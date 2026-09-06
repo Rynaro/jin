@@ -1,0 +1,11 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "ramza"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "DELEGATE",
+  "objective": "Refine real Notes writing experience per spec with continuous Jinpaper editorialtype groupedcontrols and untouched editorcontracts."
+}

@@ -1,0 +1,11 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "ramza"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "INFORM",
+  "objective": "Complete remaining Jin UI surfaces with dedicated adaptive visual roles and preserved behavior; see design.md and spec.md."
+}

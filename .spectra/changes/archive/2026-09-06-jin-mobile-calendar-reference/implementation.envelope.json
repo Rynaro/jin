@@ -1,0 +1,11 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "ramza"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "DELEGATE",
+  "objective": "Apply user-provided Apple calendar composition to normal mobile Month view, retaining Jin materials, real controls and desktop/AX behavior."
+}

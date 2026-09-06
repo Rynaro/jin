@@ -119,9 +119,9 @@ export { LanguageDescription };
 
 export const jinHighlightStyle = HighlightStyle.define([
   // Heading content — larger + bold, scaling from h1 → h6
-  { tag: tags.heading1, fontSize: 'var(--prose-h1-size)', fontWeight: '700', color: 'var(--label)' },
-  { tag: tags.heading2, fontSize: 'var(--prose-h2-size)', fontWeight: '700', color: 'var(--label)' },
-  { tag: tags.heading3, fontSize: 'var(--prose-h3-size)', fontWeight: '700', color: 'var(--label)' },
+  { tag: tags.heading1, fontFamily: 'var(--font-display)', fontSize: 'var(--prose-h1-size)', fontWeight: '700', color: 'var(--notes-writing-ink)' },
+  { tag: tags.heading2, fontFamily: 'var(--font-display)', fontSize: 'var(--prose-h2-size)', fontWeight: '700', color: 'var(--notes-writing-ink)' },
+  { tag: tags.heading3, fontFamily: 'var(--font-display)', fontSize: 'var(--prose-h3-size)', fontWeight: '700', color: 'var(--notes-writing-ink)' },
   { tag: tags.heading4, fontSize: '1.2em', fontWeight: '600', color: 'var(--label)' },
   { tag: tags.heading5, fontSize: '1.1em', fontWeight: '600', color: 'var(--label)' },
   { tag: tags.heading6, fontSize: '1.0em', fontWeight: '600', color: 'var(--label)' },
@@ -206,21 +206,21 @@ export const jinHighlightStyle = HighlightStyle.define([
 const jinEditorTheme = EditorView.theme({
   '&': {
     // No fixed height — editor grows with content inside the scroll region
-    background: 'var(--editor-canvas)',
+    background: 'var(--notes-writing-paper)',
     fontFamily: 'var(--font-text)',
-    fontSize: 'var(--editor-text-size)',
+    fontSize: 'var(--notes-prose-size)',
   },
   '.cm-scroller': {
     // outer .cm-scroll-region handles scrolling — no double-scroll
     overflow: 'visible',
   },
   '.cm-content': {
-    caretColor: 'var(--accent)',
+    caretColor: 'var(--agenda-indigo)',
     fontFamily: 'var(--font-text)',
-    fontSize: 'var(--editor-text-size)',
-    lineHeight: 'var(--editor-text-line)',
-    // Full width: no maxWidth / margin:auto (removed per restyle spec)
-    // Comfortable inset — tightened from clamp(24px,6vw,64px) (item 5)
+    fontSize: 'var(--notes-prose-size)',
+    lineHeight: 'var(--notes-prose-line)',
+    maxWidth: 'var(--notes-prose-measure)',
+    margin: '0 auto',
     padding: '1.5rem clamp(16px, 4vw, 40px)',
     minHeight: 'calc(100vh - 200px)',
     wordBreak: 'break-word',
@@ -233,13 +233,13 @@ const jinEditorTheme = EditorView.theme({
     outline: 'none',
   },
   '&.cm-focused .cm-selectionBackground': {
-    backgroundColor: 'var(--fill-secondary)',
+    backgroundColor: 'var(--notes-selection-tint)',
   },
   '.cm-selectionBackground': {
-    backgroundColor: 'var(--fill-secondary)',
+    backgroundColor: 'var(--notes-selection-tint)',
   },
   '.cm-cursor, .cm-dropCursor': {
-    borderLeftColor: 'var(--accent)',
+    borderLeftColor: 'var(--agenda-indigo)',
   },
   '.cm-placeholder': {
     color: 'var(--label-tertiary)',
@@ -276,7 +276,7 @@ const jinEditorTheme = EditorView.theme({
   // + var(--label-secondary); .cm-blockquote-line must not re-set color to
   // avoid double-muting (D-QUOTE-STYLE). Token vars only — never raw hex.
   '.cm-blockquote-line': {
-    borderInlineStart: '3px solid var(--separator)',
+    borderInlineStart: '3px solid var(--notes-quote-rule)',
     paddingInlineStart: 'var(--space-2)',
   },
   // ── Fenced-code contained block (D-CODE-BG) ──────────────────────────────
@@ -296,7 +296,7 @@ const jinEditorTheme = EditorView.theme({
   // --text-caption1-size (0.75rem) which is too small to comfortably edit;
   // the editor inherits 1.125rem from .cm-content, giving a legible edit size.
   '.cm-code-line': {
-    backgroundColor: 'var(--fill-quaternary)',
+    backgroundColor: 'var(--notes-code-wash)',
     fontFamily: 'var(--font-mono)',
     paddingInline: 'var(--space-2)',
   },
@@ -598,12 +598,14 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
     return btn;
   };
 
-  /** Create a hairline separator between toolbar groups. */
-  const mkSep = (): HTMLSpanElement => {
-    const s = document.createElement('span');
-    s.className = 'cm-toolbar__sep';
-    s.setAttribute('aria-hidden', 'true');
-    return s;
+  /** Keep related commands discoverable without changing their behavior. */
+  const mkGroup = (label: string, controls: HTMLElement[]): HTMLDivElement => {
+    const group = document.createElement('div');
+    group.className = 'cm-toolbar__group';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', label);
+    group.append(...controls);
+    return group;
   };
 
   // ── Toolbar DOM ───────────────────────────────────────────────────────────
@@ -632,7 +634,7 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   const quoteBtn   = mkBtn('quote', 'Blockquote');
   const linkFmtBtn = mkBtn('link',  'Insert link');
 
-  // Spacer (pushes reading-toggle to the right)
+  // Spacer keeps the real mode controls visually distinct on wide screens.
   const toolbarSpacer = document.createElement('div');
   toolbarSpacer.className = 'cm-toolbar__spacer';
   toolbarSpacer.setAttribute('aria-hidden', 'true');
@@ -651,25 +653,12 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   toggleBtn.setAttribute('aria-label', 'Switch to reading mode');
   toggleBtn.title = 'Switch to reading mode';
 
-  toolbar.appendChild(h1Btn);
-  toolbar.appendChild(h2Btn);
-  toolbar.appendChild(h3Btn);
-  toolbar.appendChild(mkSep());
-  toolbar.appendChild(boldBtn);
-  toolbar.appendChild(italicBtn);
-  toolbar.appendChild(strikeBtn);
-  toolbar.appendChild(codeBtn);
-  toolbar.appendChild(mkSep());
-  toolbar.appendChild(bulletBtn);
-  toolbar.appendChild(numberedBtn);
-  toolbar.appendChild(checklistBtn);
-  toolbar.appendChild(mkSep());
-  toolbar.appendChild(quoteBtn);
-  toolbar.appendChild(linkFmtBtn);
+  toolbar.appendChild(mkGroup('Structure', [h1Btn, h2Btn, h3Btn]));
+  toolbar.appendChild(mkGroup('Inline formatting', [boldBtn, italicBtn, strikeBtn, codeBtn]));
+  toolbar.appendChild(mkGroup('Lists', [bulletBtn, numberedBtn, checklistBtn]));
+  toolbar.appendChild(mkGroup('Blocks', [quoteBtn, linkFmtBtn]));
   toolbar.appendChild(toolbarSpacer);
-  toolbar.appendChild(focusBtn);
-  toolbar.appendChild(typewriterBtn);
-  toolbar.appendChild(toggleBtn);
+  toolbar.appendChild(mkGroup('Writing modes', [focusBtn, typewriterBtn, toggleBtn]));
 
   // ── Scroll region (flex:1; overflow-y:auto) — callers prepend/append into this ─
   const scrollRegion = document.createElement('div');
@@ -719,13 +708,21 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   parent.appendChild(footer);
 
   // ── Internal save wrapper (manages status indicator text) ─────────────────
+  const setSaveStatus = (state: 'saving' | 'saved' | 'failed' | 'paused', text: string): void => {
+    statusEl.dataset.saveState = state;
+    statusEl.textContent = text;
+  };
+
   const callOnSave = async (docText: string): Promise<void> => {
-    statusEl.textContent = 'Saving…';
+    setSaveStatus('saving', 'Saving…');
     try {
       await onSave(docText);
-      statusEl.textContent = 'Saved';
+      setSaveStatus('saved', 'Saved');
     } catch (err) {
-      statusEl.textContent = autosavePaused ? 'Saving paused — resolve conflict' : 'Save failed';
+      setSaveStatus(
+        autosavePaused ? 'paused' : 'failed',
+        autosavePaused ? 'Saving paused — resolve conflict' : 'Save failed',
+      );
       throw err;
     }
   };
@@ -846,10 +843,10 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
         EditorView.updateListener.of((update: ViewUpdate) => {
           if (update.docChanged && !readOnly) {
             if (autosavePaused) {
-              statusEl.textContent = 'Saving paused — resolve conflict';
+              setSaveStatus('paused', 'Saving paused — resolve conflict');
             } else {
               pendingSave = true;
-              statusEl.textContent = 'Saving…';
+              setSaveStatus('saving', 'Saving…');
               scheduleSave();
             }
             recomputeStats();
@@ -979,8 +976,9 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
           debounceTimer = null;
         }
         pendingSave = false;
-        statusEl.textContent = 'Saving paused — resolve conflict';
+        setSaveStatus('paused', 'Saving paused — resolve conflict');
       } else if (!destroyed) {
+        delete statusEl.dataset.saveState;
         statusEl.textContent = '';
       }
     },

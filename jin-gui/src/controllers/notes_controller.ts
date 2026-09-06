@@ -118,6 +118,7 @@ export default class NotesController extends Controller {
     // Search + declarative collections
     'searchInput',
     'searchCount',
+    'scopeTitle',
     'collectionList',
     'allNotesButton',
     'collectionModal',
@@ -172,6 +173,7 @@ export default class NotesController extends Controller {
   declare deleteFolderMessageTarget: HTMLElement;
   declare searchInputTarget: HTMLInputElement;
   declare searchCountTarget: HTMLElement;
+  declare scopeTitleTarget: HTMLHeadingElement;
   declare collectionListTarget: HTMLElement;
   declare allNotesButtonTarget: HTMLButtonElement;
   declare collectionModalTarget: HTMLDialogElement;
@@ -265,9 +267,13 @@ export default class NotesController extends Controller {
     const prefs = loadFolderTreePrefs();
     this.expandedFolders = new Set(prefs.expanded);
     this.paneCollapsed = prefs.paneCollapsed;
+    // At phone widths and AX5 there is room for one Notes layer at a time.
+    // Start on the index; the existing reveal control keeps the real tree available.
+    if (this.isCompactNotesViewport()) this.paneCollapsed = true;
     if (this.paneCollapsed) {
       this.element.classList.add('rail-collapsed');
     }
+    this.updateScopeTitle();
 
     void this.loadFolders();
     void this.loadCollections();
@@ -358,6 +364,8 @@ export default class NotesController extends Controller {
 
     this.currentFolder = path;
     this.currentCollectionId = null;
+    this.updateScopeTitle();
+    this.collapsePaneForCompactNavigation();
     // Re-render rail to update active highlight
     void this.loadFolders();
     this.renderCollections();
@@ -370,6 +378,8 @@ export default class NotesController extends Controller {
     if (!(await this.leaveDetailForScope())) return;
     this.currentFolder = undefined;
     this.currentCollectionId = null;
+    this.updateScopeTitle();
+    this.collapsePaneForCompactNavigation();
     this.renderCollections();
     void this.loadFolders();
     void this.loadList({});
@@ -466,9 +476,18 @@ export default class NotesController extends Controller {
    * and the always-reachable reveal button in list/detail panes.
    */
   togglePane(): void {
+    const wasCollapsed = this.paneCollapsed;
     this.paneCollapsed = !this.paneCollapsed;
     this.element.classList.toggle('rail-collapsed', this.paneCollapsed);
     this.saveTreePrefs();
+    if (wasCollapsed) {
+      this.folderRailTarget.querySelector<HTMLElement>('.notes-folder-rail__collapse-btn')?.focus();
+    } else {
+      const activePane = this.detailPanelTarget.classList.contains('hidden')
+        ? this.listPanelTarget
+        : this.detailPanelTarget;
+      activePane.querySelector<HTMLElement>('.notes-rail-reveal')?.focus();
+    }
   }
 
   // ── Private tree-pref helper ──────────────────────────────────────────────
@@ -612,6 +631,7 @@ export default class NotesController extends Controller {
       this.renameTarget = null;
       // D-CURRENT-FOLDER-SYNC: remap currentFolder / expandedFolders / focusedFolderPath
       this.remapAfterRename(oldPath, newPath);
+      this.updateScopeTitle();
       await this.loadFolders();
       void this.loadList({ folder: this.currentFolder });
     } catch (err: unknown) {
@@ -666,6 +686,7 @@ export default class NotesController extends Controller {
       this.deleteTarget = null;
       // D-CURRENT-FOLDER-SYNC: remap after delete
       this.remapAfterDelete(path);
+      this.updateScopeTitle();
       await this.loadFolders();
       void this.loadList({ folder: this.currentFolder });
     } catch (err: unknown) {
@@ -736,6 +757,7 @@ export default class NotesController extends Controller {
     }
 
     this.saveTreePrefs();
+    this.updateScopeTitle();
   }
 
   /**
@@ -767,6 +789,7 @@ export default class NotesController extends Controller {
     }
 
     this.saveTreePrefs();
+    this.updateScopeTitle();
   }
 
   /**
@@ -796,6 +819,7 @@ export default class NotesController extends Controller {
     try {
       this.collections = await listCollections();
       this.renderCollections();
+      this.updateScopeTitle();
       initIcons();
     } catch (err: unknown) {
       if (isJinErrorDto(err)) {
@@ -865,6 +889,8 @@ export default class NotesController extends Controller {
     if (!(await this.leaveDetailForScope())) return;
     this.currentCollectionId = id;
     this.currentFolder = undefined;
+    this.updateScopeTitle();
+    this.collapsePaneForCompactNavigation();
     this.renderCollections();
     void this.loadFolders();
     await this.loadActiveList();
@@ -916,6 +942,7 @@ export default class NotesController extends Controller {
       const created = await createCollection({ name, query });
       this.collectionModalTarget.close();
       await this.loadCollections();
+      this.updateScopeTitle();
       await this.selectCollection(created.id);
     } catch (err: unknown) {
       renderFormError(
@@ -952,6 +979,7 @@ export default class NotesController extends Controller {
       this.renameCollectionModalTarget.close();
       this.collectionRenameTarget = null;
       await this.loadCollections();
+      this.updateScopeTitle();
     } catch (err: unknown) {
       renderFormError(
         this.renameCollectionErrorTarget,
@@ -984,6 +1012,7 @@ export default class NotesController extends Controller {
       if (wasActive) {
         this.currentCollectionId = null;
         this.currentFolder = undefined;
+        this.updateScopeTitle();
       }
       await this.loadCollections();
       if (wasActive) await this.loadList({});
@@ -1643,6 +1672,27 @@ export default class NotesController extends Controller {
       // item 1: header action cluster (icon-only attach/link buttons)
       detailActions: this.detailActionsTarget,
     };
+  }
+
+  /** Reflect the selected real folder or collection without changing search feedback. */
+  private updateScopeTitle(): void {
+    if (this.currentCollectionId) {
+      const collection = this.collections.find((candidate) => candidate.id === this.currentCollectionId);
+      this.scopeTitleTarget.textContent = collection?.name ?? 'All Notes';
+      return;
+    }
+    this.scopeTitleTarget.textContent = this.currentFolder || 'All Notes';
+  }
+
+  private isCompactNotesViewport(): boolean {
+    return (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 640px)').matches)
+      || (document.documentElement.dataset.textScale === 'accessibility' && window.innerWidth < 760);
+  }
+
+  private collapsePaneForCompactNavigation(): void {
+    if (!this.isCompactNotesViewport()) return;
+    this.paneCollapsed = true;
+    this.element.classList.add('rail-collapsed');
   }
 
   private get viewTemplates(): NotesTemplates {

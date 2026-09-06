@@ -25,8 +25,21 @@ body {
   flex-direction: row;
   height: 100%;
   width: 100%;
-  background-color: var(--bg-base);
+  background-color: var(--agenda-canvas);
   overflow: hidden;
+}
+
+/* The capture action is the single warm entry point in the quiet shell. */
+.jin-capture-btn {
+  background-color: var(--capture-vermilion) !important;
+  color: var(--capture-on-vermilion) !important;
+  box-shadow: var(--seal-shadow);
+}
+
+.jin-capture-btn:hover,
+.jin-capture-btn:active {
+  background-color: var(--capture-vermilion-hover) !important;
+  color: var(--capture-on-vermilion) !important;
 }
 
 /* ── Sidebar — nanquim washi-paper panel ─────────────────────────────────────
@@ -692,6 +705,24 @@ body {
   .jin-settings-btn {
     min-width: var(--coarse-hit-target);
     min-height: var(--coarse-hit-target);
+  }
+}
+
+/* Mobile navigation keeps the established sidebar controller, while exposing
+ * its real toggle as a reach-in handle until the overlay is opened. */
+@media (max-width: 639px) {
+  .jin-sidebar.is-collapsed { width: 256px; }
+
+  .jin-sidebar:not(.jin-sidebar--open) .jin-sidebar-toggle {
+    position: absolute;
+    inset-block-start: var(--space-1);
+    inset-inline-start: calc(100% - var(--coarse-hit-target));
+    min-width: var(--coarse-hit-target);
+    min-height: var(--coarse-hit-target);
+    transform: translateX(var(--coarse-hit-target));
+    background-color: var(--agenda-elevated);
+    border: 1px solid var(--agenda-timeline);
+    box-shadow: var(--elevation-shadow);
   }
 }
 

@@ -1,0 +1,129 @@
+{
+  "schema": "ramza/plan-state.v1",
+  "plan": "jin-app-overhaul",
+  "created_at": "2026-09-06T02:06:57Z",
+  "tier": "full",
+  "phase": "DONE",
+  "phases_done": [
+    "RS",
+    "S",
+    "P",
+    "E",
+    "C",
+    "T",
+    "A",
+    "DONE"
+  ],
+  "rightsize": {
+    "score": 5,
+    "computed_tier": "full",
+    "inputs": {
+      "files_est": 18,
+      "new_dep": false,
+      "public_api": false,
+      "migration": false,
+      "security": false,
+      "novel": true,
+      "stakes": "high"
+    }
+  },
+  "refine_cycles": 0,
+  "skips": [],
+  "gates": [
+    {
+      "rubric": "complexity",
+      "total": 9,
+      "dims": {
+        "scope": 3,
+        "ambiguity": 1,
+        "dependencies": 2,
+        "risk": 3
+      },
+      "verdict": "extended",
+      "at": "2026-09-06T02:06:57Z",
+      "label": "scope"
+    },
+    {
+      "rubric": "explore",
+      "total": 68,
+      "dims": {
+        "alignment": 6,
+        "correctness": 8,
+        "maintainability": 6,
+        "performance": 8,
+        "simplicity": 8,
+        "risk": 6,
+        "innovation": 4
+      },
+      "verdict": "weak",
+      "at": "2026-09-06T02:06:57Z",
+      "label": "route-isolated"
+    },
+    {
+      "rubric": "explore",
+      "total": 86,
+      "dims": {
+        "alignment": 9,
+        "correctness": 9,
+        "maintainability": 9,
+        "performance": 8,
+        "simplicity": 8,
+        "risk": 8,
+        "innovation": 8
+      },
+      "verdict": "elite",
+      "at": "2026-09-06T02:07:04Z",
+      "label": "semantic-system-sequential"
+    },
+    {
+      "rubric": "explore",
+      "total": 66,
+      "dims": {
+        "alignment": 5,
+        "correctness": 7,
+        "maintainability": 8,
+        "performance": 8,
+        "simplicity": 7,
+        "risk": 5,
+        "innovation": 7
+      },
+      "verdict": "weak",
+      "at": "2026-09-06T02:07:04Z",
+      "label": "universal-card-system"
+    },
+    {
+      "rubric": "confidence",
+      "total": 93.5,
+      "dims": {
+        "pattern_match": 92,
+        "requirement_clarity": 95,
+        "decomposition_stability": 91,
+        "constraint_compliance": 96
+      },
+      "verdict": "AUTO_PROCEED",
+      "at": "2026-09-06T02:09:32Z",
+      "label": "final"
+    }
+  ],
+  "amendments": [],
+  "declared_scope": [
+    "jin-gui/index.html",
+    "jin-gui/src/styles/*.css",
+    "jin-gui/src/lib/calendar/*.ts",
+    "jin-gui/src/lib/events/*.ts",
+    "jin-gui/src/lib/notifications/render.ts",
+    "jin-gui/src/lib/settings/render.ts",
+    "jin-gui/src/__tests__/*.test.ts",
+    ".spectra/changes/jin-app-overhaul/*",
+    ".spectra/plans/jin-app-overhaul.state.json",
+    ".spectra/plans/ramza-calibration.jsonl"
+  ],
+  "criteria_sha256": "442b18656f053d0e4d6ffb094ae7df15682fee14563e1ce85989f487c672420b",
+  "critic": {
+    "author": "ramza",
+    "checker": "atlas",
+    "at": "2026-09-06T02:09:32Z"
+  },
+  "scope_declared_at": "2026-09-06T02:09:32Z",
+  "criteria_frozen_at": "2026-09-06T02:09:32Z"
+}

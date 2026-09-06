@@ -7,6 +7,10 @@
 >
 > See `docs/testing.md` for the core (`jin-core` + `jin` CLI) test strategy.
 > See `.spectra/plans/gui-mvp.md §8.6` for the gate definitions.
+>
+> Current visual-language authority: [`docs/visual-language/README.md`](visual-language/README.md).
+> The implementation and review skill is [`.agents/skills/jin-visual-language`](../.agents/skills/jin-visual-language/SKILL.md);
+> browser evidence and drift review use [`.agents/skills/jin-gui-visual-qa`](../.agents/skills/jin-gui-visual-qa/SKILL.md).
 
 ---
 

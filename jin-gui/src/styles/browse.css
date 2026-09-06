@@ -40,6 +40,7 @@
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
 
+
 .browse-back-btn:hover {
   background-color: var(--fill-tertiary);
 }
@@ -530,6 +531,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-half) var(--space-2);
   flex-shrink: 0;
   padding: var(--space-half) 0;
   border-top: 0.5px solid var(--separator);
@@ -540,18 +543,19 @@
 }
 
 .cm-footer__stats {
-  flex-shrink: 0;
+  min-width: 0;
 }
 
 .cm-footer__right {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-2);
   flex-shrink: 0;
 }
 
 .cm-footer__read-time {
-  flex-shrink: 0;
+  min-width: 0;
 }
 
 /* Save-status indicator (class preserved for test compat; now lives in footer) */
@@ -913,6 +917,9 @@ figure.code-block {
 .event-detail {
   display: grid;
   gap: var(--space-2);
+  max-inline-size: min(100%, 52rem);
+  margin-inline: auto;
+  padding: var(--space-4);
   min-width: 0;
 }
 
@@ -921,10 +928,18 @@ figure.code-block {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-2);
+  padding-block-end: var(--space-3);
+  border-block-end: 1px solid var(--separator);
 }
 
 .event-detail__heading-group { min-width: 0; }
 .event-detail__heading-group h2 { overflow-wrap: anywhere; }
+.event-detail .browse-detail__title {
+  font-family: var(--font-display);
+  font-size: var(--text-large-title-size);
+  line-height: var(--text-large-title-line);
+  letter-spacing: var(--display-title-tracking);
+}
 .event-detail__header-actions { display: flex; align-items: center; gap: var(--space-1); flex-shrink: 0; }
 .event-detail__overflow { position: relative; }
 .event-detail__overflow summary { list-style: none; }
@@ -1010,9 +1025,7 @@ figure.code-block {
   color: var(--label-tertiary);
 }
 
-.event-detail__time-section {
-  margin-bottom: var(--space-2);
-}
+.event-detail__time-section { margin: var(--space-3) 0; padding: var(--space-2) 0; border-block: 1px solid var(--separator); }
 
 .event-detail__date {
   font-size: var(--text-headline-size);
@@ -1061,10 +1074,18 @@ figure.code-block {
 
 .event-detail__metadata-section {
   min-width: 0;
-  padding: var(--space-2);
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--fill-tertiary) 52%, transparent);
+  padding: var(--space-3) 0;
+  border: 0;
+  border-block-start: 1px solid var(--separator);
+  border-radius: 0;
+  background: transparent;
+}
+
+.event-detail .browse-detail__links-section {
+  padding-block: var(--space-3);
+  border-block-start: 1px solid var(--separator);
+  border-radius: 0;
+  background: transparent;
 }
 
 .event-detail__metadata-heading {
@@ -1326,6 +1347,10 @@ figure.code-block {
 
 .notes-paned.detail-open.rail-collapsed {
   grid-template-columns: 0 1fr;
+}
+
+.notes-folder-rail {
+  background: var(--agenda-rail);
 }
 
 .notes-paned.rail-collapsed .notes-folder-rail {
@@ -2313,7 +2338,8 @@ figure.code-block {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  background: var(--bg-secondary);
+  background: var(--tasks-board-paper);
+  border: 0.5px solid var(--separator);
   border-radius: var(--radius-md);
   padding: var(--space-2);
   transition: opacity 120ms ease;
@@ -2326,6 +2352,8 @@ figure.code-block {
    the event layer, not the mechanism itself. */
 .tasks-board__column--drop-disabled {
   opacity: 0.45;
+  outline: 2px dashed var(--label-secondary);
+  outline-offset: -2px;
 }
 
 .tasks-board__column-header {
@@ -2390,7 +2418,9 @@ figure.code-block {
 
 /* ── Card variant: boxed card, stacked (Board view) ──────────────────────── */
 .task-item--card {
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
   background: var(--bg-elevated);
   border: 0.5px solid var(--separator);
   border-radius: var(--radius-sm);
@@ -2401,6 +2431,28 @@ figure.code-block {
 
 .task-item--card:hover {
   box-shadow: 0 2px 8px -2px var(--elevation-shadow);
+}
+
+.task-item--card .task-item__checkbox {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.task-item--card .task-item__content {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.task-item--card .task-item__priority {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
+}
+
+.task-item--card .task-item__status-badge {
+  grid-column: 2;
+  grid-row: 3;
+  justify-self: start;
 }
 
 /* ── Drag-and-drop manual reorder (identical in both variants) ───────────── */
@@ -2468,13 +2520,13 @@ figure.code-block {
 
 /* ── Selection (S3 — Approach §2): drives the ONE detail pane ─────────────── */
 .task-item--selected.task-item--row {
-  background: var(--fill-tertiary);
-  box-shadow: inset 2px 0 0 0 var(--accent);
+  background: var(--tasks-selected-wash);
+  box-shadow: inset 3px 0 0 0 var(--tasks-selected-edge);
 }
 
 .task-item--selected.task-item--card {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1.5px var(--accent);
+  border-color: var(--tasks-selected-edge);
+  box-shadow: 0 0 0 1.5px var(--tasks-selected-edge);
 }
 
 /* ── S6: nested child items (list view — AC-S6-13/14/15) ──────────────────── */
@@ -2776,12 +2828,12 @@ figure.code-block {
 
 /* ── Detail pane (grid track 2) — the ONE task editor (S3, Approach §2) ───── */
 .tasks-detail-pane {
-  border-inline-start: 0.5px solid var(--separator);
+  border-inline-start: 2px solid var(--tasks-detail-edge);
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
   padding: var(--space-3);
-  background-color: var(--bg-elevated);
+  background-color: var(--tasks-board-paper);
 }
 
 /* ── Pane header: Delete + Close (S3) ─────────────────────────────────────── */
@@ -3982,10 +4034,31 @@ figure.code-block {
 }
 
 .notes-list-pane__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   width: auto;
   min-height: var(--toolbar-height);
   margin: 0 calc(-1 * var(--space-3)) var(--space-2);
   padding: 0 var(--space-3);
+  gap: var(--space-half) var(--space-1);
+}
+
+.notes-workspace-title {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: var(--space-2) 0 0;
+  color: var(--ink-primary);
+  font-family: var(--font-display);
+  font-size: var(--text-title2-size);
+  font-weight: 650;
+  letter-spacing: var(--display-title-tracking);
+  line-height: var(--text-title2-line);
+  overflow-wrap: anywhere;
+}
+
+.notes-list-pane__header .notes-search {
+  margin-inline-end: 0;
 }
 
 .notes-list-pane > .browse-list {
@@ -4008,7 +4081,7 @@ figure.code-block {
 
 .note-row .browse-row__inner.jin-list-row {
   min-block-size: var(--note-row-height);
-  max-block-size: var(--note-row-height);
+  max-block-size: none;
   gap: 0;
   padding: var(--space-1) var(--space-2);
   border: 0;
@@ -4016,7 +4089,7 @@ figure.code-block {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .note-row .browse-row__inner.jin-list-row:hover {
@@ -4025,18 +4098,16 @@ figure.code-block {
 }
 
 .note-row .browse-row__title {
-  padding-inline-end: 36%;
+  padding-inline-end: 0;
   font-size: var(--text-subheadline-size);
   line-height: var(--text-subheadline-line);
   font-weight: 600;
 }
 
 .note-row .browse-row__meta {
-  position: absolute;
-  inset-block-start: var(--space-1);
-  inset-inline-end: var(--space-2);
-  max-width: 34%;
-  overflow: hidden;
+  position: static;
+  max-width: none;
+  overflow: visible;
   font-size: var(--text-footnote-size);
   line-height: var(--text-footnote-line);
 }
@@ -4049,14 +4120,22 @@ figure.code-block {
 }
 
 .note-row__tags {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.notes-collection-row.is-active,
+[role="treeitem"][aria-selected="true"] > .folder-row__btn {
+  color: var(--notes-selected-edge);
+  background: var(--notes-selected-wash);
+  box-shadow: inset 3px 0 0 var(--notes-selected-edge);
 }
 
 .notes-detail-pane {
   padding: 0;
-  background: var(--workspace-canvas);
+  background: var(--notes-editor-paper);
 }
 
 .notes-detail-pane__header {
@@ -4075,12 +4154,15 @@ figure.code-block {
 
 .notes-detail-pane .browse-detail__title-row {
   width: min(calc(100% - var(--space-6)), var(--reading-width));
-  align-items: center;
+  align-items: start;
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin: 0 auto var(--space-3);
 }
 
 .notes-detail-pane .browse-detail__title--input.jin-title-field {
+  min-width: 0;
+  flex: 1 1 16rem;
   min-height: var(--control-height-prominent);
   padding: 0;
   border: 0;
@@ -4103,6 +4185,7 @@ figure.code-block {
 
 .notes-detail-pane .note-detail__status {
   margin-top: var(--space-1);
+  flex: 0 0 auto;
 }
 
 .notes-detail-pane .note-detail__body,
@@ -4218,6 +4301,10 @@ figure.code-block {
   padding: 0 var(--space-1) 0 var(--space-2);
 }
 
+.tasks-lists-rail {
+  background: var(--agenda-rail);
+}
+
 .tasks-lists-rail__smart-list,
 .tasks-lists-rail__list {
   padding: 0;
@@ -4230,9 +4317,40 @@ figure.code-block {
   min-height: var(--desktop-hit-target);
 }
 
-.lists-rail__row-btn {
+.tasks-lists-rail .lists-rail__row-btn {
   min-width: 0;
   min-height: var(--rail-row-height);
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.tasks-lists-rail .lists-rail__row.jin-navigation-row--actions {
+  grid-template-columns: 9px var(--icon-size-standard) minmax(0, 1fr);
+  overflow: visible;
+}
+
+.tasks-lists-rail .lists-rail__row {
+  min-block-size: var(--rail-row-height);
+}
+
+.tasks-lists-rail .lists-rail__row--actions > .lists-rail__actions {
+  align-self: center;
+}
+
+.tasks-lists-rail .lists-rail__row--actions > .lists-rail__actions {
+  position: absolute;
+  inset-inline-end: var(--space-1);
+  inline-size: auto;
+}
+
+.tasks-lists-rail .lists-rail__row--active {
+  color: var(--agenda-indigo);
+  background: var(--agenda-indigo-tint);
+}
+
+.tasks-lists-rail .lists-rail__row--active::before {
+  background: var(--agenda-indigo);
 }
 
 .lists-rail__row:hover .lists-rail__count,
@@ -4252,6 +4370,33 @@ figure.code-block {
   background: var(--workspace-canvas);
 }
 
+.tasks-workspace-header {
+  display: flex;
+  align-items: end;
+  gap: var(--space-1);
+  min-height: 52px;
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.tasks-workspace-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-primary);
+  font-family: var(--font-display);
+  font-size: var(--text-title2-size);
+  font-weight: 650;
+  letter-spacing: var(--display-title-tracking);
+  line-height: var(--text-title2-line);
+  overflow-wrap: anywhere;
+}
+
+.tasks-rail-toggle,
+.tasks-lists-rail__mobile-header {
+  display: none;
+}
+
 [data-tasks-target="listPanel"] {
   padding: 0 var(--space-3) var(--space-8);
   background: var(--workspace-canvas);
@@ -4262,7 +4407,7 @@ figure.code-block {
   z-index: 5;
   top: 0;
   min-height: var(--toolbar-height);
-  margin: 0 calc(-1 * var(--space-3)) var(--space-2);
+  margin: 0 calc(-1 * var(--space-3)) var(--space-3);
   padding: var(--space-half) var(--space-3);
   border-width: 0 0 0.5px;
 }
@@ -4280,12 +4425,13 @@ figure.code-block {
 
 .task-item--row.jin-list-row {
   display: grid;
-  grid-template-columns: 20px 28px minmax(160px, 1fr) auto 28px;
+  grid-template-columns: 20px 40px minmax(0, 1fr) auto 40px;
   gap: var(--space-1);
+  align-items: start;
   min-height: var(--task-row-height);
-  height: var(--task-row-height);
-  max-height: var(--task-row-height);
-  padding: 0 var(--space-1);
+  height: auto;
+  max-height: none;
+  padding: var(--space-1) var(--space-1);
   border-bottom: 0.5px solid var(--separator);
   border-radius: 0;
   background: transparent;
@@ -4294,7 +4440,7 @@ figure.code-block {
 }
 
 .tasks-main--detail-open .task-item--row.jin-list-row {
-  grid-template-columns: 20px 28px minmax(96px, 1fr) auto 28px;
+  grid-template-columns: 20px 40px minmax(0, 1fr) auto 40px;
 }
 
 .task-item--row .task-item__status-badge {
@@ -4359,58 +4505,62 @@ figure.code-block {
 
 .task-item--row .task-item__content {
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-1);
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: var(--space-half);
   min-width: 0;
-  min-height: var(--task-row-height);
+  min-height: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .task-item--row .task-item__body {
-  width: auto;
-  flex: 1 1 auto;
+  width: 100%;
+  flex: 0 1 auto;
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .task-item--row .task-item__title {
   width: 100%;
   min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
 }
 
 .task-item--row .task-item__meta {
   width: auto;
-  max-width: 48%;
+  max-width: none;
   min-width: 0;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   justify-content: flex-start;
   overflow: visible;
-  white-space: nowrap;
+  color: var(--tasks-meta);
 }
 
 .task-item--row .task-item__priority-label {
-  display: none;
+  display: inline;
 }
 
 .task-item--row .due-chip-group,
 .task-item--row .task-item__tags {
   max-width: 100%;
   min-width: 0;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 
 .task-item--row .task-item__tags {
-  flex: 1 1 auto;
-  overflow: hidden;
+  flex: 0 1 auto;
+  overflow: visible;
 }
 
 .task-item--row .task-tag-chip {
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .task-item--row .task-item__actions {
@@ -4468,6 +4618,296 @@ figure.code-block {
   }
 }
 
+
+/* ── Notes editor: continuous Jin writing desk ────────────────────────────── */
+/* The editor is intentionally an open paper field. Toolbar groups receive the
+ * only contained treatment; the note itself never becomes a rounded card. */
+.notes-detail-pane,
+.notes-detail-pane .note-detail__body,
+.notes-detail-pane .cm-scroll-region,
+.notes-detail-pane .cm-editor-wrapper,
+.notes-detail-pane .cm-reading-wrapper {
+  background: var(--notes-writing-paper);
+}
+
+.notes-detail-pane .browse-detail__title-row {
+  width: min(calc(100% - var(--space-6)), var(--notes-prose-measure));
+  margin-block-end: var(--space-4);
+}
+
+.notes-detail-pane .browse-detail__title--input.jin-title-field {
+  color: var(--notes-writing-ink);
+  font-size: clamp(var(--display-title-size), 4vw, 2.5rem);
+  line-height: 1.12;
+  letter-spacing: var(--display-title-tracking);
+}
+
+.notes-detail-pane .browse-detail__title--input.jin-title-field:focus-visible {
+  border-bottom-color: var(--notes-focus-tint);
+  outline: 2px solid var(--notes-focus-tint);
+  outline-offset: var(--space-half);
+}
+
+.notes-detail-pane .cm-toolbar {
+  width: min(calc(100% - var(--space-6)), var(--reading-width));
+  padding-block: var(--space-1);
+  padding-inline: 0;
+  gap: var(--space-1);
+  border-bottom-color: var(--notes-toolbar-rule);
+  background: var(--notes-writing-paper);
+}
+
+.cm-toolbar__group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  flex: 0 0 auto;
+  min-inline-size: 0;
+  padding: var(--space-half);
+  border: 1px solid var(--notes-toolbar-rule);
+  border-radius: var(--radius-sm);
+  background: var(--notes-toolbar-wash);
+}
+
+.cm-toolbar__group:focus-within {
+  outline: 2px solid var(--notes-focus-tint);
+  outline-offset: 1px;
+}
+
+.cm-toolbar__spacer {
+  min-inline-size: 0;
+}
+
+.cm-toolbar__toggle {
+  background: transparent;
+  color: var(--notes-writing-ink);
+}
+
+.cm-toolbar__toggle:hover,
+.cm-toolbar__btn:hover {
+  background: var(--notes-selection-tint);
+  color: var(--notes-writing-ink);
+}
+
+.cm-toolbar__btn[aria-pressed="true"] {
+  background: var(--notes-selection-tint);
+  color: var(--agenda-indigo);
+}
+
+.notes-detail-pane .cm-editor-wrapper,
+.notes-detail-pane .cm-reading-wrapper,
+.notes-detail-pane .browse-detail__meta,
+.notes-detail-pane .browse-detail__links-section {
+  width: min(calc(100% - var(--space-6)), var(--notes-prose-measure));
+}
+
+.notes-detail-pane .cm-content {
+  color: var(--notes-writing-ink);
+  font-size: var(--notes-prose-size);
+  line-height: var(--notes-prose-line);
+}
+
+.notes-detail-pane .cm-reading-wrapper {
+  padding: var(--space-3) 0 var(--space-8);
+  color: var(--notes-writing-ink);
+  font-size: var(--notes-prose-size);
+  line-height: var(--notes-prose-line);
+}
+
+.cm-reading-wrapper :is(h1, h2, h3) {
+  color: var(--notes-writing-ink);
+  font-family: var(--font-display);
+}
+
+.cm-reading-wrapper p,
+.cm-reading-wrapper li {
+  line-height: var(--notes-prose-line);
+}
+
+.cm-reading-wrapper blockquote {
+  border-inline-start-color: var(--notes-quote-rule);
+  color: var(--notes-writing-muted);
+}
+
+.cm-reading-wrapper :is(code, pre) {
+  background: var(--notes-code-wash);
+}
+
+.cm-reading-wrapper a {
+  color: var(--agenda-indigo);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+}
+
+.notes-detail-pane .cm-footer {
+  width: min(calc(100% - var(--space-6)), var(--notes-prose-measure));
+  margin-inline: auto;
+  padding: var(--space-1) 0 var(--space-2);
+  border-top-color: var(--notes-toolbar-rule);
+  background: var(--notes-writing-paper);
+  color: var(--notes-writing-muted);
+}
+
+.cm-toolbar__status[data-save-state]::before {
+  display: inline-block;
+  min-inline-size: 1em;
+  margin-inline-end: var(--space-half);
+  font-weight: 700;
+  text-align: center;
+}
+
+.cm-toolbar__status[data-save-state="saving"] { color: var(--notes-save-saving); }
+.cm-toolbar__status[data-save-state="saving"]::before { content: "…"; }
+.cm-toolbar__status[data-save-state="saved"]::before { content: "✓"; }
+.cm-toolbar__status[data-save-state="failed"] { color: var(--notes-save-failed); font-weight: 700; }
+.cm-toolbar__status[data-save-state="failed"]::before { content: "!"; }
+.cm-toolbar__status[data-save-state="paused"] { color: var(--notes-save-paused); font-weight: 700; }
+.cm-toolbar__status[data-save-state="paused"]::before { content: "Ⅱ"; }
+
+@media (max-width: 640px) {
+  .notes-detail-pane .browse-detail__title-row,
+  .notes-detail-pane .cm-toolbar,
+  .notes-detail-pane .cm-editor-wrapper,
+  .notes-detail-pane .cm-reading-wrapper,
+  .notes-detail-pane .browse-detail__meta,
+  .notes-detail-pane .browse-detail__links-section,
+  .notes-detail-pane .cm-footer {
+    width: calc(100% - var(--space-4));
+  }
+
+  .notes-detail-pane .browse-detail__title--input.jin-title-field {
+    flex-basis: 100%;
+  }
+
+  .notes-detail-pane .cm-toolbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .cm-toolbar__spacer { display: none; }
+}
+
+:root[data-text-scale="accessibility"] .notes-detail-pane .note-detail__body,
+:root[data-text-scale="accessibility"] .notes-detail-pane .cm-scroll-region {
+  min-inline-size: 0;
+  overflow: visible;
+}
+
+:root[data-text-scale="accessibility"] .notes-detail-pane .cm-toolbar {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+
+:root[data-text-scale="accessibility"] .notes-detail-pane .cm-toolbar__group {
+  max-inline-size: 100%;
+  flex-wrap: wrap;
+}
+
+:root[data-text-scale="accessibility"] .notes-detail-pane .cm-footer,
+:root[data-text-scale="accessibility"] .notes-detail-pane .cm-footer__right {
+  align-items: flex-start;
+}
+
+/* The footer's controls may take a full row at AX5, but the footer itself
+ * must retain intrinsic height when the surrounding editor flow is intrinsic. */
+:root[data-text-scale="accessibility"] .notes-detail-pane .cm-footer {
+  flex-basis: auto;
+}
+
+:root[data-text-scale="accessibility"] .notes-detail-pane .cm-footer__right {
+  flex-basis: 100%;
+}
+
+/* At phone widths and AX5, Tasks has one active layer: either the readable
+ * workspace or the list rail. The real rail keeps its existing controls and
+ * callbacks; this only changes its presentation. */
+@media (max-width: 760px) {
+  .jin-content-body[data-section-name="tasks"].jin-split-view {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tasks-lists-rail {
+    display: none;
+  }
+
+  .tasks-rail-open .tasks-lists-rail {
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    display: flex;
+    inline-size: 100vw;
+    max-inline-size: 100vw;
+  }
+
+  .tasks-rail-toggle,
+  .tasks-lists-rail__mobile-header {
+    display: inline-flex;
+  }
+
+  .tasks-workspace-header {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .tasks-workspace-title,
+  .tasks-rail-toggle {
+    flex-basis: 100%;
+  }
+
+  .tasks-lists-rail__mobile-header {
+    align-items: center;
+    justify-content: space-between;
+    min-block-size: var(--toolbar-height);
+    padding-inline: var(--space-2);
+    border-bottom: 0.5px solid var(--separator);
+    color: var(--ink-primary);
+    font-weight: 600;
+  }
+
+  .tasks-rail-toggle {
+    flex: 0 0 auto;
+  }
+
+  .tasks-filter-bar,
+  .tasks-filter-controls {
+    min-width: 0;
+  }
+}
+
+:root[data-text-scale="accessibility"] .jin-content-body[data-section-name="tasks"].jin-split-view {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+:root[data-text-scale="accessibility"] .tasks-lists-rail {
+  display: none;
+}
+
+:root[data-text-scale="accessibility"] .tasks-rail-open .tasks-lists-rail {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  inline-size: 100vw;
+  max-inline-size: 100vw;
+}
+
+:root[data-text-scale="accessibility"] .tasks-rail-toggle,
+:root[data-text-scale="accessibility"] .tasks-lists-rail__mobile-header {
+  display: inline-flex;
+}
+
+:root[data-text-scale="accessibility"] .tasks-workspace-header {
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+:root[data-text-scale="accessibility"] .tasks-workspace-title,
+:root[data-text-scale="accessibility"] .tasks-rail-toggle {
+  flex-basis: 100%;
+}
+
 /* Keep clipping on the two text-bearing lines, not their positioned popup
  * host. The transient may now leave the fixed 40px ledger row without
  * changing its geometry. */
@@ -4481,16 +4921,16 @@ figure.code-block {
 .task-item--row .task-item__title,
 .task-item--row .task-item__tags {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 /* Task Detail is a compact inspector, not a stack of default form controls.
  * It uses continuous separators and calm paper fields rather than cards. */
 .tasks-detail-pane {
   padding: var(--space-2) var(--space-3) var(--space-4);
-  background: var(--workspace-canvas);
+  background: var(--tasks-board-paper);
 }
 
 .tasks-detail-pane__header {
@@ -4638,4 +5078,73 @@ figure.code-block {
   background: var(--workspace-row-hover);
   box-shadow: inset 0 0.5px 0 var(--specular-highlight);
   font-size: var(--text-footnote-size);
+}
+
+/* Tasks reflow keeps task meaning inside the page instead of manufacturing a
+ * compact pass with clipped rows. The detail remains the existing overlay on
+ * narrow screens, so list width is never sacrificed to the inspector. */
+@media (max-width: 640px) {
+  .tasks-workspace-header {
+    min-height: 0;
+    padding-inline: var(--space-2);
+  }
+
+  .tasks-filter-bar.jin-toolbar-strip {
+    align-items: flex-start;
+    padding-inline: var(--space-2);
+  }
+
+  .tasks-view-segment {
+    margin-inline-start: 0;
+  }
+
+  .task-item--row.jin-list-row,
+  .tasks-main--detail-open .task-item--row.jin-list-row {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+  }
+
+  .task-item--row .task-item__drag-handle {
+    display: none;
+  }
+
+  .task-item--row .task-item__checkbox {
+    grid-column: 1;
+  }
+
+  .task-item--row .task-item__content {
+    grid-column: 2 / -1;
+  }
+
+  .task-item--row .task-item__priority {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .task-item--row .task-item__actions {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .tasks-detail-pane {
+    width: 100vw;
+    max-width: 100vw;
+    padding-inline: var(--space-2);
+  }
+
+  .task-detail__field-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .task-detail__field-label {
+    width: auto;
+  }
+}
+
+@media (pointer: coarse) {
+  .task-item--row .task-item__actions {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
 }

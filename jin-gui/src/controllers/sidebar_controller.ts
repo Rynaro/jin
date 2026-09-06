@@ -28,11 +28,16 @@ export default class SidebarController extends Controller {
   declare readonly hasToggleTarget: boolean;
 
   private collapsed = false;
+  private mobileOpen = false;
 
   connect(): void {
     const el = this.element as HTMLElement;
     this.collapsed = loadSidebarPrefs().collapsed;
     applySidebarCollapsed(el, this.collapsed, this.toggleEl);
+    if (this.isMobileViewport()) {
+      this.toggleEl?.setAttribute('aria-expanded', 'false');
+      this.toggleEl?.setAttribute('aria-label', 'Open navigation');
+    }
 
     // Enable the width animation only AFTER the initial (possibly collapsed)
     // state has painted, so a persisted-collapsed sidebar does not animate
@@ -46,6 +51,15 @@ export default class SidebarController extends Controller {
   }
 
   toggle(): void {
+    if (this.isMobileViewport()) {
+      this.mobileOpen = !this.mobileOpen;
+      const sidebar = this.element as HTMLElement;
+      sidebar.classList.toggle('jin-sidebar--open', this.mobileOpen);
+      this.toggleEl?.setAttribute('aria-expanded', String(this.mobileOpen));
+      this.toggleEl?.setAttribute('aria-label', this.mobileOpen ? 'Close navigation' : 'Open navigation');
+      return;
+    }
+
     this.collapsed = !this.collapsed;
     applySidebarCollapsed(this.element as HTMLElement, this.collapsed, this.toggleEl);
     saveSidebarPrefs({ collapsed: this.collapsed });
@@ -53,5 +67,11 @@ export default class SidebarController extends Controller {
 
   private get toggleEl(): HTMLElement | null {
     return this.hasToggleTarget ? this.toggleTarget : null;
+  }
+
+  private isMobileViewport(): boolean {
+    return typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(max-width: 639px)').matches;
   }
 }

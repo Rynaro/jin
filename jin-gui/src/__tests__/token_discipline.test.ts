@@ -117,6 +117,28 @@ describe('VG-GUI-5: tokens.css defines required semantic tokens', () => {
     expect(tokens).toContain('--seal-strong: #8f2d21');
   });
 
+  it('defines adaptive semantic roles for the Tasks ledger', () => {
+    for (const token of [
+      '--tasks-selected-wash:',
+      '--tasks-selected-edge:',
+      '--tasks-board-paper:',
+      '--tasks-detail-edge:',
+      '--tasks-meta:',
+    ]) {
+      expect(tokens).toContain(token);
+    }
+  });
+
+  it('defines adaptive roles for the continuous Notes writing surface', () => {
+    for (const token of [
+      '--notes-writing-paper:', '--notes-writing-ink:', '--notes-writing-muted:',
+      '--notes-toolbar-wash:', '--notes-toolbar-rule:', '--notes-selection-tint:',
+      '--notes-focus-tint:', '--notes-quote-rule:', '--notes-code-wash:',
+      '--notes-save-saving:', '--notes-save-failed:', '--notes-save-paused:',
+      '--notes-prose-measure: 66ch', '--notes-prose-size: 1.125rem', '--notes-prose-line: 1.7',
+    ]) expect(tokens).toContain(token);
+  });
+
   it('defines all spacing tokens (8pt grid)', () => {
     for (const token of ['--space-1: 8px', '--space-2: 16px', '--space-4: 32px']) {
       expect(tokens).toContain(token);

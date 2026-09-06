@@ -1,0 +1,184 @@
+change_id: jin-app-overhaul
+tier: full
+intent: change
+objective: >-
+  Complete Jin's warm paper, black ink, indigo interaction, and vermilion intent
+  visual renewal across every remaining user-facing surface, beginning with Events,
+  while preserving the application's existing behavior and accessibility contracts.
+maker: vivi
+checker: atlas
+phases:
+  - id: events
+    order: 1
+    surfaces:
+      - month, week, and day calendar
+      - event detail
+      - event create, edit, recurrence, and conflict flows
+    outcome: warm editorial planning surface with crisp time and date hierarchy
+  - id: notifications
+    order: 2
+    surfaces:
+      - filter row
+      - notification list and detail
+      - provider, pending, error, historical, disabled, and recurrence-scope states
+    outcome: calm triage desk with explicit state truth
+  - id: settings
+    order: 3
+    surfaces:
+      - General
+      - Calendars and Sync
+      - Notifications
+      - Data and Storage
+    outcome: open settings document with clear operational hierarchy
+  - id: shared-moments
+    order: 4
+    surfaces:
+      - Capture
+      - shared dialogs and confirmations
+      - forms, search, filters, selects, tags, color picker
+      - loading, empty, not-found, offline, disabled, conflict, and error states
+    outcome: one coherent interaction and state language
+  - id: closure
+    order: 5
+    surfaces:
+      - application shell and navigation
+      - Today, Tasks, and Notes regression-only consistency review
+      - adaptive and responsive matrix
+    outcome: complete whole-app visual coherence without redesigning accepted routes
+scope:
+  files:
+    - jin-gui/index.html
+    - jin-gui/src/styles/tokens.css
+    - jin-gui/src/styles/calendar.css
+    - jin-gui/src/styles/notifications.css
+    - jin-gui/src/styles/settings.css
+    - jin-gui/src/styles/forms.css
+    - jin-gui/src/styles/components.css
+    - jin-gui/src/styles/browse.css
+    - jin-gui/src/styles/a11y.css
+    - jin-gui/src/styles/index.css
+    - jin-gui/src/lib/calendar/render.ts
+    - jin-gui/src/lib/calendar/time_grid_render.ts
+    - jin-gui/src/controllers/calendar_view_controller.ts
+    - jin-gui/src/lib/events/render.ts
+    - jin-gui/src/lib/events/edit.ts
+    - jin-gui/src/lib/notifications/render.ts
+    - jin-gui/src/lib/settings/render.ts
+    - jin-gui/src/__tests__/*.test.ts
+  preserve:
+    - every existing controller target, action, route, callback, and payload
+    - calendar_view_controller control flow, state, bridge calls, payloads, and lifecycle; only render-only header and date-scroller hooks may change
+    - calendar Month, Week, Day, selection, collision, all-day, and current-time behavior
+    - event source, capability, recurrence, timezone, validation, conflict, and related-context truth
+    - notification state machine, provider truth, recurrence scope, busy, and live-region semantics
+    - settings navigation, auth, sync, export, appearance, notification, and diagnostics behavior
+    - modal focus, Escape, backdrop, focus-return, pending, submit, and cancel behavior
+    - previously accepted Today, Tasks, Notes, and Notes editor information architecture
+    - light, dark, auto, dynamic type, contrast, transparency, motion, and forced-color preferences
+  exclude:
+    - Rust, core, DTO, invoke, bridge, database, filesystem, auth, sync, or persistence changes
+    - recurrence, timezone, notification-state, Markdown, sanitizer, router, or storage semantic changes
+    - dependencies, APIs, product features, themes, AI, collaboration, or fabricated production data
+    - replacement of native dialogs, CodeMirror, calendar/select/tag primitives, or controller architecture
+visual_contract:
+  foundation: adaptive warm paper and readable black ink
+  interaction: indigo for focus, selection, links, and current state
+  intent: vermilion for Capture, Add Event, and consequential actions
+  hierarchy: display typography, body typography, spacing, and fine rules
+  containers: open composition; full rounded cards are exceptional rather than structural default
+  states: truthful text plus non-color cues for loading, empty, pending, success, warning, and failure
+  appearance: coherent light, dark, automatic, contrast, transparency, motion, and forced-color behavior
+acceptance_checks:
+  - id: AC1
+    given: Events in Month, Week, or Day view
+    when: the workspace renders
+    then: it has an editorial header and warm calendar field with distinct date, view, navigation, Today, and Add Event actions without a heavy gray segmented strip
+    verify_method: Playwright screenshots, accessibility snapshot, and computed styles
+  - id: AC2
+    given: dense, overlapping, all-day, selected, today, or current-time calendar content
+    when: users navigate and activate it
+    then: existing geometry, source meaning, callbacks, accessible names, and content reachability remain intact
+    verify_method: calendar controller/time-grid Vitest plus Playwright interaction
+  - id: AC3
+    given: local, Google, recurring, read-only, or task-derived event detail and editing
+    when: users inspect, create, edit, save, cancel, delete, or resolve conflict
+    then: all real capabilities, fields, validation, scope, payloads, focus, context, and errors remain truthful in an unboxed editorial surface
+    verify_method: event render/edit/controller Vitest plus Playwright flows
+  - id: AC4
+    given: active or historical notification content
+    when: users filter, select, respond, retry, defer, dismiss, mark read, or choose recurrence scope
+    then: provider truth, state labels, disabled reasons, live announcements, and actions remain intact in a calm open triage view
+    verify_method: notification render/controller/accessibility Vitest plus Playwright
+  - id: AC5
+    given: any Settings pane and operational state
+    when: it renders or changes
+    then: every existing value and control remains readable and functional in an open settings document with truthful status and error text
+    verify_method: settings render/controller/navigation Vitest plus Playwright pane matrix
+  - id: AC6
+    given: an existing dialog, Capture flow, form, search, filter, select, tag input, color picker, or destructive confirmation
+    when: it is used by keyboard or pointer
+    then: shared Jin styling preserves labels, focus lifecycle, validation, pending state, Escape, submit, cancel, callback, and payload behavior
+    verify_method: component/capture/modal Vitest plus representative Playwright flows
+  - id: AC7
+    given: loading, empty, not-found, offline, conflict, disabled, queued, success, warning, or failure
+    when: any route exposes the state
+    then: meaning is explicit in text, perceivable without color, correctly announced, and does not fabricate progress or success
+    verify_method: source assertions, accessibility snapshots, and state fixtures
+  - id: AC8
+    given: navigation across all six routes
+    when: the overhaul is integrated
+    then: material, typography, color roles, rules, controls, badges, dialogs, and density read as one Jin system while accepted Today, Tasks, and Notes layouts remain stable
+    verify_method: route screenshot set and regression suites
+  - id: AC9
+    given: 320, 390, 760, or 1440 CSS px or AX5/310% text
+    when: every route and representative dialog is exercised
+    then: content and actions remain readable and reachable without document horizontal overflow or clipped meaning
+    verify_method: deterministic Playwright viewport and overflow matrix
+  - id: AC10
+    given: light, dark, auto, reduced motion, reduced transparency, increased contrast, or forced colors
+    when: the interface renders
+    then: explicit preferences win and hierarchy, focus, boundaries, state, and meaning remain perceivable
+    verify_method: token/source tests and Playwright appearance matrix
+  - id: AC11
+    given: the completed diff
+    when: scope and behavior are reviewed
+    then: no excluded system contract, dependency, API, product feature, or production sample data has changed
+    verify_method: checker diff review and full regression gate
+  - id: AC12
+    given: stable integrated implementation
+    when: verification completes
+    then: focused suites, make verify-gui, browser route/state/accessibility evidence, and native Tauri build boundary are recorded
+    verify_method: command logs, evidence directory, and checker verdict
+verification:
+  focused:
+    - events_controller.test.ts
+    - calendar_view_controller.test.ts
+    - calendar_time_grid.test.ts
+    - event_edit.test.ts
+    - event_locale.test.ts
+    - notifications_render.test.ts
+    - notifications_controller.test.ts
+    - notifications_accessibility.test.ts
+    - settings_controller.test.ts
+    - notification_settings.test.ts
+    - ui_modal.test.ts
+    - capture_controller.test.ts
+    - actions_controller.test.ts
+    - token_discipline.test.ts
+  full: make verify-gui
+  visual: deterministic Playwright MCP on http://127.0.0.1:1420
+  viewports:
+    - 320
+    - 390
+    - 760
+    - 1440
+  preferences:
+    - light
+    - dark
+    - auto
+    - AX5/310%
+    - increased contrast
+    - reduced transparency
+    - reduced motion
+    - forced colors
+  native: build the debug Tauri application after browser verification and report native review separately

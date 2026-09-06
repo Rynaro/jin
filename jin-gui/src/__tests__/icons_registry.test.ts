@@ -53,6 +53,7 @@ import ListsController from '../controllers/lists_controller';
 import * as InvokeModule from '../invoke';
 
 const INDEX_HTML = readFileSync(resolve(process.cwd(), 'index.html'), 'utf-8');
+const ICONS_SOURCE = readFileSync(resolve(process.cwd(), 'src/lib/icons/index.ts'), 'utf-8');
 
 function extractBodyInnerHTML(html: string): string {
   const match = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
@@ -232,6 +233,13 @@ describe('AC-X-03 — every data-lucide icon rendered by the tasks surface is re
     const unresolved = Array.from(document.querySelectorAll('i[data-lucide]'));
     const unresolvedNames = unresolved.map((el) => el.getAttribute('data-lucide'));
     expect(unresolvedNames, 'every rendered data-lucide name must be registered').toEqual([]);
+  });
+});
+
+describe('Notes history icon registry', () => {
+  it('registers the rendered History action instead of leaving a Lucide placeholder', () => {
+    expect(ICONS_SOURCE).toMatch(/import \{[\s\S]*?History,[\s\S]*?\} from 'lucide';/);
+    expect(ICONS_SOURCE).toMatch(/const REGISTERED_ICONS = \{[\s\S]*?History,/);
   });
 });
 

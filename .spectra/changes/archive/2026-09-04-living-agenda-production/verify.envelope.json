@@ -1,0 +1,19 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "atlas"
+  },
+  "to": {
+    "eidolon": "idg"
+  },
+  "performative": "INFORM",
+  "objective": "Distinct checker verified production implementation and corrected mobile AX5 navigation; no material spec drift.",
+  "context_delta": {
+    "browser": "320/390/760/1440, AX5, Capture modes and keyboard, appearance/forced colors; native owner signoff remains outstanding",
+    "checker": "atlas",
+    "evidence": "verification.md",
+    "fresh_context": true,
+    "tests": "1881 frontend tests; Rust bridge gates; tsc; stylelint; build; production smoke; 150 final focused tests",
+    "verify_pass": true
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "esl_version": "1.1",
+  "change_id": "living-tasks-production",
+  "status": "archived",
+  "tier": "lite",
+  "maker": "vivi",
+  "checker": "atlas",
+  "acceptance_checks": [
+    {
+      "id": "AC1",
+      "given": "Current task scope",
+      "when": "Opened or changed",
+      "then": "One exact active scope heading and reachable navigation",
+      "verify_method": "Controller tests/browser"
+    },
+    {
+      "id": "AC2",
+      "given": "Existing task operations",
+      "when": "Activated",
+      "then": "Existing guarded callbacks and bridge paths preserved",
+      "verify_method": "Task/list regression suites"
+    },
+    {
+      "id": "AC3",
+      "given": "Populated list",
+      "when": "Rendered and selected",
+      "then": "Metadata and noncolor selection/focus retained",
+      "verify_method": "DOM tests and browser"
+    },
+    {
+      "id": "AC4",
+      "given": "Board view",
+      "when": "Rendered or moved",
+      "then": "Real columns/counts/actions/legal transitions retained",
+      "verify_method": "Task/DnD tests and browser"
+    },
+    {
+      "id": "AC5",
+      "given": "Single or bulk selection",
+      "when": "Detail opens",
+      "then": "Fields/actions/close reachable with internal scroll",
+      "verify_method": "Tests and narrow/AX browser"
+    },
+    {
+      "id": "AC6",
+      "given": "Loading empty failed requests",
+      "when": "Rendered",
+      "then": "Truthful states retained",
+      "verify_method": "Regression tests"
+    },
+    {
+      "id": "AC7",
+      "given": "Widths320/390/760/1440 andAX5",
+      "when": "All Tasks layouts used",
+      "then": "No page overflow/clipped meaning/unreachable controls",
+      "verify_method": "Browser matrix"
+    },
+    {
+      "id": "AC8",
+      "given": "Appearance/a11y preferences",
+      "when": "Enabled",
+      "then": "Legible semantic surfaces and structural state cues",
+      "verify_method": "Tokens/a11y tests and browser"
+    }
+  ],
+  "spec_ref": "spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-09-04-living-tasks-production",
+  "has_code": true
+}

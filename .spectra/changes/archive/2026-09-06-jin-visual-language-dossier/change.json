@@ -1,0 +1,70 @@
+{
+  "esl_version": "1.1",
+  "change_id": "jin-visual-language-dossier",
+  "status": "archived",
+  "tier": "lite",
+  "maker": "idg",
+  "checker": "atlas",
+  "acceptance_checks": [
+    {
+      "id": "AC1",
+      "given": "Current accepted Jin GUI and visual-language dossier",
+      "when": "Contributor or agent implements or reviews a UI change",
+      "then": "Canonical grounded dossier",
+      "verify_method": "Source-fidelity review, relative-link checks and official skill validation"
+    },
+    {
+      "id": "AC2",
+      "given": "Current accepted Jin GUI and visual-language dossier",
+      "when": "Contributor or agent implements or reviews a UI change",
+      "then": "Precise visual roles",
+      "verify_method": "Source-fidelity review, relative-link checks and official skill validation"
+    },
+    {
+      "id": "AC3",
+      "given": "Current accepted Jin GUI and visual-language dossier",
+      "when": "Contributor or agent implements or reviews a UI change",
+      "then": "All screen recipes",
+      "verify_method": "Source-fidelity review, relative-link checks and official skill validation"
+    },
+    {
+      "id": "AC4",
+      "given": "Current accepted Jin GUI and visual-language dossier",
+      "when": "Contributor or agent implements or reviews a UI change",
+      "then": "Implementation skill prevents drift",
+      "verify_method": "Source-fidelity review, relative-link checks and official skill validation"
+    },
+    {
+      "id": "AC5",
+      "given": "Current accepted Jin GUI and visual-language dossier",
+      "when": "Contributor or agent implements or reviews a UI change",
+      "then": "QA review integration",
+      "verify_method": "Source-fidelity review, relative-link checks and official skill validation"
+    },
+    {
+      "id": "AC6",
+      "given": "Current accepted Jin GUI and visual-language dossier",
+      "when": "Contributor or agent implements or reviews a UI change",
+      "then": "Documentation discovery",
+      "verify_method": "Source-fidelity review, relative-link checks and official skill validation"
+    },
+    {
+      "id": "AC7",
+      "given": "Current accepted Jin GUI and visual-language dossier",
+      "when": "Contributor or agent implements or reviews a UI change",
+      "then": "Lean skill package",
+      "verify_method": "Source-fidelity review, relative-link checks and official skill validation"
+    },
+    {
+      "id": "AC8",
+      "given": "Current accepted Jin GUI and visual-language dossier",
+      "when": "Contributor or agent implements or reviews a UI change",
+      "then": "Validation and independent review",
+      "verify_method": "Source-fidelity review, relative-link checks and official skill validation"
+    }
+  ],
+  "spec_ref": "spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-09-06-jin-visual-language-dossier",
+  "has_code": false
+}

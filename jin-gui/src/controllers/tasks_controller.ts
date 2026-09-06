@@ -147,6 +147,9 @@ export default class TasksController extends Controller {
     // collapsed (0-width) vs. open (detail-open) state.
     'main',
     'listPanel',
+    'workspaceTitle',
+    'railToggleBtn',
+    'railCloseBtn',
     'list',
     'emptyState',
     'loadingState',
@@ -180,6 +183,12 @@ export default class TasksController extends Controller {
   declare hasMainTarget: boolean;
   declare mainTarget: HTMLElement;
   declare listPanelTarget: HTMLElement;
+  declare workspaceTitleTarget: HTMLElement;
+  declare hasWorkspaceTitleTarget: boolean;
+  declare railToggleBtnTarget: HTMLButtonElement;
+  declare hasRailToggleBtnTarget: boolean;
+  declare railCloseBtnTarget: HTMLButtonElement;
+  declare hasRailCloseBtnTarget: boolean;
   declare listTarget: HTMLElement;
   declare emptyStateTarget: HTMLElement;
   declare loadingStateTarget: HTMLElement;
@@ -306,6 +315,24 @@ export default class TasksController extends Controller {
   private currentScope: TaskScope = { kind: 'smart', id: 'inbox' };
   /** Pending section delete (for the confirm dialog). */
   private pendingDeleteSectionId: string | null = null;
+
+  /** Keep the workspace identity a direct projection of the already-active scope. */
+  private updateWorkspaceTitle(): void {
+    if (!this.hasWorkspaceTitleTarget) return;
+    if (this.currentScope.kind === 'list') {
+      this.workspaceTitleTarget.textContent =
+        this.currentLists.find((list) => list.id === this.currentScope.id)?.name ?? this.currentScope.id;
+      return;
+    }
+    const names: Record<Extract<TaskScope, { kind: 'smart' }>['id'], string> = {
+      inbox: 'Inbox',
+      today: 'Today',
+      upcoming: 'Upcoming',
+      flexible: 'Flexible',
+      completed: 'Completed',
+    };
+    this.workspaceTitleTarget.textContent = names[this.currentScope.id];
+  }
 
   // ── S1: Approach §8 — the mutation chokepoint ─────────────────────────────
   //
@@ -464,6 +491,7 @@ export default class TasksController extends Controller {
     if (defaultListId) {
       this.currentScope = { kind: 'list', id: defaultListId };
     }
+    this.updateWorkspaceTitle();
     void this.loadList(this.currentFilter);
   }
 
@@ -593,7 +621,23 @@ export default class TasksController extends Controller {
     this.setDetailOpen(false);
     this.detailContentTarget.replaceChildren();
     this.currentScope = ce.detail.scope;
+    this.setRailOpen(false);
+    this.updateWorkspaceTitle();
     void this.loadList(this.currentFilter);
+  }
+
+  toggleRail(): void {
+    this.setRailOpen(!this.element.classList.contains('tasks-rail-open'));
+  }
+
+  private setRailOpen(open: boolean): void {
+    const wasOpen = this.element.classList.contains('tasks-rail-open');
+    this.element.classList.toggle('tasks-rail-open', open);
+    if (this.hasRailToggleBtnTarget) {
+      this.railToggleBtnTarget.setAttribute('aria-expanded', String(open));
+      if (!open && wasOpen) this.railToggleBtnTarget.focus();
+    }
+    if (open && this.hasRailCloseBtnTarget) this.railCloseBtnTarget.focus();
   }
 
   // ── S1: view toggle (Approach §5 — GLOBAL preference, not per-list) ──────
@@ -1053,6 +1097,7 @@ export default class TasksController extends Controller {
     const lists = await this.guarded(() => listLists(), 'loadList:listLists');
     // S7: cache the full list set for the bulk panel's "Move to list" select.
     this.currentLists = lists ?? [];
+    this.updateWorkspaceTitle();
     if (selectedListId) {
       const activeList = lists?.find((l) => l.id === selectedListId);
       if (activeList) {
@@ -1322,6 +1367,7 @@ export default class TasksController extends Controller {
     if (task === undefined) return;
     if (task.list !== this.currentListId) {
       this.currentScope = { kind: 'list', id: task.list };
+      this.updateWorkspaceTitle();
       this.dispatch('scope-set', { detail: { scope: this.currentScope }, prefix: 'jin', bubbles: true });
       await this.loadList(this.currentFilter);
     }

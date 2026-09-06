@@ -4,6 +4,46 @@
   position: relative;
 }
 
+/* Dynamic type keeps route identity readable without reducing its scale. */
+.notifications-header,
+.notifications-header > *,
+.notifications-detail,
+.notifications-detail > * { min-inline-size: 0; }
+.notifications-header__eyebrow,
+.notifications-header__title,
+.notifications-detail__title,
+.notifications-row__title,
+.notifications-metadata__value,
+.notifications-partial-error { min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; line-height: var(--text-footnote-line); }
+
+/* Large text: the route, rather than a collapsed split pane, owns scrolling. */
+:root[data-text-scale="accessibility"] .notifications-view {
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
+:root[data-text-scale="accessibility"] .notifications-workspace {
+  flex: 0 0 auto;
+  min-block-size: max-content;
+  overflow: visible;
+}
+
+:root[data-text-scale="accessibility"] .notifications-list-pane,
+:root[data-text-scale="accessibility"] .notifications-detail-pane {
+  block-size: auto;
+  min-block-size: 0;
+  overflow: visible;
+}
+
+@media (max-width: 700px) {
+  :root[data-text-scale="accessibility"] .notifications-list-pane,
+  :root[data-text-scale="accessibility"] .notifications-detail-pane {
+    block-size: auto;
+    min-block-size: 0;
+  }
+}
+.notifications-detail__section { padding-block-start: var(--space-3); }
+
 .jin-nav-badge {
   min-width: var(--space-2);
   margin-inline-start: auto;
@@ -29,7 +69,7 @@
 .notifications-view {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   overflow: hidden;
   background: var(--workspace-canvas);
 }
@@ -39,6 +79,8 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-3);
+  padding-block-end: var(--space-2);
+  border-block-end: 1px solid var(--separator);
 }
 
 .notifications-header__eyebrow {
@@ -69,8 +111,8 @@
   min-height: var(--control-height);
   padding: var(--space-half) var(--space-1);
   border: 1px solid var(--separator);
-  border-radius: var(--radius-capsule);
-  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--label-secondary);
   font-size: var(--text-footnote-size);
   line-height: var(--text-footnote-line);
@@ -78,9 +120,9 @@
 
 .notifications-filter--active,
 .notifications-filter[aria-pressed="true"] {
-  border-color: var(--ink-stroke);
-  background: var(--ink-primary);
-  color: var(--ink-on);
+  border-color: var(--agenda-indigo);
+  background: var(--operational-wash);
+  color: var(--agenda-indigo);
   font-weight: 600;
 }
 
@@ -131,9 +173,9 @@
   flex: 1 1 0%;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-xl);
-  background: var(--bg-elevated);
+  border-block: 1px solid var(--separator);
+  border-radius: 0;
+  background: transparent;
 }
 
 .notifications-workspace--empty {
@@ -157,7 +199,7 @@
 
 .notifications-list-pane {
   border-inline-end: 1px solid var(--separator);
-  background: var(--workspace-context);
+  background: transparent;
 }
 
 .notifications-list__item + .notifications-list__item {
@@ -169,8 +211,8 @@
   flex-direction: column;
   gap: var(--space-half);
   width: 100%;
-  padding: var(--space-2);
-  border-inline-start: var(--space-half) solid transparent;
+  padding: var(--space-2) var(--space-3);
+  border-inline-start: 3px solid transparent;
   border-radius: 0;
   color: var(--label);
   text-align: start;
@@ -182,8 +224,8 @@
 
 .notifications-row--selected,
 .notifications-row[aria-selected="true"] {
-  border-inline-start-color: var(--ink-stroke);
-  background: var(--workspace-row-selected);
+  border-inline-start-color: var(--agenda-indigo);
+  background: var(--operational-wash);
 }
 
 .notifications-row--unread .notifications-row__title {
@@ -242,9 +284,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-width: var(--reading-width);
+  max-inline-size: 46rem;
   margin: 0 auto;
-  padding: var(--space-4);
+  padding: var(--space-4) var(--space-3);
 }
 
 .notifications-back {
@@ -294,9 +336,10 @@
   grid-template-columns: minmax(112px, auto) 1fr;
   gap: var(--space-1) var(--space-2);
   margin: 0;
-  padding: var(--space-2);
-  border-radius: var(--radius-lg);
-  background: var(--fill-quaternary);
+  padding: var(--space-2) 0;
+  border-block: 1px solid var(--separator);
+  border-radius: 0;
+  background: transparent;
 }
 
 .notifications-metadata__label {

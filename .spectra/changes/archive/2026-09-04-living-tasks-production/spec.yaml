@@ -1,0 +1,76 @@
+change_id: living-tasks-production
+tier: lite
+author: ramza
+maker: vivi
+checker: atlas
+objective: >-
+  Extend the validated Living Agenda visual language into the real Tasks workspace
+  while preserving all existing task, list, board, detail and accessibility behavior.
+scope:
+  files:
+    - jin-gui/src/styles/tokens.css
+    - jin-gui/index.html
+    - jin-gui/src/controllers/tasks_controller.ts
+    - jin-gui/src/styles/browse.css
+    - jin-gui/src/styles/a11y.css
+    - jin-gui/src/__tests__/tasks_controller.test.ts
+    - jin-gui/src/__tests__/token_discipline.test.ts
+  optional_tests:
+    - jin-gui/src/__tests__/notes_visual_system.test.ts
+  forbidden:
+    - jin-core/**
+    - jin-gui/src-tauri/**
+    - jin-gui/src/invoke.ts
+    - jin-gui/src/types/dto.ts
+visual_model:
+  canvas: warm paper and ink
+  focus_relationships: indigo with a non-color edge or outline
+  completion: existing vermilion seal with text or checked-state semantics
+  list: open content-sized ledger rows
+  board: three real status lanes with calm elevated paper cards
+  detail: connected paper inspector; side-by-side wide, full-width scrollable overlay narrow
+preserve:
+  - smart-view and list routing/counts
+  - filters, sorting and persisted List/Board choice
+  - quick create and due picker
+  - single and bulk selection, roving tabindex and keyboard shortcuts
+  - legal status transitions and completion/reopen semantics
+  - section/list/task drag-and-drop ranking
+  - title/body/status/priority/due/list/section/tag editors
+  - subtasks, reminders, backlinks and Promote to Event
+  - native dialogs, errors, busy states and focus restoration
+  - appearance and accessibility preferences
+acceptance:
+  - id: AC1
+    check: Exactly one h1 shows the exact active smart-view or list name after initial load, rail changes and deep links.
+  - id: AC2
+    check: Existing task/list/board/detail callbacks, bridge calls, guarded errors and legal FSM remain unchanged.
+  - id: AC3
+    check: List order and visible status/title/due/priority/tags/subtask context/actions remain usable without color alone.
+  - id: AC4
+    check: Board preserves Todo/Doing/Done, counts, legal drop rules, card action parity and Todo quick-create.
+  - id: AC5
+    check: Single-task inspector and bulk panel remain reachable; narrow detail scrolls and exposes close/delete/actions.
+  - id: AC6
+    check: Loading, empty and error states remain truthful and contain no fabricated tasks or metrics.
+  - id: AC7
+    check: Widths 320/390/760/1440 and AX5 310% reflow without page horizontal scrolling or clipped meaning.
+  - id: AC8
+    check: All appearance/contrast/motion modes retain legible focus, selection, completion and drag/drop cues beyond color.
+verification:
+  focused:
+    - tasks_controller
+    - lists_controller
+    - sidebar_controller
+    - appearance
+    - a11y
+    - token_discipline
+  full: make verify-gui
+  browser:
+    - populated and empty list
+    - active scope heading and rail
+    - filters expanded and collapsed
+    - list and board views
+    - single detail and bulk panel
+    - long title, tags, subtasks and due actions
+    - light, dark, contrast and AX5 reflow at 320/390/760/1440

@@ -1,0 +1,11 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "forge"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "DECIDE",
+  "objective": "Implement production-native shell, Today and Capture while deferring prototype-only workflows and preserving API contracts."
+}

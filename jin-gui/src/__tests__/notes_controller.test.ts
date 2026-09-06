@@ -2348,6 +2348,13 @@ describe('G-TREE-COLLAPSE-PANE — pane collapse/reveal works in list AND detail
     expect(revealBtn, 'reveal button must exist').toBeTruthy();
     revealBtn.click();
     expect(section.classList.contains('rail-collapsed')).toBe(false);
+    expect(document.activeElement).toBe(document.querySelector('.notes-folder-rail__collapse-btn'));
+  });
+
+  it('returns focus to the visible reveal control when the rail closes', () => {
+    const collapseBtn = document.querySelector<HTMLElement>('.notes-folder-rail__collapse-btn')!;
+    collapseBtn.click();
+    expect(document.activeElement).toBe(document.querySelector('.notes-list-pane .notes-rail-reveal'));
   });
 
   it('togglePane works when detail-open is also set (open note state)', async () => {
@@ -3561,6 +3568,7 @@ describe('VG-CURRENT-SYNC — currentFolder remapped after rename/delete', () =>
       (args[0] as Record<string, unknown>)?.folder === 'Job'
     );
     expect(calledWithJob, 'listNotes must be called with folder:Job after rename Work→Job').toBe(true);
+    expect(document.querySelector('[data-notes-target="scopeTitle"]')?.textContent).toBe('Job');
   });
 
   it('VG-CURRENT-SYNC delete: currentFolder=Work → delete Work → listNotes called with {folder:""}', async () => {
@@ -3598,6 +3606,7 @@ describe('VG-CURRENT-SYNC — currentFolder remapped after rename/delete', () =>
       (args[0] as Record<string, unknown>)?.folder === ''
     );
     expect(calledWithRoot, 'listNotes must be called with folder:"" after deleting Work').toBe(true);
+    expect(document.querySelector('[data-notes-target="scopeTitle"]')?.textContent).toBe('All Notes');
   });
 });
 

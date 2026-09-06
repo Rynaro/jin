@@ -347,6 +347,43 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(document.querySelector<HTMLButtonElement>('.calendar-event-chip')?.getAttribute('aria-label')).toBe('Ver Overnight workshop');
   });
 
+  it('keeps month dates on the existing Day-view activation path', () => {
+    const date = document.querySelector<HTMLButtonElement>('[data-date="2026-08-20"]')!;
+    date.click();
+
+    expect(localStorage.getItem('jin:calendar-view')).toBe('day');
+    expect(document.querySelector('[data-calendar-view-target="monthView"]')?.classList.contains('hidden')).toBe(true);
+    expect(document.querySelector('[data-calendar-view-target="dayView"]')?.classList.contains('hidden')).toBe(false);
+  });
+
+  it('keeps month event chips on the authoritative detail path', () => {
+    const navigations: unknown[] = [];
+    document.querySelector('section')?.addEventListener('jin:navigate', event => navigations.push((event as CustomEvent).detail));
+    const chip = document.querySelector<HTMLButtonElement>('.calendar-event-chip')!;
+
+    chip.click();
+
+    expect(chip.dataset.eventId).toBe('event-1');
+    expect(navigations).toEqual([{ kind: 'events', id: 'event-1' }]);
+    expect(document.querySelector('[data-calendar-view-target="monthView"]')?.classList.contains('hidden')).toBe(false);
+  });
+
+  it('keeps the first three real month event controls and truthful overflow', async () => {
+    mocks.listEvents.mockResolvedValue([
+      makeEvent({ id: 'event-1', title: 'First', start: '2026-08-20T09:00:00', end: '2026-08-20T10:00:00' }),
+      makeEvent({ id: 'event-2', title: 'Second', start: '2026-08-20T10:00:00', end: '2026-08-20T11:00:00' }),
+      makeEvent({ id: 'event-3', title: 'Third', start: '2026-08-20T11:00:00', end: '2026-08-20T12:00:00' }),
+      makeEvent({ id: 'event-4', title: 'Fourth', start: '2026-08-20T12:00:00', end: '2026-08-20T13:00:00' }),
+    ]);
+    await controller.loadCalendar();
+    const cell = document.querySelector<HTMLButtonElement>('[data-date="2026-08-20"]')!.closest('.calendar-day-cell')!;
+    const chips = [...cell.querySelectorAll<HTMLButtonElement>('.calendar-event-chip')];
+
+    expect(chips.map(chip => chip.dataset.eventId)).toEqual(['event-1', 'event-2', 'event-3']);
+    expect(chips.every(chip => chip.getAttribute('aria-label')?.startsWith('View '))).toBe(true);
+    expect(cell.querySelector('.calendar-event-more')?.textContent).toBe('+1');
+  });
+
   it('keeps Week active for Today and week navigation', () => {
     document.querySelectorAll<HTMLButtonElement>('.calendar-view-switch__button')
       .forEach(button => { if (button.textContent === 'Week') button.click(); });

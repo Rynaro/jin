@@ -1,0 +1,39 @@
+spec_version: '1.0'
+title: Living Agenda production integration
+scope: shell, Today, Capture
+author: ramza
+maker: vivi
+checker: atlas
+non_goals:
+  - backend or DTO changes
+  - prototype-only task mutations or Undo
+  - unrelated view redesign
+acceptance_checks:
+  - id: AC1
+    when: appearance or sidebar state changes
+    then: adaptive surfaces and all destinations remain usable
+    verify_method: focused tests and browser fixture
+  - id: AC2
+    when: native Capture opens and submits
+    then: existing forms, validation and focus behavior remain intact
+    verify_method: Capture tests and keyboard checks
+  - id: AC3
+    when: real agenda items load
+    then: ranges, source and relationship links use existing DTOs and routes
+    verify_method: agenda tests and fixture links
+  - id: AC4
+    when: valid same-domain intervals overlap
+    then: both rows show overlap cues without claiming touching or invalid overlap
+    verify_method: pure interval projection tests
+  - id: AC5
+    when: agenda is loading, empty or failed
+    then: truthful existing states remain
+    verify_method: controller tests and fixture states
+  - id: AC6
+    when: viewport is narrow or dynamic type enlarged
+    then: rows and dialog reflow without horizontal page scrolling
+    verify_method: browser reflow matrix
+  - id: AC7
+    when: accessibility appearance preferences apply
+    then: content meaning and focus remain visible
+    verify_method: token tests and browser checks

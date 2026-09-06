@@ -1,0 +1,11 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "ramza"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "DELEGATE",
+  "objective": "Implement approved production Living Agenda spec in isolated worktree; preserve real application contracts."
+}

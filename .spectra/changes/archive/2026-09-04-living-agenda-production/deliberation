@@ -1,0 +1,15 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "forge"
+  },
+  "to": {
+    "eidolon": "ramza"
+  },
+  "performative": "DECIDE",
+  "objective": "Integrate the approved Living Agenda into Jin shell, Today, and Capture using real agenda ranges and links; retain existing domain workflows and persisted appearance.",
+  "context_delta": {
+    "confidence": 0.91,
+    "decision": "UI-only first production slice; derive conflict groups from real start/end; preserve existing navigation, Capture, and appearance controllers; exclude prototype-only overdue mutations and Undo."
+  }
+}

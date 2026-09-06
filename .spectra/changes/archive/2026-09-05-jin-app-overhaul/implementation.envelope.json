@@ -1,0 +1,23 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "ramza"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "DELEGATE",
+  "objective": "Implement Events first, Notifications, Settings, shared dialogs and controls, then consistency closure. Preserve all current behavior and approved baseline.",
+  "context_delta": {
+    "checker": "atlas",
+    "maker": "vivi",
+    "phases": [
+      "Events",
+      "Notifications",
+      "Settings",
+      "Shared controls and consistency"
+    ],
+    "spec": "spec.md",
+    "worktree": "/private/tmp/jin-app-overhaul"
+  }
+}

@@ -32,6 +32,7 @@ import {
   sourceBadgeLabel,
   sourceBadgeIcon,
   isRecurring,
+  projectTimedAgenda,
   prevDay,
   nextDay,
   formatDisplayDate,
@@ -138,6 +139,9 @@ function makeTodayTemplates(): TodayTemplates {
       <div class="today-event-row__body">
         <div class="today-event-row__header">
           <span class="today-event-row__title"></span>
+          <span class="today-event-row__overlap hidden" role="status" aria-label="">
+            <span>Overlaps schedule</span>
+          </span>
           <span class="today-event-row__source-badge" role="img" aria-label="">
             <i class="today-event-row__source-icon" aria-hidden="true"></i>
             <span class="today-event-row__source-label"></span>
@@ -292,6 +296,63 @@ describe('sortTimedEvents', () => {
     const e2 = makeAgendaEvent({ id: 'e2', start: '2026-06-27T22:00:00Z' });
     const sorted = sortTimedEvents([e1, e2]);
     expect(sorted.map((e) => e.id)).toEqual(['e2', 'e1']);
+  });
+});
+
+describe('projectTimedAgenda — display ranges and honest overlap groups', () => {
+  it('uses the display timezone for anchored event ranges', () => {
+    const projection = projectTimedAgenda(
+      [makeAgendaEvent({ start: '2026-06-27T14:00:00Z', end: '2026-06-27T15:00:00Z' })],
+      'America/New_York',
+    );
+    expect(projection.get('evt-001')?.timeRange).toContain('10:00');
+  });
+
+  it('marks both valid anchored intervals when they overlap', () => {
+    const projection = projectTimedAgenda([
+      makeAgendaEvent({ id: 'one', start: '2026-06-27T09:00:00Z', end: '2026-06-27T10:30:00Z' }),
+      makeAgendaEvent({ id: 'two', start: '2026-06-27T10:00:00Z', end: '2026-06-27T11:00:00Z' }),
+    ], 'UTC');
+    expect(projection.get('one')?.overlaps).toBe(true);
+    expect(projection.get('two')?.overlaps).toBe(true);
+  });
+
+  it('uses a max-end sweep so transitive overlap groups are all marked', () => {
+    const projection = projectTimedAgenda([
+      makeAgendaEvent({ id: 'one', start: '2026-06-27T09:00:00Z', end: '2026-06-27T11:00:00Z' }),
+      makeAgendaEvent({ id: 'two', start: '2026-06-27T10:00:00Z', end: '2026-06-27T10:30:00Z' }),
+      makeAgendaEvent({ id: 'three', start: '2026-06-27T10:45:00Z', end: '2026-06-27T12:00:00Z' }),
+    ], 'UTC');
+    expect([...projection.values()].every((row) => row.overlaps)).toBe(true);
+  });
+
+  it('does not claim a conflict for touching, all-day, invalid, or mixed-domain values', () => {
+    const projection = projectTimedAgenda([
+      makeAgendaEvent({ id: 'touch-a', start: '2026-06-27T09:00:00Z', end: '2026-06-27T10:00:00Z' }),
+      makeAgendaEvent({ id: 'touch-b', start: '2026-06-27T10:00:00Z', end: '2026-06-27T11:00:00Z' }),
+      makeAgendaEvent({ id: 'mixed', floating: true, start: '2026-06-27T09:30:00', end: '2026-06-27T10:30:00' }),
+      makeAgendaEvent({ id: 'invalid', start: '2026-06-27T14:00:00Z', end: '2026-06-27T14:00:00Z' }),
+      makeAllDayEvent({ id: 'all-day' }),
+    ], 'UTC');
+    expect([...projection.values()].every((row) => !row.overlaps)).toBe(true);
+  });
+
+  it('compares floating entries by their literal wall times', () => {
+    const projection = projectTimedAgenda([
+      makeAgendaEvent({ id: 'one', floating: true, start: '2026-06-27T09:00:00', end: '2026-06-27T10:30:00' }),
+      makeAgendaEvent({ id: 'two', floating: true, start: '2026-06-27T10:00:00', end: '2026-06-27T11:00:00' }),
+    ], 'UTC');
+    expect(projection.get('one')?.overlaps).toBe(true);
+    expect(projection.get('two')?.overlaps).toBe(true);
+  });
+
+  it('excludes zone-less anchored values from comparison', () => {
+    const projection = projectTimedAgenda([
+      makeAgendaEvent({ id: 'one', start: '2026-06-27T09:00:00', end: '2026-06-27T10:30:00' }),
+      makeAgendaEvent({ id: 'two', start: '2026-06-27T10:00:00', end: '2026-06-27T11:00:00' }),
+    ], 'UTC');
+    expect(projection.get('one')?.overlaps).toBe(false);
+    expect(projection.get('two')?.overlaps).toBe(false);
   });
 });
 
@@ -589,6 +650,21 @@ describe('renderTodayView — timed events', () => {
     const row = el.timedList.querySelector('.today-event-row') as HTMLElement;
     expect(row.dataset.eventId).toBe('evt-xyz');
   });
+
+  it('renders a visible and accessible overlap cue from the projection', () => {
+    const event = makeAgendaEvent({ id: 'overlap-event' });
+    const grouped: GroupedAgenda = {
+      date: '2026-06-27', displayTz: 'UTC', allDay: [], timed: [event], isEmpty: false,
+      presentationById: new Map([['overlap-event', { timeRange: '09:00 – 10:00', overlaps: true }]]),
+    };
+    renderTodayView(el, templates, grouped, noopNavigate);
+    const row = el.timedList.querySelector('.today-event-row') as HTMLElement;
+    const cue = row.querySelector('.today-event-row__overlap') as HTMLElement;
+    expect(row.classList.contains('today-event-row--overlap')).toBe(true);
+    expect(cue.classList.contains('hidden')).toBe(false);
+    expect(cue.getAttribute('aria-label')).toBe('Overlaps another scheduled event');
+    expect(row.querySelector('.today-event-row__display-start')?.textContent).toBe('09:00 – 10:00');
+  });
 });
 
 describe('renderTodayView — source badge (color-independence gate)', () => {
@@ -815,6 +891,26 @@ describe('renderTodayView — prep_notes (hero-flow reachability)', () => {
       ],
     });
   }
+
+  it('keeps long relationship titles and their exact task/note routes intact', () => {
+    const longTask = 'Prepare a detailed cross-functional review with every decision and open question';
+    const longNote = 'Stakeholder context and the complete preparation checklist for the planning conversation';
+    const event = makeAgendaEvent({
+      originating_task: { id: 'task-long', title: longTask },
+      prep_notes: [{ id: 'note-long', title: longNote }],
+    });
+    const grouped: GroupedAgenda = {
+      date: '2026-06-27', displayTz: 'UTC', allDay: [], timed: [event], isEmpty: false,
+    };
+    const navigate = vi.fn();
+    renderTodayView(el, templates, grouped, navigate);
+    expect(el.timedList.querySelector('.today-event-row__task-title')?.textContent).toBe(longTask);
+    expect(el.timedList.querySelector('.today-prep-note__title')?.textContent).toBe(longNote);
+    (el.timedList.querySelector('.today-event-row__task-link') as HTMLAnchorElement).click();
+    (el.timedList.querySelector('.today-prep-note__link') as HTMLAnchorElement).click();
+    expect(navigate).toHaveBeenNthCalledWith(1, 'tasks', 'task-long');
+    expect(navigate).toHaveBeenNthCalledWith(2, 'notes', 'note-long');
+  });
 
   it('hides the notes block when prep_notes is empty', () => {
     const grouped: GroupedAgenda = {

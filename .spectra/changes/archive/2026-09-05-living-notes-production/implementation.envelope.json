@@ -1,0 +1,11 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "ramza"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "DELEGATE",
+  "objective": "Extend validated design to real Notes browsing and existing editor with workflow preservation and accessible reflow."
+}

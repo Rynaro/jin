@@ -1,0 +1,15 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "atlas"
+  },
+  "to": {
+    "eidolon": "idg"
+  },
+  "performative": "INFORM",
+  "objective": "Accept Jin visual language dossier and skill package",
+  "context_delta": {
+    "acceptance": "AC1–AC8 PASS distinct source-fidelity review; official skill validation, links, documented tokens, diff check and realistic forward tests passed",
+    "scope": "documentation only; no new app behavior or native visual claims"
+  }
+}

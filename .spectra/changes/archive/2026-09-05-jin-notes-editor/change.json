@@ -1,0 +1,70 @@
+{
+  "esl_version": "1.1",
+  "change_id": "jin-notes-editor",
+  "status": "archived",
+  "tier": "lite",
+  "maker": "vivi",
+  "checker": "atlas",
+  "acceptance_checks": [
+    {
+      "id": "AC1",
+      "given": "Real note",
+      "when": "Edit/read",
+      "then": "Continuous adaptivepaper no card",
+      "verify_method": "Browser/CSS"
+    },
+    {
+      "id": "AC2",
+      "given": "760–1440px",
+      "when": "Readingwriting",
+      "then": "66ch18px1.7 editorialhierarchy",
+      "verify_method": "Computedstyles/browser"
+    },
+    {
+      "id": "AC3",
+      "given": "Toolbar",
+      "when": "Used",
+      "then": "Allrealcommands groupedaccessible",
+      "verify_method": "Editor tests/browser"
+    },
+    {
+      "id": "AC4",
+      "given": "Autosave/flush",
+      "when": "Triggered",
+      "then": "SameCMidentitycaretundo preserved",
+      "verify_method": "Editor regressions"
+    },
+    {
+      "id": "AC5",
+      "given": "Save lifecycle",
+      "when": "Changes",
+      "then": "Truthfultextandattribute",
+      "verify_method": "Save tests"
+    },
+    {
+      "id": "AC6",
+      "given": "Existing editor actions",
+      "when": "Used",
+      "then": "Callbacks/routes/guards unchanged",
+      "verify_method": "Editor/Notes tests"
+    },
+    {
+      "id": "AC7",
+      "given": "320/390/760/1440 andAX5",
+      "when": "Editorused",
+      "then": "Controlsreadable reachable nooverflow",
+      "verify_method": "Browser matrix"
+    },
+    {
+      "id": "AC8",
+      "given": "Lightdarkauto/a11y",
+      "when": "Enabled",
+      "then": "Adaptive legible contrast",
+      "verify_method": "Tokens/browser"
+    }
+  ],
+  "spec_ref": "spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-09-05-jin-notes-editor",
+  "has_code": true
+}

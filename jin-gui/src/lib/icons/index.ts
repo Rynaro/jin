@@ -118,6 +118,7 @@ import {
   BellPlus,       // Add reminder button
   // S4: board Kanban-by-status
   RotateCcw,      // Reopen action on a `done` board card (done -> todo)
+  History,        // Note revision history action
 } from 'lucide';
 
 export {
@@ -216,6 +217,7 @@ export {
   BellPlus,
   // S4: board Kanban-by-status
   RotateCcw,
+  History,
 };
 
 const REGISTERED_ICONS = {
@@ -314,6 +316,7 @@ const REGISTERED_ICONS = {
   BellPlus,
   // S4: board Kanban-by-status
   RotateCcw,
+  History,
 };
 
 const ICON_ATTRS = {

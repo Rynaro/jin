@@ -8,6 +8,7 @@
  */
 
 import type { AgendaDto, AgendaEventDto } from '../../types/dto';
+import { formatEventTime } from '../events/transform';
 
 // ── Output types ──────────────────────────────────────────────────────────────
 
@@ -26,8 +27,16 @@ export interface GroupedAgenda {
    * Core delivers them pre-sorted; we re-verify defensively.
    */
   timed: AgendaEventDto[];
+  /** Presentation derived from real event fields. Keys are stable event ids. */
+  presentationById?: ReadonlyMap<string, AgendaRowPresentation>;
   /** True when both buckets are empty — drives the empty state. */
   isEmpty: boolean;
+}
+
+/** Display-only metadata for a timed agenda row. It never changes the DTO. */
+export interface AgendaRowPresentation {
+  timeRange: string;
+  overlaps: boolean;
 }
 
 // ── Core transforms ───────────────────────────────────────────────────────────
@@ -40,13 +49,132 @@ export interface GroupedAgenda {
  * this function is self-contained (safe if core order ever changes).
  */
 export function groupAgenda(dto: AgendaDto): GroupedAgenda {
+  const timed = sortTimedEvents(dto.timed_events);
   return {
     date: dto.date,
     displayTz: dto.display_tz,
     allDay: [...dto.all_day_events],
-    timed: sortTimedEvents(dto.timed_events),
+    timed,
+    presentationById: projectTimedAgenda(timed, dto.display_tz),
     isEmpty: dto.all_day_events.length === 0 && dto.timed_events.length === 0,
   };
+}
+
+/**
+ * projectTimedAgenda derives display ranges and honest overlap cues.
+ *
+ * Anchored events are compared as epoch intervals. Floating events are compared
+ * as literal wall-time intervals. The two domains are deliberately never mixed:
+ * doing so would turn a timezone conversion into a false scheduling conflict.
+ * Invalid, zero-length, and all-day items are excluded from overlap detection.
+ */
+export function projectTimedAgenda(
+  events: AgendaEventDto[],
+  displayTz: string,
+): ReadonlyMap<string, AgendaRowPresentation> {
+  const presentation = new Map<string, AgendaRowPresentation>();
+  const comparable: ComparableInterval[] = [];
+
+  for (const event of events) {
+    presentation.set(event.id, {
+      timeRange: formatEventTime(
+        event.start,
+        event.end,
+        event.is_all_day,
+        event.floating,
+        event.floating ? null : displayTz,
+      ),
+      overlaps: false,
+    });
+
+    if (event.is_all_day) continue;
+    const interval = comparableInterval(event);
+    if (interval) comparable.push(interval);
+  }
+
+  for (const domain of ['anchored', 'floating'] as const) {
+    markOverlappingIntervals(comparable.filter((interval) => interval.domain === domain), presentation);
+  }
+
+  return presentation;
+}
+
+type IntervalDomain = 'anchored' | 'floating';
+
+interface ComparableInterval {
+  id: string;
+  domain: IntervalDomain;
+  start: number;
+  end: number;
+}
+
+function comparableInterval(event: AgendaEventDto): ComparableInterval | null {
+  const domain: IntervalDomain = event.floating ? 'floating' : 'anchored';
+  const start = event.floating ? parseLiteralWallTime(event.start) : parseAnchoredTime(event.start);
+  const end = event.floating ? parseLiteralWallTime(event.end) : parseAnchoredTime(event.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+  return { id: event.id, domain, start, end };
+}
+
+/**
+ * Anchored values must carry Z or an explicit offset. Date.parse accepts a
+ * zone-less ISO timestamp using the host timezone, which would make conflict
+ * cues vary by machine and is therefore intentionally excluded.
+ */
+function parseAnchoredTime(value: string): number {
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/.test(value)) return Number.NaN;
+  return Date.parse(value);
+}
+
+/** Parses ISO-like wall times without applying the machine timezone or an offset. */
+function parseLiteralWallTime(value: string): number {
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(?:Z|[+-]\d{2}:?\d{2})?$/,
+  );
+  if (!match) return Number.NaN;
+  const [, year, month, day, hour, minute, second = '0', fraction = '0'] = match;
+  const stamp = Date.UTC(
+    Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute),
+    Number(second), Number(fraction.padEnd(3, '0')),
+  );
+  const date = new Date(stamp);
+  return date.getUTCFullYear() === Number(year)
+    && date.getUTCMonth() === Number(month) - 1
+    && date.getUTCDate() === Number(day)
+    ? stamp
+    : Number.NaN;
+}
+
+/**
+ * Marks each member of a transitive overlap group using a max-end sweep.
+ * Half-open boundaries mean an item beginning exactly when another ends is not
+ * marked as conflicting.
+ */
+function markOverlappingIntervals(
+  intervals: ComparableInterval[],
+  presentation: Map<string, AgendaRowPresentation>,
+): void {
+  const ordered = [...intervals].sort((a, b) => a.start - b.start || a.end - b.end);
+  let group: ComparableInterval[] = [];
+  let maxEnd = Number.NEGATIVE_INFINITY;
+
+  const flush = () => {
+    if (group.length > 1) {
+      for (const interval of group) {
+        const current = presentation.get(interval.id);
+        if (current) presentation.set(interval.id, { ...current, overlaps: true });
+      }
+    }
+    group = [];
+    maxEnd = Number.NEGATIVE_INFINITY;
+  };
+
+  for (const interval of ordered) {
+    if (group.length > 0 && interval.start >= maxEnd) flush();
+    group.push(interval);
+    maxEnd = Math.max(maxEnd, interval.end);
+  }
+  flush();
 }
 
 /**

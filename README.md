@@ -135,6 +135,21 @@ dependent on the local desktop environment. See
 [GUI testing](docs/gui-testing.md) and [testing](docs/testing.md) for the
 current verification boundaries.
 
+## Design Philosophy
+
+Jin's current GUI language is a calm working surface: continuous warm paper,
+near-black ink, indigo for focus and linkage, and restrained vermilion for
+capture and today's attention. Typography, spacing, adaptive appearance,
+accessibility behavior, screen recipes, and stylesheet ownership are recorded
+in the [visual-language dossier](docs/visual-language/README.md).
+
+Apple's Human Interface Guidelines remain an inspiration for clarity,
+deference, depth, and harmony. The Tauri GUI may use glass for chrome and
+transient elevation, with opaque fallbacks for reduced transparency; Liquid
+Glass and the historical [`design.md`](design.md) are background references,
+not the product's complete visual authority. The dossier is the source to
+extend when implementing a new surface or reviewing visual drift.
+
 ## Documentation
 
 - [Getting oriented](discovery/00-discovery-and-gaps.md)

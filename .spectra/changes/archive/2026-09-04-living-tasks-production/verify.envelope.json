@@ -1,0 +1,17 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "atlas"
+  },
+  "to": {
+    "eidolon": "idg"
+  },
+  "performative": "INFORM",
+  "objective": "Distinct checker and browser acceptance verified real Tasks redesign, responsive scope rail focus, list/board/detail reflow and preserved workflows.",
+  "context_delta": {
+    "browser": "16 list/board viewport-text combinations and AX5 detail at4widths; native Tasks owner signoff separate",
+    "evidence": "verification.md",
+    "tests": "1884 frontend tests, Rust bridge gates, tsc/stylelint/build, production browser smoke",
+    "verify_pass": true
+  }
+}

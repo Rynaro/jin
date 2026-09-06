@@ -129,7 +129,7 @@ describe('Notification Center rendering', () => {
     renderNotificationDetail(container, pending);
 
     expect(container.textContent).toContain('Pending sync: Allow');
-    expect(container.textContent).toContain('Google’s confirmed response remains needsAction');
+    expect(container.textContent).toContain('Google’s confirmed response remains Awaiting your response');
     expect(container.querySelector('[aria-label="Invitation response"]')?.getAttribute('aria-busy')).toBe('true');
     expect(container.querySelector<HTMLButtonElement>('[data-notification-action="defer"]')?.disabled).toBe(true);
     expect(container.querySelector<HTMLButtonElement>('[data-notification-action="dismiss"]')?.disabled).toBe(true);

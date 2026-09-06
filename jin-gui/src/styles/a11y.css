@@ -50,6 +50,12 @@
   }
 }
 
+@media (forced-colors: active) {
+  .calendar-view-switch__button[aria-pressed='true'],
+  .notifications-row--selected,
+  .settings-nav__item[aria-current='page'] { outline: 2px solid CanvasText; outline-offset: -2px; }
+}
+
 /* Via manual in-app toggle */
 [data-reduce-transparency="1"] .material-thin,
 [data-reduce-transparency="1"] .material-regular,
@@ -191,6 +197,26 @@
   }
 }
 
+/* On a phone at AX sizes, the navigation is an overlay rather than a rail.
+ * Giving it the viewport lets labels and the Capture action remain readable. */
+@media (max-width: 639px) {
+  :root[data-text-scale="accessibility"] .jin-sidebar:not(.is-collapsed),
+  :root[data-text-scale="accessibility"] .jin-sidebar.is-collapsed {
+    width: 100vw;
+    max-width: 100vw;
+  }
+
+  :root[data-text-scale="accessibility"] .jin-capture-btn {
+    justify-content: flex-start;
+    white-space: normal;
+  }
+
+  :root[data-text-scale="accessibility"] .jin-navigation-row__label,
+  :root[data-text-scale="accessibility"] .jin-capture-btn > span {
+    overflow-wrap: anywhere;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * 3. Reduced Motion
  *    All animations and transitions are disabled.
@@ -293,6 +319,16 @@
     box-shadow: none;
   }
 
+  .today-event-row--overlap {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  .today-event-row__overlap,
+  .jin-capture-btn {
+    forced-color-adjust: auto;
+  }
+
   .jin-navigation-row[aria-current="page"]::before,
   .jin-navigation-row.is-active::before,
   .jin-navigation-row.jin-nav-item--active::before,
@@ -312,5 +348,342 @@
   .calendar-widget__day-btn[data-state="selected"] {
     color: HighlightText;
     background: Highlight;
+  }
+
+  .task-item--selected,
+  .task-item--selected.task-item--card,
+  .tasks-board__column--drop-disabled {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+    forced-color-adjust: auto;
+  }
+
+  .task-item__checkbox[aria-checked="true"]::before {
+    background: Highlight;
+    border-color: Highlight;
+  }
+}
+
+/* Dynamic type turns the Tasks ledger into content-sized rows. This keeps
+ * title, due and tag meaning available at AX5 instead of truncating it. */
+:root[data-text-scale="accessibility"] .task-item--row.jin-list-row {
+  height: auto;
+  max-height: none;
+  align-items: start;
+}
+
+:root[data-text-scale="accessibility"] .task-item--row .task-item__title,
+:root[data-text-scale="accessibility"] .task-item--row .task-item__tags {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+:root[data-text-scale="accessibility"] .task-detail__field-row {
+  min-height: 0;
+}
+
+:root[data-text-scale="accessibility"] .tasks-detail-pane :is(
+  .task-detail__fields .form-select,
+  .task-detail__due-btn.jin-control,
+  .task-detail__fields .task-detail__tag-input,
+  .task-detail__subtask-add-input.form-input
+) {
+  height: auto;
+  min-height: max(var(--control-height-prominent), 2.5em);
+  padding-block: var(--space-half);
+  line-height: var(--text-body-line);
+}
+
+/* AX5 keeps the controls in separate tracks, then stacks the real board
+ * lanes so neither controls nor card titles compete for inline space. */
+:root[data-text-scale="accessibility"] .tasks-filter-bar {
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+:root[data-text-scale="accessibility"] .tasks-filter-controls {
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+}
+
+:root[data-text-scale="accessibility"] .tasks-filter-controls :is(.jin-select, select) {
+  flex: 1 1 100%;
+  max-inline-size: 100%;
+}
+
+:root[data-text-scale="accessibility"] .tasks-view-segment {
+  order: 3;
+  margin-inline-start: 0;
+  align-self: flex-start;
+}
+
+:root[data-text-scale="accessibility"] .tasks-board {
+  flex-direction: column;
+  overflow-x: visible;
+}
+
+:root[data-text-scale="accessibility"] .tasks-board__column {
+  flex: 0 0 auto;
+  inline-size: 100%;
+  min-inline-size: 0;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  :root[data-text-scale="accessibility"] .jin-content-body[data-section-name="tasks"] {
+    min-width: 0;
+  }
+
+  :root[data-text-scale="accessibility"] .tasks-filter-controls {
+    min-width: 0;
+  }
+
+  :root[data-text-scale="accessibility"] .tasks-filter-controls .jin-select,
+  :root[data-text-scale="accessibility"] .tasks-filter-controls select {
+    max-width: 100%;
+  }
+}
+
+/* The compact Notes header uses content rows before AX5 too: a real search
+ * field must never surrender its width to its label or the compose control. */
+@media (max-width: 760px) {
+  .notes-list-pane__header {
+    grid-template-columns: minmax(0, 1fr);
+    min-block-size: 0;
+    height: auto;
+  }
+
+  .notes-list-pane__header .notes-search {
+    grid-column: 1;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .notes-search__label,
+  .notes-search__input,
+  .notes-search__count {
+    grid-column: 1;
+    min-inline-size: 0;
+  }
+
+  .notes-search__input {
+    inline-size: 100%;
+    box-sizing: border-box;
+  }
+
+  .notes-new-note-btn {
+    justify-self: start;
+  }
+}
+
+/* Notes uses the existing rail reveal control as deliberate one-layer navigation
+ * on phones and at AX5. Content rows grow with their title, metadata and links. */
+@media (max-width: 640px) {
+  .notes-paned,
+  .notes-paned.detail-open,
+  .notes-paned.rail-collapsed,
+  .notes-paned.detail-open.rail-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .notes-paned:not(.rail-collapsed) .notes-folder-rail {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    inline-size: 100%;
+    max-inline-size: 100%;
+  }
+
+  .notes-paned.rail-collapsed .notes-folder-rail {
+    display: none;
+  }
+
+  /* Keep the Notes rail affordance clear of the global navigation handle. */
+  .notes-rail-reveal {
+    width: var(--coarse-hit-target);
+    height: var(--coarse-hit-target);
+    min-width: var(--coarse-hit-target);
+    min-height: var(--coarse-hit-target);
+    margin-inline-start: var(--coarse-hit-target);
+  }
+
+  .notes-list-pane,
+  .notes-detail-pane,
+  .notes-list-pane__header,
+  .notes-detail-pane__header,
+  .notes-detail-pane .browse-detail__title-row,
+  .notes-detail-pane .cm-editor-wrapper,
+  .notes-detail-pane .cm-reading-wrapper,
+  .notes-detail-pane .browse-detail__meta,
+  .notes-detail-pane .browse-detail__links-section {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
+  .notes-list-pane__header,
+  .notes-detail-pane__header {
+    flex-wrap: wrap;
+    height: auto;
+  }
+
+  .notes-detail-pane__actions,
+  .notes-detail-pane .cm-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .note-row .browse-row__title,
+  .note-row .browse-row__meta,
+  .note-row__tags {
+    max-inline-size: none;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+:root[data-text-scale="accessibility"] .notes-paned {
+  min-inline-size: 0;
+}
+
+/* At AX sizes, a long note must contribute its real height to the detail
+ * scroller. The compact editor normally uses an internal flex scroll region;
+ * once text is enlarged, allowing that region to paint outside a collapsed
+ * flex track puts the footer on top of the prose. Let the detail pane own the
+ * scroll and keep each editor layer intrinsic instead. */
+:root[data-text-scale="accessibility"] .notes-detail-pane {
+  overflow-y: auto;
+}
+
+:root[data-text-scale="accessibility"] .notes-detail-pane [data-notes-target="detailContent"],
+:root[data-text-scale="accessibility"] .notes-detail-pane .note-detail__body,
+:root[data-text-scale="accessibility"] .notes-detail-pane .cm-scroll-region {
+  flex: 0 0 auto;
+  min-block-size: min-content;
+  overflow: visible;
+}
+
+:root[data-text-scale="accessibility"] .note-row .browse-row__inner.jin-list-row {
+  min-block-size: 0;
+  max-block-size: none;
+  height: auto;
+  overflow: visible;
+}
+
+:root[data-text-scale="accessibility"] .note-row :is(.browse-row__title, .note-row__snippet, .note-row__tags, .note-row__date) {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+
+:root[data-text-scale="accessibility"] .notes-list-pane__header,
+:root[data-text-scale="accessibility"] .notes-detail-pane__header,
+:root[data-text-scale="accessibility"] .notes-detail-pane .browse-detail__title-row {
+  min-block-size: 0;
+  height: auto;
+}
+
+/* AX5 makes the search label, field, count, and compose action separate tracks.
+ * The real note preview then flows as title, date/snippet, and metadata rather
+ * than trying to preserve the compact two-line desktop ledger. */
+:root[data-text-scale="accessibility"] .notes-list-pane__header {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+:root[data-text-scale="accessibility"] .notes-list-pane__header .notes-search {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+:root[data-text-scale="accessibility"] .notes-search__label,
+:root[data-text-scale="accessibility"] .notes-search__input,
+:root[data-text-scale="accessibility"] .notes-search__count {
+  grid-column: 1;
+  min-inline-size: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+:root[data-text-scale="accessibility"] .notes-search__input {
+  inline-size: 100%;
+  box-sizing: border-box;
+}
+
+:root[data-text-scale="accessibility"] .note-row__preview,
+:root[data-text-scale="accessibility"] .note-row .browse-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  min-inline-size: 0;
+  gap: var(--space-half) var(--space-1);
+}
+
+:root[data-text-scale="accessibility"] .note-row__snippet {
+  flex: 1 1 100%;
+  display: block;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: initial;
+  min-inline-size: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* The collapsed desktop grid track is already zero; remove the rail itself so
+ * its inherited navigation width cannot paint over or intercept the reveal. */
+@media (min-width: 641px) {
+  .notes-paned.rail-collapsed .notes-folder-rail {
+    display: none;
+    inline-size: 0;
+    width: 0;
+    max-inline-size: 0;
+  }
+
+  /* Removing the collapsed rail from grid auto-placement would otherwise put
+   * the visible list or detail pane into the deliberately zero-width first
+   * track. Keep the rail hidden, but place real Notes content in track two. */
+  .notes-paned.rail-collapsed :is(.notes-list-pane, .notes-detail-pane) {
+    grid-column: 2;
+  }
+}
+
+@media (forced-colors: active) {
+  .notes-collection-row.is-active,
+  [role="treeitem"][aria-selected="true"] > .folder-row__btn,
+  .note-row .browse-row__inner.jin-list-row:focus-within {
+    color: CanvasText;
+    background: Canvas;
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+    box-shadow: none;
+  }
+
+  .notes-collection-row.is-active :is(.jin-navigation-row__label, svg),
+  [role="treeitem"][aria-selected="true"] > .folder-row__btn :is(.jin-navigation-row__label, svg) {
+    color: inherit;
+    background: transparent;
+  }
+
+  .notes-detail-pane .cm-toolbar__group {
+    background: Canvas;
+    border-color: CanvasText;
+  }
+
+  .notes-detail-pane .cm-toolbar__group:focus-within,
+  .notes-detail-pane .browse-detail__title--input.jin-title-field:focus-visible,
+  .notes-detail-pane .cm-toolbar__btn:focus-visible,
+  .notes-detail-pane .cm-toolbar__toggle:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  .notes-detail-pane .cm-toolbar__status[data-save-state="failed"],
+  .notes-detail-pane .cm-toolbar__status[data-save-state="paused"] {
+    color: CanvasText;
+    text-decoration: underline;
   }
 }

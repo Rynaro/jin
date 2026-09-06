@@ -1,0 +1,77 @@
+change_id: living-notes-production
+tier: lite
+author: ramza
+maker: vivi
+checker: atlas
+objective: >-
+  Extend the validated Living Agenda and Tasks visual language into the real Notes
+  workspace while preserving all browse, writing, recovery and accessibility behavior.
+scope:
+  files:
+    - jin-gui/src/styles/tokens.css
+    - jin-gui/index.html
+    - jin-gui/src/controllers/notes_controller.ts
+    - jin-gui/src/styles/browse.css
+    - jin-gui/src/styles/a11y.css
+    - jin-gui/src/lib/icons/index.ts
+    - jin-gui/src/__tests__/notes_controller.test.ts
+    - jin-gui/src/__tests__/notes_visual_system.test.ts
+    - jin-gui/src/__tests__/icons_registry.test.ts
+    - jin-gui/src/__tests__/token_discipline.test.ts
+  forbidden:
+    - jin-core/**
+    - jin-gui/src-tauri/**
+    - jin-gui/src/invoke.ts
+    - jin-gui/src/types/dto.ts
+visual_model:
+  canvas: warm paper and ink
+  focus_relationships: indigo with a persistent edge or outline
+  browse: quiet folder rail and open paper index with real scope identity
+  detail: content-first editable title and single existing CodeMirror writing surface
+  relationships: exact real tags, attachments, links and backlinks in the scroll flow
+preserve:
+  - folder tree, collections, counts, menus, collapse and keyboard navigation
+  - search debounce, request ordering, Escape clearing and live result count
+  - note list ordering, date, snippet, tags and archived status
+  - inline title save/revert and CodeMirror autosave/flush lifecycle
+  - formatting, Focus, Typewriter, Read mode, caret and editor identity
+  - attachments, outgoing links, backlinks and cross-object navigation
+  - history, conflict draft protection, loading, empty and not-found states
+  - dialogs, errors, focus restoration and appearance/accessibility preferences
+acceptance:
+  - id: AC1
+    check: Exactly one visible h1 shows All Notes or the exact selected folder/collection name while routing and rail state remain intact.
+  - id: AC2
+    check: Browse/search preserves real order and content, truthful result/loading/empty/failure states and adds no fabricated notes or counts.
+  - id: AC3
+    check: Folder and collection workflows keep callback/bridge parity, tree keyboard behavior and non-color active cues.
+  - id: AC4
+    check: One existing editor preserves title save, autosave/flush, formatting, Focus, Typewriter, Read mode, caret and conflict pause behavior.
+  - id: AC5
+    check: Tags, attachments, links and backlinks show exact real labels and remain readable, focusable and routed to exact IDs.
+  - id: AC6
+    check: History/not-found/conflict recovery remains reachable and opening a note emits no unregistered History-icon warning.
+  - id: AC7
+    check: Widths 320/390/760/1440 and AX5 310% reflow without page horizontal scrolling, clipped note meaning or unreachable controls.
+  - id: AC8
+    check: Appearance, contrast, transparency and motion preferences retain legible focus/current/archive/conflict/link cues beyond color.
+verification:
+  focused:
+    - notes_controller
+    - folderTree
+    - folderTreePrefs
+    - editor
+    - livePreview
+    - markdown
+    - icons_registry
+    - router
+    - appearance
+    - token_discipline
+  full: make verify-gui
+  browser:
+    - populated, empty and search states
+    - folder, collection and All Notes scope identity
+    - long titles, snippets, tags and archived status
+    - editor and Read mode with related links
+    - history and conflict presentation
+    - rail collapse and AX5 at 320/390/760/1440
