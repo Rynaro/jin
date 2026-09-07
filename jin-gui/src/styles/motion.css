@@ -1,0 +1,141 @@
+/**
+ * motion.css — Informational transition and animation utilities.
+ *
+ * Design principle (design.md §5.8): motion is informational, not decorative.
+ *   - Push/pop transitions: directional slide from the originating side.
+ *   - Sheet transitions: spring from the triggering control's anchor.
+ *   - Reduced-motion: crossfade or instant (a11y.css gates ALL animations).
+ *
+ * All durations/easings reference tokens from tokens.css — NO raw values.
+ * All classes are INERT (no motion) when reduced-motion is active (a11y.css).
+ */
+
+/* ── Standard transition helpers ─────────────────────────────────────────── */
+
+/* Default informational transition (opacity + transform) */
+.transition-base {
+  transition:
+    opacity var(--duration-base) var(--ease-standard),
+    transform var(--duration-base) var(--ease-standard);
+}
+
+.transition-fast {
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
+}
+
+.transition-slow {
+  transition:
+    opacity var(--duration-slow) var(--ease-emphasized),
+    transform var(--duration-slow) var(--ease-emphasized);
+}
+
+/* Color/background transitions (for theme switching) */
+.transition-colors {
+  transition:
+    background-color var(--duration-base) var(--ease-standard),
+    color var(--duration-base) var(--ease-standard),
+    border-color var(--duration-base) var(--ease-standard),
+    box-shadow var(--duration-base) var(--ease-standard);
+}
+
+/* ── Enter/leave animations ───────────────────────────────────────────────── */
+
+/* Fade */
+@keyframes jin-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes jin-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+.animate-fade-in {
+  animation: jin-fade-in var(--duration-base) var(--ease-standard) both;
+}
+
+/* Slide in from bottom (sheets, quick-capture) */
+@keyframes jin-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-4));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: jin-slide-up var(--duration-base) var(--ease-emphasized) both;
+}
+
+/* Slide in from right (detail push in navigation stack) */
+@keyframes jin-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(var(--space-6));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in-right {
+  animation: jin-slide-in-right var(--duration-base) var(--ease-emphasized) both;
+}
+
+/* Slide out to left (popping back in the navigation stack) */
+@keyframes jin-slide-out-left {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(calc(-1 * var(--space-6)));
+  }
+}
+
+.animate-slide-out-left {
+  animation: jin-slide-out-left var(--duration-fast) var(--ease-accelerate) both;
+}
+
+/* ── Interactive feedback ─────────────────────────────────────────────────── */
+
+/* Scale-down on press (touch-friendly; pointer-ok desktop) */
+.press-scale {
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.press-scale:active {
+  transform: scale(0.97);
+}
+
+/* Hover elevation (subtle lift for cards/buttons) */
+.hover-lift {
+  transition:
+    transform var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.hover-lift:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 0 var(--specular-highlight),
+    0 12px 32px var(--fill-tertiary);
+}
+
+/* ── Spin (loading indicators) ────────────────────────────────────────────── */
+
+@keyframes jin-spin {
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: jin-spin 1s var(--ease-linear) infinite;
+}

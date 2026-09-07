@@ -1,0 +1,60 @@
+{
+  "envelope_version": "1.0",
+  "message_id": "a2225699-8809-47e0-8b14-c87a8c9a9400",
+  "thread_id": "6a9a8db3-2548-4f5b-b922-01856fdb9e90",
+  "parent_id": null,
+  "from": {
+    "eidolon": "spectra",
+    "version": "4.10.0"
+  },
+  "to": {
+    "eidolon": "apivr",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Propose the MVP 'Integrated Thin Slice' build specification for project Jin: 11 stories across store, index, CLI/DTO, primitives+linking, Google sync, merged agenda, export, and tests.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/mvp-integrated-thin-slice.md",
+    "sha256": "75f3b6550cb2b2bf2c339dc6a895abfc8d93d38eebc288dff135a230679f4c88",
+    "size_bytes": 66034
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 5200,
+    "input_handles": [
+      "discovery/00-discovery-and-gaps.md",
+      "docs/adr/0001-data-model-and-linking.md",
+      "docs/adr/0002-storage-format.md",
+      "docs/adr/0003-runtime-and-gui-contract.md",
+      "docs/adr/0004-google-calendar-sync.md"
+    ],
+    "summary": "Decision-ready dual-format spec for the Jin MVP hero flow (note -> task+references -> promote->event -> bidirectional Google sync -> jin today merged agenda -> exportable). Architecture is fixed by ADR-0001..0004; this decomposes the build into 11 INVEST stories with GIVEN/WHEN/THEN criteria, 11 validation gates, a 4-milestone sequence with an explicit dependency graph and parallelizable side-tracks, and the deferred-not-foreclosed guardrails. APIVR-/builder should start with Milestone 1 (S1->S2->S3) gated on VG1/VG3/VG4."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "expected_response": {
+    "performative": "ACKNOWLEDGE",
+    "shape_hint": "build milestone-1 (S1->S2->S3) then report; or orchestrator fan-out decision for parallel tracks A/C/D/E"
+  },
+  "confidence": 0.9,
+  "assumptions": [
+    "Google OAuth refresh-token 7-day expiry under 'Testing' status for sensitive Calendar scopes; 'In production' (unverified) yields long-lived tokens - verify at build.",
+    "syncToken/410 fullSyncRequired, client-specified event-id charset a-v0-9 (5-1024), If-Match/etag concurrency, PKCE+loopback for installed apps - per training knowledge, confirm against current Google docs.",
+    "Owner-confirm: remote-delete-of-promoted-event = unpublish (keep Jin object); DEC-C company-calendar mirroring permitted.",
+    "Owner Rust fluency / DEC-I time posture is an open GAP (Rust treated as committed per mandate); optional <=1wk spike before M1."
+  ],
+  "integrity": {
+    "method": "sha256",
+    "value": "75f3b6550cb2b2bf2c339dc6a895abfc8d93d38eebc288dff135a230679f4c88"
+  },
+  "trace": {
+    "ts": "2026-06-26T23:26:02Z",
+    "host": "claude-code",
+    "model": "claude-opus-4-8-1m",
+    "tier": "standard"
+  }
+}

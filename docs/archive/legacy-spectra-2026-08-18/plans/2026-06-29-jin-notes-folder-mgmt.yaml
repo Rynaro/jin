@@ -1,0 +1,192 @@
+spec_id: 2026-06-29-jin-notes-folder-mgmt
+title: "Jin Notes — Folder Management (rename / delete-to-parent / drag-note-into-folder)"
+author: spectra
+handoff_to: vivi            # apivr / Builder
+intent_type: CHANGE
+base_branch: main           # v0.5.0; branch off main
+complexity: 9
+confidence: 0.90
+ecl_envelope: false         # no ECL_VERSION in install root
+
+scope:
+  in:
+    - Backend rename_folder (jin-core) — prefix-rewrite via move_note, recreate empty subdirs, remove old tree
+    - Backend delete_folder MOVE-TO-PARENT (jin-core) — flatten subtree notes to parent_of(path), return moved count
+    - Tauri commands rename_folder_fn / delete_folder_fn + lib.rs registration + api::refresh
+    - invoke.ts renameFolder / deleteFolder bindings
+    - Drag note -> folder (frontend, reuses existing moveNote)
+    - Per-row kebab menu (Rename / Delete / New Subfolder) via native <dialog>, keyboard reachable
+  out:
+    - Folder->folder re-nesting via drag (DEFERRED)
+    - Merge-on-collision for rename (v1 refuses)
+    - contextmenu right-click handler (OPTIONAL alias only)
+    - Soft-delete of folders
+    - Tasks/Events folders
+
+owner_locked:
+  D-DELETE-POLICY: move-to-parent (non-destructive); delete F flattens all notes under F + subfolders to F's parent (top-level parent = root "")
+  D-DRAG-SCOPE: NOTE -> FOLDER only (reuses move_note)
+
+decisions:
+  D-RENAME-MECHANISM: per-note move_note over a pre-mutation snapshot; dest = new_path + folder[old_path.len()..]
+  D-RENAME-COLLISION: refuse if notes_dir.join(new_path) exists; refuse new==old; refuse new starts_with old + "/"
+  D-RENAME-EMPTY-SUBDIRS: recreate empty descendant subfolders under new prefix
+  D-DELETE-PARENT: parent_of(path) = before last "/" or ""; ALL subtree notes flatten to that single parent
+  D-DELETE-COUNT: delete_folder returns usize moved count
+  D-AFFORDANCE: focusable kebab <button> aria-haspopup=menu opening role=menu (3 menuitems); contextmenu optional
+  D-CURRENT-FOLDER-SYNC: remap currentFolder/expandedFolders/focusedFolderPath after rename/delete then loadFolders + conditional loadList
+  D-DRAG-DATA: dataTransfer 'application/x-jin-note-id' (+ text/plain mirror); .folder-row__btn--drop-target highlight; same-folder drop = no-op
+  D-NEW-SUBFOLDER-REUSE: reuse New Folder dialog + submitNewFolder with newFolderParent prefix
+
+algorithms:
+  parent_of: 'path.rsplit_once(''/'').map(|(p,_)| p).unwrap_or("")'
+  rename_folder: |
+    reject old_path==""; validate(new_path); reject new_path==""; reject new==old;
+    reject new.starts_with(old + "/"); reject notes_dir.join(new_path).exists();
+    snapshot notes (id, folder) and subdirs under old subtree BEFORE mutation;
+    for each note: move_note(id, new_path + folder[old.len()..]);
+    recreate empty subdirs under new prefix;
+    GUARD err if any *.md remain under old subtree; remove_dir_all(old)
+  delete_folder: |
+    reject path==""; validate(path); parent = parent_of(path);
+    snapshot ids under subtree (folder==path || startsWith path + "/");
+    for each id: move_note(id, parent);
+    GUARD err if any *.md remain under path subtree; remove_dir_all(path); return count
+
+stories:
+  - id: S1
+    name: Backend rename_folder core op + parent_of helper
+    timebox: "<=1d"
+    risk: P0
+    depends_on: []
+    files:
+      - jin-core/src/ops/notes.rs
+      - jin-core/src/store/fs.rs
+    acceptance:
+      - GIVEN notes in Work and Work/Projects WHEN rename Work->Job THEN files under notes/Job and notes/Job/Projects; notes/Work gone
+      - GIVEN empty subdir Work/Empty WHEN rename Work->Job THEN notes/Job/Empty exists
+      - GIVEN folder Existing on disk WHEN rename Work->Existing THEN Err (collision); Work untouched
+      - GIVEN any WHEN rename ""->X THEN Err (refuse root)
+      - GIVEN folder Work WHEN rename Work->Work/Sub THEN Err (own descendant)
+      - GIVEN parent_of WHEN "Work","Work/Projects","" THEN "","Work",""
+    gates: [VG-RENAME-CORE]
+    agent_hint: { class: reasoner, fmt: "cargo fmt before commit" }
+  - id: S2
+    name: Backend delete_folder (move-to-parent) core op
+    timebox: "<=1d"
+    risk: P0
+    depends_on: [S1]
+    files:
+      - jin-core/src/ops/notes.rs
+    acceptance:
+      - GIVEN notes in Work + Work/Projects + 1 root WHEN delete Work THEN all former Work* notes folder_path=="", notes/Work removed, root untouched, return==count
+      - GIVEN note in A/B/C WHEN delete A/B THEN note folder_path=="A", notes/A/B removed, notes/A remains
+      - GIVEN any WHEN delete "" THEN Err (refuse root)
+    gates: [VG-DELETE-CORE]
+    agent_hint: { class: reasoner, fmt: "cargo fmt before commit" }
+  - id: S3
+    name: Tauri commands + invoke bindings + anti-shallow bridge round-trips
+    timebox: "<=2d"
+    risk: P0
+    depends_on: [S1, S2]
+    files:
+      - jin-gui/src-tauri/src/commands/folders.rs
+      - jin-gui/src-tauri/src/lib.rs
+      - jin-gui/src/invoke.ts
+      - jin-gui/src-tauri/tests/bridge.rs
+    actions:
+      - "rename_folder_fn(root, old_path, new_path) -> Result<(),JinErrorDto>: notes::rename_folder; api::refresh"
+      - "delete_folder_fn(root, path) -> Result<usize,JinErrorDto>: n = notes::delete_folder; api::refresh; Ok(n)"
+      - "register commands::folders::rename_folder + delete_folder in invoke_handler! Folders block"
+      - "invoke.ts: renameFolder -> invoke('rename_folder',{old_path,new_path}); deleteFolder -> invoke('delete_folder',{path})"
+    acceptance:
+      - "VG-RENAME-BRIDGE: REAL attach edge B->W1; rename Work->Job + refresh; notes/Job exists, notes/Work gone; list_notes(Job)=W1 folder_path Job; list_notes(Job/Projects)=P1; get_note(W1).backlinks still has B; list_dangling empty; collision Job->Existing Err; rename ''->X Err"
+      - "VG-DELETE-BRIDGE: REAL attach edge B->W1; moved=delete_folder Work + refresh; W1+P1 folder_path==''; notes/Work gone; W1 backlink from B; moved==2; list_dangling empty; nested delete A/B -> note folder_path 'A'; delete '' Err"
+    gates: [VG-RENAME-BRIDGE, VG-DELETE-BRIDGE]
+    agent_hint: { class: reasoner, context: "read bridge.rs vg_move_link_integrity_after_folder_move first", fmt: "cargo fmt before push" }
+  - id: S4
+    name: Drag note -> folder (frontend-only)
+    timebox: "<=2d"
+    risk: P1
+    depends_on: []
+    files:
+      - jin-gui/src/lib/notes/render.ts
+      - jin-gui/src/controllers/notes_controller.ts
+      - jin-gui/index.html
+      - jin-gui/src/styles/browse.css
+      - jin-gui/src/__tests__/notes_controller.test.ts
+    actions:
+      - "buildNoteRow: draggable=true; dragstart sets dataTransfer 'application/x-jin-note-id' + text/plain; effectAllowed=move"
+      - "renderFolderTree.buildNode: .folder-row__btn dragover preventDefault + add drop-target class; dragleave remove; drop read id + cb.onDropNote(path,id)"
+      - "controller onDropNote: if target===current folder no-op else moveNote + loadFolders + loadList"
+    acceptance:
+      - "VG-DND: real dragstart on note row + drop on Work folder row -> moveNote('N','Work') exact args; rail refreshes"
+      - "VG-DND same-folder: note already in Work dropped on Work -> moveNote NOT called"
+      - "VG-DND mutation: removing drop wiring fails the move case"
+    gates: [VG-DND]
+    agent_hint: { class: builder, node: ">=20 via nvm (system v16 crashes vitest)", note: "jsdom DataTransfer is limited; hand-roll a dataTransfer stub like stubDialogMethods" }
+  - id: S5
+    name: Per-row kebab menu (Rename / Delete / New Subfolder)
+    timebox: "<=3d"
+    risk: P1
+    depends_on: [S3, K1, K2, K3, K4]
+    files:
+      - jin-gui/index.html
+      - jin-gui/src/lib/notes/render.ts
+      - jin-gui/src/controllers/notes_controller.ts
+      - jin-gui/src/lib/icons/index.ts
+      - jin-gui/src/styles/browse.css
+      - jin-gui/src/__tests__/notes_controller.test.ts
+    actions:
+      - "#tmpl-folder-row: add focusable kebab button aria-haspopup=menu + role=menu with 3 menuitems; keep .folder-row__btn[data-folder-path] + all existing hooks"
+      - "renderFolderTree.buildNode: kebab click stopPropagation toggles menu; menuitem -> cb.onRename/onDelete/onNewSubfolder + close; Escape/outside-click close"
+      - "controller renameFolder(path): open #jin-rename-folder-modal prefilled leaf name; submit -> renameFolder(path, parentPrefix+input) + D-CURRENT-FOLDER-SYNC"
+      - "controller deleteFolder(path): open #jin-delete-folder-modal 'Move N notes to parentLabel and delete?' (N from cachedTree subtree sum); confirm -> deleteFolder(path) + D-CURRENT-FOLDER-SYNC"
+      - "controller newSubfolder(path): set newFolderParent; reuse New Folder dialog; submitNewFolder composes parent+'/'+name"
+    test_harness_edits_required:
+      - "extend vi.mock('../invoke') in notes_controller.test.ts: add moveNote, renameFolder, deleteFolder (+ imports)"
+      - "update in-test folderRowTmpl + #tmpl-folder-row parity test to include kebab/menu hooks"
+    acceptance:
+      - "VG-KEBAB-RENAME: kebab Work -> Rename -> dialog prefilled 'Work' -> 'Job' -> submit -> renameFolder('Work','Job'); rail refreshes"
+      - "VG-KEBAB-RENAME-NESTED: rename leaf Work/Projects -> renameFolder('Work/Projects','Work/Tasks')"
+      - "VG-KEBAB-DELETE: kebab Work -> Delete -> confirm shows count+parent -> confirm -> deleteFolder('Work'); rail refreshes"
+      - "VG-SUBFOLDER: kebab Work -> New Subfolder -> enter Sub -> createFolder('Work/Sub')"
+      - "VG-CURRENT-SYNC: currentFolder=Work, rename Work->Job -> currentFolder Job + listNotes({folder:Job}); delete Job -> currentFolder '' + reload"
+      - "VG-A11Y-KEBAB: kebab is focusable <button>; aria-haspopup=menu; open sets aria-expanded=true; Escape closes; kebab click does NOT fire selectFolder"
+      - "MUTATION: unwiring Rename menuitem fails VG-KEBAB-RENAME"
+    preserve_gates: [VG-FE, VG-FE-FOLDER-OPEN, VG-FE-TMPL, folderTree-pure, VG-NEW-FOLDER, G-XSS]
+    gates: [VG-KEBAB-RENAME, VG-KEBAB-RENAME-NESTED, VG-KEBAB-DELETE, VG-SUBFOLDER, VG-CURRENT-SYNC, VG-A11Y-KEBAB]
+    agent_hint: { class: builder, node: ">=20 via nvm", context: "study #jin-new-folder-modal + stubDialogMethods harness" }
+
+kupo_tasks:
+  - id: K1
+    task: "invoke.ts renameFolder(oldPath,newPath) + deleteFolder(path) with snake_case keys"
+    file: jin-gui/src/invoke.ts
+    story: S3
+  - id: K2
+    task: "register Lucide MoreVertical (kebab), Pencil (rename), Trash2 (delete) in import+export+initIcons (FolderPlus already present)"
+    file: jin-gui/src/lib/icons/index.ts
+    story: S5
+  - id: K3
+    task: ".folder-row__menu-btn, .folder-row__menu + .folder-row__menuitem, .folder-row__btn--drop-target CSS (mirror .notes-folder-rail__new-btn / .folder-row__btn)"
+    file: jin-gui/src/styles/browse.css
+    story: S4/S5
+  - id: K4
+    task: "index.html: kebab+menu in #tmpl-folder-row; <dialog id=jin-rename-folder-modal> + <dialog id=jin-delete-folder-modal> mirroring #jin-new-folder-modal; draggable hint on #tmpl-note-row"
+    file: jin-gui/index.html
+    story: S4/S5
+
+risks:
+  - { id: R-PARTIAL, sev: P0, note: "mid-loop FS failure -> half-renamed folder; on-disk stays consistent (no note lost); index self-heals on refresh; guard prevents dir removal with notes present; partial retry may need manual cleanup" }
+  - { id: R-ORPHAN-DIR, sev: P0, note: "remove_dir_all guarded by *.md scan; move_note leaves source dir, removal is explicit final guarded step" }
+  - { id: R-LINK, sev: P1, note: "reuses move_note (ULID-based); VG bridge gates re-prove backlink survival + empty list_dangling with REAL attach edge" }
+  - { id: R-CURRENT-SYNC, sev: P1, note: "D-CURRENT-FOLDER-SYNC remap; VG-CURRENT-SYNC" }
+  - { id: R-DND-A11Y, sev: P1, note: "kebab menu is the keyboard-reachable equivalent; no op is drag-exclusive" }
+  - { id: R-COLLISION, sev: P1, note: "D-RENAME-COLLISION refuses; VG-RENAME-CORE/BRIDGE assert Err" }
+  - { id: R-EMPTY-SUBDIR, sev: P2, note: "D-RENAME-EMPTY-SUBDIRS recreates" }
+  - { id: R-PERF, sev: P2, note: "O(n^2) via find_note_path; ok for personal vault; fs::rename fast-path is future optimization" }
+  - { id: R-NODE, sev: P1, note: "vitest under Node>=20 (nvm v24.18.0); cargo fmt before push" }
+
+execution_order: [S1, S2, S3, S4, S5]   # S4 and S5 may run in parallel after S3
+gate_order_constraint: "backend gates (VG-RENAME-CORE, VG-DELETE-CORE, VG-RENAME-BRIDGE, VG-DELETE-BRIDGE) green before frontend stories"
+</content>

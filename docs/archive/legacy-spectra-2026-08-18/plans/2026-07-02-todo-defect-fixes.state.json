@@ -1,0 +1,24 @@
+{
+  "session_id": "spectra-todo-defect-fixes-2026-07-02",
+  "spec": ".spectra/todo-defect-fixes.spec.md",
+  "yaml": ".spectra/todo-defect-fixes.spec.yaml",
+  "envelope": ".spectra/todo-defect-fixes.spec.md.envelope.json",
+  "status": "SPEC_READY",
+  "confidence": 0.88,
+  "decision": "AUTO_PROCEED",
+  "build_order": {
+    "wave_A_parallel": ["S1", "S5", "S6", "S7"],
+    "wave_B_after_S1": ["S2", "S3", "S4"]
+  },
+  "steps": [
+    { "id": "S1", "title": "JinModal base + .action-dialog__* CSS", "status": "pending", "depends_on": [], "files": ["src/lib/ui/modal.ts", "src/styles/forms.css"], "gate": "ui_modal.test.ts + lint:css + owner visual sign-off" },
+    { "id": "S2", "title": "ConfirmDialog + task delete", "status": "pending", "depends_on": ["S1"], "files": ["src/lib/ui/confirm_dialog.ts", "src/controllers/tasks_controller.ts", "index.html"], "gate": "ui_confirm_dialog.test.ts + real-index wiring test" },
+    { "id": "S3", "title": "Edit-task + shared due-date adoption", "status": "pending", "depends_on": ["S1"], "files": ["src/controllers/tasks_controller.ts", "index.html"], "gate": "real-index wiring test + capture-regression test" },
+    { "id": "S4", "title": "New List modal styling (DT-1)", "status": "pending", "depends_on": ["S1"], "files": ["src/controllers/lists_controller.ts", "index.html"], "gate": "lists_controller.test.ts + owner visual sign-off" },
+    { "id": "S5", "title": "JinSelect (DT-3a)", "status": "pending", "depends_on": [], "files": ["src/lib/ui/select.ts", "src/styles/browse.css", "src/styles/forms.css", "index.html"], "gate": "ui_select.test.ts + lint:css + owner visual sign-off" },
+    { "id": "S6", "title": "List id/name canonicalization (DT-3b)", "status": "pending", "depends_on": [], "files": ["src/lib/tasks/render.ts", "src/lib/lists/transform.ts", "src/controllers/tasks_controller.ts", "src/controllers/capture_controller.ts"], "gate": "id!=name fixture in tasks_controller.test.ts" },
+    { "id": "S7", "title": "Board view for sectionless lists (DT-4)", "status": "pending", "depends_on": [], "files": ["src/controllers/tasks_controller.ts", "src/lib/tasks/render.ts"], "gate": "board-render-empty-sections unit test + >=1-section regression" }
+  ],
+  "risks": ["RISK-1 green-but-shallow tests (H)", "RISK-2 id/name on-disk migration (M)", "RISK-3 visual-only gap (M)", "RISK-4 jsdom showModal (M)", "RISK-5 shared due-date dialog (M)"],
+  "replanning_history": []
+}

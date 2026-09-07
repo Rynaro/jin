@@ -1,0 +1,292 @@
+{
+  "esl_version": "1.1",
+  "change_id": "calendar-event-detail-m1",
+  "status": "archived",
+  "tier": "full",
+  "maker": "Vivi",
+  "checker": "VIGIL",
+  "acceptance_checks": [
+    {
+      "id": "AC-001",
+      "given": ".spectra/changes/calendar-pr47-rescue remains in progress without explicit owner supersession",
+      "when": "the implementation changed-file inventory is evaluated",
+      "then": "implementation SHALL make no edit to an overlapping calendar or event file",
+      "verify_method": "gate: pre-implementation change-state check plus changed-file inventory"
+    },
+    {
+      "id": "AC-002",
+      "given": "an Event detail response is produced",
+      "when": "the response contract is evaluated",
+      "then": "every event-detail capability SHALL be projected by jin-core",
+      "verify_method": "test: cargo test -p jin-core event_detail_capabilities"
+    },
+    {
+      "id": "AC-003",
+      "given": "an active Jin-owned non-recurring Event without an originating Task",
+      "when": "its detail capabilities are projected",
+      "then": "its detail projection SHALL report display_kind=event",
+      "verify_method": "test: cargo test -p jin-core event_detail_capabilities::plain_event"
+    },
+    {
+      "id": "AC-004",
+      "given": "an Event carries derived_from, including a missing or inactive Task reference",
+      "when": "its detail capabilities are projected",
+      "then": "its detail projection SHALL report display_kind=time-block",
+      "verify_method": "test: cargo test -p jin-core event_detail_capabilities::time_block"
+    },
+    {
+      "id": "AC-005",
+      "given": "a recurring Event from any source",
+      "when": "its M1 detail capabilities are projected",
+      "then": "its M1 detail projection SHALL report can_edit=false",
+      "verify_method": "test: cargo test -p jin-core event_detail_capabilities::recurring_view_only"
+    },
+    {
+      "id": "AC-006",
+      "given": "a Google-authoritative Event",
+      "when": "its M1 detail capabilities are projected",
+      "then": "its M1 detail projection SHALL report can_delete=false",
+      "verify_method": "test: cargo test -p jin-core event_detail_capabilities::google_view_only"
+    },
+    {
+      "id": "AC-007",
+      "given": "an Event has one or more overlapping mutation restrictions",
+      "when": "its read-only reason is projected",
+      "then": "its detail projection SHALL choose the read-only reason by cancelled → recurring_milestone_1 → external authority/source precedence",
+      "verify_method": "test: cargo test -p jin-core event_detail_capabilities::reason_matrix"
+    },
+    {
+      "id": "AC-008",
+      "given": "a legacy Task file without agenda_bucket",
+      "when": "the canonical Task is loaded",
+      "then": "the Task SHALL deserialize with no explicit agenda bucket",
+      "verify_method": "test: cargo test -p jin-core serde_default_legacy_task_agenda_bucket"
+    },
+    {
+      "id": "AC-009",
+      "given": "a Task has agenda_bucket=flexible",
+      "when": "a new Time block commits successfully",
+      "then": "the Task SHALL have no explicit agenda bucket",
+      "verify_method": "test: cargo test -p jin-core promote::tests::successful_block_clears_flexible"
+    },
+    {
+      "id": "AC-010",
+      "given": "a Task has agenda_bucket=flexible",
+      "when": "the Task becomes done",
+      "then": "the Task SHALL have no explicit agenda bucket",
+      "verify_method": "test: cargo test -p jin-core tasks::tests::completion_clears_flexible"
+    },
+    {
+      "id": "AC-011",
+      "given": "a Task has agenda_bucket=flexible",
+      "when": "the Task becomes cancelled or deleted",
+      "then": "the Task SHALL have no explicit agenda bucket",
+      "verify_method": "test: cargo test -p jin-core tasks::tests::inactive_clears_flexible"
+    },
+    {
+      "id": "AC-012",
+      "given": "a mutable Time block is the last active block of an active originating Task",
+      "when": "return-to-flexible eligibility is projected",
+      "then": "its projection SHALL report can_return_task_to_flexible=true",
+      "verify_method": "test: cargo test -p jin-core event_detail_capabilities::last_block_active_task"
+    },
+    {
+      "id": "AC-013",
+      "given": "another active Time block derives from the same Task",
+      "when": "return-to-flexible eligibility is projected",
+      "then": "return-to-flexible eligibility SHALL be false",
+      "verify_method": "test: cargo test -p jin-core event_detail_capabilities::another_active_block"
+    },
+    {
+      "id": "AC-014",
+      "given": "a Time block has a missing or inactive originating Task",
+      "when": "return-to-flexible eligibility is projected",
+      "then": "return-to-flexible eligibility SHALL be false",
+      "verify_method": "test: cargo test -p jin-core event_detail_capabilities::originating_task_unavailable"
+    },
+    {
+      "id": "AC-015",
+      "given": "an eligible Time block and return_to_flexible=false",
+      "when": "the remove operation succeeds",
+      "then": "only the Event SHALL become cancelled",
+      "verify_method": "test: cargo test -p jin-core remove_time_block::tests::remove_only"
+    },
+    {
+      "id": "AC-016",
+      "given": "an eligible Time block and return_to_flexible=true",
+      "when": "the remove operation succeeds",
+      "then": "the originating Task SHALL have agenda_bucket=flexible",
+      "verify_method": "test: cargo test -p jin-core remove_time_block::tests::remove_and_return"
+    },
+    {
+      "id": "AC-017",
+      "given": "a Time block removal targets an originating Task",
+      "when": "the removal operation converges",
+      "then": "Time block removal SHALL preserve the originating Task identity, due date, list, status, priority, body, section, tags, position, reminders, and parent",
+      "verify_method": "test: cargo test -p jin-core remove_time_block::tests::preserves_task_fields"
+    },
+    {
+      "id": "AC-018",
+      "given": "return eligibility changes after detail load",
+      "when": "removal requests return_to_flexible=true",
+      "then": "the core SHALL reject the stale return request without partially applying it",
+      "verify_method": "test: cargo test -p jin-core remove_time_block::tests::revalidates_eligibility"
+    },
+    {
+      "id": "AC-019",
+      "given": "a crash is injected between canonical writes",
+      "when": "startup recovery runs",
+      "then": "canonical Event and Task state SHALL converge to the journaled transaction invariant",
+      "verify_method": "test: cargo test -p jin-core remove_time_block::tests::recovers_each_crash_boundary"
+    },
+    {
+      "id": "AC-020",
+      "given": "a completed remove transaction",
+      "when": "the same request is retried",
+      "then": "the operation SHALL return the canonical completed result without additional semantic mutation",
+      "verify_method": "test: cargo test -p jin-core remove_time_block::tests::retry_idempotent"
+    },
+    {
+      "id": "AC-021",
+      "given": "a Google provider payload is mapped from Jin canonical state",
+      "when": "outbound serialization runs",
+      "then": "Google provider payloads SHALL omit agenda_bucket and Jin-local context edges",
+      "verify_method": "test: cargo test -p jin-core google::mapping::tests::local_context_never_serialized"
+    },
+    {
+      "id": "AC-022",
+      "given": "event detail is visible",
+      "when": "the detail layout and accessibility tree are evaluated",
+      "then": "the global Add Event control SHALL be hidden from layout and accessibility trees",
+      "verify_method": "test: pnpm vitest run src/__tests__/events_controller.test.ts"
+    },
+    {
+      "id": "AC-023",
+      "given": "a mutable plain Event detail",
+      "when": "the detail header is rendered",
+      "then": "the header SHALL expose Edit and Delete actions",
+      "verify_method": "test: pnpm vitest run src/__tests__/events_controller.test.ts"
+    },
+    {
+      "id": "AC-024",
+      "given": "a mutable Time block detail",
+      "when": "the detail header is rendered",
+      "then": "the destructive header action SHALL be labelled Remove",
+      "verify_method": "test: pnpm vitest run src/__tests__/events_controller.test.ts"
+    },
+    {
+      "id": "AC-025",
+      "given": "an eligible Time block removal confirmation",
+      "when": "the confirmation is rendered",
+      "then": "it SHALL show an unchecked Return task to flexible agenda checkbox",
+      "verify_method": "test: pnpm vitest run src/__tests__/events_controller.test.ts"
+    },
+    {
+      "id": "AC-026",
+      "given": "an ineligible Time block removal confirmation",
+      "when": "the confirmation is rendered",
+      "then": "it SHALL contain no return-to-flexible checkbox",
+      "verify_method": "test: pnpm vitest run src/__tests__/events_controller.test.ts"
+    },
+    {
+      "id": "AC-027",
+      "given": "event edit mode contains unsaved changes",
+      "when": "Cancel is activated",
+      "then": "canonical Event data SHALL remain unchanged",
+      "verify_method": "test: pnpm vitest run src/__tests__/events_controller.test.ts"
+    },
+    {
+      "id": "AC-028",
+      "given": "a detail mutation succeeds",
+      "when": "the command resolves",
+      "then": "the detail SHALL refetch canonical Event data before rendering success",
+      "verify_method": "test: pnpm vitest run src/__tests__/events_controller.test.ts"
+    },
+    {
+      "id": "AC-029",
+      "given": "detail was opened from a calendar mode, date, and scroll position",
+      "when": "Back is activated",
+      "then": "that calendar state SHALL be restored",
+      "verify_method": "Playwright MCP: calendar detail return-state scenario"
+    },
+    {
+      "id": "AC-030",
+      "given": "the system locale is active",
+      "when": "Event detail is rendered",
+      "then": "event detail copy and temporal formatting SHALL use the system locale",
+      "verify_method": "test: pnpm vitest run src/__tests__/event_locale.test.ts"
+    },
+    {
+      "id": "AC-031",
+      "given": "a supported language override is selected",
+      "when": "event detail rerenders",
+      "then": "its visible and accessibility copy SHALL use the override",
+      "verify_method": "test: pnpm vitest run src/__tests__/event_locale.test.ts"
+    },
+    {
+      "id": "AC-032",
+      "given": "a Google-source event detail offers local context actions",
+      "when": "the local context section is rendered",
+      "then": "it SHALL display the approved Private to Jin privacy copy",
+      "verify_method": "test: pnpm vitest run src/__tests__/events_controller.test.ts"
+    },
+    {
+      "id": "AC-033",
+      "given": "the native detail surface at supported widths, themes, scaling, languages, and reduced-motion settings",
+      "when": "native visual verification runs",
+      "then": "the summary hierarchy SHALL remain readable without clipped primary actions or unintended horizontal scrolling",
+      "verify_method": "evidence: Playwright artifacts plus owner native Tauri visual sign-off"
+    },
+    {
+      "id": "AC-034",
+      "given": "a crash is injected during create-Time-block after any staged write boundary",
+      "when": "operation recovery runs",
+      "then": "application-visible Task and Event state SHALL converge before create success is returned",
+      "verify_method": "test: cargo test -p jin-core promote::tests::recovers_each_create_boundary"
+    },
+    {
+      "id": "AC-035",
+      "given": "a create or remove request reuses a completed operation ID",
+      "when": "the request is retried",
+      "then": "the core SHALL return the original semantic result without creating or applying a second mutation",
+      "verify_method": "test: cargo test -p jin-core recoverable_operations::tests::operation_id_idempotent"
+    },
+    {
+      "id": "AC-036",
+      "given": "a create or remove operation passed canonical precondition checks",
+      "when": "its first canonical write is attempted",
+      "then": "a locked durable recovery record SHALL already contain every target before image, post image, and SHA-256 hash",
+      "verify_method": "test: cargo test -p jin-core recoverable_operations::tests::stages_under_lock_before_write"
+    },
+    {
+      "id": "AC-037",
+      "given": "an affected Task or Event canonical read is requested while an operation is incomplete",
+      "when": "the read path resolves canonical data",
+      "then": "the read path SHALL run operation recovery before returning canonical data",
+      "verify_method": "test: cargo test -p jin-core recoverable_operations::tests::recover_before_read"
+    },
+    {
+      "id": "AC-038",
+      "given": "an incomplete operation target matches a staged before or post hash",
+      "when": "recovery selects the target action",
+      "then": "recovery SHALL apply the deterministic mapping {before: roll-forward, post: rollback}",
+      "verify_method": "test: cargo test -p jin-core recoverable_operations::tests::known_hash_recovery_matrix"
+    },
+    {
+      "id": "AC-039",
+      "given": "an incomplete operation target matches neither staged before nor staged post hash",
+      "when": "recovery inspects the target",
+      "then": "recovery SHALL persist a blocked conflict without canonical overwrite, index refresh, or sync enqueue",
+      "verify_method": "test: cargo test -p jin-core recoverable_operations::tests::divergent_hash_blocks"
+    }
+  ],
+  "spec_ref": ".spectra/changes/calendar-event-detail-m1/spec.md",
+  "created_at": "2026-08-26",
+  "drift_checked": true,
+  "archive_path": "archive/2026-08-26-calendar-event-detail-m1",
+  "has_code": true,
+  "memory_preflight": {
+    "ran": false,
+    "records": 0
+  }
+}

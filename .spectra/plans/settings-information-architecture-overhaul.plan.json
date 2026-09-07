@@ -1,0 +1,53 @@
+{
+  "thread_id": "01a06bc8-d754-7a11-8b8b-4c57bc657690",
+  "tier": "standard",
+  "enforce": "fail-fast",
+  "executor": "container",
+  "steps": [
+    {
+      "step_id": "S0",
+      "from": { "eidolon": "atlas", "version": "n/a" },
+      "to": { "eidolon": "ramza", "version": "1.1.0" },
+      "performative": "INFORM",
+      "edge_origin": "roster",
+      "objective": "Turn the mapped Settings implementation and benchmark evidence into a decision-ready overhaul plan.",
+      "artifact": {
+        "kind": "prompt",
+        "schema_version": "1.0",
+        "path": ".spectra/plans/settings-information-architecture-overhaul.md"
+      },
+      "model_tier_hint": "reasoning-class",
+      "constraints": { "trust_level": "standard" }
+    },
+    {
+      "step_id": "S1",
+      "from": { "eidolon": "ramza", "version": "1.1.0" },
+      "to": { "eidolon": "vivi", "version": "n/a" },
+      "performative": "DELEGATE",
+      "edge_origin": "roster",
+      "objective": "Implement the amended four-pane Settings overhaul with desktop workspace scrolling and compact or AX route scrolling within the six-file product scope.",
+      "artifact": {
+        "kind": "spec",
+        "schema_version": "1.0",
+        "path": ".spectra/plans/settings-information-architecture-overhaul.md"
+      },
+      "model_tier_hint": "reasoning-class",
+      "constraints": { "trust_level": "standard" }
+    },
+    {
+      "step_id": "S2",
+      "from": { "eidolon": "vivi", "version": "n/a" },
+      "to": { "eidolon": "vigil", "version": "n/a" },
+      "performative": "REQUEST",
+      "edge_origin": "roster",
+      "objective": "Independently verify the amended implementation, including scroll ownership and category focus retention, against the frozen EARS criteria and visual QA matrix.",
+      "artifact": {
+        "kind": "report",
+        "schema_version": "1.0",
+        "path": ".spectra/plans/settings-information-architecture-overhaul.criteria.md"
+      },
+      "model_tier_hint": "reasoning-class",
+      "constraints": { "trust_level": "standard" }
+    }
+  ]
+}

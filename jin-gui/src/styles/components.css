@@ -1,0 +1,736 @@
+/**
+ * components.css — Continuous Ink Workspace primitives.
+ *
+ * Workspace and list surfaces are solid and contiguous. Liquid Glass is a
+ * functional material reserved for chrome and transient layers; nanquim is a
+ * sparse state grammar, never a paper texture or ambient illustration.
+ */
+
+.jin-split-view {
+  display: grid;
+  grid-template-columns: var(--context-rail-width) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  min-width: 0;
+  min-height: 0;
+  background: var(--workspace-canvas);
+}
+
+.jin-context-rail {
+  min-width: 0;
+  min-height: 0;
+  background: var(--workspace-context);
+  border-inline-end: 0.5px solid var(--separator);
+}
+
+.jin-workspace-pane {
+  min-width: 0;
+  min-height: 0;
+  background: var(--workspace-canvas);
+}
+
+.jin-chrome,
+.jin-transient {
+  background-color: var(--workspace-chrome);
+  border: 0.5px solid var(--separator);
+  box-shadow: inset 0 0.5px 0 var(--specular-highlight);
+  -webkit-backdrop-filter: blur(var(--glass-blur-thin)) saturate(var(--glass-saturate));
+          backdrop-filter: blur(var(--glass-blur-thin)) saturate(var(--glass-saturate));
+}
+
+.jin-transient {
+  background-color: var(--workspace-transient);
+  box-shadow: var(--elevation-shadow);
+}
+
+.jin-toolbar-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--toolbar-height);
+  padding-inline: var(--space-2);
+  border-width: 0 0 0.5px;
+  border-radius: 0;
+}
+
+.jin-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-half);
+  min-width: var(--control-height);
+  min-height: var(--control-height);
+  padding: 0 var(--space-1);
+  border: 0.5px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--label);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.jin-control:hover {
+  background: var(--workspace-row-hover);
+}
+
+.jin-control:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.jin-control--icon {
+  width: var(--control-height);
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.jin-control--icon svg,
+.jin-control--icon i svg {
+  width: var(--icon-size-standard);
+  height: var(--icon-size-standard);
+}
+
+/* Standard icon + text composition for labelled controls. Keeping both
+ * children in the flex formatting context avoids SVG baseline drift. */
+.jin-control--icon-label > :is(i, svg) {
+  display: block;
+  width: var(--icon-size-standard);
+  height: var(--icon-size-standard);
+  flex: 0 0 var(--icon-size-standard);
+}
+
+.jin-control--icon-label > .jin-control__label {
+  min-width: 0;
+  line-height: inherit;
+}
+
+.jin-control--primary,
+.jin-control--danger {
+  min-height: var(--control-height-prominent);
+  padding-inline: var(--space-2);
+  color: var(--ink-on);
+  background: var(--ink-primary);
+}
+
+.jin-control--primary:hover {
+  background: var(--ink-primary);
+  opacity: 0.88;
+}
+
+.jin-control--secondary {
+  min-height: var(--control-height-prominent);
+  padding-inline: var(--space-2);
+  border-color: var(--separator);
+  background: var(--workspace-row-hover);
+}
+
+.jin-control--danger {
+  color: var(--seal-on);
+  background: var(--seal);
+}
+
+.jin-control--danger:hover {
+  background: var(--seal-strong);
+  opacity: 1;
+}
+
+/* Painted controls stay compact; wrappers alone grow for coarse pointers. */
+.jin-check {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--check-hit-size);
+  height: var(--check-hit-size);
+  min-width: var(--check-hit-size);
+  min-height: var(--check-hit-size);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-primary);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.jin-check::before {
+  content: '';
+  width: var(--check-visual-size);
+  height: var(--check-visual-size);
+  border: 1.5px solid var(--label-tertiary);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.jin-check::after {
+  content: '';
+  position: absolute;
+  width: 5px;
+  height: 9px;
+  max-width: var(--check-mark-size);
+  max-height: var(--check-mark-size);
+  border: solid var(--ink-on);
+  border-width: 0 1.5px 1.5px 0;
+  opacity: 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.jin-check:hover::before {
+  border-color: var(--ink-stroke);
+  background: var(--ink-bleed);
+}
+
+.jin-check[aria-checked='true']::before {
+  border-color: var(--ink-stroke);
+  background: var(--ink-stroke);
+}
+
+.jin-check[aria-checked='true']::after {
+  opacity: 1;
+}
+
+.jin-checkbox,
+.jin-switch,
+.jin-range {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.jin-checkbox {
+  gap: var(--space-1);
+  min-height: var(--check-hit-size);
+  cursor: pointer;
+}
+
+.jin-checkbox > input,
+.jin-switch > input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.jin-checkbox__mark {
+  position: relative;
+  width: var(--check-visual-size);
+  height: var(--check-visual-size);
+  border: 1.5px solid var(--label-tertiary);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.jin-checkbox__mark::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-start: 5px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--ink-on);
+  border-width: 0 1.5px 1.5px 0;
+  opacity: 0;
+  transform: rotate(45deg);
+}
+
+.jin-checkbox > input:checked + .jin-checkbox__mark {
+  border-color: var(--ink-stroke);
+  background: var(--ink-stroke);
+}
+
+.jin-checkbox > input:checked + .jin-checkbox__mark::after {
+  opacity: 1;
+}
+
+.jin-checkbox > input:focus-visible + .jin-checkbox__mark,
+.jin-switch > input:focus-visible + .jin-switch__track,
+.jin-range > input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.jin-switch {
+  position: relative;
+  width: var(--switch-track-width);
+  height: var(--check-hit-size);
+  cursor: pointer;
+}
+
+/* The semantic input owns the complete switch hit area. The painted track is
+ * only its visual proxy, so automation and assistive pointer input can target
+ * role="switch" directly without a decorative descendant intercepting it. */
+.jin-switch > input {
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.jin-switch__track {
+  position: relative;
+  display: block;
+  width: var(--switch-track-width);
+  height: var(--switch-track-height);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-capsule);
+  background: var(--fill-primary);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+  pointer-events: none;
+}
+
+.jin-switch__track::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 1.5px;
+  inset-inline-start: 1.5px;
+  width: var(--switch-thumb-size);
+  height: var(--switch-thumb-size);
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  box-shadow: 0 1px 3px var(--separator);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.jin-switch > input:checked + .jin-switch__track {
+  border-color: var(--ink-stroke);
+  background: var(--ink-stroke);
+}
+
+.jin-switch > input:checked + .jin-switch__track::after {
+  transform: translateX(12px);
+}
+
+.jin-range {
+  min-height: var(--check-hit-size);
+  min-width: 128px;
+}
+
+.jin-range > input {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+.jin-list {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.jin-list-row {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-bottom: 0.5px solid var(--separator);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.jin-list-row:hover {
+  background: var(--workspace-row-hover);
+  transform: none;
+}
+
+/* The selection stroke is out-of-flow, so selecting a row never changes it. */
+.jin-list-row[aria-selected="true"]::before,
+.jin-list-row.task-item--selected::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset-block: 4px 3px;
+  inset-inline-start: 3px;
+  width: 3px;
+  border-radius: 46% 54% 38% 62%;
+  background: var(--ink-stroke);
+  box-shadow:
+    2px 0 5px var(--ink-bleed),
+    -1px 1px 2px var(--ink-bleed);
+  pointer-events: none;
+}
+
+.jin-list-row[aria-selected="true"],
+.jin-list-row.task-item--selected {
+  background: var(--workspace-row-selected);
+}
+
+.jin-section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--toolbar-height);
+  padding-inline: var(--space-2) var(--space-1);
+  color: var(--ink-muted);
+  border-bottom: 0.5px solid var(--separator);
+  text-transform: uppercase;
+  letter-spacing: 0.055em;
+  font-size: var(--text-caption1-size);
+  font-weight: 600;
+  font-family: var(--font-text);
+}
+
+.jin-section-header::after,
+.today-section__heading::after,
+.tasks-section-group__header::after,
+.tasks-board__column-header::after {
+  content: '';
+  flex: 0 0 auto;
+  width: 21px;
+  height: 2px;
+  margin-inline-end: auto;
+  background: linear-gradient(90deg, var(--ink-dry), var(--ink-bleed), transparent);
+  transform: rotate(-1.5deg);
+  clip-path: polygon(0 17%, 71% 0, 100% 48%, 63% 72%, 0 100%);
+  pointer-events: none;
+}
+
+.jin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  min-width: 0;
+  padding: 2px var(--space-1);
+  border: 0.5px solid color-mix(in srgb, currentcolor 14%, transparent);
+  border-radius: var(--radius-capsule);
+  color: var(--label-secondary);
+  background: var(--workspace-row-hover);
+  font-size: var(--text-caption2-size);
+  line-height: var(--text-caption2-line);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.jin-color-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.jin-color-swatch {
+  --sw: var(--accent);
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  min-inline-size: 1.75rem;
+  min-block-size: 1.75rem;
+  padding: 0;
+  border: 2px solid var(--workspace, var(--workspace-canvas));
+  border-radius: 50%;
+  background: var(--sw, var(--accent));
+  box-shadow: 0 0 0 1px var(--separator);
+}
+
+.jin-color-swatch[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--workspace, var(--workspace-canvas)), 0 0 0 4px var(--ink-stroke);
+}
+
+.jin-color-swatch[data-color='accent'] { --sw: var(--accent); }
+.jin-color-swatch[data-color='sky'] { --sw: var(--system-teal); }
+.jin-color-swatch[data-color='danger'] { --sw: var(--system-red); }
+.jin-color-swatch[data-color='warning'] { --sw: var(--system-yellow); }
+.jin-color-swatch[data-color='success'] { --sw: var(--system-green); }
+.jin-color-swatch[data-color='purple'] { --sw: var(--system-purple); }
+.jin-color-swatch[data-color='pink'] { --sw: var(--system-pink); }
+.jin-color-swatch[data-color='orange'] { --sw: var(--system-orange); }
+
+.jin-color-swatch--custom {
+  position: relative;
+  background: conic-gradient(
+    var(--chroma-red), var(--chroma-yellow), var(--chroma-green), var(--chroma-cyan),
+    var(--chroma-blue), var(--chroma-magenta), var(--chroma-red)
+  );
+}
+
+.jin-color-swatch--custom[aria-pressed='true']::after {
+  position: absolute;
+  inset: 25%;
+  border: 1px solid var(--workspace, var(--workspace-canvas));
+  border-radius: 50%;
+  background: var(--custom-preview, transparent);
+  content: '';
+}
+
+.jin-chroma-dialog {
+  display: grid;
+  gap: var(--space-3);
+  inline-size: min(28rem, 78vw);
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.jin-chroma-dialog__preview {
+  min-block-size: 2.5rem;
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-md);
+}
+
+.jin-chroma-dialog__sv-map {
+  position: relative;
+  block-size: 11rem;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(to top, var(--chroma-black), transparent),
+    linear-gradient(to right, var(--chroma-white), transparent),
+    var(--jin-chroma-hue, var(--accent));
+  cursor: crosshair;
+}
+
+.jin-chroma-dialog__sv-map:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.jin-chroma-dialog__sv-thumb {
+  position: absolute;
+  inset-block-start: var(--jin-chroma-value, 50%);
+  inset-inline-start: var(--jin-chroma-saturation, 50%);
+  inline-size: 0.875rem;
+  block-size: 0.875rem;
+  border: 2px solid var(--chroma-white);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--chroma-black);
+  translate: -50% -50%;
+  pointer-events: none;
+}
+
+.jin-chroma-dialog__ranges,
+.jin-chroma-dialog__inputs,
+.jin-chroma-dialog__rgb {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.jin-chroma-dialog__ranges { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.jin-chroma-dialog__inputs { grid-template-columns: minmax(8rem, 1fr) 2fr; }
+.jin-chroma-dialog__rgb { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.jin-chroma-dialog__hex,
+.jin-chroma-dialog__rgb .form-input {
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding-inline: var(--space-1);
+}
+
+.jin-chroma-dialog__ranges label,
+.jin-chroma-dialog__inputs label {
+  display: grid;
+  gap: var(--space-half);
+  min-inline-size: 0;
+  color: var(--label-secondary);
+  font-size: var(--text-caption1-size);
+}
+
+.jin-chroma-dialog__range--full { grid-column: 1 / -1; }
+
+.jin-chroma-dialog__range-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.jin-chroma-dialog__range-output {
+  color: var(--label);
+  font-variant-numeric: tabular-nums;
+}
+
+.jin-chroma-dialog__hue {
+  -webkit-appearance: none;
+  appearance: none;
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: var(--control-height);
+  margin-inline: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.jin-chroma-dialog__hue::-webkit-slider-runnable-track {
+  block-size: var(--space-1);
+  border-radius: var(--radius-capsule);
+  background: linear-gradient(to right,
+    var(--chroma-red), var(--chroma-yellow), var(--chroma-green), var(--chroma-cyan),
+    var(--chroma-blue), var(--chroma-magenta), var(--chroma-red)
+  );
+}
+
+.jin-chroma-dialog__hue::-moz-range-track {
+  block-size: var(--space-1);
+  border-radius: var(--radius-capsule);
+  background: linear-gradient(to right,
+    var(--chroma-red), var(--chroma-yellow), var(--chroma-green), var(--chroma-cyan),
+    var(--chroma-blue), var(--chroma-magenta), var(--chroma-red)
+  );
+}
+
+.jin-chroma-dialog__hue::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  inline-size: 1rem;
+  block-size: 1rem;
+  margin-block-start: -0.375rem;
+  border: 2px solid var(--chroma-white);
+  border-radius: 50%;
+  background: var(--jin-chroma-current-hue, var(--accent));
+  box-shadow: 0 0 0 1px var(--chroma-black);
+}
+
+.jin-chroma-dialog__hue::-moz-range-thumb {
+  inline-size: 1rem;
+  block-size: 1rem;
+  border: 2px solid var(--chroma-white);
+  border-radius: 50%;
+  background: var(--jin-chroma-current-hue, var(--accent));
+  box-shadow: 0 0 0 1px var(--chroma-black);
+}
+
+.jin-chroma-dialog__hue:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.jin-chroma-dialog__error { min-block-size: var(--text-caption1-line); margin: 0; }
+.jin-chroma-dialog__actions { display: flex; gap: var(--space-2); }
+
+@media (max-width: 32rem) {
+  .jin-chroma-dialog__ranges,
+  .jin-chroma-dialog__inputs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .jin-chroma-dialog__ranges label,
+  .jin-chroma-dialog__ranges input,
+  .jin-chroma-dialog__inputs > label,
+  .jin-chroma-dialog__rgb {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  .jin-chroma-dialog__ranges input[type='range'] { margin-inline: 0; }
+}
+
+@media (forced-colors: active) {
+  .jin-chroma-dialog__hue {
+    appearance: auto;
+    forced-color-adjust: auto;
+  }
+
+  .jin-chroma-dialog__hue::-webkit-slider-runnable-track,
+  .jin-chroma-dialog__hue::-moz-range-track { background: Highlight; }
+
+  .jin-chroma-dialog__hue::-webkit-slider-thumb,
+  .jin-chroma-dialog__hue::-moz-range-thumb {
+    border-color: Canvas;
+    background: Highlight;
+    box-shadow: 0 0 0 1px CanvasText;
+  }
+}
+
+.jin-title-field {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height-prominent);
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-primary);
+  font-family: var(--font-text);
+  font-size: var(--display-title-size);
+  line-height: var(--display-title-line);
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.jin-title-field:focus {
+  outline: none;
+  border-bottom-color: var(--ink-stroke);
+  background: transparent;
+  box-shadow: none;
+}
+
+.jin-empty-state {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: var(--space-2);
+  min-height: 180px;
+  padding: var(--space-3);
+  color: var(--label-secondary);
+  text-align: center;
+}
+
+.jin-empty-state > :is(h2, h3, p) {
+  max-width: 34rem;
+  margin: 0;
+}
+
+.jin-empty-state__ink {
+  width: 58px;
+  height: 40px;
+  color: var(--ink-stroke);
+  opacity: 0.72;
+  overflow: visible;
+}
+
+.jin-empty-state__ink path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+
+@media (pointer: coarse) {
+  .jin-control {
+    min-width: var(--coarse-hit-target);
+    min-height: var(--coarse-hit-target);
+  }
+
+  .jin-control--icon {
+    width: var(--coarse-hit-target);
+  }
+
+  .jin-check,
+  .jin-checkbox,
+  .jin-switch,
+  .jin-range {
+    min-width: var(--coarse-hit-target);
+    min-height: var(--coarse-hit-target);
+  }
+
+  .jin-switch {
+    width: var(--coarse-hit-target);
+    justify-content: center;
+  }
+}

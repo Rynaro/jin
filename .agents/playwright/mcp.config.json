@@ -1,0 +1,39 @@
+{
+  "browser": {
+    "browserName": "chromium",
+    "isolated": true,
+    "launchOptions": {
+      "headless": true
+    },
+    "contextOptions": {
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "deviceScaleFactor": 1,
+      "colorScheme": "light",
+      "locale": "en-US",
+      "timezoneId": "UTC",
+      "reducedMotion": "reduce",
+      "serviceWorkers": "block"
+    },
+    "initScript": [
+      "../../jin-gui/tools/tauri-fixture-init.js"
+    ]
+  },
+  "network": {
+    "allowedOrigins": [
+      "http://127.0.0.1:1420"
+    ]
+  },
+  "outputDir": ".artifacts/playwright-mcp",
+  "saveSession": true,
+  "console": {
+    "level": "warning"
+  },
+  "timeouts": {
+    "action": 5000,
+    "navigation": 30000,
+    "settle": 500
+  }
+}

@@ -1,0 +1,215 @@
+{
+  "esl_version": "1.1",
+  "change_id": "settings-navigation-sidebar-overhaul",
+  "status": "archived",
+  "tier": "full",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    {
+      "id": "AC-NAV-001",
+      "then": "the shared navigation rail width token SHALL resolve to 184px at standard text scale",
+      "verify_method": "static token assertion in src/__tests__/notes_visual_system.test.ts"
+    },
+    {
+      "id": "AC-NAV-002",
+      "then": "navigation.css SHALL be the authoritative stylesheet for shared navigation rail, list, row, icon, label, meta, and actions anatomy",
+      "verify_method": "import-order and selector-ownership assertions in src/__tests__/notes_visual_system.test.ts"
+    },
+    {
+      "id": "AC-NAV-003",
+      "then": "each shared navigation row SHALL use a 32px minimum row height",
+      "verify_method": "static CSS contract in src/__tests__/notes_visual_system.test.ts"
+    },
+    {
+      "id": "AC-NAV-004",
+      "then": "each standard shared navigation row SHALL use 0 10px padding",
+      "verify_method": "static CSS contract in src/__tests__/notes_visual_system.test.ts"
+    },
+    {
+      "id": "AC-NAV-005",
+      "then": "each standard shared navigation row SHALL use an 8px anatomy gap",
+      "verify_method": "static CSS contract in src/__tests__/notes_visual_system.test.ts"
+    },
+    {
+      "id": "AC-NAV-006",
+      "then": "each standard shared navigation row SHALL use the existing 6px small-radius token",
+      "verify_method": "static CSS contract in src/__tests__/notes_visual_system.test.ts"
+    },
+    {
+      "id": "AC-NAV-007",
+      "then": "each standard shared navigation row SHALL use the existing 13px by 18px footnote typography tokens",
+      "verify_method": "static CSS contract in src/__tests__/notes_visual_system.test.ts"
+    },
+    {
+      "id": "AC-NAV-008",
+      "given": "a shared page-navigation row exposes aria-current=\"page\"",
+      "then": "the row SHALL show the shared selected wash and ink marker",
+      "verify_method": "selector contract plus browser comparison across Main, Settings, Notes collections, and Tasks"
+    },
+    {
+      "id": "AC-NAV-009",
+      "given": "a shared tree item exposes aria-selected=\"true\"",
+      "then": "its child navigation row SHALL show the shared selected wash and ink marker",
+      "verify_method": "selector contract plus Notes folder selection browser check"
+    },
+    {
+      "id": "AC-NAV-010",
+      "then": "inactive page-navigation rows SHALL omit aria-current rather than expose aria-current=\"false\" or aria-current=\"true\"",
+      "verify_method": "jsdom assertions in settings_controller.test.ts, notes_controller.test.ts, and lists_controller.test.ts"
+    },
+    {
+      "id": "AC-NAV-011",
+      "then": "Main navigation links SHALL use the shared navigation rail, list, row, icon, label, and meta classes",
+      "verify_method": "static markup assertion in src/__tests__/notes_visual_system.test.ts"
+    },
+    {
+      "id": "AC-NAV-012",
+      "then": "Settings category buttons SHALL use the shared navigation rail, list, row, and label classes",
+      "verify_method": "static markup assertion in src/__tests__/notes_visual_system.test.ts"
+    },
+    {
+      "id": "AC-NAV-013",
+      "then": "Notes All Notes, folder rows, and collection rows SHALL use the shared navigation anatomy",
+      "verify_method": "markup and renderer assertions in notes_visual_system.test.ts plus notes_controller.test.ts"
+    },
+    {
+      "id": "AC-NAV-014",
+      "then": "Tasks smart-view and list rows SHALL use the shared navigation anatomy",
+      "verify_method": "renderer assertions in lists_controller.test.ts"
+    },
+    {
+      "id": "AC-NAV-015",
+      "then": "the Notes All Notes row SHALL fill the available navigation-list width",
+      "verify_method": "static shared-row width assertion plus browser bounding-box check"
+    },
+    {
+      "id": "AC-NAV-016",
+      "given": "a task-list navigation row is rendered in a 184px rail",
+      "then": "its icon, label, meta, and action slots SHALL remain inside the rail bounds",
+      "verify_method": "184px browser bounding-box assertion with long labels and two action buttons"
+    },
+    {
+      "id": "AC-NAV-017",
+      "given": "a task-list row shows its count metadata",
+      "when": "its action cluster becomes visible",
+      "then": "the row label SHALL not shift horizontally",
+      "verify_method": "before/after browser bounding-box comparison"
+    },
+    {
+      "id": "AC-NAV-018",
+      "given": "keyboard focus enters a task-list action button",
+      "when": "the row receives focus-within",
+      "then": "the shared actions slot SHALL become visibly available",
+      "verify_method": "jsdom focus test plus keyboard browser check"
+    },
+    {
+      "id": "AC-NAV-019",
+      "given": "a coarse pointer is active",
+      "then": "task-list row actions SHALL remain discoverable without hover",
+      "verify_method": "pointer-coarse CSS assertion plus browser emulation"
+    },
+    {
+      "id": "AC-NAV-020",
+      "given": "a nested Notes folder row is rendered",
+      "then": "the shared tree variant SHALL preserve its depth indentation and reserved chevron, icon, meta, and action tracks",
+      "verify_method": "nested-folder renderer assertion plus browser geometry check through four depths"
+    },
+    {
+      "id": "AC-NAV-021",
+      "given": "navigation text exceeds its available label slot",
+      "then": "the shared label SHALL truncate without expanding the 184px rail",
+      "verify_method": "static overflow contract plus long-label browser check"
+    },
+    {
+      "id": "AC-NAV-022",
+      "then": "existing router, Stimulus target, data-action, data attribute, drag, menu, collapse, and dialog hooks SHALL remain present",
+      "verify_method": "existing router/sidebar/notes/lists/settings suites plus static hook inventory"
+    },
+    {
+      "id": "AC-NAV-023",
+      "then": "the Settings desktop workspace-scroll and compact-or-AX route-scroll contracts SHALL remain unchanged",
+      "verify_method": "settings_controller.test.ts and notes_visual_system.test.ts scrolling regressions"
+    },
+    {
+      "id": "AC-NAV-024",
+      "then": "Main sidebar collapse and collapsed-only tooltip behavior SHALL remain unchanged",
+      "verify_method": "sidebar_controller.test.ts and router_controller_wiring.test.ts in the full suite"
+    },
+    {
+      "id": "AC-NAV-025",
+      "then": "Notes rail collapse, reveal, tree keyboard navigation, and folder menus SHALL remain unchanged",
+      "verify_method": "notes_controller.test.ts plus deterministic browser keyboard check"
+    },
+    {
+      "id": "AC-NAV-026",
+      "then": "Tasks list selection, counts, editing, deletion, and drag reordering SHALL remain unchanged",
+      "verify_method": "lists_controller.test.ts plus tasks_lists_modal_wiring.test.ts in the full suite"
+    },
+    {
+      "id": "AC-NAV-027",
+      "given": "accessibility text scale is active",
+      "then": "shared navigation rails SHALL use the existing accessibility rail-width override without page-level horizontal overflow",
+      "verify_method": "a11y CSS assertion plus 1280x800 and 390x844 browser checks"
+    },
+    {
+      "id": "AC-NAV-028",
+      "given": "a coarse pointer is active",
+      "then": "interactive shared navigation descendants SHALL retain the existing 44px pointer target contract",
+      "verify_method": "pointer-coarse CSS assertion plus browser computed-size check"
+    },
+    {
+      "id": "AC-NAV-029",
+      "given": "forced colors or increased contrast is active",
+      "then": "shared active navigation rows SHALL retain a non-color-only visible marker",
+      "verify_method": "a11y selector contract plus browser forced-colors inspection"
+    },
+    {
+      "id": "AC-NAV-030",
+      "given": "reduced transparency is active",
+      "then": "shared structural navigation rails SHALL remain opaque continuous surfaces",
+      "verify_method": "a11y CSS assertion plus browser computed-style check"
+    },
+    {
+      "id": "AC-NAV-031",
+      "then": "note lists, task content rows, Notifications master rows, Today/event/calendar rows, menus, dialogs, and detail panes SHALL not receive shared navigation anatomy classes",
+      "verify_method": "negative static assertions in src/__tests__/notes_visual_system.test.ts"
+    },
+    {
+      "id": "AC-NAV-032",
+      "then": "feature stylesheets SHALL not redefine the shared row height, padding, gap, radius, typography, selected wash, or ink marker",
+      "verify_method": "selector ownership assertions in src/__tests__/notes_visual_system.test.ts"
+    },
+    {
+      "id": "AC-NAV-033",
+      "then": "the shared navigation contract SHALL introduce no raw color literal or new runtime dependency",
+      "verify_method": "npm run lint:css plus package-lock/package.json diff inspection"
+    },
+    {
+      "id": "AC-NAV-034",
+      "given": "all eligible navigation surfaces are rendered at 1280x800",
+      "then": "their standard rails and rows SHALL be visually aligned to the Main navigation geometry",
+      "verify_method": ".spectra/plans/navigation-sidebar-unification.evidence/geometry.json with rail/row/padding/gap/radius/type/marker comparisons at plus or minus 0.5 CSS px"
+    },
+    {
+      "id": "AC-NAV-035",
+      "given": "the viewport is 720px wide or narrower",
+      "then": "each eligible navigation surface SHALL retain its existing compact layout behavior without clipped navigation actions",
+      "verify_method": "deterministic Playwright checks at 720x800 and 390x844"
+    },
+    {
+      "id": "AC-NAV-036",
+      "then": "the pre-existing uncommitted Settings functionality and tests SHALL remain in the resulting worktree",
+      "verify_method": "compare settings-baseline.patch and settings-baseline.json to settings-preservation.json under .spectra/plans/navigation-sidebar-unification.evidence"
+    },
+    {
+      "id": "AC-NAV-037",
+      "then": "every browser-produced verification artifact SHALL be indexed by acceptance-criterion ID, viewport, mode, baseline revision, and result",
+      "verify_method": "schema/content assertion over .spectra/plans/navigation-sidebar-unification.evidence/manifest.json"
+    }
+  ],
+  "spec_ref": ".spectra/plans/navigation-sidebar-unification.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-09-04-settings-navigation-sidebar-overhaul",
+  "has_code": true
+}

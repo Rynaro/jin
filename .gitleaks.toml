@@ -1,0 +1,6 @@
+# This is a synthetic passphrase used only by the S6.1 encrypted-store test.
+# Keep the allowlist exact so real credentials remain detectable.
+[[allowlists]]
+description = "Synthetic S6.1 integration-test passphrase"
+paths = ["^jin-core/tests/s61_auth\\.rs$"]
+regexes = ["s61-integration-pass"]

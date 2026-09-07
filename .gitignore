@@ -1,0 +1,59 @@
+/target/
+*.rs.bk
+*.pdb
+
+# Jin test data and scratch dirs
+scratch/
+test-data/
+.jin/index.sqlite
+.jin/notification-center.sqlite*
+.jin/reminder-state.sqlite*
+.jin/config.toml
+.jin/sync/sync-state.sqlite
+.jin/sync/outbox.jsonl
+.jin/sync/tokens.enc
+
+# Local worktrees and reproducible release artifacts
+/.worktrees/
+/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+.atlas/
+.artifacts/
+
+# Magicite authored engrams and config are tracked; only local/rebuildable state is ignored.
+.magicite/engrams/skill-graph.db
+.magicite/engrams/skill-graph.db-shm
+.magicite/engrams/skill-graph.db-wal
+.magicite/runtime/
+.magicite/approvals/
+
+# Eidolons per-session context meter (ephemeral telemetry, rewritten every session)
+.eidolons/.context/
+
+# Owner-local tool configuration and generated harness state. These are never
+# part of a public snapshot; portable project instructions remain tracked.
+.codex/config.toml
+.mcp.json
+eidolons.mcp.lock
+.eidolons/harness/manifest.json
+
+# <!-- eidolon:gitignore start -->
+# Managed by eidolons. Recreated by `eidolons sync`. Do not edit between markers.
+/.eidolons/*
+!/.eidolons/cortex/
+!/.eidolons/cortex/**
+!/.eidolons/harness/
+!/.eidolons/harness/manifest.json
+# <!-- eidolon:gitignore end -->
+
+# Keep this ignore after Eidolons' managed exceptions above.
+.eidolons/harness/manifest.json

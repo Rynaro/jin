@@ -1,0 +1,25 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "nexus"
+  },
+  "performative": "ESCALATE",
+  "objective": "Escalate final retry-ceiling blockers: a real historical binary writes through the v2 marker, and the frozen cross-language DTO parity fixture is absent.",
+  "context_delta": {
+    "acceptance_tally": "52 pass/pass-static, 1 fail, 1 unverified",
+    "blocking_acceptance": [
+      "AC-GCAL-043"
+    ],
+    "implementation_head": "75fdd97a18eff639aa3b802ae848e8678837e69c",
+    "live_google": "unvalidated",
+    "native_tauri": "owner-signoff-required",
+    "product_commit": "1fcfd8e8f52fcabf97db88c7ed901872effd32de",
+    "retry_ceiling": true,
+    "unverified_acceptance": [
+      "AC-GCAL-034"
+    ]
+  }
+}

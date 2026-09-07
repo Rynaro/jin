@@ -1,0 +1,102 @@
+{
+  "session_id": "79aa4855-bc46-4e45-8aad-db66257efcb4",
+  "feature": "jin-notes-folder-tree-sidebar",
+  "date": "2026-06-29",
+  "methodology": "SPECTRA",
+  "methodology_version": "4.10.0",
+  "from": "spectra",
+  "to": "vivi",
+  "performative": "PROPOSE",
+  "confidence": 0.88,
+  "status": "proposed",
+  "repo": "jin-gui",
+  "frontend_only": true,
+  "base_version": "main = v0.3.0",
+  "branch": "feat/notes-folder-tree-sidebar off main (after code-highlighting PR lands)",
+  "steps": [
+    {
+      "id": "T1",
+      "title": "Pure folder-tree builder + flatten-visible",
+      "status": "pending",
+      "depends_on": [],
+      "files": ["jin-gui/src/lib/notes/folderTree.ts (new)"],
+      "gates": ["G-TREE-BUILD"]
+    },
+    {
+      "id": "T2",
+      "title": "Recursive ARIA tree render + indentation + chevrons + counts",
+      "status": "pending",
+      "depends_on": ["T1"],
+      "files": [
+        "jin-gui/src/lib/notes/render.ts",
+        "jin-gui/index.html",
+        "jin-gui/src/styles/browse.css"
+      ],
+      "gates": ["G-TREE-RENDER", "VG-FE-TMPL (update)"]
+    },
+    {
+      "id": "T3",
+      "title": "Expand/collapse + roving tabindex + keyboard navigation",
+      "status": "pending",
+      "depends_on": ["T2"],
+      "files": [
+        "jin-gui/src/controllers/notes_controller.ts",
+        "jin-gui/src/lib/notes/folderTree.ts",
+        "jin-gui/src/lib/notes/render.ts"
+      ],
+      "gates": ["G-TREE-EXPAND-COLLAPSE", "G-TREE-KEYBOARD"]
+    },
+    {
+      "id": "T4",
+      "title": "Select semantics + preserve folder-open regression fix",
+      "status": "pending",
+      "depends_on": ["T2", "T3"],
+      "files": ["jin-gui/src/controllers/notes_controller.ts"],
+      "gates": ["G-TREE-SELECT", "VG-FE", "VG-FE-FOLDER-OPEN"]
+    },
+    {
+      "id": "T5",
+      "title": "Collapsible sidebar pane",
+      "status": "pending",
+      "depends_on": ["T2"],
+      "files": [
+        "jin-gui/src/controllers/notes_controller.ts",
+        "jin-gui/index.html",
+        "jin-gui/src/styles/browse.css"
+      ],
+      "gates": ["G-TREE-COLLAPSE-PANE"]
+    },
+    {
+      "id": "T6",
+      "title": "Persistence of expanded Set + pane-collapsed (localStorage)",
+      "status": "pending",
+      "depends_on": ["T3", "T5"],
+      "files": [
+        "jin-gui/src/lib/notes/folderTreePrefs.ts (new)",
+        "jin-gui/src/controllers/notes_controller.ts"
+      ],
+      "gates": ["G-TREE-PERSIST"]
+    }
+  ],
+  "immovable_gates": [
+    "VG-FE (test:990-1033)",
+    "VG-FE-FOLDER-OPEN (test:1631-1742)",
+    "G-XSS (test:504-538)",
+    "VG-ROUTER-UNTOUCHED (test:1070+)",
+    "VG-DTO-DRIFT (test:1095+)",
+    "filterNotesList folder-filter (test:845+)",
+    "all editor/livePreview/markdown/G-SAVE gates"
+  ],
+  "decisions": [
+    "D-PERSIST: localStorage 'jin_notes_folder_tree' mirroring lib/appearance/state.ts",
+    "D-COUNTS: direct counts v1 (aggregate roll-up deferred)",
+    "D-RAIL-WIDTH: fixed 200px + 14px/level indent + ellipsis (not resizable)",
+    "D-RERENDER: targeted DOM for interaction; full re-render only on data refresh with focus restoration",
+    "D-PANE-TOGGLE: .rail-collapsed grid track -> 0; in-rail collapse + outside-track reveal control",
+    "D-SELECT-SEMANTICS: row selects, chevron toggles (stopPropagation); Enter/Space selects",
+    "D-ROOT-NODE: '' is a top-level peer (depth 0), not the parent of user folders",
+    "D-SELECTOR-STABILITY: keep .folder-row__btn[data-folder-path] clickable hook for immovable tests"
+  ],
+  "replanning_history": [],
+  "node_requirement": ">=20 (nvm v24.18.0; system v16.20.2 crashes vitest)"
+}

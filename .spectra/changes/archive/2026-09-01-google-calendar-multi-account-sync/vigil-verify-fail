@@ -1,0 +1,22 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "nexus"
+  },
+  "performative": "ESCALATE",
+  "objective": "Escalate the final retry-ceiling blockers: real historical-binary refusal and the frozen cross-language DTO parity fixture.",
+  "context_delta": {
+    "implementation_head": "75fdd97a18eff639aa3b802ae848e8678837e69c",
+    "product_commit": "1fcfd8e8f52fcabf97db88c7ed901872effd32de",
+    "corrective_attempt": 2,
+    "retry_ceiling": true,
+    "acceptance_tally": "52 pass/pass-static, 1 fail, 1 unverified",
+    "live_google": "unvalidated",
+    "native_tauri": "owner-signoff-required",
+    "report": ".spectra/changes/google-calendar-multi-account-sync/vigil-verification-report.md",
+    "verdict": "verify_fail"
+  }
+}

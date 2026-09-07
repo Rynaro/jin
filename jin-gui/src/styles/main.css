@@ -1,0 +1,14 @@
+/**
+ * main.css — thin wrapper for backward-compatibility (GUI-S1+).
+ *
+ * GUI-S0 imported this file directly. GUI-S1 restructured CSS into the modular
+ * token system. This file re-exports index.css so both the static <link> in
+ * index.html and the `import './styles/main.css'` in main.ts resolve to the
+ * full GUI-S1 design system.
+ *
+ * All actual CSS lives in the modular files imported by index.css:
+ *   tokens.css, typography.css, spacing.css, materials.css,
+ *   a11y.css, motion.css, layout.css
+ */
+
+@import './index.css';

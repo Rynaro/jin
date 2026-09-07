@@ -1,0 +1,84 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "d1ebfbc7-48f3-441d-8ce5-66828da02fdb",
+  "thread_id": "fe9c0ba1-89c0-4972-ac2e-58c5a75e7616",
+  "parent_id": null,
+  "from": {
+    "eidolon": "spectra",
+    "version": "4.10.0"
+  },
+  "to": {
+    "eidolon": "apivr",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Propose the Jin Notes Wave-2 Track A (Folders) spec: real on-disk note subdirectories. Make fs::list_note_paths recursive; add folder helpers (list_note_folders/folder_path_of/write_note_in/validate_folder_path); migrate the index (SCHEMA_VERSION wave1-v1->wave2-v1 + folder_path column via guarded ALTER + re-armed version-gate rebuild); derive folder_path at rebuild via strip_prefix; thread folder_path through NoteRow/SELECTs/NoteDto + a SQL folder filter; add create_note(folder), fix edit_note folder-preservation, add move_note (link-integrity via ULID frontmatter), list_folders (index UNION on-disk scan for empty folders) + create_folder + FolderDto; the P0 export-sovereignty fix (recursive notes export + empty dirs + manifest subpaths + recursive s8 test); and a folder rail inside the Notes view (3-pane) driving NotesController.loadList({folder}) with router.ts/RouterController untouched. Obsidian editor (Track B) + folder rename/delete + CLI folder-awareness are out of scope.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/2026-06-28-jin-notes-wave2-track-a-folders.md",
+    "sha256": "b7fbc223f29fdbf9954281b7bf3e31032be3d8e0d1bd540d82dbdadaf91cecb2",
+    "size_bytes": 46658
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 5200,
+    "input_handles": [
+      "jin-core/src/store/fs.rs",
+      "jin-core/src/index/schema.rs",
+      "jin-core/src/index/rebuild.rs",
+      "jin-core/src/index/query.rs",
+      "jin-core/src/ops/api.rs",
+      "jin-core/src/ops/notes.rs",
+      "jin-core/src/ops/init.rs",
+      "jin-core/src/ops/export.rs",
+      "jin-core/src/dto/note.rs",
+      "jin-core/src/dto/mod.rs",
+      "jin-core/src/model/note.rs",
+      "jin-core/src/config.rs",
+      "jin-gui/src-tauri/src/commands/notes.rs",
+      "jin-gui/src-tauri/src/commands/export.rs",
+      "jin-gui/src-tauri/src/commands/mod.rs",
+      "jin-gui/src-tauri/src/lib.rs",
+      "jin-gui/src-tauri/tests/bridge.rs",
+      "jin/tests/s8_export_sovereignty.rs",
+      "jin-gui/src/invoke.ts",
+      "jin-gui/src/types/dto.ts",
+      "jin-gui/src/controllers/notes_controller.ts",
+      "jin-gui/src/controllers/router_controller.ts",
+      "jin-gui/src/lib/router.ts",
+      "jin-gui/src/lib/notes/render.ts",
+      "jin-gui/src/lib/notes/transform.ts",
+      "jin-gui/index.html",
+      "jin-gui/src/__tests__/notes_controller.test.ts",
+      "jin-gui/src/__tests__/dto_shapes.test.ts"
+    ],
+    "summary": "Decision-ready dual-format Wave-2 Track-A (Folders) spec. 8 INVEST stories + 3 Kupo micro-tasks. Build order S1->S3->S4->S2(P0)->S5->S6->S7->S8. S1 recursive store + folder helpers (fs.rs:83-97,100-109; new list_note_folders/folder_path_of/write_note_in/validate_folder_path). S2 is the BLOCKING P0 export-sovereignty fix (export.rs:62-91,81 non-recursive read_dir + hardcoded notes/<file> manifest silently drops foldered notes; s8 tests at :205,:339-351 iterate non-recursively so they can't catch it) -> recursive notes export + relative subpaths + empty-dir preservation + recursive s8 fix + new foldered/empty round-trip. S3 schema migration (bump SCHEMA_VERSION wave1-v1->wave2-v1 schema.rs:8; add folder_path column CREATE schema.rs:19-29 + guarded ALTER mirroring excerpt at :127-131; re-arm version_gate_rebuild init.rs:53-75). S4 rebuild derives folder_path via strip_prefix (rebuild.rs:15,33-57) + NoteRow.folder_path + SELECTs (query.rs) + folder_counts + NoteDto.folder_path/with_folder (note.rs) + SQL exact-match folder filter on api::list_notes. S5 create_note(folder) + FIX edit_note folder-preserve (latent bug: title-change writes via fs::write_note which hardcodes root, relocating foldered notes) + move_note (write-new-remove-old, no frontmatter mutation; links survive because edges rebuild from frontmatter ULIDs rebuild.rs:162-229). S6 list_folders (folder_counts UNION fs::list_note_folders so EMPTY folders appear) + create_folder + FolderDto{path,name,note_count}. S7 Tauri bridge (move_note/list_folders/create_folder commands + folder args + lib.rs:25-63 registration + invoke.ts + dto.ts). S8 folder rail INSIDE the Notes section (3-pane: rail|list|detail) driving NotesController.loadList({folder}); router.ts ViewKind + RouterController UNTOUCHED (no 6th view). Anti-shallow load-bearing gates: VG-EXPORT (P0 round-trip), VG-MOVE (link-integrity post-move), VG-LIST-FILTER (create-in-folder->list), VG-FOLDERS-EMPTY, VG-FE (controller-driven Stimulus folder-rail). Frontend tests require Node>=20.",
+    "wave_scope": "Wave 2 of N, Track A (Folders). Track B Obsidian editor + folder rename/delete + CLI folder-awareness deferred."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "expected_response": {
+    "performative": "ACKNOWLEDGE",
+    "shape_hint": "Build S1 first (unblocks all). Land S2 (P0 export sovereignty) BEFORE folders become user-creatable (S5/S6). The guarded ALTER + version bump (R-MIG) and the edit_note folder-preserve fix (F-EDIT) are non-negotiable. Do NOT accept core-only happy paths or hand-fed DTOs — VG-EXPORT / VG-MOVE / VG-LIST-FILTER / VG-FOLDERS-EMPTY / VG-FE are load-bearing round-trips. Frontend gates need Node >= 20."
+  },
+  "confidence": 0.88,
+  "assumptions": [
+    "The SQLite index is a fully derived, disposable artifact rebuilt from canonical markdown files (rebuild.rs:19-30).",
+    "Edges/backlinks are rebuilt from frontmatter ULIDs, never from path (rebuild.rs:162-229); folder_path is path-derived only and NoteFrontmatter has no folder field (model/note.rs:25-40) -> moves preserve links.",
+    "NoteRow.file_path (query.rs:18) is the real path written at rebuild (rebuild.rs:51) and api::get_note reads the body from it (api.rs:35); move must be followed by api::refresh.",
+    "find_note_path loops over list_note_paths (fs.rs:100-109) so recursing list_note_paths makes edit/delete/get(ops)/infer_kind work on foldered notes."
+  ],
+  "integrity": {
+    "method": "sha256",
+    "value": "b7fbc223f29fdbf9954281b7bf3e31032be3d8e0d1bd540d82dbdadaf91cecb2"
+  },
+  "trace": {
+    "ts": "2026-06-28T00:00:00Z",
+    "host": "claude-code",
+    "model": "claude-opus-4-8-1m",
+    "tier": "standard"
+  }
+}

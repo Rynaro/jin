@@ -1,0 +1,478 @@
+/**
+ * today.css — Today / Agenda hero view styles (GUI-S3).
+ *
+ * All values reference tokens from tokens.css — NO raw hex anywhere.
+ * Visual correctness (glass rendering, layout proportions, motion) is
+ * owner-verified via cargo tauri dev (spec §7.2).
+ *
+ * Class namespace: .today-* (no leakage into other views).
+ */
+
+/* ── Accessibility utility: visually hidden but screen-reader accessible ── */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Date navigation toolbar ─────────────────────────────────────────────── */
+
+.today-date-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0 var(--space-2);
+  border-bottom: 0.5px solid var(--separator);
+  margin-bottom: var(--space-3);
+}
+
+.today-date-nav__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--hit-target);
+  min-inline-size: var(--hit-target);
+  border-radius: var(--radius-sm);
+  color: var(--ink-primary);
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.today-date-nav__btn:hover {
+  background-color: var(--fill-tertiary);
+}
+
+.today-date-nav__btn svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2;
+}
+
+.today-date-nav__center {
+  flex: 1 1 0%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  justify-content: center;
+  min-width: 0;
+}
+
+.today-date-nav__label {
+  color: var(--ink-primary);
+  font-family: var(--font-display);
+  font-size: var(--display-title-size);
+  font-weight: var(--display-title-weight);
+  line-height: var(--display-title-line);
+  letter-spacing: var(--display-title-tracking);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.today-date-nav__date-input {
+  /* Visually hidden but keyboard+a11y accessible; value synced to the label */
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.today-date-nav__date-input:focus {
+  /* When focused (e.g. keyboard), make visible */
+  position: static;
+  opacity: 1;
+  width: auto;
+  height: auto;
+  clip: auto;
+  white-space: normal;
+  pointer-events: auto;
+  padding: var(--space-half) var(--space-1);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-elevated);
+  color: var(--label);
+  font-family: var(--font-text);
+  font-size: var(--text-subheadline-size);
+}
+
+.today-date-nav__today-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--hit-target);
+  padding: var(--space-half) var(--space-2);
+  border-radius: var(--radius-capsule);
+  border: 0.5px solid var(--separator);
+  background-color: var(--workspace-row-hover);
+  color: var(--ink-primary);
+  font-size: var(--text-subheadline-size);
+  font-weight: 600;
+  line-height: var(--text-subheadline-line);
+  white-space: nowrap;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.today-date-nav__today-btn:hover {
+  background-color: var(--fill-secondary);
+}
+
+/* ── Loading state ───────────────────────────────────────────────────────── */
+
+.today-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-6) var(--space-3);
+  color: var(--label-secondary);
+  font-size: var(--text-callout-size);
+  line-height: var(--text-callout-line);
+}
+
+.today-loading svg {
+  width: 20px;
+  height: 20px;
+  animation: today-spin var(--duration-xslow) var(--ease-linear) infinite;
+}
+
+/* Respect reduced-motion: stop the spinner animation (data-attr + media query) */
+[data-reduce-motion="1"] .today-loading svg {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .today-loading svg {
+    animation: none;
+  }
+}
+
+@keyframes today-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+
+.today-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-3);
+  color: var(--label-tertiary);
+  text-align: center;
+}
+
+.today-empty.jin-empty-state {
+  min-height: 15rem;
+  padding: var(--space-8) var(--space-3);
+}
+
+.today-empty svg {
+  width: 40px;
+  height: 40px;
+  opacity: 0.5;
+}
+
+.today-empty p {
+  margin: 0;
+  color: var(--label-secondary);
+  font-size: var(--text-callout-size);
+  line-height: var(--text-callout-line);
+}
+
+/* ── Agenda sections (all-day / schedule) ────────────────────────────────── */
+
+.today-section {
+  margin-bottom: var(--space-3);
+}
+
+.today-section__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-text);
+  font-size: var(--text-caption1-size);
+  font-weight: 600;
+  line-height: var(--text-subheadline-line);
+  color: var(--label-secondary);
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  margin: 0 0 var(--space-1) 0;
+  padding: 0 var(--space-half);
+}
+
+/* ── Event list ──────────────────────────────────────────────────────────── */
+
+.today-event-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* ── Event row ───────────────────────────────────────────────────────────── */
+
+.today-event-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background-color: transparent;
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-md);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.today-event-row:hover {
+  background-color: var(--workspace-row-hover);
+}
+
+/* Time column — fixed width for alignment */
+.today-event-row__time {
+  flex-shrink: 0;
+  width: 56px;
+  padding-top: var(--space-half);
+}
+
+.today-event-row__display-start {
+  font-size: var(--text-subheadline-size);
+  font-weight: 400;
+  line-height: var(--text-subheadline-line);
+  color: var(--label-secondary);
+  white-space: nowrap;
+}
+
+/* Body column — title, badges, task, notes */
+.today-event-row__body {
+  flex: 1 1 0%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+}
+
+.today-event-row__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.today-event-row__title {
+  font-size: var(--text-headline-size);
+  font-weight: var(--text-headline-weight);
+  line-height: var(--text-headline-line);
+  color: var(--label);
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Source badge ─────────────────────────────────────────────────────────
+ * Text label is the PRIMARY identifier.
+ * Icon and background color are SUPPLEMENTARY (not the sole differentiator).
+ * Honors WCAG SC 1.4.1 and HIG color-independence.
+ */
+
+.today-event-row__source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  padding: 2px var(--space-1);
+  border-radius: var(--radius-capsule);
+  font-size: var(--text-caption1-size);
+  font-weight: 600;
+  line-height: var(--text-caption1-line);
+  background-color: var(--fill-tertiary);
+  color: var(--label-secondary);
+  flex-shrink: 0;
+}
+
+.today-event-row__source-badge svg,
+.today-event-row__source-icon svg {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2;
+}
+
+/* Supplementary color tint per source (text label + icon remain primary) */
+.today-event-row__source-badge[data-source="jin"] {
+  background-color: var(--fill-secondary);
+  color: var(--accent);
+}
+
+.today-event-row__source-badge[data-source="google"] {
+  background-color: var(--fill-secondary);
+  color: var(--system-green);
+}
+
+/* ── Recurring badge ─────────────────────────────────────────────────────── */
+
+.today-event-row__recurring-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  padding: 2px var(--space-1);
+  border-radius: var(--radius-capsule);
+  font-size: var(--text-caption1-size);
+  font-weight: 600;
+  line-height: var(--text-caption1-line);
+  background-color: var(--fill-tertiary);
+  color: var(--label-tertiary);
+  flex-shrink: 0;
+}
+
+.today-event-row__recurring-badge svg {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2;
+}
+
+/* ── Originating task ────────────────────────────────────────────────────── */
+
+.today-event-row__task {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--label-secondary);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+}
+
+.today-event-row__task svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 1.75;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.today-event-row__task-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-half);
+  min-block-size: unset;
+  min-inline-size: unset;
+  padding: var(--space-half) var(--space-1);
+  border-radius: var(--radius-xs);
+  background-color: var(--fill-quaternary);
+  color: var(--accent);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+  text-decoration: none;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.today-event-row__task-link:hover {
+  background-color: var(--fill-tertiary);
+  text-decoration: none;
+}
+
+.today-event-row__task-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.today-event-row__task-id {
+  font-size: var(--text-caption2-size);
+  font-family: var(--font-mono);
+  color: var(--label-tertiary);
+  flex-shrink: 0;
+}
+
+/* ── Prep notes ──────────────────────────────────────────────────────────── */
+
+.today-event-row__notes {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+}
+
+.today-event-row__notes svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 1.75;
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--label-secondary);
+}
+
+.today-event-row__notes-label {
+  font-size: var(--text-caption1-size);
+  font-weight: 600;
+  color: var(--label-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.today-event-row__notes-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-half);
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
+/* ── Prep note item ──────────────────────────────────────────────────────── */
+
+.today-prep-note {
+  display: inline-block;
+}
+
+.today-prep-note__link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-half);
+  padding: 2px var(--space-1);
+  border-radius: var(--radius-xs);
+  background-color: var(--fill-quaternary);
+  color: var(--label-secondary);
+  font-size: var(--text-caption1-size);
+  line-height: var(--text-caption1-line);
+  min-block-size: unset;
+  min-inline-size: unset;
+  text-decoration: none;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.today-prep-note__link:hover {
+  background-color: var(--fill-tertiary);
+  text-decoration: none;
+}
+
+.today-prep-note__title {
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.today-prep-note__id {
+  font-size: var(--text-caption2-size);
+  font-family: var(--font-mono);
+  color: var(--label-tertiary);
+  flex-shrink: 0;
+}

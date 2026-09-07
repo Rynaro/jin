@@ -1,0 +1,250 @@
+spec:
+  id: jin-notes-wave2-track-a-folders
+  title: "Jin Notes — Wave 2, Track A: Notes Folders (real on-disk subdirectories)"
+  methodology: SPECTRA
+  methodology_version: 4.10.0
+  tier: standard
+  intent_type: CHANGE
+  complexity: 9
+  confidence: 0.88
+  decision: AUTO_PROCEED
+  date: 2026-06-28
+  from: spectra
+  to: apivr            # Vivi (coder)
+  scope_note: "Wave 2 Track A (Folders) ONLY. Obsidian editor (Track B) + CLI folder-awareness (ATLAS F6) OUT of scope. Folder rename/delete deferred."
+  upstream_scout: "ATLAS Wave-2 Track A (episodic crystal 0ca90347 — NOT surfaced by recall; anchors re-verified firsthand)."
+
+locked_product_decisions:
+  - "Folders = real on-disk subdirs: <root>/notes/<Folder>/.../<ULID>--<slug>.md; folder_path=='' is the default Notes folder."
+  - "Empty folders ARE supported: list_folders unions index folder_paths with an on-disk recursive subdir scan; export preserves empty dirs."
+  - "Folder UI = a folder rail INSIDE the Notes view (3-pane). router.ts/RouterController UNTOUCHED. No 6th view / no new ViewKind."
+
+decisions:
+  D_FOLDER_MODEL: "folder is path-derived at rebuild (strip_prefix); NOT in NoteFrontmatter (model/note.rs:25-40 untouched). Move rewrites location only; frontmatter byte-identical -> links preserved."
+  D_NESTING: "arbitrary nesting supported at data layer for free; v1 rail = flat list of distinct relative folder paths; exact-match folder filter. Tree widget = polish seam."
+  D_EMPTY: "list_folders -> Vec<FolderDto{path,name,note_count}>; index folder_counts UNION fs::list_note_folders (empty-dir-aware); '' always present; empty folder -> note_count 0."
+  D_MOVE: "move_note(notes_dir,id,dest_folder)->Note; reuse edit_note write-new-remove-old, folder-aware; do NOT mutate frontmatter (no updated bump); command wrapper calls api::refresh. v1 = create+move+list; rename/delete deferred."
+  D_UI_NEWNOTE: "create_note accepts folder (mkdir via write_note_in); plumbed CreateNoteParams.folder -> NoteInput.folder -> invoke createNote({folder}) -> controller passes currentFolder; DTO carries it via with_folder."
+  D_FILTER: "folder filter is SQL exact-match (WHERE folder_path=?1) on api::list_notes(root,include_deleted,tag,folder); tags stay post-fetch (JSON)."
+  D_EDIT_PRESERVE: "FIX edit_note: title-change must write to the note's CURRENT folder (folder_path_of + write_note_in), not root (fs::write_note hardcodes root)."
+  D_PATHSEP: "store folder_path with '/' separators (portable across OS)."
+  D_VALIDATE: "validate_folder_path rejects absolute, '..', empty components; called by create_folder/create_note(folder)/move_note(dest)."
+  D_MIGRATION: "bump SCHEMA_VERSION wave1-v1->wave2-v1; add folder_path TEXT NOT NULL DEFAULT '' (CREATE + guarded ALTER); re-arm version_gate_rebuild. Existing flat notes get folder_path='' (no file moves)."
+
+build_order: [S1, S3, S4, S2, S5, S6, S7, S8]
+kupo_order:  {K1: after_S4, K3: after_S7, K2: after_S8}
+
+stories:
+  - id: S1
+    title: "Recursive note store + folder helpers"
+    priority: P0
+    timebox: "<=1.5d"
+    depends_on: []
+    blocks: [S2, S4, S5, S6]
+    agent_hint: { class: builder }
+    files:
+      - "jin-core/src/store/fs.rs:58-69,83-97,100-109 (+ new fns)"
+    actions:
+      - "Make list_note_paths recursive (find_note_path becomes recursive transitively)."
+      - "Add fs::list_note_folders (recursive, empty-dir-aware, '/'-joined, includes '')."
+      - "Add fs::folder_path_of(notes_dir, path) -> '' for root, '/'-joined nested."
+      - "Add fs::write_note_in(notes_dir, folder, note) (mkdir_all + write); write_note delegates with folder=''."
+      - "Add fs::validate_folder_path (reject absolute / '..' / empty components)."
+    acceptance: [AC-S1.1, AC-S1.2, AC-S1.3, AC-S1.4, AC-S1.5]
+    gates: [VG-A1, VG-VALIDATE]
+
+  - id: S2
+    title: "P0 Export sovereignty: recursive notes export + empty dirs + tests"
+    priority: P0
+    timebox: "<=1.5d"
+    depends_on: [S1]
+    blocks: []
+    note: "BLOCKING gate. Must land WITH/BEFORE folders become user-creatable (S5/S6)."
+    agent_hint: { class: builder, also: reviewer }
+    files:
+      - "jin-core/src/ops/export.rs:44-113 (esp. 62-91, 81)"
+      - "jin/tests/s8_export_sovereignty.rs:202-234,339-351 (+ new test)"
+    actions:
+      - "Walk notes/ recursively; preserve relative subpath in copy + manifest (notes/<rel>.md, not notes/<file>)."
+      - "Preserve empty dirs (create_dir_all each fs::list_note_folders entry under dest/notes)."
+      - "Keep audit.jsonl include + secrets/derived-cache exclusions unchanged."
+      - "Make s8 byte-identical walk + round-trip copy recursive; add foldered-note + empty-folder round-trip test."
+    acceptance: [AC-S2.1, AC-S2.2, AC-S2.3, AC-S2.4]
+    gates: [VG-EXPORT]
+
+  - id: S3
+    title: "Schema migration: folder_path column + version bump + guarded ALTER"
+    priority: P0
+    timebox: "<=1d"
+    depends_on: []
+    blocks: [S4, K1]
+    agent_hint: { class: builder }
+    files:
+      - "jin-core/src/index/schema.rs:8,19-29,123-133,158-165"
+      - "jin-core/src/ops/init.rs:53-75"
+    actions:
+      - "Add folder_path TEXT NOT NULL DEFAULT '' to notes CREATE TABLE."
+      - "Add guarded idempotent ALTER (has_column gate) mirroring the excerpt guard."
+      - "Bump SCHEMA_VERSION wave1-v1 -> wave2-v1 (re-arms version_gate_rebuild)."
+    acceptance: [AC-S3.1, AC-S3.2, AC-S3.3]
+    gates: [VG-MIG]
+
+  - id: S4
+    title: "Rebuild derives folder_path + index/DTO/filter plumbing"
+    priority: P1
+    timebox: "<=2d"
+    depends_on: [S1, S3]
+    blocks: [S5, S6]
+    agent_hint: { class: builder }
+    files:
+      - "jin-core/src/index/rebuild.rs:15,33-57"
+      - "jin-core/src/index/query.rs:10-20,79-102,108-125,127-146 (+ folder_counts)"
+      - "jin-core/src/ops/api.rs:14-24"
+      - "jin-core/src/dto/note.rs:8-26,45-69,72-93"
+    actions:
+      - "rebuild: folder_path = fs::folder_path_of(notes_dir, path); extend INSERT."
+      - "NoteRow.folder_path + folder_path in list/get SELECTs + mappers."
+      - "api::list_notes gains folder_filter: Option<&str> -> SQL WHERE folder_path=?1."
+      - "query::folder_counts (GROUP BY folder_path WHERE status != deleted)."
+      - "NoteDto.folder_path: Option<String>; from_row Some, from_model None, with_folder builder."
+    acceptance: [AC-S4.1, AC-S4.2, AC-S4.3, AC-S4.4, AC-S4.5]
+    gates: [VG-REBUILD, VG-LIST-FILTER, VG-DTO]
+
+  - id: S5
+    title: "create_note(folder) + edit_note folder-preserve fix + move_note"
+    priority: P1
+    timebox: "<=2d"
+    depends_on: [S1, S4]
+    blocks: [S7]
+    agent_hint: { class: builder }
+    files:
+      - "jin-core/src/ops/notes.rs:9-13,27-47,74-123 (+ new move_note)"
+      - "jin-core/src/store/fs.rs (S1 helpers)"
+    actions:
+      - "CreateNoteParams.folder; create_note validates + writes via write_note_in."
+      - "edit_note title-change branch: folder_path_of(old_path) + write_note_in (NOT root)."
+      - "move_note(notes_dir,id,dest_folder): validate, find, write_note_in, remove old; no frontmatter mutation."
+    acceptance: [AC-S5.1, AC-S5.2, AC-S5.3, AC-S5.4]
+    gates: [VG-MOVE, VG-EDIT-PRESERVE, VG-VALIDATE]
+
+  - id: S6
+    title: "list_folders (index UNION on-disk scan) + create_folder + FolderDto"
+    priority: P1
+    timebox: "<=1.5d"
+    depends_on: [S1, S4]
+    blocks: [S7]
+    agent_hint: { class: builder }
+    files:
+      - "jin-core/src/dto/folder.rs (new)"
+      - "jin-core/src/dto/mod.rs:7-16,18-23"
+      - "jin-core/src/ops/api.rs (new list_folders/create_folder)"
+    actions:
+      - "FolderDto{path,name,note_count}; export from dto/mod."
+      - "list_folders: folder_counts UNION fs::list_note_folders; '' always present; name=last comp or 'Notes'."
+      - "create_folder: validate (reject empty) + create_dir_all; return FolderDto note_count 0."
+    acceptance: [AC-S6.1, AC-S6.2, AC-S6.3, AC-S6.4]
+    gates: [VG-FOLDERS-EMPTY]
+
+  - id: S7
+    title: "Tauri bridge: commands + folder args + invoke.ts + dto.ts"
+    priority: P1
+    timebox: "<=1.5d"
+    depends_on: [S5, S6]
+    blocks: [S8, K3]
+    agent_hint: { class: builder }
+    files:
+      - "jin-gui/src-tauri/src/commands/notes.rs:16-23,37-43,49-62,91-97 (+ move)"
+      - "jin-gui/src-tauri/src/commands/folders.rs (new)"
+      - "jin-gui/src-tauri/src/commands/mod.rs:16-27"
+      - "jin-gui/src-tauri/src/lib.rs:25-63"
+      - "jin-gui/src/invoke.ts:35-71"
+      - "jin-gui/src/types/dto.ts:29-52"
+    actions:
+      - "NoteInput.folder (serde default); create_note_fn passes it + returns with_folder; list_notes_fn/command gain folder: Option<String>."
+      - "move_note_fn + #[tauri::command] move_note (-> notes::move_note + api::refresh + with_folder)."
+      - "commands/folders.rs: list_folders_fn/create_folder_fn + wrappers; pub mod folders."
+      - "Register move_note/list_folders/create_folder in invoke_handler!."
+      - "invoke.ts: listNotes({folder}), createNote({folder}), moveNote(id,folder), listFolders(), createFolder(path)."
+      - "dto.ts: NoteDto.folder_path?; FolderDto{path,name,note_count}."
+    acceptance: [AC-S7.1, AC-S7.2, AC-S7.3, AC-S7.4]
+    gates: [VG-MOVE, VG-LIST-FILTER, VG-FOLDERS-EMPTY, VG-DTO-DRIFT]
+
+  - id: S8
+    title: "Folder rail inside the Notes view (3-pane) + selection -> loadList({folder})"
+    priority: P1
+    timebox: "<=2.5d"
+    depends_on: [S7]
+    blocks: [K2]
+    agent_hint: { class: builder }
+    node_requirement: ">=20 (vitest crashes on system default node v16)"
+    files:
+      - "jin-gui/index.html:289-363,1268-1283"
+      - "jin-gui/src/controllers/notes_controller.ts:34-44,71-73,81-110"
+      - "jin-gui/src/lib/notes/transform.ts:14-17,23-29"
+      - "jin-gui/src/lib/notes/render.ts (new renderFolderRail)"
+      - "jin-gui/src/styles/browse.css"
+    untouched:
+      - "jin-gui/src/lib/router.ts:13 (ViewKind stays 5)"
+      - "jin-gui/src/controllers/router_controller.ts"
+    actions:
+      - "Add folder-rail pane INSIDE the notes section (3-pane); targets folderRail/folderList; New Folder (+ optional New Note) controls; NO router-target/section-name."
+      - "Add #tmpl-folder-row (.folder-row__name/.folder-row__count/data-folder-path + selectFolder action)."
+      - "NotesController: loadFolders(), selectFolder(), newFolder(), optional newNote(); currentFolder state; connect loads folders then loadList({folder:''})."
+      - "loadList passes folder to listNotes + filterNotesList; NotesFilter.folder."
+      - "renderFolderRail (textContent only, XSS-safe); 3-pane CSS scoped away from Tasks/Events."
+    acceptance: [AC-S8.1, AC-S8.2, AC-S8.3, AC-S8.4, AC-S8.5]
+    gates: [VG-FE, VG-FE-TMPL, VG-ROUTER-UNTOUCHED]
+
+kupo:
+  - id: K1
+    title: "Migration-safety + folder-populate test"
+    timebox: "<=0.5d"
+    depends_on: [S3, S4]
+    gate: VG-MIG
+    note: "Mirror Wave-1 K1 (init.rs:115-181): wave1-v1 index opens/ALTERs/lists; rebuild populates folder_path=''; sentinel -> wave2-v1."
+  - id: K2
+    title: "#tmpl-folder-row parity guard"
+    timebox: "<=0.25d"
+    depends_on: [S8]
+    gate: VG-FE-TMPL
+    note: "Parse production index.html #tmpl-folder-row; assert hooks; keep fixture in lock-step."
+  - id: K3
+    title: "DTO drift test"
+    timebox: "<=0.25d"
+    depends_on: [S7]
+    gate: VG-DTO-DRIFT
+    note: "dto_shapes.test.ts:143-223 — add NoteDto.folder_path + FolderDto block."
+
+validation_gates:
+  anti_shallow_loadbearing: [VG-EXPORT, VG-MOVE, VG-LIST-FILTER, VG-FOLDERS-EMPTY, VG-FE]
+  project_commands:
+    - "cargo test -p jin-core"
+    - "cargo test            # jin-gui bridge"
+    - "cargo clippy --all-targets -- -D warnings"
+    - "npm test              # vitest, Node >= 20"
+    - "tsc / build"
+  discipline: "No #[ignore], no it.skip on listed gates."
+
+risks:
+  - { id: F1,           sev: P0, desc: "Non-recursive export drops foldered notes; s8 tests can't catch it.", mitig: "S2 (VG-EXPORT)" }
+  - { id: R-MIG,        sev: P0, desc: "CREATE IF NOT EXISTS won't add folder_path -> crash on old index.", mitig: "S3 guarded ALTER + version bump (VG-MIG)" }
+  - { id: F-EDIT,       sev: P1, desc: "edit_note title-change relocates foldered note to root (write_note hardcodes root).", mitig: "S5 folder_path_of + write_note_in (VG-EDIT-PRESERVE)" }
+  - { id: F2,           sev: P1, desc: "move without refresh -> stale file_path -> get_note errors.", mitig: "move wrapper calls api::refresh (VG-MOVE)" }
+  - { id: R-VALIDATE,   sev: P1, desc: "folder strings -> notes_dir.join could escape via '..'.", mitig: "validate_folder_path (VG-VALIDATE)" }
+  - { id: R-PATHSEP,    sev: P1, desc: "OS-native separators make folder_path non-portable.", mitig: "folder_path_of joins with '/'" }
+  - { id: R-SHALLOW,    sev: P1, desc: "repo history of green-but-shallow tests.", mitig: "mandatory round-trip gates" }
+  - { id: R-NODE,       sev: P1, desc: "vitest crashes on Node 16.", mitig: "frontend gates require Node >= 20" }
+  - { id: F3,           sev: P2, desc: "recursive find_note_path O(N) for edit/delete/move/infer_kind.", mitig: "accepted v1; future index file_path lookup" }
+  - { id: R-DTO,        sev: P2, desc: "silent Rust<->TS DTO drift.", mitig: "K3 dto_shapes (VG-DTO-DRIFT)" }
+
+confidence_report:
+  pattern_match: 0.90
+  requirement_clarity: 0.90
+  decomposition_stability: 0.85
+  constraint_compliance: 0.88
+  overall: 0.88
+  decision: AUTO_PROCEED
+
+expected_response:
+  performative: ACKNOWLEDGE
+  shape_hint: "Build S1 -> S3 -> S4 -> S2(P0) -> S5 -> S6 -> S7 -> S8. Land S2 before folders are user-creatable. Do NOT accept core-only happy paths or hand-fed DTOs: VG-EXPORT/VG-MOVE/VG-LIST-FILTER/VG-FOLDERS-EMPTY/VG-FE are load-bearing round-trips. edit_note folder-preserve (F-EDIT) and the guarded ALTER (R-MIG) are non-negotiable."

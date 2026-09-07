@@ -1,0 +1,397 @@
+{
+  "esl_version": "1.1",
+  "change_id": "google-calendar-multi-account-sync",
+  "status": "archived",
+  "tier": "full",
+  "maker": "Vivi",
+  "checker": "VIGIL",
+  "acceptance_checks": [
+    {
+      "id": "AC-GCAL-001",
+      "given": "the archived rescue is the implementation baseline",
+      "when": "the integration regression gate runs",
+      "then": "the archived rescue acceptance checks SHALL remain passing",
+      "verify_method": "test: rerun AC-CAL-01 through AC-CAL-04"
+    },
+    {
+      "id": "AC-GCAL-002",
+      "given": "a valid singleton Google configuration",
+      "when": "migration first commits",
+      "then": "Jin SHALL persist exactly one immutable account ID for the legacy connection",
+      "verify_method": "test: config_migration::singleton_creates_one_account"
+    },
+    {
+      "id": "AC-GCAL-003",
+      "given": "the singleton migration has completed",
+      "when": "migration runs again",
+      "then": "Jin SHALL produce no duplicate account, token, mapping, or event rewrite",
+      "verify_method": "test: config_migration::rerun_is_idempotent"
+    },
+    {
+      "id": "AC-GCAL-004",
+      "given": "a legacy token cannot be copied and verified",
+      "when": "migration attempts account activation",
+      "then": "Jin SHALL retain the legacy token slot and fail without partial activation",
+      "verify_method": "test: config_migration::token_copy_failure_rolls_back"
+    },
+    {
+      "id": "AC-GCAL-005",
+      "given": "a configured account has tokens, mappings, cursors, and event targets",
+      "when": "its alias is renamed",
+      "then": "every immutable identity and storage key SHALL remain byte-for-byte unchanged",
+      "verify_method": "test: account_registry::rename_is_presentation_only"
+    },
+    {
+      "id": "AC-GCAL-006",
+      "given": "OAuth token material is persisted",
+      "when": "a token storage address is resolved",
+      "then": "every OAuth token SHALL be addressed by immutable account ID rather than alias or email",
+      "verify_method": "test: google::secrets::account_namespaces"
+    },
+    {
+      "id": "AC-GCAL-007",
+      "given": "OAuth is pending for account A",
+      "when": "a callback carries state bound to account B",
+      "then": "Jin SHALL reject the callback without persisting token material",
+      "verify_method": "test: google::auth::account_state_mismatch"
+    },
+    {
+      "id": "AC-GCAL-008",
+      "given": "a migrated token lacks CalendarList scope",
+      "when": "scope compatibility is evaluated",
+      "then": "Jin SHALL preserve local data and mark only its account `needs_reauth`",
+      "verify_method": "test: config_migration::scope_upgrade_preserves_data"
+    },
+    {
+      "id": "AC-GCAL-009",
+      "given": "Google returns visible calendars for a connected account",
+      "when": "discovery completes",
+      "then": "Jin SHALL persist every returned calendar under that account ID",
+      "verify_method": "test: google::calendar_list::persists_all_visible"
+    },
+    {
+      "id": "AC-GCAL-010",
+      "given": "a calendar is discovered for the first time",
+      "when": "its registry state is first persisted",
+      "then": "its enabled state SHALL default to true",
+      "verify_method": "test: calendar_registry::new_calendar_enabled"
+    },
+    {
+      "id": "AC-GCAL-011",
+      "given": "a disabled existing calendar and a newly visible calendar",
+      "when": "discovery refreshes",
+      "then": "Jin SHALL preserve the existing disable while enabling the new calendar",
+      "verify_method": "test: calendar_registry::refresh_preserves_choice"
+    },
+    {
+      "id": "AC-GCAL-012",
+      "given": "a known calendar is absent from a later discovery response",
+      "when": "reconciliation completes",
+      "then": "Jin SHALL mark it unavailable without deleting cached canonical events",
+      "verify_method": "test: calendar_registry::missing_calendar_is_nondestructive"
+    },
+    {
+      "id": "AC-GCAL-013",
+      "given": "an enabled reader or freeBusyReader calendar",
+      "when": "agenda and destination capabilities are projected",
+      "then": "Jin SHALL mirror its events while excluding it from mutation destinations",
+      "verify_method": "test: calendar_capability::readonly_mirrors_not_destinations"
+    },
+    {
+      "id": "AC-GCAL-014",
+      "given": "a calendar with queued writes loses writer/owner access",
+      "when": "discovery refreshes its role",
+      "then": "Jin SHALL pause those writes with `provider_permission_changed` without rerouting",
+      "verify_method": "test: calendar_capability::role_downgrade_pauses_exact_route"
+    },
+    {
+      "id": "AC-GCAL-015",
+      "given": "a calendar is disabled or unavailable",
+      "when": "aggregate sync schedules destination work",
+      "then": "sync SHALL issue no provider request for that destination",
+      "verify_method": "test: sync_orchestrator::inactive_calendar_no_network"
+    },
+    {
+      "id": "AC-GCAL-016",
+      "given": "two accounts expose identical calendar IDs and Google event IDs",
+      "when": "either remote identity is queried",
+      "then": "their cursor and mapping rows SHALL remain independently addressable",
+      "verify_method": "test: sync_state::same_remote_ids_across_accounts"
+    },
+    {
+      "id": "AC-GCAL-017",
+      "given": "one destination receives HTTP 410",
+      "when": "full-bootstrap recovery runs",
+      "then": "clean mappings outside that exact account/calendar SHALL remain unchanged",
+      "verify_method": "test: sync_state::scoped_410_cleanup"
+    },
+    {
+      "id": "AC-GCAL-018",
+      "given": "a new or unpublished Jin event and an enabled writable destination",
+      "when": "canonical creation or assignment commits",
+      "then": "one outbox operation SHALL reference that exact account/calendar target",
+      "verify_method": "test: event_mutation::routes_exact_destination"
+    },
+    {
+      "id": "AC-GCAL-019",
+      "given": "Local only is selected",
+      "when": "a Jin event is created",
+      "then": "no provider outbox operation SHALL be created",
+      "verify_method": "test: event_mutation::local_only_has_no_outbox"
+    },
+    {
+      "id": "AC-GCAL-020",
+      "given": "any synced event is created, edited, or deleted through CLI or Tauri",
+      "when": "its canonical mutation commits",
+      "then": "exactly one recoverable destination-scoped outbox intent SHALL exist",
+      "verify_method": "test: event_mutation::entrypoint_outbox_parity"
+    },
+    {
+      "id": "AC-GCAL-021",
+      "given": "a process stops between canonical write and outbox finalization",
+      "when": "startup recovery runs",
+      "then": "the canonical revision and its outbox intent SHALL converge idempotently",
+      "verify_method": "test: event_mutation::journal_failure_injection"
+    },
+    {
+      "id": "AC-GCAL-022",
+      "given": "a non-cancelled Google event on an enabled available writer/owner calendar",
+      "when": "core projects mutation capabilities",
+      "then": "core capability projection SHALL report it editable",
+      "verify_method": "test: event_capabilities::writable_google_event"
+    },
+    {
+      "id": "AC-GCAL-023",
+      "given": "an eligible Google-origin event",
+      "when": "supported fields are edited in Jin",
+      "then": "its sparse PATCH intent SHALL preserve target, remote identity, and base etag",
+      "verify_method": "test: google_sync::google_origin_sparse_patch"
+    },
+    {
+      "id": "AC-GCAL-024",
+      "given": "an eligible Google-origin event",
+      "when": "deletion synchronizes successfully",
+      "then": "Google SHALL receive the delete on the event's persisted destination",
+      "verify_method": "test: google_sync::google_origin_delete_route"
+    },
+    {
+      "id": "AC-GCAL-025",
+      "given": "a recurring Google event",
+      "when": "`This occurrence` is edited",
+      "then": "Jin SHALL preserve exception and original-start identity through round-trip",
+      "verify_method": "test: google_sync::recurring_occurrence_identity"
+    },
+    {
+      "id": "AC-GCAL-026",
+      "given": "a recurring Google event",
+      "when": "`Entire series` is edited",
+      "then": "Jin SHALL preserve master recurrence lines, timezone, and all-day end semantics",
+      "verify_method": "test: google_sync::recurring_series_lossless"
+    },
+    {
+      "id": "AC-GCAL-027",
+      "given": "a recurring event mutation requests `This and following`",
+      "when": "core validates the scope",
+      "then": "Jin SHALL reject it without canonical or outbox mutation",
+      "verify_method": "test: event_capabilities::following_scope_rejected"
+    },
+    {
+      "id": "AC-GCAL-028",
+      "given": "Google returns 412 for a pending Google-origin edit",
+      "when": "conflict resolution runs",
+      "then": "Jin SHALL retain the remote representation without unconditional overwrite",
+      "verify_method": "test: conflict::google_origin_412_remote_wins"
+    },
+    {
+      "id": "AC-GCAL-029",
+      "given": "a local Google-origin edit loses conflict resolution",
+      "when": "remote state replaces it",
+      "then": "the losing delta SHALL be appended under the same immutable account/calendar identity",
+      "verify_method": "test: conflict::google_origin_loser_audited"
+    },
+    {
+      "id": "AC-GCAL-030",
+      "given": "a Jin-origin published event",
+      "when": "its Google replica is deleted remotely",
+      "then": "the Jin canonical event SHALL remain locally present as unpublished",
+      "verify_method": "test: conflict::remote_delete_preserves_jin"
+    },
+    {
+      "id": "AC-GCAL-031",
+      "given": "one destination fails while another succeeds",
+      "when": "aggregate sync completes",
+      "then": "the successful destination SHALL commit with both scoped outcomes reported",
+      "verify_method": "test: sync_orchestrator::partial_failure_isolated"
+    },
+    {
+      "id": "AC-GCAL-032",
+      "given": "a disconnected account has paused outbox work",
+      "when": "that same account is reauthenticated with sufficient role",
+      "then": "only its original destinations SHALL resume after capability refresh",
+      "verify_method": "test: sync_orchestrator::reauth_resumes_without_reroute"
+    },
+    {
+      "id": "AC-GCAL-033",
+      "given": "Jin and enabled Google events intersect the selected range",
+      "when": "the selected Month, Week, or Day is projected",
+      "then": "Month, Week, and Day SHALL project both source classes in one agenda",
+      "verify_method": "test: agenda::unified_multi_account_projection plus Playwright fixture"
+    },
+    {
+      "id": "AC-GCAL-034",
+      "given": "a provider-backed event crosses Rust, Tauri, and TypeScript boundaries",
+      "when": "its DTO is serialized and decoded",
+      "then": "its DTO SHALL preserve stable identity, display provenance, access role, and sync state",
+      "verify_method": "test: Rust serialization fixture equals TypeScript fixture"
+    },
+    {
+      "id": "AC-GCAL-035",
+      "given": "multiple writable destinations exist without an explicit preference",
+      "when": "create or promote is requested",
+      "then": "Jin SHALL return typed ambiguity instead of selecting a cross-account fallback",
+      "verify_method": "test: CLI and controller no_singleton_fallback"
+    },
+    {
+      "id": "AC-GCAL-036",
+      "given": "multiple accounts are configured",
+      "when": "Settings renders the integration collection",
+      "then": "Settings SHALL render independently operable account cards with calendar toggles",
+      "verify_method": "test: settings_controller.test.ts multi_account_cards"
+    },
+    {
+      "id": "AC-GCAL-037",
+      "given": "any provider event mutation is ready to synchronize",
+      "when": "its Google payload is serialized",
+      "then": "Google payloads SHALL omit account aliases and every Jin-local context field",
+      "verify_method": "test: google::mapping::local_context_denylist"
+    },
+    {
+      "id": "AC-GCAL-038",
+      "given": "an account with cached events and audit records",
+      "when": "it is disconnected",
+      "then": "Jin SHALL retain those local records while pausing only that account's network work",
+      "verify_method": "test: account_registry::disconnect_preserves_local_state"
+    },
+    {
+      "id": "AC-GCAL-039",
+      "given": "no two-account live sandbox result has been recorded",
+      "when": "release evidence is assembled",
+      "then": "release evidence SHALL label Google end-to-end behavior `live-unvalidated`",
+      "verify_method": "review: docs/google-smoke-test.md result record and release checklist"
+    },
+    {
+      "id": "AC-GCAL-040",
+      "given": "initial OAuth succeeds for a newly generated Jin account ID",
+      "when": "the account registry activates the connection",
+      "then": "the account SHALL be immutably bound to Google's validated issuer and subject",
+      "verify_method": "test: account_registry::activation_binds_stable_subject"
+    },
+    {
+      "id": "AC-GCAL-041",
+      "given": "a configured account is bound to one Google issuer and subject",
+      "when": "reauthentication returns a different issuer or subject",
+      "then": "Jin SHALL reject the credentials without changing the stored token namespace",
+      "verify_method": "test: google::auth::reauth_subject_mismatch"
+    },
+    {
+      "id": "AC-GCAL-042",
+      "given": "migration is interrupted after any v1-to-v2 phase",
+      "when": "startup recovery reruns the same migration operation",
+      "then": "Jin SHALL converge to one complete v2 state or the intact v1 snapshot",
+      "verify_method": "test: config_migration::all_phase_failure_injection"
+    },
+    {
+      "id": "AC-GCAL-043",
+      "given": "a root carries the v2 account-registry activation marker",
+      "when": "the current compatibility guard and frozen historical writer behavior are evaluated",
+      "then": "current Jin SHALL reject legacy singleton operations before mutation, and lifecycle evidence SHALL record that an already-built historical binary is outside current-code enforcement",
+      "verify_method": "test: config_migration_old_binary_write_guard_fixture; evidence: VIGIL pinned-historical-binary counterexample; review: planner-amendment-ac-gcal-043.md"
+    },
+    {
+      "id": "AC-GCAL-044",
+      "given": "v2 account credentials are active",
+      "when": "token load, save, refresh, or delete cannot find the requested account namespace",
+      "then": "Jin SHALL fail without probing the legacy singleton credential slot",
+      "verify_method": "test: google::secrets::v2_has_no_legacy_fallback"
+    },
+    {
+      "id": "AC-GCAL-045",
+      "given": "concurrent refresh requests target one account",
+      "when": "refreshed tokens attempt to commit",
+      "then": "an account-scoped lock and auth generation SHALL prevent an older refresh overwriting a newer token",
+      "verify_method": "test: google::secrets::refresh_lock_generation_order"
+    },
+    {
+      "id": "AC-GCAL-046",
+      "given": "two providers or accounts reuse calendar, event, and recurrence identifiers",
+      "when": "mappings and outbox rows are persisted",
+      "then": "schema constraints SHALL distinguish the complete provider/account/calendar/event/recurrence key",
+      "verify_method": "test: sync_state::composite_recurrence_collision_schema"
+    },
+    {
+      "id": "AC-GCAL-047",
+      "given": "a calendar is inbound-enabled with reader-only provider access",
+      "when": "pull and outbound capabilities are evaluated",
+      "then": "Jin SHALL allow inbound mirroring without authorizing outbound mutation",
+      "verify_method": "test: calendar_capability::inbound_enable_not_write_authority"
+    },
+    {
+      "id": "AC-GCAL-048",
+      "given": "queued writes exist when provider role is downgraded or revoked",
+      "when": "route generation changes",
+      "then": "Jin SHALL quarantine the writes until explicit review without automatic replay",
+      "verify_method": "test: sync_orchestrator::downgrade_quarantine_requires_review"
+    },
+    {
+      "id": "AC-GCAL-049",
+      "given": "an event mutation is accepted for one destination",
+      "when": "its outbox operation is drained later",
+      "then": "sync SHALL use the exact intent-time destination without alias, default, or primary fallback",
+      "verify_method": "test: event_mutation::intent_route_is_immutable"
+    },
+    {
+      "id": "AC-GCAL-050",
+      "given": "Google returns 412 for a pending operation",
+      "when": "the conflict audit record is appended",
+      "then": "it SHALL contain scoped identity, operation, etags, redacted local delta, remote snapshot, policy, and winner",
+      "verify_method": "test: conflict::google_412_audit_contract"
+    },
+    {
+      "id": "AC-GCAL-051",
+      "given": "an account has cursors and pending outbox operations",
+      "when": "the account is disconnected",
+      "then": "Jin SHALL clear only its cursors and quarantine only its pending operations",
+      "verify_method": "test: account_registry::disconnect_scopes_cursor_and_outbox"
+    },
+    {
+      "id": "AC-GCAL-052",
+      "given": "a disconnected account reconnects with the matching subject",
+      "when": "discovery and capability refresh complete",
+      "then": "no quarantined operation SHALL resume until the user explicitly reviews it",
+      "verify_method": "test: sync_orchestrator::reconnect_requires_outbox_review"
+    },
+    {
+      "id": "AC-GCAL-053",
+      "given": "the user disconnects or hides a Google account",
+      "when": "local cached data is considered for deletion",
+      "then": "Jin SHALL require a separate destructive-removal operation not provided by disconnect",
+      "verify_method": "test: account_registry::disconnect_never_removes_local_data"
+    },
+    {
+      "id": "AC-GCAL-054",
+      "given": "a queued write predates revocation, downgrade, disconnect, remote cancellation, or local tombstone",
+      "when": "sync evaluates that stale operation",
+      "then": "the newer safety generation SHALL quarantine or supersede it before any provider request",
+      "verify_method": "test: sync_orchestrator::revocation_and_tombstone_outrank_stale_write"
+    }
+  ],
+  "spec_ref": ".spectra/changes/google-calendar-multi-account-sync/spec.md",
+  "created_at": "2026-08-26",
+  "drift_checked": true,
+  "archive_path": "archive/2026-09-01-google-calendar-multi-account-sync",
+  "has_code": true,
+  "memory_preflight": {
+    "ran": false,
+    "records": 0
+  }
+}

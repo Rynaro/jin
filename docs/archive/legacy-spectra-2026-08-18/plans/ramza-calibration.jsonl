@@ -1,0 +1,10 @@
+{"rubric":"complexity","total":11,"dims":{"scope":3,"ambiguity":2,"dependencies":3,"risk":3},"verdict":"human_loop","at":"2026-07-14T14:23:44Z"}
+{"rubric":"explore","total":56,"dims":{"alignment":5,"correctness":6,"maintainability":3,"performance":8,"simplicity":8,"risk":6,"innovation":2},"verdict":"weak","at":"2026-07-14T14:26:18Z","label":"H-A patch-in-place"}
+{"rubric":"explore","total":82,"dims":{"alignment":10,"correctness":9,"maintainability":9,"performance":7,"simplicity":6,"risk":6,"innovation":6},"verdict":"solid","at":"2026-07-14T14:26:18Z","label":"H-B unified-item + selection-pane + kanban-by-status"}
+{"rubric":"explore","total":68,"dims":{"alignment":7,"correctness":7,"maintainability":7,"performance":7,"simplicity":7,"risk":6,"innovation":5},"verdict":"weak","at":"2026-07-14T14:26:18Z","label":"H-C port notes 3-pane wholesale"}
+{"rubric":"explore","total":62,"dims":{"alignment":6,"correctness":7,"maintainability":9,"performance":6,"simplicity":3,"risk":3,"innovation":9},"verdict":"weak","at":"2026-07-14T14:26:18Z","label":"H-D state-container rewrite"}
+{"rubric":"explore","total":62,"dims":{"alignment":5,"correctness":8,"maintainability":7,"performance":8,"simplicity":4,"risk":4,"innovation":6},"verdict":"weak","at":"2026-07-14T14:26:19Z","label":"H-E core-first smart views"}
+{"rubric":"confidence","total":84.25,"dims":{"pattern_match":80,"requirement_clarity":85,"decomposition_stability":82,"constraint_compliance":90},"verdict":"VALIDATE","at":"2026-07-14T14:31:15Z"}
+{"rubric":"refine","cycle":1,"total":4.2,"min":4,"dims":{"clarity":4,"completeness":4,"actionability":4,"efficiency":4,"testability":5},"verdict":"pass","at":"2026-07-14T14:45:30Z"}
+{"rubric":"confidence","total":87.5,"dims":{"pattern_match":85,"requirement_clarity":88,"decomposition_stability":85,"constraint_compliance":92},"verdict":"AUTO_PROCEED","at":"2026-07-14T14:45:30Z"}
+{"rubric":"refine","cycle":2,"total":4.4,"min":4,"dims":{"clarity":4,"completeness":5,"actionability":4,"efficiency":4,"testability":5},"verdict":"pass","at":"2026-07-14T14:51:34Z"}

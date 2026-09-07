@@ -1,0 +1,18 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "FORGE"
+  },
+  "to": {
+    "eidolon": "Vivi"
+  },
+  "performative": "DECIDE",
+  "objective": "Keep M2 one-off-only and defer recurrence to a dedicated temporal-losslessness foundation and recurrence editing follow-up.",
+  "context_delta": {
+    "dg_01": "resolved_one_off_only",
+    "dg_02": "dormant",
+    "implementation_boundary": "active Jin-owned non-recurring Events and Time blocks only",
+    "memory_preflight": "attempted; Crystalium transport closed; zero records",
+    "recurrence_boundary": "Jin and Google recurring masters and occurrences remain view-only; This and following deferred"
+  }
+}

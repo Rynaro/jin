@@ -1,0 +1,26 @@
+{
+  "session_id": "spectra-2026-06-28-jin-notes-wave2-track-b-editor",
+  "spec": "jin-notes-wave2-track-b-editor",
+  "methodology": "SPECTRA 4.10.0",
+  "tier": "standard",
+  "intent_type": "CHANGE",
+  "complexity": "8/12",
+  "confidence": 0.87,
+  "decision": "AUTO_PROCEED",
+  "handoff": { "from": "spectra", "to": "apivr", "executor": "Vivi" },
+  "scope": "frontend-only; backend save path DONE; no Rust/Tauri/schema changes",
+  "execution_order": ["K-B1", "B1", "B2", "B3", "K-B2", "B4", "K-B3"],
+  "steps": [
+    { "id": "K-B1", "title": "Add markdown-it + dompurify + @types/markdown-it deps", "status": "pending", "depends_on": [], "blocks": ["B1"], "files": ["jin-gui/package.json"], "gates": ["G-BUILD"] },
+    { "id": "B1", "title": "Sanitize chokepoint lib/notes/markdown.ts + adversarial suite", "status": "pending", "depends_on": ["K-B1"], "blocks": ["B3", "B4", "K-B3"], "files": ["jin-gui/src/lib/notes/markdown.ts"], "gates": ["G-SANITIZE", "G-XSS"] },
+    { "id": "B2", "title": "Block transform lib/notes/blocks.ts + round-trip property tests", "status": "pending", "depends_on": [], "blocks": ["B3", "B4"], "files": ["jin-gui/src/lib/notes/blocks.ts"], "gates": ["G-ROUNDTRIP", "G-BLOCKS"] },
+    { "id": "K-B2", "title": "Editor CSS / token hookup", "status": "pending", "depends_on": [], "blocks": ["B3"], "files": ["jin-gui/src/styles/browse.css"], "gates": ["G-CSS"] },
+    { "id": "B3", "title": "Per-block live-preview editor lib/notes/editor.ts + swap test", "status": "pending", "depends_on": ["B1", "B2", "K-B2"], "blocks": ["B4"], "files": ["jin-gui/src/lib/notes/editor.ts", "jin-gui/src/styles/browse.css"], "gates": ["G-SWAP", "G-XSS"] },
+    { "id": "B4", "title": "Wire renderNoteDetail + NotesController save + migrate tests", "status": "pending", "depends_on": ["B1", "B2", "B3"], "blocks": [], "files": ["jin-gui/src/lib/notes/render.ts", "jin-gui/src/controllers/notes_controller.ts", "jin-gui/src/__tests__/notes_controller.test.ts"], "gates": ["G-SAVE", "G-SAVE-ERROR", "G-XSS", "G-DETAIL-MIGRATE"] },
+    { "id": "K-B3", "title": "Chokepoint-singleton guard test", "status": "pending", "depends_on": ["B1"], "blocks": [], "files": ["jin-gui/src/__tests__/"], "gates": ["G-CHOKEPOINT"] }
+  ],
+  "anti_shallow_load_bearing_gates": ["G-SANITIZE", "G-ROUNDTRIP", "G-SWAP", "G-SAVE"],
+  "immovable_gate": "G-XSS (existing notes_controller.test.ts:486-499 stays green)",
+  "node_requirement": "Node >=20 (system Node 16 crashes Vitest)",
+  "replanning_history": []
+}

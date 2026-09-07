@@ -1,0 +1,317 @@
+# SPECTRA agent handoff — Jin Notes CM6 inline Live-Preview (Obsidian "Live Preview")
+# Methodology: SPECTRA 4.10.0  |  envelope_version: 2.0  |  ECL: present (.eidolons/spectra/ECL_VERSION)
+meta:
+  spec_id: 2026-06-28-jin-notes-cm6-live-preview
+  title: Inline live-preview (hide/reveal markdown markers) for the Jin CM6 note editor
+  intent_type: CHANGE            # extends the just-shipped CM6 source editor
+  from: spectra
+  to: vivi                       # apivr / Builder capability class
+  performative: PROPOSE
+  repo: jin-gui                  # FRONTEND-ONLY
+  date: 2026-06-28
+  conventions_file: null         # .spectra/setup/spectra-conventions.md absent -> generic defaults
+  complexity: 9/12               # raw; architecture+scope LOCKED by owner -> single-pass extended tier (NOT TRANCE)
+  routing: extended-single-pass
+  confidence: 0.90               # AUTO_PROCEED (>=85%)
+
+builds_on:
+  - jin-gui/src/lib/notes/editor.ts        # CM6 editor; Compartments staged for this exact layer
+  - jin-gui/src/lib/notes/markdown.ts      # sanitize chokepoint (renderMarkdownFragment) — Reading view only
+  - prior: cfc941a (CM6 source editor), 2167269 (Apple-Notes chrome)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LOCKED SCOPE (owner directive)
+# ─────────────────────────────────────────────────────────────────────────────
+scope:
+  goal: >
+    While editing, render markdown STYLED INLINE with syntax markers HIDDEN, EXCEPT on the
+    line(s) the cursor/selection touches, where raw markdown is REVEALED for editing. Pure
+    CM6 decoration layer over the same text buffer. Raw markdown stays the on-disk source of
+    truth. Live-preview becomes the DEFAULT edit mode.
+  in_scope:
+    - Hide/reveal markers for HEADINGS (# .. ######) via HeaderMark (+ one trailing space).
+    - Hide/reveal INLINE EMPHASIS markers — bold **/__ and italic */_ (EmphasisMark),
+      strikethrough ~~ (StrikethroughMark), inline code ` (CodeMark).
+    - Reveal raw on the ACTIVE line(s) — every line any selection range touches.
+    - Provide EditorView.atomicRanges over the hidden marker ranges (caret skips them as one unit).
+    - Keep existing jinHighlightStyle (styles TEXT) — live-preview only hides MARKERS; they compose.
+    - Keep the existing Reading-view toggle (full rendered HTML via renderMarkdownFragment) AS-IS.
+  out_of_scope_deferred:   # state explicitly as follow-ups; do NOT build now (each is Widget/Replace-heavy)
+    - List bullet/number glyph rendering
+    - Checkbox widgets
+    - Link/url collapse to clickable text
+    - Image embeds
+    - Blockquote vertical bar
+    - Horizontal-rule widget
+    - Tables, code-block backgrounds
+    - Setext (=== / ---) headings (same HeaderMark mechanism; trivial follow-up)
+    - Always-raw "source mode" toggle (livePreviewCompartment makes this a 1-line follow-up)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DECISIONS
+# ─────────────────────────────────────────────────────────────────────────────
+decisions:
+  D-DEP:
+    decision: HAND-ROLL the ViewPlugin. Do NOT add a live-preview npm package.
+    rationale: >
+      All required primitives are present in installed deps (verified firsthand):
+      syntaxTree (@codemirror/language ^6.12.4), atomicRanges Facet + skipAtomicRanges
+      (@codemirror/view ^6.43.4), Decoration.replace/ViewPlugin (@codemirror/view), and the
+      lezer-markdown parse tree via @codemirror/lang-markdown ^6.5.0 (markdownLanguage =
+      commonmark.configure([GFM,...]) so Strikethrough nodes ARE produced). Community
+      live-preview packages are incomplete/unmaintained and would widen the dependency
+      surface (and the chokepoint/audit burden) for ~150 LOC we fully control and can test.
+    verified_node_names: [ATXHeading1-6, HeaderMark, Emphasis, StrongEmphasis, EmphasisMark, Strikethrough, StrikethroughMark, InlineCode, CodeMark, CodeText]
+  D-REVEAL:
+    decision: PER-LINE reveal (not per-element).
+    rule: >
+      A syntax marker is HIDDEN iff NO selection range touches the line that contains it.
+      Equivalently: activeLines = union over state.selection.ranges of
+      [doc.lineAt(r.from).number .. doc.lineAt(r.to).number]; a marker on an active line is
+      revealed, every other marker is hidden.
+    rationale: >
+      Simplest correct rule and matches Obsidian closely (the whole active line goes raw).
+      For ALL v1 elements (headings, emphasis, strike, inline code) the element never spans a
+      line break, so per-line == per-element on the marker's own line, BUT per-line also
+      reveals the OTHER markers on the active line — the desired "edit this line raw" feel.
+      Multi-line selection naturally reveals every intersected line (G-LP-SELECTION).
+    use_all_ranges: true   # iterate state.selection.ranges, not just .main (multi-cursor correctness)
+  D-MODULE:
+    decision: New module jin-gui/src/lib/notes/livePreview.ts exporting buildLivePreviewDecorations + jinLivePreview. editor.ts imports it. Keeps editor.ts cohesive.
+  D-COMPARTMENT:
+    decision: Add a NEW dedicated `livePreviewCompartment` in editor.ts (default-on), rather than folding into highlightCompartment.
+    rationale: >
+      Cohesion (highlight != conceal) and it makes the deferred source-mode toggle a 1-line
+      reconfigure. "Compose via Compartment(s) so it can be reconfigured/toggled" — owner intent.
+  D-TEST:
+    decision: >
+      Assert behavior at the STATE level via the pure function buildLivePreviewDecorations(state, ranges)
+      — iterate the returned DecorationSet and assert exact hidden ranges (from/to) given a doc +
+      selection. Plus ONE real-mount smoke test (plugin loads, no throw, buffer unchanged). The
+      DECORATIONS' visual effect (markers actually hidden on screen) is OWNER-verified via
+      `cargo tauri dev` — jsdom lacks the layout CM6 decoration geometry needs.
+    headless_parse_note: >
+      syntaxTree(state) is viewport/parse-driven; in headless tests call
+      ensureSyntaxTree(state, state.doc.length, <ms>) (from @codemirror/language) FIRST to force a
+      full synchronous parse for small test docs before asserting ranges. Provide a forceParse(state)
+      test helper (K-LP-4).
+    anti_shallow: >
+      NO "plugin is defined" tests. Every LP gate asserts the hide/reveal RANGES for a concrete
+      doc + selection, or exercises the real mounted wiring. (Owner mutation-tests the gates.)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MODULE CONTRACT (for Vivi — shape, not implementation)
+# ─────────────────────────────────────────────────────────────────────────────
+module_contract:
+  file: jin-gui/src/lib/notes/livePreview.ts
+  imports_allowed: ["@codemirror/state", "@codemirror/view", "@codemirror/language", "@lezer/common (optional)"]
+  imports_forbidden: ["markdown-it", "dompurify"]   # G-CHOKEPOINT scanner — keep clean
+  exports:
+    - "const HIDE_MARK_NODES = new Set(['HeaderMark','EmphasisMark','StrikethroughMark','CodeMark'])"
+    - "buildLivePreviewDecorations(state: EditorState, ranges?: readonly {from:number;to:number}[]): DecorationSet"
+    - "jinLivePreview(): Extension"
+  build_algorithm: |
+    activeLines := union over state.selection.ranges of [lineAt(r.from).number .. lineAt(r.to).number]
+    ranges := ranges ?? [{from:0, to:state.doc.length}]
+    for each r in ranges:
+      syntaxTree(state).iterate({ from:r.from, to:r.to, enter(node):
+        if HIDE_MARK_NODES.has(node.name):
+          lineNo := state.doc.lineAt(node.from).number
+          if not activeLines.has(lineNo):
+            to := node.to
+            if node.name=='HeaderMark' and state.doc.sliceString(to,to+1)==' ': to += 1   # K-LP-3 (Obsidian flush-left)
+            add Decoration.replace({}) over [node.from, to]
+      })
+    # iterate yields document order -> RangeSetBuilder add() stays sorted-by-from. Never throw.
+  viewplugin: |
+    jinLivePreview = ViewPlugin.fromClass(class {
+      decorations = buildLivePreviewDecorations(view.state, view.visibleRanges)
+      update(u): if (u.docChanged || u.viewportChanged || u.selectionSet)
+                   decorations = buildLivePreviewDecorations(u.view.state, u.view.visibleRanges)
+    }, {
+      decorations: v => v.decorations,
+      provide: plugin => EditorView.atomicRanges.of(view => view.plugin(plugin)?.decorations ?? Decoration.none)
+    })
+    # atomicRanges == the SAME replace DecorationSet -> single source of truth; revealed (active-line)
+    # markers are absent from the set, so they are never atomic (no caret trap on the line you edit).
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EDITOR.TS INTEGRATION ANCHORS (file:line — verified against current editor.ts)
+# ─────────────────────────────────────────────────────────────────────────────
+integration:
+  import_add: "editor.ts:49 (after import { renderMarkdownFragment } from './markdown';) -> import { jinLivePreview, buildLivePreviewDecorations } from './livePreview';"
+  compartment_declare: "editor.ts:491-495 -> add `const livePreviewCompartment = new Compartment();`"
+  extension_add: "editor.ts:~532 -> after highlightCompartment.of(syntaxHighlighting(jinHighlightStyle)), add `livePreviewCompartment.of(jinLivePreview()),`"
+  unchanged:
+    - "jinHighlightStyle (editor.ts:88-111) — NO change; it styles TEXT, LP hides MARKERS; compose"
+    - "updateListener (editor.ts:555-562) — NO change; only docChanged sets pendingSave; LP listens to selectionSet for DECORATIONS only, never touches save"
+    - "keymap/jinNoteKeys (editor.ts:498-518) — operate on the doc; atomicRanges affects only caret MOTION, not programmatic dispatch"
+    - "Reading-view toggle (editor.ts:603-626) — AS-IS"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STORIES (ordered; INVEST; GIVEN/WHEN/THEN)
+# ─────────────────────────────────────────────────────────────────────────────
+stories:
+  - id: LP-1
+    title: Pure decoration core — syntax-tree walk + per-line reveal (the brain)
+    user_story: "As a note editor, I want markdown markers replaced/hidden on inactive lines and revealed on the active line so editing feels like Obsidian Live Preview while raw markdown stays the source of truth."
+    timebox: "<=2d"
+    risk: P0
+    depends_on: []
+    action_plan:
+      - Create jin-gui/src/lib/notes/livePreview.ts (imports only @codemirror/* per module_contract).
+      - Implement buildLivePreviewDecorations(state, ranges?) per build_algorithm (HeaderMark/EmphasisMark/StrikethroughMark/CodeMark; per-line reveal over all selection.ranges; HeaderMark +1 trailing space).
+      - Use Decoration.replace({}) only (NO widget). Degrade to raw (no decoration) for partial/unterminated constructs (parser yields no parent node -> no mark).
+    given_when_then:
+      - "GIVEN '# Title\\n\\n**bold** text' WHEN cursor is on line 1 (offset 0) THEN buildLivePreviewDecorations hides the **bold** EmphasisMark ranges (line 3) but reveals the line-1 HeaderMark (active line)."
+      - "GIVEN the same doc WHEN cursor is on the **bold** line THEN both EmphasisMark ranges on that line are revealed (NOT in the set) and the line-1 HeaderMark IS hidden (replace over [0,2) incl. the trailing space)."
+      - "GIVEN '`code`' with cursor on a DIFFERENT line THEN both CodeMark ranges are hidden and CodeText is NOT decorated (stays styled monospace)."
+      - "GIVEN unterminated '**bold' (no closing) THEN no StrongEmphasis node exists -> no EmphasisMark hidden -> raw shown; the call does not throw."
+    gates: [G-LP-HIDE, G-LP-REVEAL, G-LP-NO-INNERHTML]
+    agent_hints:
+      class: Builder (Vivi)
+      context_files: [jin-gui/src/lib/notes/editor.ts, jin-gui/src/lib/notes/markdown.ts, jin-gui/src/__tests__/editor.test.ts]
+      notes: "Node>=20 (nvm v24.18.0; system node v16 crashes vitest). Use ensureSyntaxTree(state, doc.length) in tests to force parse before asserting ranges (K-LP-4)."
+
+  - id: LP-2
+    title: ViewPlugin wrapper — viewport-aware rebuild + atomicRanges provide
+    user_story: "As a note editor, I want decorations rebuilt only when needed and only over visible text, with hidden markers skipped by the caret as one unit, so editing is fast and the cursor never gets trapped."
+    timebox: "<=1d"
+    risk: P0
+    depends_on: [LP-1]
+    action_plan:
+      - Export jinLivePreview(): Extension as a ViewPlugin.fromClass per module_contract.
+      - Rebuild decorations on update.docChanged || update.viewportChanged || update.selectionSet.
+      - Iterate only view.visibleRanges (perf). Provide EditorView.atomicRanges via `provide` over the SAME decoration set.
+    given_when_then:
+      - "GIVEN a mounted editor with jinLivePreview WHEN the plugin is queried THEN it contributes atomicRanges whose ranges exactly equal the hidden-marker DecorationSet (G-LP-ATOMIC)."
+      - "GIVEN the cursor moves from line 1 to the bold line (selection-only transaction) WHEN selectionSet fires THEN decorations rebuild: the bold line's markers become revealed and line 1's HeaderMark becomes hidden."
+      - "GIVEN a doc edit WHEN docChanged fires THEN decorations rebuild from the new tree."
+    gates: [G-LP-ATOMIC, G-LP-REBUILD]
+    agent_hints:
+      class: Builder (Vivi)
+      context_files: [jin-gui/src/lib/notes/livePreview.ts, jin-gui/src/__tests__/editor.test.ts]
+      notes: "atomicRanges = view.plugin(plugin)?.decorations ?? Decoration.none — single source of truth; do NOT build a separate atomic set."
+
+  - id: LP-3
+    title: Compose into editor.ts via livePreviewCompartment (default-on) — preserve all gates
+    user_story: "As the Jin app, I want live-preview to be the default edit mode without changing the on-disk format, the save flow, the keymap, the toolbar, the footer, or the Reading view."
+    timebox: "<=1d"
+    risk: P0
+    depends_on: [LP-2]
+    action_plan:
+      - Add livePreviewCompartment + import jinLivePreview in editor.ts (see integration anchors).
+      - Add livePreviewCompartment.of(jinLivePreview()) to the extensions array after the highlight compartment.
+      - Run full jin-gui vitest suite; confirm every preserved gate stays green.
+    given_when_then:
+      - "GIVEN mountEditor with live-preview WHEN the editor mounts THEN it does not throw, .cm-content exists, and handle.getDoc() === the initial doc (decorations never mutate the buffer) (G-LP-SMOKE)."
+      - "GIVEN a selection-only transaction (caret move, no doc change) WHEN dispatched THEN onSave is NOT called and getDoc() is unchanged (G-SAVE-CARET-SAFE)."
+      - "GIVEN the existing suite WHEN run THEN G-XSS, G-CHOKEPOINT, G-KEYMAP*, G-TOOLBAR-*, G-FOOTER-STATS, G-READING-VIEW all stay green."
+    gates: [G-LP-SMOKE, G-SAVE-CARET-SAFE, G-XSS, G-CHOKEPOINT, G-KEYMAP, G-TOOLBAR-BOLD, G-TOOLBAR-H2, G-TOOLBAR-LIST, G-FOOTER-STATS, G-READING-VIEW]
+    agent_hints:
+      class: Builder (Vivi)
+      context_files: [jin-gui/src/lib/notes/editor.ts, jin-gui/src/__tests__/editor.test.ts, jin-gui/src/__tests__/notes_controller.test.ts, jin-gui/src/__tests__/markdown.test.ts]
+      notes: "G-XSS immovable @ notes_controller.test.ts:505. G-CHOKEPOINT scanner @ markdown.test.ts:366-405 — livePreview.ts must NOT import markdown-it/dompurify."
+
+  - id: LP-4
+    title: Caret + robustness hardening (top-risk story) + owner visual checklist
+    user_story: "As a note editor, I want the caret to behave correctly across hide/reveal transitions and never throw on partial/empty markdown, verified by adversarial tests and an owner visual pass."
+    timebox: "<=1d"
+    risk: P1
+    depends_on: [LP-3]
+    action_plan:
+      - State-level adversarial tests: unterminated **, inline code mid-edit, heading being typed (# then space), empty doc, doc with only markers, multi-line selection spanning heading+bold+code.
+      - State-level caret test: reveal-on-selectionSet (move caret onto a hidden-marker line -> that line's markers leave the set).
+      - Author the owner cargo-tauri-dev visual checklist (markers visually hidden off-line; revealed on-line; arrow-key caret skips hidden markers without stutter; selection across lines reveals all).
+    given_when_then:
+      - "GIVEN any of {unterminated **, lone `, '# ' mid-type, empty doc} WHEN buildLivePreviewDecorations runs THEN it returns a valid DecorationSet and never throws (G-LP-ROBUST)."
+      - "GIVEN a selection from line 1 to line 3 WHEN built THEN markers on lines 1,2,3 are ALL revealed (G-LP-SELECTION)."
+      - "GIVEN the caret moves onto a previously-hidden bold line WHEN selectionSet fires THEN those EmphasisMark ranges are no longer in the set (G-LP-CARET-MOVE)."
+    gates: [G-LP-ROBUST, G-LP-SELECTION, G-LP-CARET-MOVE]
+    agent_hints:
+      class: Builder (Vivi)
+      context_files: [jin-gui/src/lib/notes/livePreview.ts, jin-gui/src/__tests__/editor.test.ts]
+      notes: "Owner verifies VISUAL hide/reveal + arrow-key atomic skip in cargo tauri dev — automated tests assert RANGES only."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KUPO MICRO-TASKS (mechanical sub-tasks)
+# ─────────────────────────────────────────────────────────────────────────────
+kupo:
+  - id: K-LP-1
+    task: "Declare livePreviewCompartment (editor.ts:491-495) and add livePreviewCompartment.of(jinLivePreview()) to extensions (editor.ts:~532)."
+  - id: K-LP-2
+    task: "Import { jinLivePreview, buildLivePreviewDecorations } from './livePreview' in editor.ts:49."
+  - id: K-LP-3
+    task: "HeaderMark trailing-space eat: extend the replace range by 1 iff the char after the mark is ' ' (Obsidian flush-left heading text)."
+  - id: K-LP-4
+    task: "Test helper forceParse(state) = ensureSyntaxTree(state, state.doc.length, 5000) so headless range assertions see a full tree."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# VALIDATION GATES (must exist AND bite — anti-shallow)
+# ─────────────────────────────────────────────────────────────────────────────
+validation_gates:
+  # New LP gates
+  G-LP-HIDE:       "doc=heading+bold, cursor on a DIFFERENT line -> buildLivePreviewDecorations produces replace decorations over the #/** marker ranges (assert exact from/to)."
+  G-LP-REVEAL:     "cursor ON the heading/bold line -> those marker ranges are NOT in the set (revealed for editing)."
+  G-LP-ATOMIC:     "the plugin contributes atomicRanges that exactly cover the hidden marker ranges (assert provided via EditorView.atomicRanges)."
+  G-LP-SELECTION:  "a selection spanning lines 1..3 reveals every marker on lines 1,2,3."
+  G-LP-CARET-MOVE: "selectionSet onto a previously-hidden marker line removes that line's markers from the set (reveal-on-move)."
+  G-LP-REBUILD:    "decorations rebuild on docChanged/viewportChanged/selectionSet (assert set changes after a selection-only transaction)."
+  G-LP-ROBUST:     "unterminated **, lone backtick, '# ' mid-type, empty doc -> valid DecorationSet, never throws; degrade to raw."
+  G-LP-NO-INNERHTML: "every produced decoration is Decoration.replace with NO widget (no decoration injects note text as HTML)."
+  G-LP-SMOKE:      "mountEditor with live-preview does not throw; .cm-content present; handle.getDoc() === initial doc (buffer unchanged)."
+  # Preserved immovable gates (must stay green)
+  preserved:
+    G-XSS:            "notes_controller.test.ts:505 — <script> body -> literal text, not executed. Unaffected (CM6 renders text; LP uses replace, never innerHTML)."
+    G-CHOKEPOINT:     "markdown.test.ts:366-405 — only markdown.ts imports markdown-it/dompurify. livePreview.ts must stay clean."
+    G-SAVE-CARET-SAFE: "selection-only transaction does NOT call onSave and does NOT change getDoc() (LP touches decorations, never the buffer or pendingSave)."
+    G-KEYMAP:         "editor.test.ts:392 — Tab/Enter/Mod+B/Mod+I/Mod+K/Mod+1..6 still fire (operate on doc; atomicRanges only affects caret motion)."
+    G-TOOLBAR-*:      "Bold/H2/List toolbar clicks still mutate the doc."
+    G-FOOTER-STATS:   "word/char/read-time still update on docChanged."
+    G-READING-VIEW:   "Reading-view toggle still renders via renderMarkdownFragment (chokepoint)."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RISKS (caret/atomicRanges = top)
+# ─────────────────────────────────────────────────────────────────────────────
+risks:
+  - id: R-CARET
+    severity: P0
+    desc: >
+      Revealed<->hidden transitions when the caret moves onto/off a styled span; atomicRanges
+      correctness (no trap, no N-key stutter over a hidden marker). Mitigated by per-line reveal
+      (the line you're on is always raw) + atomicRanges == the same replace set (active-line
+      markers are absent -> never atomic). One-frame ordering: the move uses pre-move atomicRanges,
+      then selectionSet reveals the landed line — no trap because the target line becomes raw.
+    verify: G-LP-CARET-MOVE (state) + owner cargo-tauri-dev arrow-key pass.
+  - id: R-PERF
+    severity: P1
+    desc: "Rebuild cost. Mitigated: rebuild only on docChanged||viewportChanged||selectionSet; iterate only view.visibleRanges."
+  - id: R-PARTIAL
+    severity: P1
+    desc: "Unterminated/mid-edit markdown. Mitigated: only marks under a completed parent node are hidden; never throw; degrade to raw. G-LP-ROBUST."
+  - id: R-HEADLESS-PARSE
+    severity: P2
+    desc: "syntaxTree(state) may be incomplete in headless tests. Mitigated: ensureSyntaxTree(state, doc.length) before asserting (K-LP-4)."
+  - id: R-HEADER-SPACE
+    severity: P2
+    desc: "HeaderMark covers only '#'s; the separating space is a gap. Mitigated: extend replace by one trailing space (K-LP-3) for flush-left heading text."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REJECTED ALTERNATIVES (prevent re-exploration)
+# ─────────────────────────────────────────────────────────────────────────────
+rejected_alternatives:
+  H2-class-encapsulated: "Build decorations entirely inside the ViewPlugin class (no free function). Rejected: couples tests to a mounted view (jsdom geometry caveats) and weakens the anti-shallow state-level range assertions D-TEST requires."
+  H3-statefield: "Build the DecorationSet in a StateField. Rejected: a StateField cannot see viewportChanged/visibleRanges (view-only) -> must decorate the whole doc (perf regression on large notes). H1 keeps the pure-function testability of a field PLUS viewport awareness."
+  H4-css-hide: "Use mark decorations toggling display:none instead of atomic Decoration.replace. Rejected: the caret can still land inside a display:none span (trap/stutter) and selection geometry is off; atomic replace is the correct primitive."
+  npm-live-preview-pkg: "Adopt a community live-preview package. Rejected (D-DEP): incomplete/unmaintained, widens dependency + audit surface for ~150 LOC we control."
+
+confidence:
+  overall: 0.90
+  factors:
+    pattern_match: 0.85       # extends a just-shipped module with a well-known CM6 pattern
+    requirement_clarity: 0.95 # owner locked architecture, scope, gates
+    decomposition_stability: 0.90  # 4 stories, clean dependency chain
+    constraint_compliance: 0.92    # deps/node-names/chokepoint/gates all verified firsthand
+  decision: AUTO_PROCEED
+
+execution_sequence: [LP-1, LP-2, LP-3, LP-4]

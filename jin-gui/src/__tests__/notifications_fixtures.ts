@@ -1,0 +1,102 @@
+import type {
+  CalendarInvitationNotificationDto,
+  NotificationCapabilitiesDto,
+  TaskReminderNotificationDto,
+} from '../types/dto';
+
+export const BASE_NOTIFICATION_CAPABILITIES: NotificationCapabilitiesDto = {
+  can_mark_read: true,
+  can_defer: true,
+  can_dismiss: true,
+  can_respond: false,
+  can_complete_task: false,
+  can_open_source: true,
+  recurrence_scopes: [],
+  disabled_reason: null,
+};
+
+export function invitationFixture(
+  overrides: Partial<CalendarInvitationNotificationDto> = {},
+): CalendarInvitationNotificationDto {
+  return {
+    id: 'notification-invite-1',
+    source_key: 'google/account-work/calendar-primary/event-google-1/master',
+    source_revision: 'etag-1',
+    status: 'active',
+    version: 4,
+    read_at: null,
+    visible_after: null,
+    created_at: '2026-09-02T12:00:00Z',
+    updated_at: '2026-09-02T12:00:00Z',
+    requested_action: null,
+    action_state: null,
+    action_error: null,
+    native_state: 'not_requested',
+    resolution_origin: null,
+    source_reason: null,
+    kind: 'calendar_invitation',
+    schema_version: 1,
+    account_id: 'account-work',
+    account_alias: 'Work',
+    calendar_id: 'primary',
+    calendar_name: 'Primary calendar',
+    canonical_event_id: 'event-canonical-1',
+    google_event_id: 'event-google-1',
+    recurrence: { type: 'single' },
+    title: 'Roadmap review',
+    organizer_name: 'Ari Organizer',
+    organizer_email: 'ari@example.test',
+    start: '2026-09-03T13:00:00Z',
+    end: '2026-09-03T14:00:00Z',
+    all_day: false,
+    timezone: 'America/Sao_Paulo',
+    location: 'Studio 4',
+    self_email: 'vivi@example.test',
+    provider_response_status: 'needsAction',
+    etag: 'etag-1',
+    provider_subject: 'subject-work',
+    auth_generation: 8,
+    route_generation: 13,
+    capabilities: {
+      ...BASE_NOTIFICATION_CAPABILITIES,
+      can_respond: true,
+    },
+    ...overrides,
+  };
+}
+
+export function taskReminderFixture(
+  overrides: Partial<TaskReminderNotificationDto> = {},
+): TaskReminderNotificationDto {
+  return {
+    id: 'notification-task-1',
+    source_key: 'task/task-1/2026-09-02T15:00:00Z',
+    source_revision: 'task-revision-1',
+    status: 'active',
+    version: 2,
+    read_at: null,
+    visible_after: null,
+    created_at: '2026-09-02T14:00:00Z',
+    updated_at: '2026-09-02T14:00:00Z',
+    requested_action: null,
+    action_state: null,
+    action_error: null,
+    native_state: 'submitted',
+    resolution_origin: null,
+    source_reason: null,
+    kind: 'task_reminder',
+    schema_version: 1,
+    occurrence_key: '2026-09-02T15:00:00Z',
+    task_id: 'task-1',
+    title: 'Send launch notes',
+    scheduled_at: '2026-09-02T15:00:00Z',
+    list_name: 'Work',
+    project_name: 'Launch',
+    task_edit_token: 'task-revision-1',
+    capabilities: {
+      ...BASE_NOTIFICATION_CAPABILITIES,
+      can_complete_task: true,
+    },
+    ...overrides,
+  };
+}

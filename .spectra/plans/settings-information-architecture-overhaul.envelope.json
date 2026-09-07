@@ -1,0 +1,64 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "01a06bc8-d754-7c33-9e70-a51a7de4d7de",
+  "thread_id": "01a06bc8-d754-7a11-8b8b-4c57bc657690",
+  "parent_id": "01a06bc8-d754-7b22-a5ac-21f0c67011ef",
+  "from": {
+    "eidolon": "ramza",
+    "version": "1.1.0"
+  },
+  "to": {
+    "eidolon": "vivi",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Propose an amended four-pane Settings architecture with mode-specific scroll ownership and focus-preserving category changes.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": "settings-information-architecture-overhaul.md",
+    "sha256": "d7ceed8816ad41bc0bd9dcdeffd3b1a33d12434ad050ca75c41a0210c2d22638",
+    "size_bytes": 23001
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 0,
+    "input_handles": [
+      "atlas-settings-runtime-audit",
+      "modern-settings-benchmark-dossier"
+    ],
+    "summary": "An amended six-file plan for a four-pane Settings split view: desktop standard text uses a route-bounded shell, full-height rail, and workspace scroller; compact and AX modes retain route scrolling; category changes reset workspace scroll while preserving button focus."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "ise": {
+    "assertion_grade": "self-attested",
+    "provenance": {
+      "methodology_version": "ramza-1.1.0",
+      "tool_surface": ["Read", "Grep", "Glob"],
+      "lateral_consults": []
+    },
+    "receiver_authorization": {
+      "auto_route": true,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "confidence": 0.91,
+  "integrity": {
+    "method": "sha256",
+    "value": "d7ceed8816ad41bc0bd9dcdeffd3b1a33d12434ad050ca75c41a0210c2d22638"
+  },
+  "trace": {
+    "ts": "2026-09-04T16:18:54Z",
+    "host": "codex-desktop",
+    "model": "gpt-5.6-sol",
+    "tier": "standard"
+  },
+  "x_ramza_acceptance_criteria": {
+    "path": "settings-information-architecture-overhaul.criteria.md",
+    "sha256": "66af0ee2410318ebcb4cbf4f72653ad23d5e308129ab57775888eedb16a39467"
+  }
+}

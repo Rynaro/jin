@@ -1,0 +1,232 @@
+spec:
+  id: jin-notes-newnote-and-title
+  title: "Jin Notes QoL — sidebar New Note + inline-editable note title"
+  date: 2026-06-29
+  methodology: SPECTRA 4.10.0
+  tier: standard
+  intent_type: CHANGE
+  complexity: 7/12
+  confidence: 0.92
+  decision: AUTO_PROCEED
+  handoff: { from: spectra, to: apivr, executor: Vivi }
+  base_branch: main            # v0.4.0 (verified). Branch off main; deps already present.
+  scope_note: >
+    FRONTEND-ONLY (jin-gui). No Rust, no new Tauri commands, no schema. Reuses create_note +
+    edit_note. main already contains the CM6 editor, folder tree, createNote, editNote.
+  node_requirement: ">=20 (engines >=20.0.0); system v16 crashes vitest — use nvm v24.x"
+
+constraints_locked_by_owner:
+  - "A New Note action in the Notes sidebar creates a note AND opens it in the editor."
+  - "Folder rule: new note folder = currently-selected folder; no selection => default root \"\" (Notes)."
+  - "Inline-editable title (chosen over name-on-create dialog): click-to-edit, saves via edit_note; same UI renames ANY existing note (fills the current rename gap)."
+
+verified_facts:
+  invoke:
+    createNote: "jin-gui/src/invoke.ts:53-61 (folder default '' = root); returns NoteDto"
+    editNote: "jin-gui/src/invoke.ts:68-78 (title?/body?/add_tags?/rm_tags?)"
+  controller:
+    file: jin-gui/src/controllers/notes_controller.ts
+    editNote_imported: "line 44 (createNote NOT imported — must add)"
+    state: "currentFolder?:107 (undefined=all), currentNoteId:110, lastSavedBody:113, editorHandle:120"
+    loadDetail: "442-498 (mounts CM6 via renderNoteDetail, sets currentNoteId/lastSavedBody)"
+    onSave_targeted_dom: "517-551 (list-row DATE update at 531-539 — the pattern to mirror for title)"
+    loadList: "387-416 (filter {tag?,folder?})"
+    detailContentTarget: "line 99"
+  render:
+    file: jin-gui/src/lib/notes/render.ts
+    detail_title: "350-353 static <h2 class='browse-detail__title text-title2'>, textContent=note.title"
+    returns_editor_handle: "338-466"
+    list_row_title: ".browse-row__title render.ts:496; row btn .browse-row__inner[data-note-id] 478-489"
+  editor:
+    handle_getView: "jin-gui/src/lib/notes/editor.ts:74,839 (identity seam); _cmHandle on parent 845-850"
+  dto: "types/dto.ts:29-59 — title, updated, body_markdown?, excerpt?, folder_path?; create returns folder_path (no body/excerpt)"
+  html:
+    list_pane: "index.html:333-370 (.notes-list-pane [data-notes-target=listPanel]; NO header today)"
+    new_folder_btn: "index.html:321-329 (.notes-folder-rail__new-btn -> notes#newFolder)"
+    note_row_tmpl: "index.html:1414-1431 (.browse-row__title, .note-row__date)"
+  backend_safety:
+    slugify_empty: "jin-core/src/store/fs.rs:23-54 — slugify('')='untitled' => empty title backend-safe (create+edit)"
+    edit_note_rename: "jin-core/src/ops/notes.rs:81-137 — title change keeps frontmatter.id (ULID), renames file same folder; body-save routes by ULID via find_note_path (56-59)"
+  css:
+    title_rule: "jin-gui/src/styles/browse.css:178"
+    list_pane_rule: "browse.css:1046 (only overflow+padding; no header)"
+    new_folder_btn_rule: "browse.css:983"
+  tests:
+    file: jin-gui/src/__tests__/notes_controller.test.ts
+    invoke_mock: "60-66 (vi.fn(); createNote MISSING — add it); import 70"
+    controller_harness: "657-728 / 1564-1708 (inject BODY_CONTENT, Application.start+register('notes'), open via jin:open-detail CustomEvent, _cmHandle+getView() identity)"
+    detail_title_assertion_migrate: "453 .textContent -> .value (h2 becomes input)"
+    xss_immovable: "511-528"
+
+decisions:
+  D-BUTTON-PLACEMENT:
+    choice: "list-pane header (.notes-list-pane__header) with compose icon-button .notes-new-note-btn"
+    icon: "square-pen (Lucide)"
+    action: "click->notes#newNote"
+    aria_label: "New note"
+    rationale: "Apple-Notes compose lives in the note-list column; contextual; survives rail-collapsed; folder rail already owns New Folder (different scope)."
+    rejected: "folder-rail placement (scope confusion); global app header (too far)"
+  D-DEFAULT-TITLE:
+    choice: "empty '' (backend-safe: slugify('')='untitled')"
+    display: "Untitled fallback in list; placeholder in detail input; focus+select-all on open"
+    rejected: "literal 'New Note' (pollutes slugs; forces select-all+delete)"
+  D-TITLE-COMPONENT:
+    choice: "<input type=text class='browse-detail__title browse-detail__title--input text-title2' placeholder='Untitled'>"
+    value_source: ".value (raw note.title); never innerHTML of user text"
+    keep_class: "browse-detail__title (caret-safe node-identity selectors 1679/1700)"
+    rejected: "contenteditable (innerHTML/selection complexity, weaker XSS)"
+    test_consequence: "migrate test:453 .textContent -> .value"
+  D-TITLE-SAVE-TRIGGER:
+    owner: "interaction in renderNoteDetail wiring; persistence in controller"
+    focus: "capture titleBaseline = input.value"
+    commit_on: "blur AND Enter (dirty-check vs baseline; committing guard)"
+    enter: "preventDefault + input.blur()"
+    escape: "input.value=titleBaseline; preventDefault; blur; NO editNote"
+    allow_empty: true
+    no_per_keystroke: true
+  D-CARET-SAFE:
+    must_not: "call renderNoteDetail; touch editorHandle"
+    flow:
+      - "defensive: await editorHandle?.flush() (drain pending body save)"
+      - "await editNote(id,{title}) (ULID preserved -> body saves still route)"
+      - "targeted DOM (mirror onSave 531-539): .browse-row__inner[data-note-id=id] -> closest('.browse-row') -> .browse-row__title.textContent=noteDisplayTitle(title); .note-row__date=formatNoteDate(updated); update aria-label"
+    on_error: "app:error dispatch; keep input value; do NOT advance baseline (retry on next blur)"
+    result: "EditorView + .cm-editor identity unchanged -> caret preserved"
+  D-NEW-NOTE-FLOW:
+    steps:
+      - "created = await createNote({title:'', body:'', folder: currentFolder ?? ''})"
+      - "await loadList({folder: currentFolder})  (new row matches active filter)"
+      - "await loadDetail(created.id)  (opens; mounts CM6; sets currentNoteId/lastSavedBody)"
+      - "detailContentTarget.querySelector('.browse-detail__title').{focus(),select()}"
+    folder_map: "'Work'->'Work'; root selected ''->''; no selection undefined->'' (default)"
+    on_error: "isJinErrorDto -> dispatch app:error"
+  D-EMPTY-TITLE-DISPLAY:
+    helper: "transform.ts: noteDisplayTitle(title) => title.trim()==='' ? 'Untitled' : title"
+    list: "uses noteDisplayTitle for .browse-row__title + aria-label"
+    detail: "input value = raw (''); placeholder='Untitled' (never the literal word as value)"
+
+stories:
+  - id: NN-1
+    title: "Inline-editable note title (+ rename any note)"
+    user_story: "As a Jin user, I want to click the note title to rename it inline so I can name new notes and fix any existing note without losing my place in the body editor."
+    timebox: "<=2d"
+    risk: P0
+    files:
+      - jin-gui/src/lib/notes/render.ts        # h2->input + onTitleSave param + buildNoteRow display title
+      - jin-gui/src/lib/notes/transform.ts     # noteDisplayTitle
+      - jin-gui/src/controllers/notes_controller.ts  # onTitleSave handler (targeted DOM, no re-render)
+      - jin-gui/src/__tests__/notes_controller.test.ts  # gates + migrate :453
+    agent_hints:
+      class: builder
+      context_files: [render.ts, notes_controller.ts (onSave 517-551), editor.ts (getView), transform.ts]
+    acceptance:
+      - id: AC-NN1.1
+        gate: G-TITLE-EDIT-SAVE
+        given: "note opened via controller; capture handleBefore, viewBefore=getView(), cmEditorBefore=.cm-editor"
+        when: "title input value set to 'Renamed' + real blur"
+        then: "editNote called once with (id,{title:'Renamed'}); list .browse-row__title for data-note-id == 'Renamed'; getHandle()===handleBefore AND getView()===viewBefore AND .cm-editor===cmEditorBefore"
+        mutation: "full renderNoteDetail on commit -> new EditorView/.cm-editor -> fails; drop row update -> row assertion fails; disable editNote -> count fails"
+      - id: AC-NN1.2
+        gate: G-TITLE-EDIT-ENTER
+        given: "title input focused"
+        when: "value set + keydown Enter"
+        then: "editNote called with {title}; default prevented; no second editNote from follow-on blur"
+      - id: AC-NN1.3
+        gate: G-TITLE-EDIT-ESCAPE
+        given: "input focused, baseline 'Orig'"
+        when: "value set to 'Discard' + keydown Escape"
+        then: "input value reverts to 'Orig'; editNote NOT called"
+      - id: AC-NN1.4
+        gate: G-TITLE-DIRTY-NOOP
+        given: "input focused, value unchanged"
+        when: "blur"
+        then: "editNote NOT called"
+      - id: AC-NN1.5
+        gate: G-TITLE-EMPTY-ALLOWED
+        given: "note with non-empty title"
+        when: "title cleared to '' and committed"
+        then: "editNote called with {title:''}; list .browse-row__title shows 'Untitled'; detail input value '' with placeholder 'Untitled'"
+      - id: AC-NN1.6
+        gate: G-TITLE-RENAME-BODY-SAVE-STILL-WORKS
+        given: "note opened and title committed to a new value (file renamed)"
+        when: "body edited then flush()"
+        then: "editNote called with {body} for the SAME id (ULID) — body autosave still routes after rename"
+      - id: AC-NN1.7
+        gate: PRESERVE-G-SAVE-CARET-SAFE
+        then: "existing body-save caret gate (test:1671) green; title node-identity (now input) holds across body save"
+
+  - id: NN-2
+    title: "New Note button -> create-in-target-folder -> open -> focus title"
+    user_story: "As a Jin user, I want a New Note button in the Notes sidebar that creates a note in the folder I'm viewing and drops me into it with the title ready to type."
+    timebox: "<=2d"
+    risk: P1
+    depends_on: [NN-1]
+    files:
+      - jin-gui/index.html                     # .notes-list-pane__header + .notes-new-note-btn (K-NN-1)
+      - jin-gui/src/controllers/notes_controller.ts  # import createNote + newNote()
+      - jin-gui/src/styles/browse.css          # header + button CSS (K-NN-2)
+      - jin-gui/src/__tests__/notes_controller.test.ts  # gates + add createNote to mock/import
+    agent_hints:
+      class: builder
+      context_files: [notes_controller.ts (connect/loadList/loadDetail), index.html (.notes-list-pane 333)]
+    acceptance:
+      - id: AC-NN2.1
+        gate: G-NEWNOTE-DEFAULT-FOLDER
+        given: "controller connected, currentFolder === undefined (no folder selected)"
+        when: "real .notes-new-note-btn clicked (real MouseEvent through Stimulus)"
+        then: "createNote called with {title:'',body:'',folder:''}; new note opens (.note-detail__body + .cm-editor present; currentNoteId set)"
+        mutation: "folder:undefined instead of '' -> exact-arg fails; disable createNote -> fails"
+      - id: AC-NN2.2
+        gate: G-NEWNOTE-SELECTED-FOLDER
+        given: "currentFolder='Work'"
+        when: "New Note clicked"
+        then: "createNote called with folder:'Work'"
+      - id: AC-NN2.3
+        gate: G-NEWNOTE-IN-LIST
+        given: "post-create listNotes mock returns the new note"
+        when: "New Note completes"
+        then: "loadList re-runs with {folder: currentFolder}; a row with the new id is rendered"
+      - id: AC-NN2.4
+        gate: G-NEWNOTE-OPENS-EDITABLE-TITLE
+        given: "New Note completes"
+        then: ".browse-detail__title input present, focused (document.activeElement===input), editable; typing + blur calls editNote with typed title (end-to-end)"
+      - id: AC-NN2.5
+        gate: G-NEWNOTE-ERROR
+        given: "createNote rejects with JinErrorDto"
+        when: "New Note clicked"
+        then: "app:error dispatched; detail not left half-open"
+
+kupo_micro_tasks:
+  - id: K-NN-1
+    desc: "New Note compose button + .notes-list-pane__header markup in index.html (.notes-list-pane ~333); square-pen Lucide; data-action click->notes#newNote; aria-label 'New note'. MUST be in real index.html (controller gates inject BODY_CONTENT)."
+  - id: K-NN-2
+    desc: "browse.css — .browse-detail__title--input (transparent/borderless until focus, inherit text-title2, focus ring via token, placeholder --label-tertiary, full-width); .notes-list-pane__header flex layout + .notes-new-note-btn ghost-icon (tokens only). Keep .notes-rail-reveal positioning."
+
+test_harness_required_edits:
+  - "notes_controller.test.ts: add createNote: vi.fn() to vi.mock('../invoke') (60-66) and to import (70)."
+  - "notes_controller.test.ts:453 — migrate detail title assertion .textContent -> (titleEl as HTMLInputElement).value."
+  - "notes_controller.ts:44 — add createNote to the invoke import."
+
+preserve_gates:
+  - G-XSS (immovable, test:511-528)
+  - G-SAVE-CARET-SAFE / G-SAVE-DIRTY / G-AUTOSAVE / G-SAVE-DEBOUNCE / G-SAVE-ERROR
+  - VG1.4, VG2.4, VG2.5, VG-FE, VG-FE-FOLDER-OPEN
+  - folder tree gates (G-TREE-*), live-preview + code gates, K2 template parity
+  - "Node >= 20"
+
+risks:
+  - { id: R-CARET, sev: P0, desc: "title commit remounts body editor -> data loss/caret jump", mitig: "D-CARET-SAFE; G-TITLE-EDIT-SAVE asserts EditorView+.cm-editor identity" }
+  - { id: R-RENAME-INTERACTION, sev: P1, desc: "title-change renames file; mid-flight body save could clobber", mitig: "focus serializes; per-field read-modify-write (ops/notes.rs:81-137); defensive flush; ULID preserved; G-TITLE-RENAME-BODY-SAVE-STILL-WORKS" }
+  - { id: R-LIST-ROW-SYNC, sev: P1, desc: "list row title stale after rename", mitig: "targeted DOM mirror of onSave; asserted in G-TITLE-EDIT-SAVE" }
+  - { id: R-EMPTY-TITLE-DISPLAY, sev: P2, desc: "empty title shows '' / undefined", mitig: "noteDisplayTitle fallback + placeholder; G-TITLE-EMPTY-ALLOWED" }
+  - { id: R-DOUBLE-SAVE, sev: P2, desc: "Enter then blur double editNote", mitig: "committing guard + baseline advance + dirty-check no-op; AC-NN1.2" }
+  - { id: R-TEST-MIGRATION, sev: P1, desc: "suite breaks / gates can't run", mitig: "add createNote to mock+import; migrate :453" }
+  - { id: R-NODE, sev: P1, desc: "vitest crashes on node v16", mitig: "Node >= 20 (nvm v24.x)" }
+
+execution_plan:
+  order: [K-NN-1, NN-1, NN-2, K-NN-2]
+  notes: >
+    NN-1 first (editable title + caret-safe rename + controller onTitleSave). K-NN-1 can land
+    before/with NN-2 (button markup needed for NN-2 controller gates). NN-2 depends on NN-1
+    (focuses the NN-1 input). K-NN-2 (CSS) anytime after the markup exists. Run all gates under
+    Node >= 20.

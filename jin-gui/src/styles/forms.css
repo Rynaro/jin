@@ -1,0 +1,975 @@
+/**
+ * forms.css — form, modal dialog, and action button styles (GUI-S4).
+ *
+ * All values reference tokens from tokens.css — NO raw hex anywhere.
+ * Visual correctness (glass rendering, dialog animation) is owner-verified.
+ *
+ * Class namespaces:
+ *   .capture-modal       — the quick-capture / create <dialog>
+ *   .action-dialog       — promote / attach / link <dialog> elements
+ *   .form-*              — shared form element patterns
+ *   .task-promote-btn    — task detail promote-to-event button
+ *   .note-attach-btn / .note-link-btn
+ *   .event-attach-btn / .event-link-btn
+ *   .browse-detail__actions — action button container in detail panels
+ */
+
+/* ── Native <dialog> baseline ────────────────────────────────────────────── */
+
+dialog {
+  background: var(--bg-elevated);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
+  color: var(--label);
+  font-family: var(--font-text);
+  max-inline-size: min(90vw, 480px);
+  padding: 0;
+  /* Native dialog resets */
+  margin: auto;
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.48);
+  -webkit-backdrop-filter: blur(4px);
+          backdrop-filter: blur(4px);
+}
+
+/* Reduced-transparency fallback: solid backdrop, no blur */
+[data-reduce-transparency="1"] dialog::backdrop {
+  background: rgba(0, 0, 0, 0.72);
+  -webkit-backdrop-filter: none;
+          backdrop-filter: none;
+}
+
+/* ── Capture modal — quick-capture + tabbed create forms ─────────────────── */
+
+.capture-modal {
+  inline-size: min(92vw, 620px);
+  max-inline-size: 620px;
+  max-block-size: min(88vh, 760px);
+  overflow: visible;
+}
+
+.capture-modal__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-block-size: inherit;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.capture-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.capture-modal__title {
+  color: var(--ink-primary);
+  font-family: var(--font-display);
+  font-size: var(--text-title3-size);
+  font-weight: var(--display-title-weight);
+  line-height: var(--text-title3-line);
+  letter-spacing: var(--display-title-tracking);
+  margin: 0;
+}
+
+.capture-modal__subtitle {
+  margin: var(--space-half) 0 0;
+  color: var(--label-secondary);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+}
+
+/* ── Tab bar ─────────────────────────────────────────────────────────────── */
+
+.capture-modal__tabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 0.5px solid var(--separator);
+  role: tablist;
+}
+
+.capture-modal__tab {
+  flex: 1;
+  min-block-size: var(--hit-target);
+  padding: var(--space-1) var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-subheadline-size);
+  font-family: inherit;
+  font-weight: 400;
+  color: var(--label-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+
+.capture-modal__tab svg {
+  width: var(--icon-size-standard);
+  height: var(--icon-size-standard);
+  flex: 0 0 auto;
+}
+
+.capture-modal__tab > span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.1;
+}
+
+.capture-modal__tab strong { font-weight: 600; }
+
+.capture-modal__tab small {
+  color: var(--label-tertiary);
+  font-size: var(--text-caption2-size);
+}
+
+.capture-modal__tab:hover {
+  background: var(--fill-primary);
+  color: var(--label);
+}
+
+.capture-modal__tab[aria-selected="true"] {
+  background: var(--workspace-row-selected);
+  color: var(--ink-primary);
+  font-weight: 600;
+}
+
+[data-reduce-motion="1"] .capture-modal__tab {
+  transition: none;
+}
+
+/* ── Form panels ─────────────────────────────────────────────────────────── */
+
+.capture-modal__form {
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  overflow-y: auto;
+}
+
+.capture-field-hint {
+  margin: 0;
+  color: var(--label-tertiary);
+  font-size: var(--text-caption1-size);
+}
+
+.capture-hero-field .form-input,
+.capture-hero-field .form-textarea {
+  background: var(--workspace-row-hover);
+  border-color: var(--separator-opaque);
+}
+
+.capture-meta-row,
+.capture-task-options,
+.capture-event-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.capture-task-options {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.capture-task-composer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: 64px;
+  padding: var(--space-2) var(--space-3);
+  border: 0.5px solid var(--separator-opaque);
+  border-radius: var(--radius-md);
+  background: var(--workspace-row-hover);
+}
+
+.capture-task-composer__check {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border: 2px solid var(--seal);
+  border-radius: 50%;
+}
+
+.capture-task-composer .form-group { flex: 1; }
+
+.capture-task-composer__input {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--label);
+  font: inherit;
+  font-size: var(--text-title3-size);
+}
+
+.capture-note-editor {
+  overflow: hidden;
+  border: 0.5px solid var(--separator-opaque);
+  border-radius: var(--radius-md);
+  background: var(--editor-canvas);
+}
+
+.capture-note-editor:focus-within {
+  border-color: var(--ink-stroke);
+  box-shadow: 0 0 0 3px var(--ink-bleed);
+}
+
+.capture-icon-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.capture-icon-field svg {
+  width: var(--icon-size-standard);
+  height: var(--icon-size-standard);
+  flex: 0 0 auto;
+  color: var(--label-secondary);
+}
+
+.capture-event-when-trigger {
+  width: 100%;
+  min-block-size: var(--control-height-prominent);
+  justify-content: flex-start;
+  padding-inline: var(--space-2);
+  background: var(--workspace-row-hover);
+  border-color: var(--separator-opaque);
+  color: var(--label);
+}
+
+.capture-event-when-trigger svg:last-child {
+  color: var(--label-tertiary);
+}
+
+.capture-event-meta__field {
+  min-width: 0;
+}
+
+.capture-event-meta .jin-select-field__trigger {
+  min-block-size: calc(var(--text-body-line) + (2 * var(--space-1)));
+  padding-block: var(--space-1);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+}
+
+.capture-icon-field .form-input { flex: 1; }
+
+@media (max-width: 560px) {
+  .capture-modal__tab small { display: none; }
+  .capture-modal__tab { flex-direction: column; gap: var(--space-half); }
+  .capture-meta-row,
+  .capture-task-options,
+  .capture-event-meta { grid-template-columns: 1fr; }
+}
+
+/* ── Shared form field patterns ──────────────────────────────────────────── */
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+}
+
+.form-label {
+  font-size: var(--text-subheadline-size);
+  font-weight: 400;
+  line-height: var(--text-subheadline-line);
+  color: var(--label-secondary);
+}
+
+.form-input,
+.form-textarea,
+.form-select {
+  min-block-size: var(--hit-target);
+  padding: var(--space-1) var(--space-2);
+  background: var(--fill-primary);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-sm);
+  color: var(--label);
+  font-size: var(--text-body-size);
+  font-family: var(--font-text);
+  line-height: var(--text-body-line);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-input:focus,
+.form-textarea:focus,
+.form-select:focus {
+  outline: none;
+  border-color: var(--ink-dry);
+  box-shadow: 0 0 0 3px var(--ink-bleed);
+}
+
+.form-input:focus-visible,
+.form-textarea:focus-visible,
+.form-select:focus-visible {
+  border-color: var(--ink-stroke);
+  box-shadow: 0 0 0 3px var(--ink-bleed);
+}
+
+.form-textarea {
+  resize: vertical;
+  min-block-size: 80px;
+}
+
+[data-increase-contrast="1"] .form-input,
+[data-increase-contrast="1"] .form-textarea,
+[data-increase-contrast="1"] .form-select {
+  border-color: var(--separator-opaque);
+}
+
+/* ── Inline error elements ───────────────────────────────────────────────── */
+
+.form-error {
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+  color: var(--system-red);
+  display: flex;
+  align-items: center;
+  gap: var(--space-half);
+  min-block-size: var(--text-footnote-line); /* reserve space to avoid layout shift */
+}
+
+.form-error.hidden {
+  visibility: hidden; /* keep space, announce when appears */
+}
+
+/* ── Form actions row / Action dialog footer ─────────────────────────────── */
+/*
+ * .action-dialog__footer is the canonical footer for dialogs built by JinModal.
+ * .form-actions is kept as an alias selector so existing capture-modal markup
+ * does not regress. Both resolve to the same base rule.
+ */
+.action-dialog__footer,
+.form-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  padding-top: var(--space-1);
+}
+
+/* ── Shared button styles ────────────────────────────────────────────────── */
+
+.btn-primary {
+  min-block-size: var(--hit-target);
+  min-inline-size: var(--hit-target);
+  padding: var(--space-1) var(--space-3);
+  background: var(--ink-primary);
+  color: var(--ink-on);
+  border: none;
+  border-radius: var(--radius-capsule);
+  font-size: var(--text-subheadline-size);
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.btn-primary:hover {
+  opacity: 0.88;
+}
+
+.btn-primary:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  min-block-size: var(--hit-target);
+  min-inline-size: var(--hit-target);
+  padding: var(--space-1) var(--space-3);
+  background: transparent;
+  color: var(--accent);
+  border: none;
+  border-radius: var(--radius-capsule);
+  font-size: var(--text-subheadline-size);
+  font-family: inherit;
+  font-weight: 400;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.btn-secondary:hover {
+  background: var(--fill-primary);
+}
+
+/* ── Danger action button (cinnabar seal — destructive actions) ──────────── */
+/*
+ * Used for delete confirmations (Delete List, ConfirmDialog with variant:'danger').
+ * Standalone class: <button class="btn-danger">Delete</button>.
+ * Uses --seal (cinnabar) so the red is harmonised with the ink-and-seal design.
+ */
+.btn-danger {
+  min-block-size: var(--hit-target);
+  min-inline-size: var(--hit-target);
+  padding: var(--space-1) var(--space-3);
+  background: var(--seal);
+  color: var(--seal-on);
+  border: none;
+  border-radius: var(--radius-capsule);
+  font-size: var(--text-subheadline-size);
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.btn-danger:hover {
+  background: var(--seal-strong);
+}
+
+.btn-danger:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+[data-reduce-motion="1"] .btn-primary,
+[data-reduce-motion="1"] .btn-secondary {
+  transition: none;
+}
+
+/* ── Modal close button ──────────────────────────────────────────────────── */
+
+.modal-close-btn {
+  min-block-size: var(--hit-target);
+  min-inline-size: var(--hit-target);
+  padding: var(--space-1);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-capsule);
+  color: var(--label-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.modal-close-btn:hover {
+  background: var(--fill-primary);
+  color: var(--label);
+}
+
+.modal-close-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
+}
+
+/* ── Action dialog (promote / attach / link) ─────────────────────────────── */
+
+.action-dialog {
+  min-inline-size: min(90vw, 400px);
+}
+
+.action-dialog__inner {
+  display: flex;
+  flex-direction: column;
+}
+
+.action-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.action-dialog__title {
+  color: var(--ink-primary);
+  font-family: var(--font-display);
+  font-size: var(--text-title3-size);
+  font-weight: var(--display-title-weight);
+  line-height: var(--text-title3-line);
+  letter-spacing: var(--display-title-tracking);
+  margin: 0;
+}
+
+.action-dialog__form {
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ── Action dialog body slot ─────────────────────────────────────────────── */
+/*
+ * Wraps the content area of a JinModal-built dialog (injected by buildBody()
+ * or setBody()). Provides the inner padding and vertical rhythm.
+ */
+.action-dialog__body {
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ── Action dialog footer (canonical) — dialog-context padding override ─────
+ * The shared rule above (.action-dialog__footer, .form-actions) sets the base
+ * flex/gap/justify. This rule adds the dialog-specific padding and separator
+ * for dialogs built by JinModal, without affecting .form-actions contexts.
+ */
+.action-dialog__footer {
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-top: 0.5px solid var(--separator);
+}
+
+/* ── Action dialog message ───────────────────────────────────────────────── */
+/*
+ * Inline text used inside a dialog body for confirmation prompts or
+ * informational copy (e.g. "Delete list? This cannot be undone.").
+ * Used in the New List / Delete List dialogs and by ConfirmDialog.
+ */
+.action-dialog__message {
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  color: var(--label);
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Edge type select: vocabulary choices ────────────────────────────────── */
+
+.link-edge-select {
+  /* Same as .form-select but with a visual hint that choices are constrained */
+}
+
+/* ── Detail action buttons (promote, attach, link) ───────────────────────── */
+
+/*
+ * .browse-detail__actions — container used by Tasks + Events detail panels.
+ * Notes no longer uses this container: its attach/link buttons are icon-only
+ * and live in .notes-detail-pane__header (see browse.css, item 1).
+ */
+.browse-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-block: var(--space-3);
+  border-top: 0.5px solid var(--separator);
+  margin-top: var(--space-3);
+}
+
+/*
+ * item 1: .note-attach-btn / .note-link-btn removed from this group.
+ * Notes attach/link are now icon-only .cm-toolbar__btn buttons in the header.
+ * Tasks/Events retain their pill-style buttons unchanged.
+ */
+.task-promote-btn,
+.event-attach-btn,
+.event-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-block-size: var(--hit-target);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-capsule);
+  border: 0.5px solid var(--separator);
+  background: var(--fill-primary);
+  color: var(--accent);
+  font-size: var(--text-subheadline-size);
+  font-family: inherit;
+  font-weight: 400;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.task-promote-btn:hover,
+.event-attach-btn:hover,
+.event-link-btn:hover {
+  background: var(--fill-secondary, var(--fill-primary));
+}
+
+.task-promote-btn svg,
+.event-attach-btn svg,
+.event-link-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
+}
+
+[data-reduce-motion="1"] .task-promote-btn,
+[data-reduce-motion="1"] .event-attach-btn,
+[data-reduce-motion="1"] .event-link-btn {
+  transition: none;
+}
+
+/* ── Capture sidebar button (re-style for action state) ─────────────────── */
+
+.jin-capture-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-1);
+}
+
+/* ── JinSelect — ink-and-seal native <select> wrapper (S5) ──────────────── */
+/*
+ * Wraps a native <select> in a relative-positioned shell so a CSS-drawn
+ * chevron affordance can be absolutely-positioned at the trailing edge.
+ * The native <select> remains the interactive source of truth; its change
+ * events, keyboard navigation, and ARIA semantics are fully preserved.
+ *
+ * Shell structure (produced by JinSelect.enhance() / new JinSelect()):
+ *   <div class="jin-select">
+ *     <select …>…</select>
+ *     <span class="jin-select__chevron" aria-hidden="true"></span>
+ *   </div>
+ *
+ * CSS-drawn chevron: border-right + border-bottom, rotated 45 deg → "∨".
+ * Uses only defined design tokens (no raw hex — css_tokens.test.ts guard).
+ */
+
+.jin-select {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+}
+
+/* Remove the OS native arrow from any <select> or .form-select inside the
+ * shell; the CSS chevron below replaces it. The extra trailing padding
+ * clears the chevron so option text does not overlap it.
+ * Specificity 0,1,1 — forms.css loads after browse.css so this override
+ * wins over the equal-specificity .tasks-filter-bar select rule. */
+.jin-select select,
+.jin-select .form-select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-inline-end: var(--space-2);
+  flex: 1;
+  min-inline-size: 0;
+}
+
+/* Seal-accent focus ring — ink-and-seal identity, consistent with form controls. */
+.jin-select select:focus,
+.jin-select .form-select:focus {
+  outline: none;
+  border-color: var(--ink-dry);
+  box-shadow: 0 0 0 3px var(--ink-bleed);
+}
+
+.jin-select select:focus-visible,
+.jin-select .form-select:focus-visible {
+  border-color: var(--ink-stroke);
+  box-shadow: 0 0 0 3px var(--ink-bleed);
+}
+
+[data-increase-contrast="1"] .form-input:focus-visible,
+[data-increase-contrast="1"] .form-textarea:focus-visible,
+[data-increase-contrast="1"] .form-select:focus-visible,
+[data-increase-contrast="1"] .jin-select select:focus-visible {
+  border-color: var(--ink-primary);
+  box-shadow: 0 0 0 3px var(--ink-dry);
+}
+
+/* CSS-drawn down-chevron (∨).
+ * A 6 × 6 px element with border-right + border-bottom, rotated 45 deg,
+ * produces a "V" pointing downward. margin-top: -3px (half the height) centers
+ * it at the top: 50% anchor. Physical borders are intentional: the rotation is
+ * always clockwise regardless of text direction.
+ */
+.jin-select__chevron {
+  position: absolute;
+  right: var(--space-1);
+  top: 50%;
+  margin-top: -3px;
+  transform: rotate(45deg);
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--label-secondary);
+  border-bottom: 1.5px solid var(--label-secondary);
+  pointer-events: none;
+}
+
+/* ── JinSelectField — fully custom combobox/listbox ─────────────────────── */
+
+.jin-select-field {
+  position: relative;
+  min-width: 0;
+}
+
+.jin-select-field__native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.jin-select-field__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  width: 100%;
+  min-height: var(--control-height-prominent);
+  padding: 0 var(--space-2);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-sm);
+  background: var(--fill-primary);
+  color: var(--label);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.jin-select-field__trigger:focus-visible {
+  outline: none;
+  border-color: var(--ink-stroke);
+  box-shadow: 0 0 0 3px var(--ink-bleed);
+}
+
+.jin-select-field__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jin-select-field__chevron {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-right: 1.5px solid var(--label-secondary);
+  border-bottom: 1.5px solid var(--label-secondary);
+  transform: rotate(45deg) translateY(-2px);
+}
+
+.jin-select-field[data-open="true"] .jin-select-field__chevron {
+  transform: rotate(225deg) translate(-2px, -2px);
+}
+
+.jin-select-field__listbox {
+  position: absolute;
+  z-index: 100;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: var(--space-half);
+  border: 0.5px solid var(--separator-opaque);
+  border-radius: var(--radius-sm);
+  background: var(--workspace-transient);
+  box-shadow: var(--elevation-shadow);
+  -webkit-backdrop-filter: blur(var(--glass-blur-thick));
+  backdrop-filter: blur(var(--glass-blur-thick));
+}
+
+.jin-select-field__option {
+  display: block;
+  width: 100%;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.jin-select-field__option:hover,
+.jin-select-field__option.is-active { background: var(--workspace-row-hover); }
+
+.jin-select-field__option[aria-selected="true"] {
+  background: var(--workspace-row-selected);
+  color: var(--ink-primary);
+  font-weight: 600;
+}
+
+/* ── Chip tag input ─────────────────────────────────────────────────────── */
+
+.jin-tag-input {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-half);
+  min-height: var(--control-height-prominent);
+  padding: var(--space-half) var(--space-1);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-sm);
+  background: var(--fill-primary);
+}
+
+.jin-tag-input:focus-within {
+  border-color: var(--ink-stroke);
+  box-shadow: 0 0 0 3px var(--ink-bleed);
+}
+
+.jin-tag-input__chips { display: contents; }
+
+.jin-tag-input__chip {
+  padding: var(--space-half) var(--space-1);
+  border: 0;
+  border-radius: var(--radius-capsule);
+  background: var(--seal-tint);
+  color: var(--seal);
+  font: inherit;
+  font-size: var(--text-footnote-size);
+  cursor: pointer;
+}
+
+.jin-tag-input__field {
+  flex: 1 1 140px;
+  min-width: 80px;
+  padding: var(--space-half);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--label);
+  font: inherit;
+}
+
+/* ── Continuous control aliases ──────────────────────────────────────────── */
+
+.btn,
+.btn-primary,
+.btn-secondary,
+.btn-danger,
+.btn--primary,
+.btn--secondary,
+.btn--danger {
+  min-width: var(--desktop-hit-target);
+  min-height: var(--control-height-prominent);
+  padding: 0 var(--space-2);
+  border: 0.5px solid transparent;
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+  font-weight: 500;
+}
+
+.btn,
+.btn-secondary,
+.btn--secondary {
+  color: var(--label);
+  background: var(--workspace-row-hover);
+  border-color: var(--separator);
+}
+
+.btn-primary,
+.btn--primary {
+  color: var(--ink-on);
+  background: var(--ink-primary);
+}
+
+.btn-danger,
+.btn--danger {
+  color: var(--seal-on);
+  background: var(--seal);
+}
+
+.btn:hover,
+.btn-primary:hover,
+.btn-secondary:hover,
+.btn-danger:hover,
+.btn--primary:hover,
+.btn--secondary:hover,
+.btn--danger:hover {
+  opacity: 0.88;
+}
+
+.btn-danger:hover,
+.btn--danger:hover {
+  background: var(--seal-strong);
+  opacity: 1;
+}
+
+.modal-close-btn {
+  width: var(--control-height);
+  height: var(--control-height);
+  min-width: var(--desktop-hit-target);
+  min-height: var(--desktop-hit-target);
+  padding: 0;
+  border-radius: var(--radius-sm);
+}
+
+.action-dialog,
+.capture-modal {
+  border-radius: var(--radius-lg);
+  background: var(--workspace-transient);
+  -webkit-backdrop-filter: blur(var(--glass-blur-thick)) saturate(var(--glass-saturate));
+          backdrop-filter: blur(var(--glass-blur-thick)) saturate(var(--glass-saturate));
+}
+
+.action-dialog__header,
+.capture-modal__header {
+  min-height: var(--toolbar-height);
+  padding: var(--space-2) var(--space-3);
+}
+
+.action-dialog__footer {
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+}
+
+.form-input,
+.form-textarea,
+.form-select {
+  min-block-size: var(--control-height-prominent);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-callout-size);
+}
+
+@media (pointer: coarse) {
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger,
+  .btn--primary,
+  .btn--secondary,
+  .btn--danger,
+  .modal-close-btn {
+    min-width: var(--coarse-hit-target);
+    min-height: var(--coarse-hit-target);
+  }
+}
+
+/* The task inspector's promote action follows the shared compact secondary
+ * control rather than the legacy capsule treatment used by event actions. */
+.task-promote-btn.jin-control {
+  min-height: var(--control-height-prominent);
+  padding: 0 var(--space-2);
+  border: 0.5px solid var(--separator);
+  border-radius: 7px;
+  background: var(--workspace-row-hover);
+  box-shadow: inset 0 0.5px 0 var(--specular-highlight);
+  color: var(--label);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+  font-weight: 500;
+}
+
+.task-promote-btn.jin-control:hover {
+  background: var(--workspace-row-selected);
+  opacity: 1;
+}
+
+.task-promote-btn.jin-control svg {
+  width: var(--icon-size-standard);
+  height: var(--icon-size-standard);
+  stroke-width: 1.75;
+}
+
+.tasks-detail-pane .browse-detail__actions {
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  padding-block: var(--space-2);
+}

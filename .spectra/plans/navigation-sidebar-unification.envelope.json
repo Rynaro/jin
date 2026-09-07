@@ -1,0 +1,65 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "01a06bc8-d754-7e55-9a42-c08d53be18c1",
+  "thread_id": "01a06bc8-d754-7d44-876f-bf86556694a9",
+  "parent_id": null,
+  "from": {
+    "eidolon": "ramza",
+    "version": "1.1.0"
+  },
+  "to": {
+    "eidolon": "vivi",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Propose a staged 15-file migration to one shared navigation-sidebar anatomy across Main, Settings, Notes, and Tasks.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": "navigation-sidebar-unification.md",
+    "sha256": "1733f53cfabe114d238dfabf7e2a5b8c30aff4c6b5564b6bcdbf2969d7fd8cd1",
+    "size_bytes": 23613
+  },
+  "context_delta": {
+    "token_budget": 8000,
+    "tokens_used": 0,
+    "input_handles": [
+      "atlas-navigation-sidebar-report",
+      "dirty-settings-worktree-inventory",
+      "ramza-nav-critic-01"
+    ],
+    "summary": "A full-tier, independently critiqued plan for an authoritative navigation.css anatomy, 184px shared standard rail, semantic current/selected states, tree and actions variants, compatibility-first migration, dirty Settings preservation, and deterministic evidence."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "ise": {
+    "assertion_grade": "self-attested",
+    "provenance": {
+      "methodology_version": "ramza-1.1.0",
+      "tool_surface": ["Read", "Grep", "Glob"],
+      "lateral_consults": ["ramza-nav-critic-01"]
+    },
+    "receiver_authorization": {
+      "auto_route": true,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "confidence": 0.9225,
+  "integrity": {
+    "method": "sha256",
+    "value": "1733f53cfabe114d238dfabf7e2a5b8c30aff4c6b5564b6bcdbf2969d7fd8cd1"
+  },
+  "trace": {
+    "ts": "2026-09-04T18:50:12Z",
+    "host": "codex-desktop",
+    "model": "gpt-5.6-sol",
+    "tier": "standard"
+  },
+  "x_ramza_acceptance_criteria": {
+    "path": "navigation-sidebar-unification.criteria.md",
+    "sha256": "055a1ab40820658073ce3e56656bcfa792a2eda409eb5e31930cb3f449c78e02"
+  }
+}

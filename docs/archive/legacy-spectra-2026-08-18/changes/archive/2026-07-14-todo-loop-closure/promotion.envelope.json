@@ -1,0 +1,18 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "idg"
+  },
+  "to": {
+    "eidolon": "orchestrator"
+  },
+  "performative": "INFORM",
+  "objective": "INFORM(promotion): archived change \"todo-loop-closure\" ready for CRYSTALIUM Semantic promotion.",
+  "context_delta": {
+    "archive_path": "archive/2026-07-14-todo-loop-closure",
+    "change_id": "todo-loop-closure",
+    "intent": "promotion",
+    "spec_ref": ".spectra/changes/todo-loop-closure/spec.md",
+    "summary": "Verified + archived spec; route to mcp__crystalium__ingest (Semantic layer). tonberry does not call crystalium."
+  }
+}

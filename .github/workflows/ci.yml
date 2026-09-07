@@ -1,0 +1,196 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # ── Core gate (jin-core + jin CLI) ──────────────────────────────────────────
+  verify:
+    name: verify (stable)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The core `verify` job runs on the same ~14 GB-free ubuntu-latest runners
+      # as `verify-gui`, and has begun hitting "No space left on device" during
+      # `make verify` (both the push- and PR-triggered runs). Reclaim the same
+      # ~25 GB of unused preinstalled toolchains verify-gui already frees.
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+            /usr/local/share/boost /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # rusqlite ships with `bundled` SQLite that requires a C compiler.
+      # The rust:* Docker images include gcc; ubuntu-latest needs an explicit
+      # install to avoid "linker `cc` not found" errors.
+      - name: Install C compiler (required by rusqlite bundled)
+        run: sudo apt-get update -y && sudo apt-get install -y gcc
+
+      - name: Cache cargo registry + build artefacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-stable-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-stable-
+            ${{ runner.os }}-cargo-
+
+      - name: make verify
+        run: make verify
+
+  # ── GUI gate (jin-gui command bridge + frontend) ─────────────────────────────
+  verify-gui:
+    name: verify-gui (stable)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # A cache-cold Tauri debug build can exhaust the runner's ~14 GB of free
+      # disk ("No space left on device", os error 28). Reclaim ~25 GB of
+      # preinstalled toolchains we don't use (keep the hosted tool cache that
+      # actions/setup-node relies on).
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+            /usr/local/share/boost /opt/hostedtoolcache/CodeQL || true
+          sudo docker image prune --all --force || true
+          df -h /
+
+      # ── Rust ────────────────────────────────────────────────────────────────
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # Tauri on Linux requires several system libraries for WebKit2GTK.
+      # The exact package list matches Tauri 2.x prerequisites:
+      # https://tauri.app/start/prerequisites/#linux
+      - name: Install Tauri Linux system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            gcc \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libxdo-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - name: Cache cargo registry + build artefacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-gui-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-gui-
+            ${{ runner.os }}-cargo-
+
+      # ── Node LTS (v24) ───────────────────────────────────────────────────────
+      - name: Set up Node.js LTS (v24)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: jin-gui/package-lock.json
+
+      # ── Bridge tests (headless Rust) ─────────────────────────────────────────
+      - name: Build jin-gui command bridge
+        run: cargo build -p jin-gui 2>&1
+
+      - name: Run jin-gui bridge tests
+        run: cargo test -p jin-gui 2>&1
+
+      - name: Clippy — jin-gui
+        run: cargo clippy -p jin-gui -- -D warnings 2>&1
+
+      - name: Fmt check — jin-gui
+        run: cargo fmt -p jin-gui --check 2>&1
+
+      # ── Frontend (TypeScript + Vite) ─────────────────────────────────────────
+      - name: Install frontend dependencies
+        working-directory: jin-gui
+        run: npm ci
+
+      - name: Install Playwright Chromium for production smoke
+        working-directory: jin-gui
+        run: npx playwright install --with-deps chromium
+
+      - name: TypeScript type check
+        working-directory: jin-gui
+        run: npx tsc --noEmit
+
+      - name: Vitest frontend tests
+        working-directory: jin-gui
+        run: npm test
+
+      # GUI-S1: stylelint token-discipline gate (VG-GUI-5)
+      # Enforces no-raw-hex-in-components + color-named:never across src/styles/
+      - name: Stylelint CSS token discipline (VG-GUI-5)
+        working-directory: jin-gui
+        run: npm run lint:css
+
+      - name: Vite production build
+        working-directory: jin-gui
+        run: npx vite build
+
+      - name: Production-bundle due editor smoke
+        working-directory: jin-gui
+        run: npm run test:production-due
+
+      # VG-GUI-8: headless-honesty label — CI proves logic only, never visuals.
+      # This step always runs last so it is visible in the job summary.
+      - name: "[VG-GUI-8] LOGIC VERIFIED — visuals NOT verified"
+        run: |
+          echo "======================================================="
+          echo "VG-GUI-8: CI proves bridge logic + frontend logic only."
+          echo "Visual correctness requires owner sign-off."
+          echo "See docs/gui-testing.md section 5 for the owner checklist."
+          echo "======================================================="
+
+  # Compile the cfg(windows) notification status/delivery adapter on its native
+  # SDK. This catches WinRT feature or AUMID API drift that Unix CI cannot see.
+  check-windows-notifications:
+    name: check Windows notification adapter
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Node.js LTS (v24)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: jin-gui/package-lock.json
+
+      - name: Build frontend assets required by Tauri context
+        working-directory: jin-gui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Compile-check Windows notification adapter
+        run: cargo check -p jin-gui --all-targets

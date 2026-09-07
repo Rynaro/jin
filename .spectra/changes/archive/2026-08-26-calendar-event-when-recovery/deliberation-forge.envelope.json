@@ -1,0 +1,18 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "FORGE"
+  },
+  "to": {
+    "eidolon": "Vivi"
+  },
+  "performative": "DECIDE",
+  "objective": "Recover Add Event's shared Calendar and relative When input with a live selection boundary and explicit locale ownership.",
+  "context_delta": {
+    "dg_01": "Add Event consumes synchronous range calendar:change; calendar:commit remains opt-in for generic staged consumers and is absent from Add Event; programmatic setSelection is silent.",
+    "dg_02": "The Event host resolves locale and owns prose; the parser takes an explicit locale and returns error codes; generic Calendar takes explicit locale and supplied labels without importing Event code.",
+    "range_validity": "A first-click start=end range is valid even when complete=false; complete is click-cycle phase only.",
+    "single_mode": "Existing calendar:selected behavior remains unchanged.",
+    "locale_switch": "Reformat cached valid results and rerender labels without clearing or reparsing the valid draft."
+  }
+}

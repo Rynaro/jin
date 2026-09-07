@@ -1,0 +1,240 @@
+eidolon: ramza
+kind: spec
+version: 1.0.0
+created_at: 2026-08-26
+change_id: calendar-event-edit-m2
+esl_tier: full
+status: deliberated
+maker: Vivi
+checker: VIGIL
+spec_ref: .spectra/changes/calendar-event-edit-m2/spec.md
+change_ref: .spectra/changes/calendar-event-edit-m2/change.json
+intent_class: CHANGE
+
+intent: >-
+  Extend the approved Event detail with a calm, detail-resident, conflict-safe
+  edit flow for currently mutable Jin-owned one-off Events and Time blocks,
+  while preserving Google authority, Task linkage, local context privacy, and
+  recurrence losslessness.
+
+current_capability_audit:
+  already_delivered:
+    - Core can_edit projection for active Jin-owned non-recurring Events and Time blocks.
+    - Edit action plus shared create/edit modal.
+    - Title, date, all-day, time, location, and description mutation.
+    - Explicit Save and Cancel with immutable identity/source/linkage/recurrence fields.
+    - Calendar and index refresh after save.
+  gaps:
+    - Edit leaves the detail surface for a reused creation modal.
+    - GUI duplicates the core mutability predicate.
+    - No optimistic edit token, operation identity, or typed stale conflict.
+    - Canonical detail refetch and focus restoration are indirect rather than command-locked.
+    - Keyboard, no-op, draft-preservation, and visual-calm behavior are not acceptance-locked.
+    - original_start value type and TZID are not explicit across every representation.
+
+locked_terms:
+  display_kind: Time block
+  source_jin: "Source: Jin"
+  source_google: "Source: Google"
+
+decisions:
+  - id: D-01
+    decision: M2 extends existing one-off edit behavior instead of rebuilding event CRUD.
+  - id: D-02
+    decision: The default edit surface substitutes the bounded detail content in place and preserves route/context.
+  - id: D-03
+    decision: Detail capabilities remain the only GUI authorization source; core revalidates under lock.
+  - id: D-04
+    decision: An opaque canonical-byte edit token protects against stale overwrite.
+  - id: D-05
+    decision: Edit operations use durable operation IDs and recoverable canonical convergence before derived effects.
+  - id: D-06
+    decision: Stale conflicts preserve the draft, refetch latest detail for comparison, and never auto-write.
+  - id: D-07
+    decision: Blur never saves; Escape is Cancel; Mod+Enter is Save; Enter in Description is newline.
+  - id: D-08
+    decision: M2 is one-off-only; every recurring master and occurrence remains view-only.
+  - id: D-09
+    decision: original_start losslessness and recurrence mutation semantics move to a dedicated recurrence-foundation change.
+  - id: D-10
+    decision: DG-02 remains dormant because no concrete native accessibility or responsive evidence contradicts detail-resident editing.
+
+decision_gates:
+  - id: DG-01
+    owner: FORGE
+    status: resolved
+    verdict: >-
+      Keep M2 one-off-only and open a dedicated recurrence-foundation follow-up.
+      This and following and all Google recurrence mutation stay deferred.
+  - id: DG-02
+    owner: FORGE
+    conditional: true
+    status: dormant
+    question: >-
+      If native accessibility/responsive evidence rejects detail substitution,
+      should the edit surface move to a dedicated JinModal?
+
+capability_matrix:
+  - case: Jin plain Event, active, non-recurring
+    read: true
+    edit: true
+    destructive: Delete
+  - case: Jin Time block, active, non-recurring
+    read: true
+    edit: true
+    destructive: Remove
+    invariant: originating Task and derived_from are immutable
+  - case: Google Event or Time block-shaped mirror
+    read: true
+    edit: false
+    destructive: none
+  - case: Jin recurring master or occurrence
+    read: true
+    edit: false
+    note: dedicated recurrence-foundation follow-up
+  - case: Google recurring master or occurrence
+    read: true
+    edit: false
+  - case: Any cancelled Event
+    read: true
+    edit: false
+
+stories:
+  - id: S1
+    title: Lock the capability boundary
+    timebox: 1d
+    risk: P0
+    depends_on: []
+  - id: S2
+    title: Add conflict-safe edit command
+    timebox: 4d
+    risk: P0
+    depends_on: [S1]
+  - id: S3
+    title: Build the detail-resident editor
+    timebox: 4d
+    risk: P1
+    depends_on: [S2]
+  - id: S4
+    title: Handle conflict and recovery gently
+    timebox: 3d
+    risk: P0
+    depends_on: [S2, S3]
+  - id: S5
+    title: Complete mouse, keyboard, locale, and focus behavior
+    timebox: 2d
+    risk: P1
+    depends_on: [S3, S4]
+  - id: S6
+    title: Verify tranquility and invariants
+    timebox: 3d
+    risk: P0
+    depends_on: [S1, S2, S3, S4, S5]
+
+acceptance_criteria:
+  - id: AC-001
+    given: an active Jin-owned non-recurring plain Event
+    when: detail capabilities are projected
+    then: core SHALL report it editable and the detail SHALL expose Edit
+    verify_method: "test: cargo test -p jin-core event_detail_capabilities plus GUI detail test"
+  - id: AC-002
+    given: an active Jin-owned non-recurring Time block
+    when: detail capabilities are projected
+    then: core SHALL report it editable without granting any originating-Task mutation
+    verify_method: "test: core capability matrix and Time block edit preservation"
+  - id: AC-003
+    given: a Google-authoritative, recurring, or cancelled Event
+    when: detail capabilities are projected
+    then: Edit SHALL be absent and no edit command SHALL be accepted
+    verify_method: "test: core policy matrix plus GUI action absence"
+  - id: AC-004
+    given: a detail enters edit state
+    when: the form renders
+    then: the same route, source label, Time block label when applicable, date context, and bounded reading width SHALL remain stable
+    verify_method: "Playwright MCP: detail-to-edit context identity"
+  - id: AC-005
+    given: edit state
+    when: Cancel or Escape is activated
+    then: canonical data SHALL remain unchanged and focus SHALL return to Edit in reading state
+    verify_method: "test: GUI keyboard and cancel contract"
+  - id: AC-006
+    given: edit state contains no changed editable field
+    when: Save is activated
+    then: no canonical write, sequence increment, index refresh, or sync enqueue SHALL occur
+    verify_method: "test: core/bridge no-op edit side effects"
+  - id: AC-007
+    given: a valid changed draft
+    when: Save is activated by click or Mod+Enter
+    then: exactly one edit operation SHALL begin and repeated activation while pending SHALL be ignored
+    verify_method: "test: GUI input parity and pending guard"
+  - id: AC-008
+    given: Description has focus
+    when: Enter is pressed
+    then: a newline SHALL be inserted and Save SHALL not run
+    verify_method: "test: GUI textarea keyboard behavior"
+  - id: AC-009
+    given: a detail edit token and unchanged canonical Event
+    when: core commits the edit
+    then: only allowed fields plus updated and sequence SHALL change
+    verify_method: "test: cargo test -p jin-core event_edit::preserves_immutable_fields"
+  - id: AC-010
+    given: a Time block edit
+    when: core commits it
+    then: derived_from and every originating Task field SHALL remain unchanged
+    verify_method: "test: cargo test -p jin-core event_edit::time_block_preserves_task"
+  - id: AC-011
+    given: canonical Event bytes changed after detail load
+    when: stale Save reaches core
+    then: core SHALL return a typed conflict without write, refresh, sync enqueue, or success notification
+    verify_method: "test: cargo test -p jin-core event_edit::stale_token_conflict"
+  - id: AC-012
+    given: a typed stale conflict
+    when: GUI handles it
+    then: the draft SHALL remain intact, latest canonical detail SHALL be refetched for comparison, and neither conflict choice SHALL write
+    verify_method: "test: GUI stale conflict draft preservation"
+  - id: AC-013
+    given: a completed edit operation ID
+    when: the same request is retried
+    then: core SHALL return the original semantic result without a second mutation
+    verify_method: "test: cargo test -p jin-core event_edit::operation_id_idempotent"
+  - id: AC-014
+    given: an incomplete edit operation with a divergent canonical hash
+    when: recovery runs
+    then: recovery SHALL block without overwrite, index refresh, or sync enqueue
+    verify_method: "test: cargo test -p jin-core event_edit::divergent_hash_blocks"
+  - id: AC-015
+    given: a successful edit
+    when: the command resolves
+    then: GUI SHALL refetch canonical detail before success feedback, remain on detail, and restore focus to Edit
+    verify_method: "test: GUI canonical refetch ordering and focus"
+  - id: AC-016
+    given: validation, conflict, blocked, or retriable failure
+    when: it is rendered
+    then: the draft SHALL remain intact and localized accessible feedback SHALL identify the next safe action
+    verify_method: "test: GUI typed failure matrix in en and pt-BR"
+  - id: AC-017
+    given: any recurring master or occurrence including one with original_start
+    when: M2 capability projection or edit authorization runs
+    then: it SHALL remain view-only and edit SHALL be rejected without mutation or derived side effects
+    verify_method: "test: core/bridge/GUI recurring edit rejection matrix"
+  - id: AC-018
+    given: browser and native verification at supported widths, themes, scaling, languages, input modes, and reduced motion
+    when: edit interactions are exercised
+    then: primary actions SHALL remain reachable with no clipped content, unintended horizontal scrolling, console error, or keyboard trap
+    verify_method: "evidence: Playwright MCP plus native Tauri owner sign-off"
+
+verification_commands:
+  - cargo test -p jin-core event_edit
+  - cargo test -p jin-gui-tauri events
+  - npm --prefix jin-gui test -- --run src/__tests__/events_controller.test.ts src/__tests__/calendar_view_controller.test.ts src/__tests__/event_edit.test.ts src/__tests__/event_locale.test.ts
+  - cargo test -p jin-core
+  - cargo test -p jin-gui-tauri
+  - cargo fmt --all -- --check
+  - cargo clippy --workspace --all-targets -- -D warnings
+  - npm --prefix jin-gui test -- --run
+  - npm --prefix jin-gui run build
+  - npm --prefix jin-gui run lint:css
+
+next_handoff:
+  eidolon: Vivi
+  action: transition to in_progress and implement S1-S6 within the one-off-only boundary

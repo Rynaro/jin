@@ -1,0 +1,154 @@
+/**
+ * spacing.css — 8pt spacing grid, concentric radii, tap targets, layout utilities.
+ *
+ * All values reference tokens from tokens.css — NO raw hex here.
+ * All spacing MUST be a multiple of 8px with 4px as the only subdivision.
+ *
+ * Concentric corner-radius formula (design.md §5.6):
+ *   outer_radius = inner_radius + padding
+ *   nested radius derives DOWN: inner = max(0, outer - inset)
+ */
+
+/* ── Box model reset ─────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* ── Pointer-aware hit targets: compact desktop, 44px on coarse input ──────── */
+.tap-target {
+  min-block-size: var(--hit-target);
+  min-inline-size: var(--hit-target);
+}
+
+@media (pointer: coarse) {
+  :root {
+    --hit-target: var(--coarse-hit-target);
+  }
+}
+
+/* ── Spacing utility classes ─────────────────────────────────────────────── */
+/* Padding */
+.p-0    { padding: var(--space-0); }
+.p-half { padding: var(--space-half); }
+.p-1    { padding: var(--space-1); }
+.p-2    { padding: var(--space-2); }
+.p-3    { padding: var(--space-3); }
+.p-4    { padding: var(--space-4); }
+.p-6    { padding: var(--space-6); }
+
+/* Horizontal padding */
+.px-1   { padding-inline: var(--space-1); }
+.px-2   { padding-inline: var(--space-2); }
+.px-3   { padding-inline: var(--space-3); }
+.px-4   { padding-inline: var(--space-4); }
+
+/* Vertical padding */
+.py-half { padding-block: var(--space-half); }
+.py-1    { padding-block: var(--space-1); }
+.py-2    { padding-block: var(--space-2); }
+.py-3    { padding-block: var(--space-3); }
+
+/* Gap (for flex/grid) */
+.gap-half { gap: var(--space-half); }
+.gap-1    { gap: var(--space-1); }
+.gap-2    { gap: var(--space-2); }
+.gap-3    { gap: var(--space-3); }
+.gap-4    { gap: var(--space-4); }
+
+/* ── Border-radius utility classes ────────────────────────────────────────── */
+.rounded-xs      { border-radius: var(--radius-xs); }
+.rounded-sm      { border-radius: var(--radius-sm); }
+.rounded-md      { border-radius: var(--radius-md); }
+.rounded-lg      { border-radius: var(--radius-lg); }
+.rounded-xl      { border-radius: var(--radius-xl); }
+.rounded-capsule { border-radius: var(--radius-capsule); }
+
+/* ── Concentric radius helper ─────────────────────────────────────────────
+ * Apply .nested-radius to a child element inside a rounded container.
+ * The child must set --radius-container and --inset-padding custom props
+ * (or inherit them from the parent with the container token).
+ *
+ * Example:
+ *   .outer { --radius-container: var(--radius-lg); border-radius: var(--radius-container); }
+ *   .inner { --inset-padding: var(--space-2);
+ *             border-radius: max(0px, calc(var(--radius-container) - var(--inset-padding))); }
+ */
+.nested-radius {
+  border-radius: max(0px, calc(var(--radius-container, var(--radius-md)) - var(--inset-padding, var(--space-2))));
+}
+
+/* ── Flex layout helpers ──────────────────────────────────────────────────── */
+.flex         { display: flex; }
+.flex-col     { display: flex; flex-direction: column; }
+.flex-row     { display: flex; flex-direction: row; }
+.items-center { align-items: center; }
+.items-start  { align-items: flex-start; }
+.justify-between { justify-content: space-between; }
+.justify-center  { justify-content: center; }
+.flex-1       { flex: 1 1 0%; }
+.flex-shrink-0 { flex-shrink: 0; }
+
+/* ── Overflow ─────────────────────────────────────────────────────────────── */
+.overflow-hidden { overflow: hidden; }
+.overflow-y-auto { overflow-y: auto; }
+.overflow-x-hidden { overflow-x: hidden; }
+
+/* ── Width/height helpers ─────────────────────────────────────────────────── */
+.w-full  { width: 100%; }
+.h-full  { height: 100%; }
+.min-h-0 { min-height: 0; }
+
+/* ── Hidden (accessibility-safe) ─────────────────────────────────────────── */
+.hidden {
+  display: none !important;
+}
+
+/* ── Interactive element reset ────────────────────────────────────────────── */
+button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  padding: 0;
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* ── List reset ───────────────────────────────────────────────────────────── */
+ul,
+ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* ── Scrollbar styling (WebKit) ───────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: var(--space-1);
+  height: var(--space-1);
+}
+
+::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--fill-tertiary);
+  border-radius: var(--radius-capsule);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--fill-secondary);
+}

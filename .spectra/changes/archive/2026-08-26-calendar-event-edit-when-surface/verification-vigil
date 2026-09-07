@@ -1,0 +1,18 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "VIGIL"
+  },
+  "to": {
+    "eidolon": "nexus"
+  },
+  "performative": "INFORM",
+  "objective": "verify_pass",
+  "context_delta": {
+    "acceptance": "22/22",
+    "ci_status": "LOGIC VERIFIED — NATIVE VISUALS OWNER-APPROVED",
+    "native_owner_signoff": "approved 2026-08-26",
+    "verdict": "verify_pass",
+    "verified_commit": "1f9d8032c114e5a673e7cb725928167d54ac5fb8"
+  }
+}

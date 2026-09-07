@@ -1,0 +1,62 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "abfc4232-8411-4cbb-87cb-f2b8a6ae11b1",
+  "thread_id": "4c6227b5-bf3a-4bd4-a65d-5bca3a3aa5f1",
+  "parent_id": "73c6b18e-5fd0-42fd-b974-f243e91f64d3",
+  "from": { "eidolon": "vivi", "version": "1.1.0" },
+  "to": { "eidolon": "vigil", "version": "n/a" },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Re-verify corrective attempt 2 for the six residual failures and four previously unverified Google Calendar multi-account criteria.",
+  "artifact": {
+    "kind": "vivi-completion-report",
+    "schema_version": "1.0",
+    "path": "vivi-completion-report.md",
+    "sha256": "d6627a352fd18162b0edcbc475c1eb08d96171f24825abbb8faebd7ac08c632c",
+    "size_bytes": 6339
+  },
+  "context_delta": {
+    "token_budget": 5000,
+    "tokens_used": 0,
+    "input_handles": [
+      "branch:codex/google-calendar-multi-account-sync",
+      "commit:1fcfd8e8f52fcabf97db88c7ed901872effd32de",
+      "corrective-attempt:2"
+    ],
+    "summary": "Attempt 2 closes AC-020/026/030/035/043/054, adds all-phase AC-042 recovery evidence, and supplies fresh deterministic AC-033/034/036 evidence. Full Rust/GUI/build/lint validation passed twice."
+  },
+  "constraints": { "trust_level": "high" },
+  "ise": {
+    "assertion_grade": "validated",
+    "provenance": {
+      "methodology_version": "vivi-1.3.0",
+      "tool_surface": ["Read", "Grep", "Edit", "Bash", "Playwright MCP"],
+      "lateral_consults": []
+    },
+    "receiver_authorization": {
+      "auto_route": true,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "expected_response": {
+    "performative": "INFORM",
+    "shape_hint": "Identity-distinct VIGIL attempt-2 re-verification report with verify_pass or exact residual blockers."
+  },
+  "confidence": 0.94,
+  "assumptions": [
+    "Live Google OAuth/API fidelity requires the owner-run smoke runbook.",
+    "Native Tauri behavior and appearance require owner visual sign-off.",
+    "The deterministic browser fixture is evidence for web UI wiring only, not native Tauri execution."
+  ],
+  "integrity": {
+    "method": "sha256",
+    "value": "d6627a352fd18162b0edcbc475c1eb08d96171f24825abbb8faebd7ac08c632c"
+  },
+  "trace": {
+    "ts": "2026-08-27T01:52:33Z",
+    "host": "codex-desktop",
+    "model": "gpt-5",
+    "tier": "TRANCE"
+  }
+}

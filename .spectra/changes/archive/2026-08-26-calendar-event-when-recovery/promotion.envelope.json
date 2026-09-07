@@ -1,0 +1,18 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "idg"
+  },
+  "to": {
+    "eidolon": "orchestrator"
+  },
+  "performative": "INFORM",
+  "objective": "INFORM(promotion): archived change \"calendar-event-when-recovery\" ready for CRYSTALIUM Semantic promotion.",
+  "context_delta": {
+    "archive_path": "archive/2026-08-26-calendar-event-when-recovery",
+    "change_id": "calendar-event-when-recovery",
+    "intent": "promotion",
+    "spec_ref": ".spectra/changes/calendar-event-when-recovery/spec.md",
+    "summary": "Verified + archived spec; route to mcp__crystalium__ingest (Semantic layer). tonberry does not call crystalium."
+  }
+}

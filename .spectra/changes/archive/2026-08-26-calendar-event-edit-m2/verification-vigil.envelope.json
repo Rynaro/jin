@@ -1,0 +1,11 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "nexus"
+  },
+  "performative": "INFORM",
+  "objective": "verify_pass"
+}

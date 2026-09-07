@@ -1,0 +1,39 @@
+{
+  "session_id": "2026-06-28-jin-notes-cm6-source-editor",
+  "methodology": "SPECTRA",
+  "methodology_version": "4.10.0",
+  "tier": "standard",
+  "intent": "CHANGE",
+  "scope": "frontend-only (jin-gui)",
+  "confidence": 0.88,
+  "gate": "AUTO_PROCEED",
+  "from": "spectra",
+  "to": "apivr",
+  "consumer": "vivi",
+  "supersedes_design": "2026-06-28-jin-notes-wave2-track-b-editor",
+  "created_at": "2026-06-28T00:00:00Z",
+  "phases": {
+    "clarify": "done — no blocking questions; all plan-shaping decisions owner-LOCKED",
+    "scope": "done — complexity 11/12",
+    "pattern": "done — ADAPT save/sanitize, REPLACE editor model",
+    "explore": "done — H2 selected (module owns debounce+chrome; controller owns persistence+caret-safe reconcile); H3 compartment-readiness merged",
+    "construct": "done — 6 ordered stories (S0..S5)",
+    "test": "done — 6-layer pass; A2 (CM6-in-jsdom) flagged, de-risked by S1 smoke test",
+    "refine": "not required (confidence >=85% first pass)",
+    "assemble": "done"
+  },
+  "steps": [
+    { "id": "S0", "title": "Add CM6 dependencies", "kind": "kupo", "status": "pending", "depends_on": [], "risk": "P1", "files": ["jin-gui/package.json"], "gates": ["G-BUILD", "G-CHOKEPOINT", "G-BUNDLE"] },
+    { "id": "S1", "title": "CM6 editor module + behavior gates", "status": "pending", "depends_on": ["S0"], "risk": "P0", "files": ["jin-gui/src/lib/notes/editor.ts", "jin-gui/src/__tests__/editor.test.ts"], "gates": ["G-EDITOR-TAB", "G-EDITOR-ENTER", "G-EDITOR-BOLD", "G-EDITOR-PAIRS", "G-EDITOR-HISTORY", "G-EDITOR-PLACEHOLDER", "G-CHOKEPOINT"] },
+    { "id": "S2", "title": "Reading-view toggle through chokepoint", "status": "pending", "depends_on": ["S1"], "risk": "P0", "files": ["jin-gui/src/lib/notes/editor.ts"], "gates": ["G-READING-VIEW", "G-READING-FLUSH", "G-XSS-READING"] },
+    { "id": "S3", "title": "Controller rewire + caret-safe autosave", "status": "pending", "depends_on": ["S1", "S2"], "risk": "P0", "files": ["jin-gui/src/controllers/notes_controller.ts", "jin-gui/src/lib/notes/render.ts", "jin-gui/src/__tests__/notes_controller.test.ts"], "gates": ["G-AUTOSAVE", "G-SAVE-CARET-SAFE", "G-SAVE-DIRTY", "G-SAVE-FLUSH-SWITCH", "G-SAVE-ERROR", "G-XSS"] },
+    { "id": "S4", "title": "Full-height sizing + calm typography", "kind": "kupo", "status": "pending", "depends_on": ["S3"], "risk": "P1", "files": ["jin-gui/src/styles/browse.css"], "gates": ["G-SIZING", "G-THEME-TOKENS", "G-CSS-LINT", "G-CSS-DEADCODE"] },
+    { "id": "S5", "title": "Dead-code & dead-test removal", "kind": "kupo", "status": "pending", "depends_on": ["S3", "S4"], "risk": "P2", "files": ["jin-gui/src/lib/notes/blocks.ts", "jin-gui/src/__tests__/blocks.test.ts"], "gates": ["G-NO-DANGLING-IMPORTS", "G-BUILD", "G-CHOKEPOINT", "G-XSS"] }
+  ],
+  "top_risk": { "id": "R1", "severity": "P0", "desc": "caret-destroying renderNoteDetail on save path", "gate": "G-SAVE-CARET-SAFE" },
+  "open_items": [
+    { "id": "A2", "desc": "CM6 EditorView renders text into .cm-content under jsdom", "resolution": "S1 jsdom smoke test FIRST; module-boundary mock fallback documented; caret/XSS gates keep a real mount" }
+  ],
+  "runner": { "node": "nvm v24.18.0 (>=20)", "warning": "system node v16.20.2 crashes vitest", "dom_pragma": "// @vitest-environment jsdom" },
+  "replanning_history": []
+}

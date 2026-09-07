@@ -1,0 +1,40 @@
+plan_id: google-calendar-multi-account-sync
+tier: trance
+status: ready-for-vivi
+spec: .spectra/plans/google-calendar-multi-account-sync.md
+lifecycle_change: .spectra/changes/google-calendar-multi-account-sync/change.json
+maker: vivi
+checker: vigil
+enforcement: block
+preconditions:
+  - S0 records the rescue/M1 retained-versus-superseded boundary.
+  - Shared account, calendar, route, DTO, and persistence interfaces are frozen before parallel writes.
+tracks:
+  - id: vivi-a-accounts
+    stories: [S2, S3, S4]
+    depends_on: [S0, S1]
+    output: Account migration, scoped auth/token storage, discovery, and role fixtures.
+  - id: vivi-b-sync-safety
+    stories: [S5, S8]
+    depends_on: [S1, S2, S4]
+    output: Composite state, isolated runner, conflict audit, same-ID, and scoped-410 evidence.
+  - id: vivi-c-mutations
+    stories: [S6, S7]
+    depends_on: [S4, S5]
+    output: Mutation journal, routed outbox, Google edits/deletes/recurrence, crash and 412 evidence.
+  - id: vivi-d-client-ux
+    stories: [S9]
+    depends_on: [S7, S8]
+    output: DTO/Tauri/CLI parity, Settings, destination picker, unified agenda, accessibility evidence.
+hard_barriers:
+  - vivi-a-accounts must merge and receive identity-distinct verification before vivi-b-sync-safety implementation begins.
+  - vivi-b-sync-safety must merge and receive identity-distinct verification before vivi-c-mutations implementation begins.
+  - vivi-c-mutations must merge and receive identity-distinct verification before vivi-d-client-ux implementation begins.
+merge_order: [vivi-a-accounts, vivi-b-sync-safety, vivi-c-mutations, vivi-d-client-ux]
+precedence:
+  - Revocation, role downgrade, disconnect, provider cancellation, and local tombstone generations outrank stale queued writes.
+  - Quarantined writes require explicit review after reconnect or restored role; they never replay or reroute silently.
+final_gate:
+  story: S10
+  acceptance: AC-GCAL-001..AC-GCAL-054
+  live_smoke: separate_non_hermetic_attestation

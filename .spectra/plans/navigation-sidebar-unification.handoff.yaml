@@ -1,0 +1,53 @@
+from: ramza
+from_version: 1.1.0
+to: vivi
+performative: DELEGATE
+tier: standard
+objective: Implement one shared navigation-sidebar anatomy across Main, Settings, Notes, and Tasks while preserving the dirty Settings baseline.
+spec: navigation-sidebar-unification.md
+criteria: navigation-sidebar-unification.criteria.md
+scope:
+  - jin-gui/index.html
+  - jin-gui/src/styles/tokens.css
+  - jin-gui/src/styles/index.css
+  - jin-gui/src/styles/components.css
+  - jin-gui/src/styles/navigation.css
+  - jin-gui/src/styles/layout.css
+  - jin-gui/src/styles/browse.css
+  - jin-gui/src/styles/settings.css
+  - jin-gui/src/styles/a11y.css
+  - jin-gui/src/lib/lists/render.ts
+  - jin-gui/src/controllers/notes_controller.ts
+  - jin-gui/src/__tests__/notes_visual_system.test.ts
+  - jin-gui/src/__tests__/lists_controller.test.ts
+  - jin-gui/src/__tests__/notes_controller.test.ts
+  - jin-gui/src/__tests__/settings_controller.test.ts
+stages:
+  - Persist the dirty Settings patch and structured hook/behavior baseline before product edits.
+  - Add width token alias, stylesheet import, shared anatomy, and compatibility selectors.
+  - Migrate Main and Settings while verifying the pre-existing Settings diff inventory.
+  - Migrate Notes folders, All Notes, and collections while retaining tree semantics.
+  - Migrate Tasks smart/list rows with stable metadata and action slots.
+  - Remove duplicated feature visual rules and centralize accessibility states.
+  - Run focused, full, and deterministic visual verification.
+constraints:
+  - Never use whole-file replacement, checkout, or reset on dirty Settings files.
+  - Preserve router, Stimulus, drag, menu, dialog, collapse, and persistence hooks.
+  - Keep legacy feature classes as compatibility hooks.
+  - Do not add shared navigation classes to excluded content or transient surfaces.
+rollback:
+  - Reverse only the current stage's class additions and selector removals.
+  - Keep the context-width compatibility alias until all consumers are verified.
+  - Restore a removed feature rule only when its shared replacement fails a gate.
+evidence_root: .spectra/plans/navigation-sidebar-unification.evidence
+evidence_contract:
+  - settings-baseline.patch and settings-baseline.json before product edits
+  - settings-preservation.json before verification handoff
+  - geometry.json, console.json, deterministic screenshots, and manifest.json
+  - manifest entries keyed by AC ID, viewport, mode, baseline revision, scenario, result, and path
+geometry_tolerance_css_px: 0.5
+verification_commands:
+  - cd jin-gui && npm test -- src/__tests__/notes_visual_system.test.ts src/__tests__/lists_controller.test.ts src/__tests__/notes_controller.test.ts src/__tests__/settings_controller.test.ts
+  - cd jin-gui && npm run lint:css
+  - cd jin-gui && npm run build
+  - cd jin-gui && npm test

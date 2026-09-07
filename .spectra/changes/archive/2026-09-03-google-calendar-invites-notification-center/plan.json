@@ -1,0 +1,31 @@
+{
+  "thread_id": "01a0645f-c5bd-7669-8785-b68f1b6c9071",
+  "tier": "trance",
+  "enforce": "fail-fast",
+  "executor": "container",
+  "steps": [
+    {
+      "step_id": "S0",
+      "from": {
+        "eidolon": "ramza",
+        "version": "0.1.0"
+      },
+      "to": {
+        "eidolon": "vivi",
+        "version": "1.4.0"
+      },
+      "performative": "DELEGATE",
+      "edge_origin": "roster",
+      "objective": "Implement the serialized eight-stage Notification Center and Google invitation RSVP specification and satisfy AC-NC-001 through AC-NC-067.",
+      "artifact": {
+        "kind": "spec",
+        "schema_version": "1.0",
+        "path": ".spectra/changes/google-calendar-invites-notification-center/spec.md"
+      },
+      "model_tier_hint": "reasoning-class",
+      "constraints": {
+        "trust_level": "standard"
+      }
+    }
+  ]
+}

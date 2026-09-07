@@ -1,0 +1,16 @@
+target/
+*.rs.bk
+.git/
+scratch/
+test-data/
+.spectra/
+.eidolons/
+.atlas/
+.claude/
+docs/
+discovery/
+design.md
+product.md
+EIDOLONS.md
+AGENTS.md
+CLAUDE.md

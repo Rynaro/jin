@@ -1,0 +1,61 @@
+# Machine-readable full-tier mirror of spec.md and change.json.
+eidolon: ramza
+kind: spec
+version: 1.0.0
+created_at: 2026-08-24
+change_id: calendar-pr47-rescue
+esl_tier: full
+maker: vivi
+checker: vigil
+spec_ref: .spectra/changes/calendar-pr47-rescue/spec.md
+change_ref: .spectra/changes/calendar-pr47-rescue/change.json
+intent_class: CHANGE
+
+intent: >-
+  Implement RAMZA stories S0-S6 with atomic in-place event mutation,
+  Rust-owned authorization, half-open calendar projection, canonical event-detail
+  routing, visible failures, accessible controls, and persistent Month/Week/Day views.
+
+constraints:
+  - Event mutation authorization is owned by jin-core.
+  - Event edits and soft deletion preserve canonical identity and linkage metadata.
+  - Calendar projection uses half-open intervals and excludes an exclusive end day.
+  - VIGIL is the identity-distinct checker and verification runs in blocking mode.
+
+acceptance_criteria:
+  - id: AC-CAL-01
+    form: event-driven
+    given: "a Jin-owned non-recurring event"
+    when: "the user edits or deletes it"
+    then: "the canonical event SHALL be changed atomically in place while identity and linkage metadata remain unchanged"
+    verify_method: "test: cargo test -p jin-core ops::events::tests"
+  - id: AC-CAL-02
+    form: unwanted-behavior
+    given: "an external, cancelled, recurring, master, or instance event"
+    when: "a mutation is requested"
+    then: "the core SHALL reject the mutation and the GUI SHALL expose no mutation controls"
+    verify_method: "test: cargo test -p jin-core ops::events::tests"
+  - id: AC-CAL-03
+    form: event-driven
+    given: "the Events destination at 1280 by 800"
+    when: "the user switches Month, Week, or Day and activates an event card"
+    then: "each view SHALL remain reachable and the card SHALL open the canonical event detail surface"
+    verify_method: "Playwright evidence: .artifacts/playwright-mcp/calendar-rescue artifacts"
+  - id: AC-CAL-04
+    form: event-driven
+    given: "an all-day or multi-day event"
+    when: "the agenda projects display days"
+    then: "the event SHALL intersect every applicable half-open day bucket and exclude its exclusive end day"
+    verify_method: "test: cargo test -p jin-core; visual evidence in Month and Week views"
+
+declared_scope:
+  - .spectra/changes/calendar-pr47-rescue/spec.yaml
+  - jin-core/src/ops/events.rs
+  - jin-gui/src/controllers/calendar_view_controller.ts
+  - jin-gui/src/__tests__/calendar_view_controller.test.ts
+
+out_of_scope:
+  - Product UI redesign.
+  - Calendar event-detail Milestone 1 work.
+  - Recurrence editing.
+  - Lifecycle verification, transition, or archival by the maker.

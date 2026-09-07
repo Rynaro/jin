@@ -1,0 +1,77 @@
+{
+  "esl_version": "1.1",
+  "change_id": "unified-calendar-reminder-time-input",
+  "status": "archived",
+  "tier": "lite",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    {
+      "id": "AC-UCRT-001",
+      "given": "A supported shorthand clock value",
+      "when": "The shared clock normalizer runs",
+      "then": "The value is canonicalized to HH:mm without hour corruption",
+      "verify_method": "npm --prefix jin-gui test -- calendar_clock.test.ts"
+    },
+    {
+      "id": "AC-UCRT-002",
+      "given": "An invalid or empty clock value",
+      "when": "The shared clock normalizer runs",
+      "then": "Invalid shapes fail closed and empty remains distinguishable",
+      "verify_method": "npm --prefix jin-gui test -- calendar_clock.test.ts"
+    },
+    {
+      "id": "AC-UCRT-003",
+      "given": "The task due editor is open",
+      "when": "A clock is blurred or confirmed",
+      "then": "Text input normalization and validation preserve existing editor semantics",
+      "verify_method": "npm --prefix jin-gui test -- temporal_editor_controller.test.ts tasks_lists_modal_wiring.test.ts"
+    },
+    {
+      "id": "AC-UCRT-004",
+      "given": "Natural reminder text is entered",
+      "when": "It is previewed or applied",
+      "then": "Preview is nonmutating and valid Use or Enter updates the calendar draft",
+      "verify_method": "npm --prefix jin-gui test -- temporal_editor_controller.test.ts tasks_lists_modal_wiring.test.ts"
+    },
+    {
+      "id": "AC-UCRT-005",
+      "given": "A Calendar event clock uses shorthand",
+      "when": "The event is created or edited",
+      "then": "The shared helper normalizes before chronological validation and save",
+      "verify_method": "npm --prefix jin-gui test -- calendar_view_controller.test.ts event_edit.test.ts"
+    },
+    {
+      "id": "AC-UCRT-006",
+      "given": "Calendar and reminder temporal editors",
+      "when": "Their implementation is reviewed and built",
+      "then": "They share CalendarController, natural parsing, and clock normalization boundaries",
+      "verify_method": "npm --prefix jin-gui run build"
+    },
+    {
+      "id": "AC-UCRT-007",
+      "given": "The completed frontend change",
+      "when": "The full verification suite runs",
+      "then": "Tests, build, and CSS policy pass",
+      "verify_method": "npm --prefix jin-gui test; npm --prefix jin-gui run build; npm --prefix jin-gui run lint:css"
+    },
+    {
+      "id": "AC-UCRT-008",
+      "given": "The task due and Calendar event flows at 1280x800",
+      "when": "They are exercised with Playwright",
+      "then": "Keyboard focus, feedback, layout, and console behavior remain sound",
+      "verify_method": "Playwright MCP evidence under .artifacts/playwright-mcp"
+    },
+    {
+      "id": "AC-UCRT-009",
+      "given": "The global capture and promote event flows",
+      "when": "The patch is reviewed",
+      "then": "Their datetime-local controls remain unchanged",
+      "verify_method": "DOM and focused capture regression review"
+    }
+  ],
+  "spec_ref": "spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-09-01-unified-calendar-reminder-time-input",
+  "has_code": true
+}

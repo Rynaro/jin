@@ -1,0 +1,72 @@
+{
+  "envelope_version": "2.0",
+  "ecl_version": "1.0",
+  "message_id": "d0981b29-2482-4aaa-98d7-8394b319ea13",
+  "thread_id": "9229154a-ef86-458e-9305-966bf7498a94",
+  "from": "spectra",
+  "to": "vivi",
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Live-preview increment #4 (FINAL) — cozy extras: (1) FOCUS MODE dims every non-active line via Decoration.line({class:'cm-dim'}) (pure buildFocusDecorations, active-LINE granularity) and (2) TYPEWRITER SCROLLING centers the active line via an EditorState.transactionExtender that appends EditorView.scrollIntoView(head,{y:'center'}) for collapsed-cursor changes only (range selections excluded). Both are opt-in toolbar icon-toggles (default OFF), each driven by its own CM6 Compartment (no remount, caret-safe). Jin CM6 note editor. Frontend-only (jin-gui).",
+  "artifact": {
+    "kind": "spec",
+    "payload_ref": "2026-06-28-jin-notes-lp-cozy-extras.yaml",
+    "human_payload": "delivered inline in the SPECTRA assistant message (no .md report file written per harness directive; matches the #1/#2/#3 LP-increment convention)"
+  },
+  "integrity": {
+    "method": "sha256",
+    "value": "584ffebcabca57654340d4187f51b505da94d27a14203a4d2dd92c23273faedf",
+    "over": "2026-06-28-jin-notes-lp-cozy-extras.yaml"
+  },
+  "context_delta": {
+    "repo": "jin-gui",
+    "new_modules": [
+      "jin-gui/src/lib/notes/focusMode.ts (buildFocusDecorations(state,ranges?) pure + jinFocusMode() ViewPlugin; @codemirror/* only)",
+      "jin-gui/src/lib/notes/typewriter.ts (typewriterTarget(args) pure + typewriterExtender() = EditorState.transactionExtender; @codemirror/* only)"
+    ],
+    "edits": [
+      "jin-gui/src/lib/notes/editor.ts (add focusCompartment + typewriterCompartment beside :530; both .of([]) in the extensions array beside :569; two mkBtn toggles in the right cluster after toolbarSpacer/before the Read toggle ~:447; click handlers in the wiring block ~:612-623; .cm-dim + .cm-content.cm-typewriter rules in jinEditorTheme ~:191)",
+      "jin-gui/src/lib/icons/index.ts (register Focus + AlignCenterVertical — import + re-export + initIcons map)",
+      "jin-gui/src/styles/browse.css (add .cm-toolbar__btn[aria-pressed=\"true\"] active rule near :390)"
+    ],
+    "stories": ["COZY-1", "COZY-2"],
+    "decisions": {
+      "D-MODULE": "two new sibling modules focusMode.ts + typewriter.ts (NOT livePreview.ts, NOT inlined in editor.ts) — cohesive, independently shippable, chokepoint-clean",
+      "D-GRANULARITY": "active-LINE focus for v1 (reuses livePreview activeLines; coherent with the per-line reveal); paragraph/sentence focus deferred",
+      "D-FOCUS-BUILDER": "buildFocusDecorations(state,ranges?) pure → Decoration.line({class:'cm-dim'}) on every NON-active line; mirrors buildLivePreviewDecorations; no syntaxTree needed; headless-testable",
+      "D-TOGGLE": "two .cm-toolbar__btn icon-toggles RIGHT-aligned (after spacer, before Read), DEFAULT OFF, aria-pressed reflects state; icons Focus + AlignCenterVertical; ADD-not-rename keeps G-TOOLBAR-STRUCTURE green",
+      "D-COMPARTMENT": "focusCompartment + typewriterCompartment beside the existing five; toggle = view.dispatch(cmp.reconfigure(ON?ext:[])); composes with livePreview/highlight (multiple decoration providers; extender is orthogonal)",
+      "D-TYPEWRITER-MECHANISM": "EditorState.transactionExtender appends scrollIntoView effect to the SAME transaction (NO dispatch-in-listener; CM6 forbids that) for collapsed changes only; fallback = deferred-queueMicrotask listener; pure typewriterTarget isolates the decision",
+      "D-TYPEWRITER-PADDING": "jinEditorTheme '.cm-content.cm-typewriter'{paddingBottom:'50vh'} activated via contentAttributes class only when ON (specificity beats base .cm-content; no dead space when OFF)",
+      "D-PERSIST": "v1 per-MOUNT in-memory, default OFF (tightest scope, test-isolated); cross-note (module singletons) / persisted (settings) are documented follow-ups",
+      "D-FOCUS-CSS": ".cm-dim in jinEditorTheme = opacity 0.4 + 120ms transition (token ease); owner-tunes the feel",
+      "D-TEST-STRATEGY": "pure-builder + pure typewriterTarget gates headless; toggle + scrollIntoView-spy wiring gates on real mount; visual centering/dim opacity owner-verified via cargo tauri dev"
+    },
+    "new_gates": [
+      "G-FOCUS-DIM", "G-FOCUS-TOGGLE", "G-TYPEWRITER-TARGET", "G-TYPEWRITER-WIRING",
+      "G-TOGGLE-CARET-SAFE", "G-CHOKEPOINT-COZY", "G-FOCUS-CSS", "G-TYPEWRITER-PADDING"
+    ],
+    "immovable_gates": [
+      "G-TOOLBAR-STRUCTURE @ editor.test.ts:899-934 (ADD two toggles, rename nothing)",
+      "G-TOOLBAR-BOLD/H2/LIST @ editor.test.ts:803-897",
+      "G-FOOTER-STATS @ editor.test.ts:944-1002",
+      "G-READING-VIEW / G-READING-FLUSH / G-XSS-READING @ editor.test.ts:643-789",
+      "G-KEYMAP @ editor.test.ts:392-533",
+      "G-SAVE-CARET-SAFE @ livePreview.test.ts:451-472 (neither feature mutates the doc)",
+      "ALL LP #1/#2/#3 gates @ livePreview.test.ts:97-1104; HIDE_MARK_NODES size===4 @ :97-105",
+      "G-CHOKEPOINT @ markdown.test.ts:8 + livePreview source scan"
+    ],
+    "verified_firsthand": [
+      "Compartment.reconfigure carries no doc/selection change → same EditorView node + unchanged caret (G-TOGGLE-CARET-SAFE basis)",
+      "Plugin-provided LINE decorations are legal in CM6 (index.js:2737-2739, :8834-8838); cm-dim is a zero-width Decoration.line at line.from → RangeSetBuilder-safe in ascending line order; two ViewPlugins (livePreview + focusMode) both provide decorations and CM6 merges them",
+      "EditorView.scrollIntoView returns a StateEffect addable at state level (transactionExtender) → no second dispatch; the toggle reconfigure tr has docChanged=false & selection=undefined → extender returns null → no scroll on toggle",
+      "lucide@0.523.0 exports Focus + AlignCenterVertical (+ Crosshair/TextCursor/AlignVerticalSpaceAround alternatives)",
+      "canonical dim ranges: 'line1\\nline2\\nline3' caret@8(line2) => cm-dim line@(0,0)+(12,12), none@6 ; selection 0..8 => only (12,12) ; single-line doc => empty set"
+    ],
+    "branch_base": "main; ship COZY-1 (focus) first then rebase COZY-2 (typewriter) — both add additively to editor.ts; no hard code dependency",
+    "node_requirement": ">=20 (nvm v24.18.0; system node v16.20.2 crashes vitest)",
+    "owner_verify": "cargo tauri dev — focus dim feel + active-line full opacity; typewriter centers caret line, no yank on drag-select, last line reaches center",
+    "roadmap_note": "LAST live-preview roadmap increment (after #1 lists, #2 links, #3 blockquote). Recall did not surface roadmap 2fb5bb35 / LP crystals on the jin scope (recurring fact) — anchors verified firsthand."
+  },
+  "trust_level": "standard"
+}

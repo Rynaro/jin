@@ -1,0 +1,95 @@
+{
+  "session_id": "jin-notes-newnote-and-title",
+  "spec": ".spectra/plans/2026-06-29-jin-notes-newnote-and-title.md",
+  "date": "2026-06-29",
+  "methodology": "SPECTRA 4.10.0",
+  "tier": "standard",
+  "intent_type": "CHANGE",
+  "complexity": "7/12",
+  "confidence": 0.92,
+  "decision": "AUTO_PROCEED",
+  "handoff": { "from": "spectra", "to": "apivr", "executor": "Vivi" },
+  "base_branch": "main",
+  "scope": "frontend-only (jin-gui); reuses create_note + edit_note; no Rust/Tauri/schema",
+  "node_requirement": ">=20",
+  "steps": [
+    {
+      "id": "K-NN-1",
+      "type": "kupo",
+      "status": "pending",
+      "title": "New Note button + .notes-list-pane__header markup",
+      "files": ["jin-gui/index.html"],
+      "depends_on": [],
+      "verification": ["button present in real index.html with data-action click->notes#newNote + aria-label"]
+    },
+    {
+      "id": "NN-1",
+      "type": "story",
+      "status": "pending",
+      "title": "Inline-editable note title (+ rename any note)",
+      "files": [
+        "jin-gui/src/lib/notes/render.ts",
+        "jin-gui/src/lib/notes/transform.ts",
+        "jin-gui/src/controllers/notes_controller.ts",
+        "jin-gui/src/__tests__/notes_controller.test.ts"
+      ],
+      "depends_on": [],
+      "gates": [
+        "G-TITLE-EDIT-SAVE (AC-NN1.1, caret-safe, P0)",
+        "G-TITLE-EDIT-ENTER (AC-NN1.2)",
+        "G-TITLE-EDIT-ESCAPE (AC-NN1.3)",
+        "G-TITLE-DIRTY-NOOP (AC-NN1.4)",
+        "G-TITLE-EMPTY-ALLOWED (AC-NN1.5)",
+        "G-TITLE-RENAME-BODY-SAVE-STILL-WORKS (AC-NN1.6)",
+        "PRESERVE-G-SAVE-CARET-SAFE (AC-NN1.7)"
+      ],
+      "verification": [
+        "editNote(id,{title}) called once on blur/Enter; EditorView + .cm-editor identity preserved (no renderNoteDetail on commit)",
+        "list .browse-row__title updated via targeted DOM (mirror onSave 531-539)",
+        "Escape reverts, no editNote; dirty no-op",
+        "empty title -> 'Untitled' in list, placeholder in detail input",
+        "migrate test:453 .textContent -> .value"
+      ]
+    },
+    {
+      "id": "NN-2",
+      "type": "story",
+      "status": "pending",
+      "title": "New Note button -> create-in-target-folder -> open -> focus title",
+      "files": [
+        "jin-gui/src/controllers/notes_controller.ts",
+        "jin-gui/src/__tests__/notes_controller.test.ts"
+      ],
+      "depends_on": ["NN-1", "K-NN-1"],
+      "gates": [
+        "G-NEWNOTE-DEFAULT-FOLDER (AC-NN2.1)",
+        "G-NEWNOTE-SELECTED-FOLDER (AC-NN2.2)",
+        "G-NEWNOTE-IN-LIST (AC-NN2.3)",
+        "G-NEWNOTE-OPENS-EDITABLE-TITLE (AC-NN2.4)",
+        "G-NEWNOTE-ERROR (AC-NN2.5)"
+      ],
+      "verification": [
+        "real click -> createNote({title:'',body:'',folder: currentFolder ?? ''})",
+        "no folder -> folder:''; 'Work' -> folder:'Work'",
+        "new note opens (detail + .cm-editor), title input focused & editable, appears in list",
+        "add createNote: vi.fn() to mock+import; add createNote to controller import"
+      ]
+    },
+    {
+      "id": "K-NN-2",
+      "type": "kupo",
+      "status": "pending",
+      "title": "Editable-title + list-pane-header CSS",
+      "files": ["jin-gui/src/styles/browse.css"],
+      "depends_on": ["NN-1", "K-NN-1"],
+      "verification": [".browse-detail__title--input borderless-until-focus; header flex layout; tokens only"]
+    }
+  ],
+  "preserve_gates": [
+    "G-XSS (test:511-528, immovable)",
+    "G-SAVE-CARET-SAFE", "G-SAVE-DIRTY", "G-AUTOSAVE", "G-SAVE-DEBOUNCE", "G-SAVE-ERROR",
+    "VG1.4", "VG2.4", "VG2.5", "VG-FE", "VG-FE-FOLDER-OPEN",
+    "G-TREE-*", "live-preview gates", "code gates", "K2 parity", "Node>=20"
+  ],
+  "replanning_history": []
+}

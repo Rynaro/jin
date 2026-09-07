@@ -1,0 +1,30 @@
+/**
+ * index.css — Design system entry point (GUI-S1).
+ *
+ * Import order matters:
+ *   1. tokens    — CSS custom properties (the only file with raw color values)
+ *   2. typography — font stack, text style classes, focus ring
+ *   3. spacing    — box model, gap, flex helpers, tap targets
+ *   4. materials  — glass materials
+ *   5. motion/layout/features — component and feature composition
+ *   6. a11y       — final-authority accessibility fallbacks
+ *
+ * main.ts also imports @fontsource/inter weights before this file
+ * so Inter is available when typography.css applies the font stack.
+ */
+
+@import './tokens.css';
+@import './typography.css';
+@import './spacing.css';
+@import './materials.css';
+@import './components.css';
+@import './navigation.css';
+@import './motion.css';
+@import './layout.css';
+@import './today.css';
+@import './browse.css';
+@import './forms.css';
+@import './settings.css';
+@import './calendar.css';
+@import './notifications.css';
+@import './a11y.css';

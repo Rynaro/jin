@@ -1,0 +1,173 @@
+{
+  "esl_version": "1.1",
+  "change_id": "calendar-event-edit-when-surface",
+  "status": "archived",
+  "tier": "full",
+  "maker": "Vivi",
+  "checker": "VIGIL",
+  "acceptance_checks": [
+    {
+      "id": "AC-001",
+      "given": "an eligible Event enters Edit",
+      "when": "the form renders",
+      "then": "it SHALL show the shared compound When surface and no native date input while preserving identity and title focus",
+      "verify_method": "DOM and browser/native evidence"
+    },
+    {
+      "id": "AC-002",
+      "given": "canonical all-day [D1,D3)",
+      "when": "Edit initializes",
+      "then": "Calendar and summary SHALL show inclusive D1 through D2",
+      "verify_method": "pure and DOM tests"
+    },
+    {
+      "id": "AC-003",
+      "given": "canonical timed multi-day or overnight start and end",
+      "when": "Edit initializes",
+      "then": "both endpoint dates and wall times SHALL match exactly",
+      "verify_method": "pure and DOM matrix"
+    },
+    {
+      "id": "AC-004",
+      "given": "no temporal edit or a title-only edit",
+      "when": "input is composed",
+      "then": "the retained baseline start and end strings SHALL pass through exactly whenever the projection is semantically equal, including change-then-revert",
+      "verify_method": "serialization tests"
+    },
+    {
+      "id": "AC-005",
+      "given": "Calendar range selection",
+      "when": "one two reverse cross-month or third-click interactions occur",
+      "then": "the existing live range contract SHALL apply and draft endpoints SHALL match without extra commit",
+      "verify_method": "DOM plus Playwright"
+    },
+    {
+      "id": "AC-006",
+      "given": "valid date-only relative text",
+      "when": "Enter or Use applies",
+      "then": "start and end dates SHALL shift by the same delta while span all-day state and times remain",
+      "verify_method": "draft tests"
+    },
+    {
+      "id": "AC-007",
+      "given": "valid relative date and time on a timed draft",
+      "when": "applied",
+      "then": "naive wall-clock duration in whole minutes SHALL remain without DST reinterpretation and the endpoint SHALL handle overnight or multi-day rollover",
+      "verify_method": "draft matrix"
+    },
+    {
+      "id": "AC-008",
+      "given": "valid relative date and time on an all-day draft",
+      "when": "applied",
+      "then": "it SHALL discard the all-day span and become a synchronized one-hour timed draft with next-day rollover when needed",
+      "verify_method": "draft and DOM test"
+    },
+    {
+      "id": "AC-009",
+      "given": "invalid relative text",
+      "when": "preview or apply runs",
+      "then": "localized guidance SHALL appear and no valid draft field SHALL change",
+      "verify_method": "controller test"
+    },
+    {
+      "id": "AC-010",
+      "given": "an inclusive all-day range",
+      "when": "Save composes input",
+      "then": "canonical end SHALL be the day after the last visible date across boundaries",
+      "verify_method": "boundary matrix"
+    },
+    {
+      "id": "AC-011",
+      "given": "a timed same-day overnight or multi-day range",
+      "when": "Save validates",
+      "then": "only malformed zero or backwards chronology SHALL block and valid endpoint wall datetimes SHALL serialize exactly",
+      "verify_method": "serialization matrix"
+    },
+    {
+      "id": "AC-012",
+      "given": "all-day toggles either direction",
+      "when": "draft updates",
+      "then": "visible endpoint dates SHALL remain and canonical conversion or default times SHALL follow the spec",
+      "verify_method": "draft and DOM tests"
+    },
+    {
+      "id": "AC-013",
+      "given": "any field or Calendar selection changes",
+      "when": "locale validation pending or Review draft rerenders",
+      "then": "every unsubmitted value and range SHALL remain intact",
+      "verify_method": "controller lifecycle tests"
+    },
+    {
+      "id": "AC-014",
+      "given": "en or pt-BR live switching",
+      "when": "edit rerenders",
+      "then": "all visible and accessible copy SHALL localize without reparsing text resetting range or changing canonical data",
+      "verify_method": "locale DOM plus Playwright"
+    },
+    {
+      "id": "AC-015",
+      "given": "an unchanged complete draft",
+      "when": "Save runs",
+      "then": "the no-op contract SHALL perform no canonical mutation notification or grid refresh",
+      "verify_method": "controller and command assertions"
+    },
+    {
+      "id": "AC-016",
+      "given": "Save is pending or fails retriably",
+      "when": "UI rerenders",
+      "then": "duplicate commands SHALL be prevented and the full compound draft SHALL remain safe",
+      "verify_method": "async controller tests"
+    },
+    {
+      "id": "AC-017",
+      "given": "a stale conflict",
+      "when": "latest detail loads",
+      "then": "changed endpoint dates SHALL be detected the draft SHALL remain and conflict choices SHALL not write",
+      "verify_method": "conflict tests"
+    },
+    {
+      "id": "AC-018",
+      "given": "Use latest or Review my draft",
+      "when": "activated",
+      "then": "Use latest SHALL rebuild all When state baseline and token while Review SHALL preserve the complete draft and exact baseline and later Save SHALL use the fresh token",
+      "verify_method": "conflict token tests"
+    },
+    {
+      "id": "AC-019",
+      "given": "Cancel Escape Mod+Enter or Description Enter",
+      "when": "used",
+      "then": "original M2 non-mutation single-save newline and focus behavior SHALL remain",
+      "verify_method": "interaction tests"
+    },
+    {
+      "id": "AC-020",
+      "given": "Google recurring or cancelled detail",
+      "when": "rendered or authorized",
+      "then": "Edit and its When surface SHALL remain unavailable and command rejection SHALL remain unchanged",
+      "verify_method": "authority suites"
+    },
+    {
+      "id": "AC-021",
+      "given": "Add Event task due Calendar Month Day Week detail Back and Time block flows",
+      "when": "regression suites run",
+      "then": "create single-selection timeline focus authority and linkage SHALL remain unchanged",
+      "verify_method": "full GUI suites plus smoke"
+    },
+    {
+      "id": "AC-022",
+      "given": "supported widths zoom themes reduced motion mouse and keyboard",
+      "when": "browser and native QA run",
+      "then": "Calendar and actions SHALL remain reachable without clipping overflow console errors or keyboard traps",
+      "verify_method": "Playwright plus native owner sign-off"
+    }
+  ],
+  "spec_ref": ".spectra/changes/calendar-event-edit-when-surface/spec.md",
+  "created_at": "2026-08-26",
+  "drift_checked": true,
+  "archive_path": "archive/2026-08-26-calendar-event-edit-when-surface",
+  "has_code": true,
+  "memory_preflight": {
+    "ran": true,
+    "records": 0
+  }
+}

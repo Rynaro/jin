@@ -1,0 +1,76 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "904d2a4f-6ac2-4e7f-a26b-a53e34ba747e",
+  "thread_id": "4c6227b5-bf3a-4bd4-a65d-5bca3a3aa5f1",
+  "parent_id": "abfc4232-8411-4cbb-87cb-f2b8a6ae11b1",
+  "from": {
+    "eidolon": "vigil",
+    "version": "1.1.0"
+  },
+  "to": {
+    "eidolon": "nexus",
+    "version": "n/a"
+  },
+  "performative": "INFORM",
+  "edge_origin": "roster",
+  "objective": "verify_pass",
+  "artifact": {
+    "kind": "verification-report",
+    "schema_version": "1.0",
+    "path": "verification-vigil.md",
+    "sha256": "d77fe25de4f044f26a3c03cfc3ccbe9146f9eba934c5b3a124355ea2e2bb3e30",
+    "size_bytes": 4748
+  },
+  "context_delta": {
+    "implementation_head": "d5515ed206c1edac4bb237f143906a4f32f7e6f5",
+    "acceptance_tally": "54 pass/pass-static, 0 fail, 0 unverified offline checks",
+    "tonberry": "0.5.3 block mode pass",
+    "core_gate": "make verify pass including determinism 5/5",
+    "workspace_gate": "cargo test --workspace pass",
+    "gui_gate": "make verify-gui pass; 1727 frontend tests",
+    "live_google": "live-unvalidated",
+    "native_tauri": "owner sign-off not re-attested",
+    "summary": "Identity-distinct VIGIL verification closes AC-GCAL-034 with byte-equal Rust/TypeScript DTO evidence and accepts AC-GCAL-043 under the planner amendment that preserves the pinned historical-binary counterexample and current-code enforcement boundary."
+  },
+  "constraints": {
+    "trust_level": "high"
+  },
+  "ise": {
+    "assertion_grade": "validated",
+    "provenance": {
+      "methodology_version": "vigil-1.1.0",
+      "tool_surface": [
+        "Read",
+        "Grep",
+        "Bash",
+        "Tonberry 0.5.3"
+      ],
+      "lateral_consults": []
+    },
+    "receiver_authorization": {
+      "auto_route": true,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "expected_response": {
+    "performative": "ACKNOWLEDGE",
+    "shape_hint": "Nexus may transition, drift-check, archive, commit, or push after independently validating this pass artifact."
+  },
+  "confidence": 0.98,
+  "assumptions": [
+    "Live Google OAuth/API fidelity remains a separate owner-run smoke attestation.",
+    "No native Tauri visual claim is inferred from offline logic gates.",
+    "The AC-GCAL-043 planner amendment supersedes the impossible historical-executable requirement before this verification."
+  ],
+  "integrity": {
+    "method": "sha256",
+    "value": "d77fe25de4f044f26a3c03cfc3ccbe9146f9eba934c5b3a124355ea2e2bb3e30"
+  },
+  "trace": {
+    "ts": "2026-09-01T15:46:15Z",
+    "host": "codex-desktop",
+    "model": "gpt-5",
+    "tier": "standard"
+  }
+}

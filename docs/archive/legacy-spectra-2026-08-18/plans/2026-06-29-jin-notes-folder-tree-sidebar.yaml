@@ -1,0 +1,291 @@
+id: jin-notes-folder-tree-sidebar
+title: "Notes QoL — Apple-Notes folder tree-view sidebar (tree + collapse + WAI-ARIA keyboard nav + collapsible pane)"
+methodology: SPECTRA
+methodology_version: 4.10.0
+date: 2026-06-29
+from: spectra
+to: vivi
+performative: PROPOSE
+confidence: 0.88
+tier_hint: full           # advisory only; ESL right-sizing is Tonberry's call
+extended_thinking: true   # complexity 8/12
+
+scope:
+  intent_type: REQUEST
+  repo: jin-gui
+  frontend_only: true
+  base_version: "main = v0.3.0"
+  branch: "feat/notes-folder-tree-sidebar off main (cut AFTER the code-highlighting PR lands)"
+  one_liner: >
+    Replace the FLAT folder rail (render.ts renderFolderRail :70-101) with a nested
+    WAI-ARIA tree-view: disclosure chevrons + expand/collapse, per-folder counts,
+    selected-row highlight, full keyboard navigation (roving tabindex + Arrow/Home/End),
+    and a collapsible sidebar pane. Pure client-side tree built by splitting FolderDto.path
+    on '/' — NO backend change. list_folders already returns every ancestor.
+  in_scope:
+    - "Pure tree builder + flatten-visible (new lib/notes/folderTree.ts)"
+    - "Recursive ARIA tree render (role=tree/treeitem/group, aria-level, aria-expanded, aria-selected)"
+    - "Disclosure chevrons (rotate on expand) + per-depth indentation + leaf spacer alignment"
+    - "Per-folder direct counts (right-aligned, muted, hidden when 0)"
+    - "Expand/collapse via TARGETED DOM (no full re-render); expanded Set as state"
+    - "Roving tabindex + keyboard nav (Up/Down/Right/Left/Home/End/Enter/Space) per WAI-ARIA APG"
+    - "Collapsible sidebar pane (grid rail track -> 0 / restore, with transition + reveal control)"
+    - "localStorage persistence of expanded Set + pane-collapsed (mirrors lib/appearance/state.ts)"
+    - "Preserve VG-FE (folder click -> listNotes{folder}) + VG-FE-FOLDER-OPEN (returns to list)"
+  out_of_scope_this_round:
+    - "Folder rename / delete / drag-reparent (need backend; DEFERRED — owner-locked)"
+    - "Aggregate (recursive) parent counts (noted as a client roll-up follow-up)"
+    - "Resizable rail (drag handle) — widen to a fixed comfortable width instead"
+    - "Type-ahead first-letter focus (OPTIONAL delight; stretch sub-task, not a gate)"
+  deferred:
+    - "Aggregate counts: sum descendant note_count over the flat list, client-side"
+    - "Multi-select / context menu (Apple right-click) — future"
+
+verified_firsthand:
+  - "FolderDto = {path, name, note_count} EXACTLY (jin-gui/src/types/dto.ts:63-71). NoteDto.folder_path present (dto.ts:58)."
+  - "list_folders() invoke is pure FE call (invoke.ts:86-89); createFolder() :92. No backend change needed."
+  - "renderFolderRail FLAT loop: render.ts:70-101 — innerHTML='' then clone #tmpl-folder-row per folder; role=list/listitem; NO tree/expand/indent. onSelect(path) callback contract."
+  - "Controller is at jin-gui/src/controllers/notes_controller.ts (NOT lib/notes/). loadFolders :128-146 wires renderFolderRail; selectFolder :157-175 (flush+destroy editor -> showList() -> currentFolder=path -> loadFolders + loadList{folder}); currentFolder state :95."
+  - "selectFolder-returns-to-list FIX is LIVE (commit 60c182e, merged via PR#13 @ HEAD 97b28d4). VG-FE-FOLDER-OPEN gate @ test :1631-1742. PRESERVE."
+  - "#tmpl-folder-row @ index.html:456-468 = <li.folder-row role=listitem><button.folder-row__btn[data-folder-path]><i.folder-row__icon><span.folder-row__name><span.folder-row__count>. Folder rail markup :300-316 (.notes-folder-rail + __list role=list + __new-btn)."
+  - "3-pane grid: browse.css:725-744 .notes-paned grid-template-columns:160px 1fr (rail track FIXED 160px); .detail-open keeps 160px 1fr (list hidden via .hidden, rail visible in BOTH list+detail modes). Folder rail/list/detail styles :746-880. Folder row styles :824-880."
+  - "localStorage pattern EXISTS + works in Tauri webview: lib/appearance/state.ts (STORAGE_KEY='jin_appearance_prefs'; loadPrefs try/catch -> DEFAULTS on miss/parse-error; savePrefs try/catch silent no-op). MIRROR this for the tree prefs."
+  - "Tokens: tokens.css --space-half:4px/--space-1:8px/--space-2:16px; --hit-target:44px; --radius-sm:8px. Use var(--*) only (token discipline)."
+  - "Test harness: notes_controller.test.ts uses jsdom + @hotwired/stimulus Application.start over BODY_CONTENT (extracted from real index.html). makeNotesTemplates() mirrors #tmpl-folder-row (test :193-203) — MUST update in lock-step. Controller-driven tests find folders via querySelectorAll('.folder-row__btn').find(b=>b.dataset.folderPath===X).click()."
+  - "Node >=20 REQUIRED for vitest (engines.node>=20.0.0; system node v16.20.2 crashes vitest — use nvm v24.18.0)."
+  - "code-highlighting PR overlap = browse.css ONLY, DISJOINT regions (highlighting edits :545-560 .cm-reading-wrapper; this edits :715-880 rail+grid). render.ts/notes_controller.ts/index.html NOT touched by highlighting. LOW rebase risk."
+
+decisions:
+  D-PERSIST:
+    choice: "localStorage. Key 'jin_notes_folder_tree' storing {expanded: string[], paneCollapsed: boolean}. New module lib/notes/folderTreePrefs.ts mirroring lib/appearance/state.ts (load=try/catch->DEFAULTS on miss/parse-error; save=try/catch silent no-op)."
+    rationale: "Established, proven codebase pattern (appearance prefs survive Tauri restart -> localStorage IS available in this webview, unlike window.prompt). Research rec favors persisting expansion. Session-only loses state on every reload = annoying for a tree the user curates."
+    rejected: "sessionStorage / in-memory only (state lost on reload); per-key flat localStorage entries (less cohesive than one namespaced JSON blob)."
+  D-COUNTS:
+    choice: "DIRECT counts (FolderDto.note_count as-is) for v1."
+    rationale: "Already in the DTO; matches what list_folders returns. Aggregate changes the number's meaning (parent shows descendant totals) and risks confusing users; Apple shows direct-ish counts."
+    follow_up: "Aggregate roll-up = pure client sum of descendant note_count over the tree; add as buildFolderTree option later (NOT this round)."
+  D-RAIL-WIDTH:
+    choice: "Widen the fixed rail track 160px -> 200px in BOTH .notes-paned and .notes-paned.detail-open (browse.css:727,743). Indent 14px/level, ellipsis on .folder-row__name (already set :868-873). NOT resizable."
+    rationale: "200px comfortably fits chevron(16) + indent(<=3*14=42) + icon(14) + label(ellipsis) + count at <=3 levels. Resizable adds a drag handle + its own persistence = scope creep. Research: don't default-nest beyond 2-3 visual levels; keep indent small."
+    rejected: "Keep 160px (too tight once chevron+indent added); resizable drag handle (out of scope)."
+  D-RERENDER:
+    choice: "TARGETED DOM for expand/collapse + keyboard nav (flip aria-expanded, toggle child <ul role=group> [hidden], move roving tabindex + focus) — NO full re-render on interaction. Full re-render (buildFolderTree -> renderFolderTree) ONLY on data refresh (loadFolders / folder created / folder selected). On full re-render: restore focus to the active treeitem by [data-folder-path], reapply roving tabindex, and rebuild expanded visibility from the persisted Set."
+    rationale: "The existing innerHTML='' full re-render drops focus + expanded state — the #1 risk. Confining full re-render to data-refresh events (rare) and restoring focus/expanded deterministically from the Set keeps the focus-loss surface tiny and testable."
+    rejected: "Full re-render on every interaction (focus thrash, fights screen readers); full incremental DOM diff (over-engineered for this list size)."
+  D-PANE-TOGGLE:
+    choice: "Toggle adds/removes .rail-collapsed on .notes-paned. Expanded: collapse control in a slim rail header (.notes-folder-rail__header, top of rail, Lucide 'panel-left-close'). Collapsed: grid rail track -> 0 (rail content overflow:hidden) + a compact reveal button (.notes-rail-reveal, Lucide 'panel-left-open') pinned top-leading of the active pane (list OR detail) so it is reachable in BOTH modes. One logical action, two visual anchors. width/track transition via var(--duration-*) var(--ease-*)."
+    rationale: "Rail is visible in both list AND detail modes (grid 160/200px 1fr in both). When track->0 the in-rail control vanishes, so the reveal control MUST live outside the collapsing track. Lucide panel-left-* is the conventional Apple/VSCode sidebar-toggle glyph."
+    owner_verify: "Exact pixel placement of the reveal button (so it never overlaps the back-button / title) is a Kupo+owner visual call; the gate only asserts the rail track hides/shows."
+  D-SELECT-SEMANTICS:
+    choice: "Apple model. Clicking the ROW BODY (.folder-row__btn region / name) SELECTS (loads that folder's notes). Clicking the CHEVRON toggles expand ONLY (handler calls stopPropagation; never selects). Keyboard: Enter/Space SELECTS the focused treeitem; Right/Left handle expand/collapse + child/parent move."
+    rationale: "Matches Apple Notes + WAI-ARIA APG (Enter activates; arrows navigate/expand). Decouples 'open folder' from 'reveal children'."
+  D-ROOT-NODE:
+    choice: "Root '' ('Notes') is a TOP-LEVEL PEER node (depth 0), NOT the parent of user folders. Depth = (path.split('/').length - 1); '' -> depth 0. Parent of an N(>=2)-segment path = first N-1 segments joined; 1-segment + '' = top-level. So input [\"\",\"Work\",\"Work/Projects\",\"Personal\"] -> top-level [\"\",\"Personal\",\"Work\"], Work.children=[\"Work/Projects\"]; depths \"\"=0 Work=0 Work/Projects=1 Personal=0."
+    rationale: "Matches the G-TREE-BUILD gate (Work/Projects at depth 1 => Work at depth 0, NOT nested under ''). '' selected = notes at the root level; it has no tree children. Sort siblings lexicographically (input already BTreeSet-sorted), pin '' first."
+  D-SELECTOR-STABILITY:
+    choice: "KEEP a clickable .folder-row__btn element carrying data-folder-path inside each treeitem (as a NON-focusable styling+selection hook, role removed, NOT a <button>). The <li> is the role=treeitem + roving-tabindex focus owner."
+    rationale: "VG-FE + VG-FE-FOLDER-OPEN (IMMOVABLE) find folders via querySelectorAll('.folder-row__btn').find(...).click(). Retaining the class + data-folder-path + click-to-select keeps those controller-driven gates green with ZERO test edits. Avoids the nested-interactive ARIA anti-pattern (button inside treeitem) by demoting it to a div."
+
+architecture:
+  new_modules:
+    - "jin-gui/src/lib/notes/folderTree.ts — PURE. buildFolderTree(folders: FolderDto[]): TreeNode[] (split path on '/', synthesize missing ancestors defensively, depth, sorted siblings, root '' pinned). flattenVisible(tree, expanded: Set<string>): TreeNode[] (depth-first; include children only if parent path in expanded). resolveTreeKey(key, ctx): TreeKeyResult (PURE nav: given ordered visible paths + focusedPath + isParent/isExpanded map + key -> {nextFocusPath?, expand?, collapse?, select?, moveToParent?}). NO DOM, NO imports of render libs."
+    - "jin-gui/src/lib/notes/folderTreePrefs.ts — side-effecting. STORAGE_KEY='jin_notes_folder_tree'; FolderTreePrefs={expanded:string[]; paneCollapsed:boolean}; DEFAULT_PREFS; loadFolderTreePrefs() (try/catch->DEFAULTS); saveFolderTreePrefs(prefs) (try/catch silent). MIRROR lib/appearance/state.ts EXACTLY."
+  edits:
+    - "jin-gui/src/lib/notes/render.ts — REPLACE renderFolderRail (:70-101) with renderFolderTree(folderListEl, templates, tree, view:{activeFolder, expanded:Set, focusedPath}, cb:{onSelect:(path)=>void, onToggle:(path)=>void}). Recursive build of <li role=treeitem> + nested <ul role=group hidden|visible>. Plus small exported DOM helpers used by the controller's targeted-DOM path: setTreeItemExpanded(li,bool), focusTreeItem(container, path) (roving tabindex reapply + .focus())."
+    - "jin-gui/src/controllers/notes_controller.ts — STATE: expandedFolders:Set<string>, paneCollapsed:boolean, focusedFolderPath:string|null. connect(): load prefs -> seed Set + paneCollapsed -> apply .rail-collapsed. loadFolders(): buildFolderTree -> renderFolderTree (pass Set/active/focused) -> restore focus by path. NEW actions: toggleFolder(path) (mutate Set + targeted DOM + save prefs), onTreeKeydown(event) (delegated keydown on the tree container -> resolveTreeKey -> apply focus/expand/collapse/select via targeted DOM), togglePane() (flip .rail-collapsed + save prefs). KEEP selectFolder(path) behavior (incl. the editor flush+showList fix) intact."
+    - "jin-gui/index.html — #tmpl-folder-row (:456-468) -> tree template: <li class=folder-row role=treeitem tabindex=-1 aria-selected=false><div class=folder-row__btn data-folder-path><span class=folder-row__chevron data-folder-toggle aria-hidden=true><i data-lucide=chevron-right></i></span><i class=folder-row__icon data-lucide=folder aria-hidden=true></i><span class=folder-row__name></span><span class=folder-row__count></span></div><ul class=folder-row__group role=group hidden></ul></li>. Folder rail (:300-316): container role=tree aria-label + a .notes-folder-rail__header with the collapse toggle (data-action click->notes#togglePane). Add the .notes-rail-reveal button (data-action click->notes#togglePane, panel-left-open) reachable in both panes. Wire data-action keydown->notes#onTreeKeydown on the tree container."
+    - "jin-gui/src/styles/browse.css — rail width 160px->200px (:727 + :743). Tree CSS: .folder-row__group{list-style:none;margin:0;padding:0} ; treeitem indent via --tree-depth custom prop: .folder-row__btn{padding-inline-start:calc(var(--space-2) + var(--tree-depth,0)*14px)} ; chevron column reserved (leaf spacer same width) + rotate (chevron-right -> 90deg when [aria-expanded=true]) ; selection highlight on .folder-row[aria-selected=true] (full-row) ; :focus-visible ring on treeitem ; [hidden] group not shown ; .notes-paned.rail-collapsed{grid-template-columns:0 1fr} + transition + rail overflow:hidden ; .notes-rail-reveal styles. var(--*) tokens only."
+    - "jin-gui/src/__tests__/notes_controller.test.ts — EVOLVE the flat 'renderFolderRail — folder row rendering' block (:906-984) into G-TREE-* tree-shape gates; update makeNotesTemplates() folder template (:193-203) + VG-FE-TMPL hooks (:1039+) to the tree template. ADD a new pure-logic suite for folderTree.ts (or a sibling folderTree.test.ts) + folderTreePrefs.test.ts. KEEP VG-FE / VG-FE-FOLDER-OPEN / G-XSS / VG-ROUTER-UNTOUCHED / VG-DTO-DRIFT verbatim-green."
+
+stories:
+  - id: T1
+    title: "Pure folder-tree builder + flatten-visible"
+    user_story: "As a Notes user, I want my flat folder list turned into a correct nested model so the sidebar can show real hierarchy."
+    timebox: "1d"
+    action_plan:
+      - "Create lib/notes/folderTree.ts: TreeNode {path; name; note_count; depth; children: TreeNode[]; isParent: boolean}."
+      - "buildFolderTree(folders): split each path on '/'; compute depth=(segments-1, '' -> 0); attach each node under its parent (first N-1 segments); synthesize MISSING ancestor nodes defensively (note_count 0, name=leaf segment); pin root '' first; sort siblings lexicographically by path."
+      - "flattenVisible(tree, expanded:Set<string>): depth-first preorder; include a node's children ONLY if node.path in expanded; returns ordered TreeNode[] (drives render row order + keyboard prev/next)."
+      - "resolveTreeKey(key, {visiblePaths, focusedPath, expandedSet, parentMap, isParentMap}): PURE — return {nextFocusPath?, expand?, collapse?, select?} per WAI-ARIA (see G-TREE-KEYBOARD spec table)."
+    given_when_then:
+      - "GIVEN folders [\"\",\"Work\",\"Work/Projects\",\"Personal\"] with counts WHEN buildFolderTree THEN top-level=[\"\",\"Personal\",\"Work\"]; Work.children=[{path:'Work/Projects', depth:1}]; depths \"\"=0/Work=0/Projects=1/Personal=0; counts mapped exactly."
+      - "GIVEN folders that include 'Work/Projects' but OMIT 'Work' WHEN buildFolderTree THEN a synthetic 'Work' node (note_count 0, name 'Work', isParent true) is created with Projects as its child (no orphan, no throw)."
+      - "GIVEN a tree with Work expanded=false WHEN flattenVisible THEN Work appears but Work/Projects does NOT; GIVEN Work in expanded THEN both appear in preorder."
+    gates: ["G-TREE-BUILD"]
+    agent_hints:
+      class: reasoner
+      context_files: ["jin-gui/src/types/dto.ts", "jin-gui/src/lib/notes/transform.ts (pure-module style reference)"]
+      validation_gates: ["G-TREE-BUILD"]
+    risk_tags: ["P1"]
+
+  - id: T2
+    title: "Recursive ARIA tree render + indentation + chevrons + counts"
+    user_story: "As a Notes user, I want the sidebar to render my folders as an indented tree with disclosure chevrons and counts so I can see structure at a glance."
+    timebox: "2d"
+    depends_on: ["T1"]
+    action_plan:
+      - "render.ts: replace renderFolderRail with renderFolderTree(folderListEl, templates, tree, view, cb). Recurse the TreeNode[] -> <li role=treeitem> per node; nested <ul role=group> for children (hidden unless node.path in view.expanded)."
+      - "Per treeitem: aria-level (depth+1), aria-selected (path===activeFolder), aria-expanded ONLY on parents (isParent), data-folder-path on .folder-row__btn (kept clickable, non-focusable). Leaves: NO aria-expanded; chevron column rendered as a spacer for label alignment."
+      - "Chevron: Lucide chevron-right in .folder-row__chevron[data-folder-toggle] (parents only; leaves get an empty equal-width spacer)."
+      - "Counts: .folder-row__count = note_count>0 ? String(n) : '' (direct counts, D-COUNTS)."
+      - "Indent: set --tree-depth:<depth> inline on .folder-row__btn so CSS computes padding-inline-start."
+      - "index.html: rewrite #tmpl-folder-row to the treeitem+group template; set tree container role=tree + aria-label. browse.css: tree/indent/chevron/selection/focus CSS; widen rail 160->200px (Kupo)."
+    given_when_then:
+      - "GIVEN a built tree WHEN renderFolderTree THEN container has role=tree; each row role=treeitem with correct aria-level; PARENT rows have aria-expanded; LEAF rows have NO aria-expanded; counts shown for n>0, empty for 0."
+      - "GIVEN depth-2 nodes WHEN rendered THEN padding-inline-start increases per depth (indent visible) and the chevron column aligns labels (leaf spacer present)."
+      - "GIVEN activeFolder='Work' WHEN rendered THEN the Work treeitem has aria-selected=true + full-row highlight class; others aria-selected=false."
+    gates: ["G-TREE-RENDER"]
+    agent_hints:
+      class: builder
+      context_files: ["jin-gui/src/lib/notes/render.ts:61-101", "jin-gui/index.html:300-316,456-468", "jin-gui/src/styles/browse.css:715-880", "jin-gui/src/styles/tokens.css:130-260"]
+      validation_gates: ["G-TREE-RENDER", "VG-FE-TMPL (UPDATE to tree template)"]
+      kupo_microtasks:
+        - "CSS: --tree-depth indent (14px/level), chevron rotate on [aria-expanded=true], reserved chevron/leaf-spacer column, full-row selection highlight, :focus-visible ring, [hidden] group; rail 200px."
+        - "Icon: Lucide chevron-right (register if absent)."
+        - "Template: #tmpl-folder-row -> treeitem + nested group + chevron + kept .folder-row__btn[data-folder-path]."
+    risk_tags: ["P1", "P2"]
+
+  - id: T3
+    title: "Expand/collapse + roving tabindex + full keyboard navigation"
+    user_story: "As a keyboard / screen-reader user, I want to expand, collapse, and move through the folder tree entirely from the keyboard following the WAI-ARIA tree pattern."
+    timebox: "2d"
+    depends_on: ["T2"]
+    action_plan:
+      - "Controller: expandedFolders:Set<string> + focusedFolderPath. toggleFolder(path) mutates the Set + applies TARGETED DOM (setTreeItemExpanded: flip aria-expanded + toggle child <ul role=group>[hidden]) — NO full re-render (D-RERENDER) + saves prefs."
+      - "Chevron click (data-folder-toggle) -> toggleFolder + stopPropagation (no select). Row click -> selectFolder (D-SELECT-SEMANTICS)."
+      - "Roving tabindex: exactly one treeitem tabindex=0 (the focused/active one), rest -1. focusTreeItem(container, path) reapplies + .focus()."
+      - "Delegated keydown handler onTreeKeydown on the tree container -> resolveTreeKey (pure) -> apply: Down/Up move focus to next/prev VISIBLE treeitem; Right expand collapsed-parent ELSE move to first child; Left collapse expanded ELSE move to parent; Home/End first/last visible; Enter/Space select; preventDefault on handled keys."
+    given_when_then:
+      - "GIVEN a collapsed parent treeitem WHEN its chevron receives a real click event THEN aria-expanded flips true, the child group becomes visible, the path is added to the expanded Set, and NO sibling selection changes (stopPropagation)."
+      - "GIVEN focus on a treeitem WHEN ArrowDown/ArrowUp dispatched THEN document.activeElement moves to the next/prev VISIBLE treeitem and roving tabindex follows (focused=0, others=-1)."
+      - "GIVEN focus on a collapsed parent WHEN ArrowRight THEN it expands (aria-expanded=true); WHEN ArrowRight again THEN focus moves to its first child."
+      - "GIVEN focus on an expanded parent WHEN ArrowLeft THEN it collapses; GIVEN focus on a child WHEN ArrowLeft THEN focus moves to the parent."
+      - "GIVEN any visible treeitem focused WHEN Home/End THEN focus moves to the first/last visible treeitem."
+    gates: ["G-TREE-EXPAND-COLLAPSE", "G-TREE-KEYBOARD"]
+    agent_hints:
+      class: reasoner
+      context_files: ["jin-gui/src/controllers/notes_controller.ts:122-175", "jin-gui/src/lib/notes/folderTree.ts (resolveTreeKey)", "WAI-ARIA APG Tree View pattern"]
+      validation_gates: ["G-TREE-EXPAND-COLLAPSE", "G-TREE-KEYBOARD"]
+      notes: "resolveTreeKey is PURE -> unit-test the nav logic directly; ALSO dispatch real KeyboardEvent on the rendered tree + assert document.activeElement + aria-expanded (two layers)."
+    risk_tags: ["P0", "P1"]
+
+  - id: T4
+    title: "Select semantics + preserve folder-open regression fix"
+    user_story: "As a Notes user, I want clicking or Enter-ing a folder to load its notes (and return me to the list if I had a note open), exactly as before."
+    timebox: "0.5d"
+    depends_on: ["T2", "T3"]
+    action_plan:
+      - "Wire row-body click + Enter/Space -> selectFolder(path); KEEP selectFolder's editor flush+destroy -> showList() -> currentFolder=path -> loadFolders+loadList{folder} (the live VG-FE-FOLDER-OPEN behavior)."
+      - "On select, move aria-selected + full-row highlight to the new treeitem; keep the focused path in sync."
+      - "VERIFY the .folder-row__btn[data-folder-path] clickable hook survives (D-SELECTOR-STABILITY) so VG-FE + VG-FE-FOLDER-OPEN pass UNEDITED."
+    given_when_then:
+      - "GIVEN the tree WHEN a folder row body is clicked (real DOM) THEN onSelect(path) fires -> listNotes called with {folder: path} and aria-selected moves to that treeitem."
+      - "GIVEN a note is open (detail-open set, listPanel hidden) WHEN a folder row is clicked THEN the open editor is flushed+destroyed, detail-open is removed, detailPanel hidden, listPanel shown, listNotes({folder}) called (VG-FE-FOLDER-OPEN stays green)."
+      - "GIVEN focus on a treeitem WHEN Enter or Space THEN the same selection path fires."
+    gates: ["G-TREE-SELECT", "VG-FE (preserve)", "VG-FE-FOLDER-OPEN (preserve)"]
+    agent_hints:
+      class: builder
+      context_files: ["jin-gui/src/controllers/notes_controller.ts:148-175", "jin-gui/src/__tests__/notes_controller.test.ts:990-1033,1631-1742"]
+      validation_gates: ["G-TREE-SELECT", "VG-FE", "VG-FE-FOLDER-OPEN"]
+    risk_tags: ["P0"]
+
+  - id: T5
+    title: "Collapsible sidebar pane"
+    user_story: "As a Notes user, I want to hide the folder sidebar to get a wider editing/reading area, and bring it back, in either list or detail view."
+    timebox: "1d"
+    depends_on: ["T2"]
+    action_plan:
+      - "Controller togglePane(): flip paneCollapsed -> add/remove .rail-collapsed on .notes-paned (this.element) -> save prefs."
+      - "index.html: collapse control in .notes-folder-rail__header (panel-left-close); .notes-rail-reveal button (panel-left-open) pinned top-leading, reachable in list AND detail."
+      - "browse.css: .notes-paned.rail-collapsed{grid-template-columns:0 1fr} + width/track transition (var(--duration-*)/(--ease-*)); rail overflow:hidden when collapsed; reveal button shown only when collapsed."
+    given_when_then:
+      - "GIVEN the rail visible WHEN the collapse toggle is clicked THEN .notes-paned gains .rail-collapsed (rail track -> 0; rail content hidden) and the reveal control is shown."
+      - "GIVEN the rail collapsed WHEN the reveal control is clicked THEN .rail-collapsed is removed and the rail is shown again."
+      - "GIVEN a note open (detail-open) WHEN toggling the pane THEN collapse/restore still works (rail toggle independent of list/detail state)."
+    gates: ["G-TREE-COLLAPSE-PANE"]
+    agent_hints:
+      class: builder
+      context_files: ["jin-gui/index.html:291-316", "jin-gui/src/styles/browse.css:725-754", "jin-gui/src/controllers/notes_controller.ts:282-286"]
+      validation_gates: ["G-TREE-COLLAPSE-PANE"]
+      kupo_microtasks:
+        - "CSS: .rail-collapsed grid track 0 + transition; reveal button placement/visibility."
+        - "Icon: Lucide panel-left-close / panel-left-open."
+    risk_tags: ["P1", "P2"]
+
+  - id: T6
+    title: "Persistence of expanded Set + pane-collapsed (localStorage)"
+    user_story: "As a Notes user, I want my expanded folders and sidebar visibility to survive an app reload so I don't re-set them every time."
+    timebox: "0.5d"
+    depends_on: ["T3", "T5"]
+    action_plan:
+      - "Create lib/notes/folderTreePrefs.ts mirroring lib/appearance/state.ts (STORAGE_KEY='jin_notes_folder_tree'; load try/catch->DEFAULTS; save try/catch silent)."
+      - "Controller connect(): loadFolderTreePrefs() -> seed expandedFolders Set + paneCollapsed -> apply before first render. toggleFolder + togglePane call saveFolderTreePrefs()."
+      - "On render, rebuild visibility from the seeded Set (so reload restores the exact open/closed shape)."
+    given_when_then:
+      - "GIVEN expandedFolders={'Work'} and a save WHEN the controller is re-created (remount) with a mocked localStorage THEN the Work group renders expanded (aria-expanded=true) on first paint."
+      - "GIVEN paneCollapsed=true persisted WHEN remounted THEN .notes-paned has .rail-collapsed on first paint."
+      - "GIVEN corrupt/invalid JSON in the key WHEN loadFolderTreePrefs THEN it returns DEFAULTS (no throw) and the tree renders normally."
+    gates: ["G-TREE-PERSIST"]
+    agent_hints:
+      class: builder
+      context_files: ["jin-gui/src/lib/appearance/state.ts:64-114", "jin-gui/src/controllers/notes_controller.ts:110-120"]
+      validation_gates: ["G-TREE-PERSIST"]
+    risk_tags: ["P2"]
+
+validation_gates:
+  new:
+    G-TREE-BUILD: "buildFolderTree on flat [\"\",\"Work\",\"Work/Projects\",\"Personal\"] (+counts) -> exact nested shape (Work.children=[Projects @ depth1]; depths correct; counts mapped). Mutation: drop ancestor 'Work' -> synthetic Work created, no orphan/throw. flattenVisible honors the expanded Set."
+    G-TREE-RENDER: "render -> role=tree; treeitems with correct aria-level + per-depth indent; PARENTS have aria-expanded, LEAVES do NOT; counts shown (n>0) / empty (0); active treeitem aria-selected=true + highlight."
+    G-TREE-EXPAND-COLLAPSE: "real click on a chevron toggles aria-expanded + child-group visibility AND the expanded Set; stopPropagation -> no selection change."
+    G-TREE-KEYBOARD: "real ArrowDown/Up/Right/Left/Home/End keydown on the focused treeitem -> focus + expand/collapse move per WAI-ARIA (assert document.activeElement + aria-expanded + roving tabindex). Plus pure resolveTreeKey unit cases."
+    G-TREE-SELECT: "Enter/click on a folder -> onSelect(path) fires (drives listNotes{folder}) + aria-selected/highlight move to that treeitem."
+    G-TREE-COLLAPSE-PANE: "pane toggle adds .rail-collapsed (rail track hidden); reveal toggle removes it (rail shown); works in list AND detail modes."
+    G-TREE-PERSIST: "expanded Set + paneCollapsed survive a remount (mocked localStorage); corrupt JSON -> DEFAULTS, no throw."
+  evolving:
+    - "renderFolderRail flat-shape suite (test:906-984) -> rewritten as G-TREE-RENDER tree-shape assertions."
+    - "makeNotesTemplates() folder template (test:193-203) + VG-FE-TMPL hooks (test:1039+) -> updated to the treeitem+group+chevron template (keeps .folder-row__name/__count/__btn + data-folder-path hooks)."
+  immovable_preserve_verbatim:
+    - "VG-FE folder click -> listNotes{folder} (test:990-1033)"
+    - "VG-FE-FOLDER-OPEN 3 tests — selectFolder returns to list + flush/destroy editor (test:1631-1742)"
+    - "G-XSS script-as-text (test:504-538)"
+    - "VG-ROUTER-UNTOUCHED ViewKind=5 (test:1070+)"
+    - "VG-DTO-DRIFT FolderDto/NoteDto.folder_path shape (test:1095+)"
+    - "filterNotesList folder-filter suite (test:845+)"
+    - "ALL editor.ts / livePreview / markdown chokepoint / G-SAVE caret-safe gates (unaffected — this touches the rail only)"
+
+risk_flags:
+  - id: R1
+    severity: P0
+    text: "Focus + expanded-state across re-render (TOP). The current innerHTML='' full re-render drops focus + expanded state in a tree. MITIGATION: targeted DOM for expand/collapse + keyboard; full re-render only on data refresh with explicit focus restoration by [data-folder-path] + roving-tabindex reapply + visibility rebuilt from the expanded Set (D-RERENDER)."
+  - id: R2
+    severity: P1
+    text: "Rail width / deep nesting overflow. MITIGATION: widen 160->200px + 14px/level indent + ellipsis on __name; cap visual guidance 2-3 levels (D-RAIL-WIDTH)."
+  - id: R3
+    severity: P1
+    text: "WAI-ARIA tree correctness (roles, roving tabindex, key semantics). MITIGATION: follow APG exactly; pure resolveTreeKey unit tests + real-keydown DOM tests (two layers)."
+  - id: R4
+    severity: P1
+    text: "3-pane interaction: rail is visible in BOTH list + detail modes; collapse/reveal must work in both; selection must preserve VG-FE-FOLDER-OPEN. MITIGATION: pane toggle on the grid class; reveal control outside the collapsing track; keep data-folder-path clickable hook."
+  - id: R5
+    severity: P1
+    text: "Regression on IMMOVABLE controller tests that select via .folder-row__btn[data-folder-path]. MITIGATION: retain that class + attribute + click-to-select (D-SELECTOR-STABILITY) -> VG-FE/VG-FE-FOLDER-OPEN pass unedited."
+  - id: R6
+    severity: P2
+    text: "Rebase with code-highlighting PR. Only browse.css shared, DISJOINT regions (highlighting :545-560; this :715-880). Branch off main AFTER highlighting lands; resolve the (trivial) browse.css hunk if needed."
+  - id: R7
+    severity: P2
+    text: "Vitest needs Node>=20 (system node v16.20.2 crashes). Use nvm v24.18.0 before running gates."
+
+execution_plan:
+  order: ["T1", "T2", "T3", "T4", "T5", "T6"]
+  parallelizable: ["T5 may proceed alongside T3 (independent of keyboard nav)"]
+  owner_verification: "cargo tauri dev (Node>=20) — expand/collapse chevrons; indentation reads clean at 2-3 levels; keyboard nav (arrows/Home/End/Enter); selection highlight; pane collapse+reveal in list AND detail; reload restores expanded + pane state; rail 200px fits."
+
+confidence_report:
+  overall: 0.88
+  factors:
+    pattern_match: 0.90    # established render.ts/controller/test + appearance localStorage patterns; WAI-ARIA APG is a known pattern
+    requirement_clarity: 0.92  # owner-locked scope, explicit gates + decisions enumerated
+    decomposition_stability: 0.85  # 6 INVEST stories, stable ordering
+    constraint_compliance: 0.85  # frontend-only verified; immovable gates mapped; selector-stability constraint pins regression risk
+  decision: AUTO_PROCEED

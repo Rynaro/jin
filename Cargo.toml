@@ -1,0 +1,58 @@
+[workspace]
+members = [
+    "jin-core",
+    "jin",
+    "jin-gui/src-tauri",
+]
+# default-members excludes jin-gui so that `cargo test --workspace` and
+# `cargo clippy --all-targets` only sweep the core/CLI packages unless
+# the GUI is explicitly targeted. The Makefile verify target names the
+# core packages explicitly (-p jin-core -p jin).
+default-members = [
+    "jin-core",
+    "jin",
+]
+resolver = "2"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml_ng = "0.9"
+ulid = "1"
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = { version = "0.10", features = ["serde"] }
+rusqlite = { version = "0.38", features = ["bundled"] }
+thiserror = "2"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+tempfile = "3"
+toml = "0.8"
+rrule = "0.14"
+
+# ── S6.1: OAuth + token storage ─────────────────────────────────────────────
+# PKCE challenge: SHA-256 of the code_verifier (RFC 7636 S256 method)
+sha2 = "0.10"
+# Base64URL encoding for PKCE verifier/challenge and ciphertext
+base64 = "0.22"
+# CSPRNG for PKCE verifier bytes, AEAD salt, and nonce
+rand = "0.8"
+# HTTP client for token endpoint (exchange, refresh, future Calendar API in S6.2)
+# Uses rustls — no OpenSSL system dependency. Blocking API; no async runtime needed.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
+# OS secret store (S6.1 primary token storage).
+# Per-OS backend features enabled explicitly as required by the spec (keyring 3.6.x).
+# Feature names verified from the actual keyring 3.6.x registry entry:
+#   linux-native   — Linux kernel keyutils (no DBus daemon required; pure-Rust syscalls)
+#   sync-secret-service + crypto-rust — DBus Secret Service (gnome-keyring/kwallet) sync API
+#   apple-native   — macOS Keychain
+#   windows-native — Windows Credential Manager
+# On headless Linux where keyring fails at runtime, code falls back to AEAD-encrypted file.
+# sync-secret-service requires libdbus-dev system library — not available in all build
+# environments (headless CI, containers). linux-native uses kernel keyutils (pure-Rust
+# syscalls, no system lib required). Users on desktop Linux with gnome-keyring can add
+# "sync-secret-service" + "crypto-rust" features locally for Secret Service integration.
+keyring = { version = "3", features = ["linux-native", "apple-native", "windows-native"] }
+# AEAD encryption for the headless-Linux token file fallback (tokens.enc)
+chacha20poly1305 = "0.10"
+# KDF: Argon2id derives the 32-byte ChaCha20-Poly1305 key from the passphrase
+argon2 = "0.5"

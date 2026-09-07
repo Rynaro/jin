@@ -1,0 +1,65 @@
+{
+  "spec_id": "2026-06-28-jin-notes-lp-blockquote",
+  "session_id": "spectra-2026-06-28-lp-blockquote",
+  "methodology": "SPECTRA",
+  "methodology_version": "4.10.0",
+  "intent_type": "CHANGE",
+  "tier": "standard",
+  "repo": "jin-gui",
+  "scope": "frontend-only",
+  "from": "spectra",
+  "to": "vivi",
+  "performative": "PROPOSE",
+  "confidence": 0.92,
+  "decision": "AUTO_PROCEED",
+  "branch_base": "main AFTER increment #2 (lp-links) merges; rebase onto it if not yet landed (hard dep: atomicDecorationsOf)",
+  "phases": {
+    "clarify": "skipped-justified — brief is unambiguous, constraints explicit, all open decisions pre-listed by the requester",
+    "scope": "done — CHANGE, frontend-only, single core file + 1 CSS rule + new test describe block",
+    "pattern": "done — ADAPT of #1 ListMark + #2 Link per-node branches; HeaderMark trailing-space eat reused",
+    "explore": "done — chose emit-line-first over collect+sort/second-builder (D-QUOTE-ORDER)",
+    "construct": "done — 2 stories LPQ-1/LPQ-2",
+    "test": "done — 6 functional gates + 2 style/smoke gates; all ranges verified firsthand via node v24",
+    "refine": "not needed — confidence >=85% at first assemble",
+    "assemble": "done"
+  },
+  "stories": [
+    {
+      "id": "LPQ-1",
+      "title": "QuoteMark branch: line decoration + > hide (trailing-space eat) + line-start guard",
+      "status": "pending",
+      "depends_on": [],
+      "files": [
+        "jin-gui/src/lib/notes/livePreview.ts",
+        "jin-gui/src/__tests__/livePreview.test.ts"
+      ],
+      "gates": ["G-LP-QUOTE-BAR", "G-LP-QUOTE-REVEAL", "G-LP-QUOTE-MULTILINE", "G-LP-QUOTE-ATOMIC", "G-LP-QUOTE-ROBUST", "G-LP-QUOTE-ORDER"],
+      "verification": "pending"
+    },
+    {
+      "id": "LPQ-2",
+      "title": ".cm-blockquote-line bar CSS in jinEditorTheme + DOM smoke",
+      "status": "pending",
+      "depends_on": ["LPQ-1"],
+      "files": [
+        "jin-gui/src/lib/notes/editor.ts",
+        "jin-gui/src/__tests__/livePreview.test.ts"
+      ],
+      "gates": ["G-LP-QUOTE-STYLE", "G-LP-QUOTE-SMOKE"],
+      "verification": "pending"
+    }
+  ],
+  "firsthand_verifications": [
+    "lezer: QuoteMark = '>' only (no trailing space); Blockquote spans all lines; multi-line = 1 Blockquote + N QuoteMarks at line starts; nested = nested Blockquote nodes",
+    "RangeSetBuilder: line startSide -2e8 < replace 499999999 < mark 5e8; line-then-replace at same from OK, reverse THROWS",
+    "atomicDecorationsOf already DROPS a Decoration.line (spec.class && !spec.widget)",
+    "CM6 plugin decorations permit line decos; forbid only block widgets + line-break-crossing replaces (index.js:2737-2739, :8834-8838)"
+  ],
+  "replanning_history": [],
+  "out_of_scope": [
+    "multi-level nested bars (v1 single bar)",
+    "bar on lazy-continuation lines",
+    "reading-view blockquote (separate path)",
+    "any src-tauri change"
+  ]
+}

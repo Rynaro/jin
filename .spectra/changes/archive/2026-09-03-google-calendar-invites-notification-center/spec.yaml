@@ -1,0 +1,200 @@
+eidolon: ramza
+version: 0.1.0
+kind: spec
+status: ready-for-vivi
+created_at: 2026-09-02T23:02:42Z
+thread_id: 01a0645f-c5bd-7669-8785-b68f1b6c9071
+change_id: google-calendar-invites-notification-center
+esl_version: "1.1"
+esl_tier: full
+trance_authorized_by: user
+complexity_score: 11
+maker: vivi
+checker: vigil
+spec_author: ramza
+spec_checker: ramza-critic
+spec_ref: .spectra/changes/google-calendar-invites-notification-center/spec.md
+criteria_ref: .spectra/changes/google-calendar-invites-notification-center/criteria.md
+acceptance_range: AC-NC-001..AC-NC-067
+criteria_sha256: 24c75b11ce293e5f60c3efe969c393321a96ba49c9d477c57e6cd8749d6ad767
+confidence: 0.9425
+confidence_verdict: AUTO_PROCEED
+
+intent: >-
+  Add a durable device-local Jin Notification Center for actionable Google
+  Calendar invitations and task reminder occurrences, with narrow self-RSVP
+  actions labeled Allow, Maybe, and Refuse.
+
+mvp:
+  includes:
+    - device-local notification ledger
+    - invitation and task-reminder producers
+    - in-app read unread defer dismiss and action flows
+    - dedicated self-attendee RSVP operation
+    - best-effort native title/body notifications
+  deferred:
+    - suggested new times
+    - native notification action buttons and deep links
+    - non-Google invitations
+    - cross-device notification state
+    - this-and-following recurrence mutation
+
+storage:
+  path: .jin/notification-center.sqlite
+  canonical_sources:
+    tasks: task Markdown frontmatter
+    events: canonical event Markdown
+    reminder_delivery: .jin/reminder-state.sqlite
+    provider_operations: existing sync outbox and recoverable operation journal
+  tables:
+    notification_items:
+      unique: [source_kind, source_key]
+      statuses: [active, action_pending, acted, superseded, dismissed, obsolete]
+      optimistic_version: true
+    notification_action_attempts:
+      primary_key: operation_id
+      states: [preparing, queued, sending, succeeded, failed_retryable, failed_terminal, superseded, obsolete]
+      item_fk: on_delete_restrict
+    notification_source_tombstones:
+      retention_days: 90
+  retention:
+    terminal_items_days: 30
+    attempts_days: 90
+
+source_keys:
+  task_reminder: existing occurrence_key
+  invitation: google/account_id/calendar_id/google_event_id/recurrence_identity
+  recurrence_identity:
+    single: [account_id, calendar_id, google_event_id]
+    master: [account_id, calendar_id, master_google_event_id, MASTER]
+    instance: [account_id, calendar_id, instance_google_event_id, recurring_event_id, original_start]
+
+invitation_eligibility:
+  source: canonical_event_projection
+  required:
+    - source is google
+    - exact persisted account calendar event recurrence route exists
+    - event is not cancelled or ended
+    - account copy is not organizer-owned
+    - exactly one attendee has self=true
+    - self attendee has a non-empty email
+    - self response is needsAction for discovery
+  reject_codes:
+    - organizer_owned
+    - self_attendee_missing
+    - self_attendee_ambiguous
+    - already_answered
+    - route_unavailable
+    - unsupported_recurrence_scope
+
+rsvp:
+  service: EventMutationService::respond_to_invitation
+  labels:
+    Allow: accepted
+    Maybe: tentative
+    Refuse: declined
+  authorization_identity:
+    - provider
+    - account_id
+    - calendar_id
+    - google_event_id
+    - recurrence_identity
+    - self_email
+    - provider_subject
+    - auth_generation
+    - route_generation
+  pending_overlay: true
+  optimistic_canonical_response: forbidden
+  wire:
+    method: PATCH
+    if_match: required
+    sendUpdates: none
+    body:
+      attendees:
+        - email: unique-self-email
+          responseStatus: accepted-or-tentative-or-declined
+      attendeesOmitted: true
+    forbidden_fields:
+      - other attendees
+      - displayName
+      - comment
+      - organizer
+      - unrelated event fields
+      - Jin-local metadata
+  canonical_attendees_omitted: unchanged until normal provider import
+  idempotency_key: operation_id
+  precondition_policy:
+    max_conditional_retries: 1
+    desired_remote: succeeded
+    conflicting_external: superseded
+    cancelled_deleted_ended: obsolete
+    second_412_still_eligible: active_retryable_error
+    disconnected_or_generation_changed: active_disabled
+    unconditional_patch: forbidden
+
+saga:
+  steps:
+    - prepare center attempt and pending item under CAS
+    - enqueue exact provider intent through recoverable operation journal
+    - mirror queued state by operation ID
+    - revalidate immutable authority and generations before network access
+    - update canonical response only from confirmed provider state
+    - reconcile center outcome from operation ID and canonical provider state
+  crash_recovery:
+    center_before_outbox: resume same operation or return active error
+    outbox_before_center_mirror: join row and mark queued
+    provider_before_canonical: refetch and detect desired response
+    canonical_before_center: mark acted without a second PATCH
+    during_412: persisted retry counter enforces ceiling
+
+native_delivery:
+  role: best_effort_signal
+  source_of_truth: false
+  actions: deferred
+  states: [not_requested, pending, submitted, failed, suppressed]
+
+commands:
+  names:
+    - list_notification_items
+    - get_notification_item
+    - notification_center_summary
+    - set_notification_read
+    - defer_notification_item
+    - dismiss_notification_item
+    - respond_calendar_invitation
+    - complete_notification_task
+  mutation_guard: expected_item_version
+  list_pagination: snapshot_watermark_cursor
+
+ui:
+  route: /notifications
+  shell: sidebar bell with backend unread badge
+  desktop: list-detail
+  mobile: single-column with focus-and-scroll-restoring Back
+  invitation_actions: [Allow, Maybe, Refuse]
+  task_actions: [Open task, Mark done, Read or unread, Defer, Dismiss]
+  required_states: [loading, empty, offline_pending, action_pending, failed, superseded, disabled, obsolete, partial_error]
+  accessibility:
+    - keyboard visual focus order
+    - recurrence dialog trap and focus restoration
+    - aria-busy on action group
+    - one polite live-region announcement per outcome
+    - no color-only state or action cues
+
+stories:
+  - { id: S0, title: Freeze contracts and migrations, timebox_days: 3, depends_on: [] }
+  - { id: S1, title: Build durable center ledger, timebox_days: 6, depends_on: [S0] }
+  - { id: S2, title: Add recoverable narrow RSVP saga, timebox_days: 8, depends_on: [S1] }
+  - { id: S3, title: Reconcile actionable invitations and overlays, timebox_days: 4, depends_on: [S2] }
+  - { id: S4, title: Route task reminders through center, timebox_days: 4, depends_on: [S3] }
+  - { id: S5, title: Expose guarded Tauri commands and DTOs, timebox_days: 4, depends_on: [S4] }
+  - { id: S6, title: Build accessible Notification Center UI, timebox_days: 6, depends_on: [S5] }
+  - { id: S7, title: Verify integration and recovery, timebox_days: 6, depends_on: [S6] }
+
+single_writer_stages: [S0, S1, S2, S3, S4, S5, S6, S7]
+verification_order: [jin-core, tauri, typescript, playwright, native-owner-signoff]
+
+provider_release_gate: >-
+  Confirm with a disposable attendee-organizer integration that
+  sendUpdates=none propagates the attendee response to the organizer copy
+  without broad guest update mail; failure requires a reviewed spec amendment.

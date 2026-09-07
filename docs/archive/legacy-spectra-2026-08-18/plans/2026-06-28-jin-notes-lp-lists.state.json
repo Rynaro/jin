@@ -1,0 +1,60 @@
+{
+  "session_id": "ba47c88d-72ae-4039-bf9f-6d51d1d2504e",
+  "artifact_id": "2026-06-28-jin-notes-lp-lists",
+  "methodology": "SPECTRA",
+  "methodology_version": "4.10.0",
+  "created_at": "2026-06-28",
+  "repo": "jin-gui",
+  "branch": "feat/notes-lp-lists",
+  "scope": "frontend-only",
+  "from": "spectra",
+  "to": "vivi",
+  "confidence": 0.90,
+  "decision": "AUTO_PROCEED",
+  "decisions": {
+    "D-INTERACTIVE": "display-only (interactive deferred to increment #1.5)",
+    "D-WIDGET-ATOMIC": "widgets in the same DecorationSet -> existing atomicRanges provide covers them",
+    "D-REVEAL": "unchanged per-line reveal",
+    "D-BUILDER-SHAPE": "single ListMark branch handles bullet+task; HIDE_MARK_NODES stays size 4"
+  },
+  "steps": [
+    {
+      "id": "LPL-1",
+      "title": "Unordered bullet-list marker -> bullet glyph widget",
+      "status": "pending",
+      "depends_on": [],
+      "files": ["jin-gui/src/lib/notes/livePreview.ts", "jin-gui/src/__tests__/livePreview.test.ts"],
+      "gates": ["G-LP-BULLET-HIDE", "G-LP-BULLET-REVEAL", "G-LP-ORDERED-UNTOUCHED", "G-LP-ATOMIC(ext)", "G-LP-NO-INNERHTML(ext)", "G-LP-HIDE_MARK_NODES-SIZE-4"],
+      "verification": "pending"
+    },
+    {
+      "id": "LPL-2",
+      "title": "GFM task marker -> checkbox glyph widget (no double bullet)",
+      "status": "pending",
+      "depends_on": ["LPL-1"],
+      "files": ["jin-gui/src/lib/notes/livePreview.ts", "jin-gui/src/__tests__/livePreview.test.ts"],
+      "gates": ["G-LP-CHECKBOX", "G-LP-CHECKBOX-REVEAL", "G-LP-NO-DOUBLE-BULLET", "G-LP-ROBUST(ext)", "G-LP-ATOMIC(ext)", "G-LP-NO-INNERHTML(ext)"],
+      "verification": "pending"
+    },
+    {
+      "id": "LPL-3",
+      "title": "Glyph visual theming + full regression + smoke",
+      "status": "pending",
+      "depends_on": ["LPL-1", "LPL-2"],
+      "files": ["jin-gui/src/lib/notes/editor.ts", "jin-gui/src/__tests__/livePreview.test.ts"],
+      "gates": ["G-LP-SMOKE(ext)", "G-REGRESSION-ALL"],
+      "kupo": ["K-LPL-A", "K-LPL-B", "K-LPL-C"],
+      "verification": "pending"
+    }
+  ],
+  "preserved_gates": [
+    "G-LP-HIDE", "G-LP-REVEAL", "G-LP-SELECTION", "G-LP-CARET-MOVE", "G-LP-REBUILD", "G-LP-ROBUST", "G-LP-SMOKE",
+    "G-LP-ATOMIC", "HIDE_MARK_NODES-SIZE-4", "G-LP-NO-INNERHTML(base/list-free)", "G-SAVE-CARET-SAFE",
+    "G-XSS", "G-CHOKEPOINT", "G-KEYMAP", "G-TOOLBAR-*", "G-FOOTER-STATS", "G-READING-VIEW"
+  ],
+  "follow_up": {
+    "D-INTERACTIVE-NEXT": "increment #1.5 click-to-toggle; new gate G-LP-CHECKBOX-TOGGLE (real DOM click)"
+  },
+  "replanning_history": [],
+  "node_requirement": ">=20 (nvm v24.18.0); system node v16.20.2 crashes vitest"
+}

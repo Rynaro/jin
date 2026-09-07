@@ -1,0 +1,36 @@
+{
+  "envelope_version": "2.0",
+  "ecl_version": "1.0",
+  "message_id": "b3b8f98e-fcf6-4c91-a647-56b62c50ade6",
+  "thread_id": "68b5c257-a103-4e41-918b-9ac826fdf05c",
+  "from": "spectra",
+  "to": "vivi",
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Live-preview increment #1 — render unordered list bullets (•) and GFM task checkboxes (☐/☑) as glyphs in the Jin CM6 note editor, off-line only with active-line reveal. Frontend-only (jin-gui).",
+  "artifact": {
+    "kind": "spec",
+    "payload_ref": "2026-06-28-jin-notes-lp-lists.yaml",
+    "human_payload": "delivered inline in the SPECTRA assistant message (no .md report file written per harness directive)"
+  },
+  "integrity": {
+    "method": "sha256",
+    "value": "4f5cc12cb7189b46a0c011298fb1ed7eb055c5e2ded4035075e6bed83f5fcb6f",
+    "over": "2026-06-28-jin-notes-lp-lists.yaml"
+  },
+  "context_delta": {
+    "repo": "jin-gui",
+    "extends_module": "jin-gui/src/lib/notes/livePreview.ts (add BulletWidget + CheckboxWidget + a ListMark branch in buildLivePreviewDecorations)",
+    "edits": "jin-gui/src/lib/notes/editor.ts (optional: glyph CSS in jinEditorTheme only — no logic change)",
+    "stories": ["LPL-1", "LPL-2", "LPL-3"],
+    "decisions": {
+      "D-INTERACTIVE": "display-only (interactive deferred to increment #1.5)",
+      "D-BUILDER-SHAPE": "single ListMark branch; HIDE_MARK_NODES stays size 4"
+    },
+    "immovable_gates": ["G-XSS@notes_controller.test.ts:~486-505", "G-CHOKEPOINT@markdown.test.ts:8", "HIDE_MARK_NODES-size-4@livePreview.test.ts:94-103", "G-LP-NO-INNERHTML-base-list-free@livePreview.test.ts:375-392"],
+    "new_gates": ["G-LP-BULLET-HIDE", "G-LP-BULLET-REVEAL", "G-LP-ORDERED-UNTOUCHED", "G-LP-CHECKBOX", "G-LP-CHECKBOX-REVEAL", "G-LP-NO-DOUBLE-BULLET", "G-LP-ATOMIC(ext)", "G-LP-NO-INNERHTML(ext)", "G-LP-ROBUST(ext)", "G-LP-SMOKE(ext)"],
+    "verified_firsthand": ["lezer Task/TaskMarker exist under markdown({base:markdownLanguage})", "ListMark exact ranges", "ordered=OrderedList grandparent", "widget exposed via spec.widget", "builder add monotonic"],
+    "node_requirement": ">=20 (nvm v24.18.0)"
+  },
+  "trust_level": "standard"
+}

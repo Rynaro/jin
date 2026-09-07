@@ -1,0 +1,201 @@
+{
+  "esl_version": "1.1",
+  "change_id": "calendar-event-when-recovery",
+  "status": "archived",
+  "tier": "full",
+  "maker": "Vivi",
+  "checker": "VIGIL",
+  "acceptance_checks": [
+    {
+      "id": "AC-001",
+      "given": "Calendar Add Event is open",
+      "when": "When renders",
+      "then": "it SHALL use Jin's shared Calendar and contain no native date input or picker",
+      "verify_method": "DOM plus native screenshot"
+    },
+    {
+      "id": "AC-002",
+      "given": "fresh Add Event",
+      "when": "opened",
+      "then": "it SHALL initialize the selected Day or today as all-day with hidden 09:00-10:00 defaults and title focus",
+      "verify_method": "controller GUI test"
+    },
+    {
+      "id": "AC-003",
+      "given": "empty range",
+      "when": "one enabled day activates",
+      "then": "it SHALL become a valid one-day range",
+      "verify_method": "Calendar controller test"
+    },
+    {
+      "id": "AC-004",
+      "given": "one-day range",
+      "when": "a second date activates",
+      "then": "endpoints SHALL normalize and inclusive days SHALL expose range state",
+      "verify_method": "transform and controller matrix"
+    },
+    {
+      "id": "AC-005",
+      "given": "completed range",
+      "when": "a third date activates",
+      "then": "a new valid one-day range SHALL start",
+      "verify_method": "controller test"
+    },
+    {
+      "id": "AC-006",
+      "given": "month or year-crossing range",
+      "when": "pointer or keyboard selects",
+      "then": "endpoints and interior SHALL remain correct",
+      "verify_method": "unit plus Playwright"
+    },
+    {
+      "id": "AC-007",
+      "given": "range mode",
+      "when": "rendered or changed",
+      "then": "ARIA multiselect selection endpoint/interior non-color cues one roving tabindex and localized labels SHALL be accurate",
+      "verify_method": "DOM accessibility assertions"
+    },
+    {
+      "id": "AC-008",
+      "given": "Calendar keyboard focus",
+      "when": "APG keys activate",
+      "then": "navigation SHALL hold and focus SHALL remain usable to complete the range",
+      "verify_method": "keyboard matrix plus Playwright"
+    },
+    {
+      "id": "AC-009",
+      "given": "task due Calendar single mode",
+      "when": "existing flows run",
+      "then": "selection clear today bounds keyboard normalization and payloads SHALL remain unchanged",
+      "verify_method": "existing suites plus smoke"
+    },
+    {
+      "id": "AC-010",
+      "given": "en locale",
+      "when": "supported and invalid expressions parse",
+      "then": "deterministic results and localized errors SHALL match the grammar",
+      "verify_method": "pure parser table"
+    },
+    {
+      "id": "AC-011",
+      "given": "pt-BR locale",
+      "when": "supported accent variants times and invalid expressions parse",
+      "then": "deterministic results and localized errors SHALL match the grammar",
+      "verify_method": "pure parser table"
+    },
+    {
+      "id": "AC-012",
+      "given": "fixed input today and locale",
+      "when": "system timezone or locale changes",
+      "then": "parser output SHALL not change",
+      "verify_method": "deterministic fixtures"
+    },
+    {
+      "id": "AC-013",
+      "given": "relative text",
+      "when": "preview changes",
+      "then": "localized preview or error SHALL update and invalid input SHALL not mutate the valid draft",
+      "verify_method": "controller plus Playwright"
+    },
+    {
+      "id": "AC-014",
+      "given": "valid relative text",
+      "when": "Enter or Use applies",
+      "then": "Calendar and summary SHALL sync and optional time SHALL make a one-hour timed draft including midnight rollover",
+      "verify_method": "controller matrix"
+    },
+    {
+      "id": "AC-015",
+      "given": "date-only text",
+      "when": "applied",
+      "then": "the current all-day or timed state and times SHALL be preserved",
+      "verify_method": "controller tests"
+    },
+    {
+      "id": "AC-016",
+      "given": "any date input method",
+      "when": "it changes",
+      "then": "draft visible range and summary SHALL agree without mandatory extra commit",
+      "verify_method": "sync tests plus Playwright"
+    },
+    {
+      "id": "AC-017",
+      "given": "one all-day date",
+      "when": "created",
+      "then": "start SHALL be that date and end SHALL be the next date",
+      "verify_method": "command assertion"
+    },
+    {
+      "id": "AC-018",
+      "given": "inclusive multi-day all-day range",
+      "when": "created",
+      "then": "end SHALL be the day after the last visible date",
+      "verify_method": "boundary matrix"
+    },
+    {
+      "id": "AC-019",
+      "given": "timed one-day or multi-day range",
+      "when": "created",
+      "then": "endpoint wall datetimes and chronology validation SHALL be exact",
+      "verify_method": "serialization matrix"
+    },
+    {
+      "id": "AC-020",
+      "given": "invalid or missing fields",
+      "when": "Create runs",
+      "then": "a localized error SHALL appear no command SHALL run and the draft SHALL remain",
+      "verify_method": "controller tests"
+    },
+    {
+      "id": "AC-021",
+      "given": "pending failing or successful Create",
+      "when": "retried or completed",
+      "then": "one command draft retention or one reload close reset SHALL occur as appropriate",
+      "verify_method": "async tests"
+    },
+    {
+      "id": "AC-022",
+      "given": "created Event variants",
+      "when": "Calendar reloads",
+      "then": "Month and chronological Day and Week projection SHALL remain half-open and correct",
+      "verify_method": "suites plus smoke"
+    },
+    {
+      "id": "AC-023",
+      "given": "M1 M2 source and Time block paths",
+      "when": "exercised",
+      "then": "authority conflict focus scroll detail editing and no grid-local mutation SHALL remain unchanged",
+      "verify_method": "suites plus Playwright"
+    },
+    {
+      "id": "AC-024",
+      "given": "en or pt-BR or a live locale switch",
+      "when": "When rerenders",
+      "then": "all visible and accessibility copy SHALL localize without losing the draft",
+      "verify_method": "locale DOM plus Playwright"
+    },
+    {
+      "id": "AC-025",
+      "given": "supported widths themes zoom and reduced motion",
+      "when": "Add Event is used",
+      "then": "controls and actions SHALL remain readable and reachable with no clipped popup or document overflow",
+      "verify_method": "visual QA plus native sign-off"
+    },
+    {
+      "id": "AC-026",
+      "given": "complete GUI and build verification",
+      "when": "VIGIL checks",
+      "then": "tests build CSS lint diff and block-mode ESL SHALL pass",
+      "verify_method": "verification commands"
+    }
+  ],
+  "spec_ref": ".spectra/changes/calendar-event-when-recovery/spec.md",
+  "created_at": "2026-08-26",
+  "drift_checked": true,
+  "archive_path": "archive/2026-08-26-calendar-event-when-recovery",
+  "has_code": true,
+  "memory_preflight": {
+    "ran": true,
+    "records": 0
+  }
+}

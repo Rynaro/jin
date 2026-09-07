@@ -1,0 +1,38 @@
+{
+  "thread_id": "01a06bc8-d754-7d44-876f-bf86556694a9",
+  "tier": "standard",
+  "enforce": "fail-fast",
+  "executor": "container",
+  "steps": [
+    {
+      "step_id": "S0",
+      "from": { "eidolon": "ramza", "version": "1.1.0" },
+      "to": { "eidolon": "vivi", "version": "n/a" },
+      "performative": "DELEGATE",
+      "edge_origin": "roster",
+      "objective": "Implement the frozen 15-file shared navigation migration while preserving the dirty Settings baseline.",
+      "artifact": {
+        "kind": "spec",
+        "schema_version": "1.0",
+        "path": ".spectra/plans/navigation-sidebar-unification.md"
+      },
+      "model_tier_hint": "reasoning-class",
+      "constraints": { "trust_level": "standard" }
+    },
+    {
+      "step_id": "S1",
+      "from": { "eidolon": "vivi", "version": "n/a" },
+      "to": { "eidolon": "vigil", "version": "n/a" },
+      "performative": "REQUEST",
+      "edge_origin": "roster",
+      "objective": "Independently verify all frozen navigation criteria, excluded-surface guards, Settings preservation, and the visual matrix.",
+      "artifact": {
+        "kind": "report",
+        "schema_version": "1.0",
+        "path": ".spectra/plans/navigation-sidebar-unification.criteria.md"
+      },
+      "model_tier_hint": "reasoning-class",
+      "constraints": { "trust_level": "standard" }
+    }
+  ]
+}

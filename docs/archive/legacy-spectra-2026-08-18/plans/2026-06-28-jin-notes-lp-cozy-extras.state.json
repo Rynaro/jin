@@ -1,0 +1,62 @@
+{
+  "session_id": "2026-06-28-jin-notes-lp-cozy-extras",
+  "methodology": "SPECTRA",
+  "methodology_version": "4.10.0",
+  "spec_id": "2026-06-28-jin-notes-lp-cozy-extras",
+  "title": "Live-preview increment #4 (FINAL) — cozy extras: focus mode + typewriter scrolling (Jin CM6 note editor)",
+  "from": "spectra",
+  "to": "vivi",
+  "repo": "jin-gui",
+  "scope": "frontend-only",
+  "branch_base": "main (ship COZY-1 then rebase COZY-2; no hard code dependency)",
+  "confidence": 0.90,
+  "decision": "AUTO_PROCEED",
+  "created_at": "2026-06-28T00:00:00Z",
+  "roadmap_position": "LAST live-preview increment (after #1 lists, #2 links, #3 blockquote)",
+  "recall_note": "Roadmap crystal 2fb5bb35 and LP-increment crystals did NOT surface on the jin scope (only Wave-1 5216e65c + Wave-2B 9a893cc6); all anchors verified firsthand from the working tree (RECURRING JIN FACT).",
+  "steps": [
+    {
+      "id": "COZY-1",
+      "title": "Focus mode — dim non-active lines (new focusMode.ts + focusCompartment + toolbar toggle + .cm-dim CSS + Focus icon)",
+      "status": "pending",
+      "timebox": "1.5d",
+      "depends_on": [],
+      "files": [
+        "jin-gui/src/lib/notes/focusMode.ts (NEW)",
+        "jin-gui/src/lib/notes/editor.ts (EDIT — focusCompartment + extensions + Focus toggle + handler + .cm-dim in jinEditorTheme)",
+        "jin-gui/src/lib/icons/index.ts (EDIT — Focus)",
+        "jin-gui/src/styles/browse.css (EDIT — .cm-toolbar__btn[aria-pressed=true])",
+        "jin-gui/src/__tests__/focusMode.test.ts (NEW)",
+        "jin-gui/src/__tests__/editor.test.ts (EDIT — new describes only)"
+      ],
+      "gates": ["G-FOCUS-DIM", "G-FOCUS-TOGGLE", "G-TOGGLE-CARET-SAFE", "G-CHOKEPOINT-COZY", "G-FOCUS-CSS"],
+      "verification": "pending"
+    },
+    {
+      "id": "COZY-2",
+      "title": "Typewriter scrolling — center active line (new typewriter.ts + typewriterCompartment + toolbar toggle + 50vh bottom padding + AlignCenterVertical icon)",
+      "status": "pending",
+      "timebox": "1.5d",
+      "depends_on": [],
+      "merge_note": "If after COZY-1, rebase onto it (both add to editor.ts toolbar/compartments/jinEditorTheme — additive).",
+      "files": [
+        "jin-gui/src/lib/notes/typewriter.ts (NEW)",
+        "jin-gui/src/lib/notes/editor.ts (EDIT — typewriterCompartment + extensions + Typewriter toggle + handler + .cm-content.cm-typewriter padding in jinEditorTheme)",
+        "jin-gui/src/lib/icons/index.ts (EDIT — AlignCenterVertical)",
+        "jin-gui/src/__tests__/typewriter.test.ts (NEW)",
+        "jin-gui/src/__tests__/editor.test.ts (EDIT — new describes only)"
+      ],
+      "gates": ["G-TYPEWRITER-TARGET", "G-TYPEWRITER-WIRING", "G-TOGGLE-CARET-SAFE", "G-CHOKEPOINT-COZY", "G-TYPEWRITER-PADDING"],
+      "verification": "pending"
+    }
+  ],
+  "immovable_gates": [
+    "G-TOOLBAR-STRUCTURE", "G-TOOLBAR-BOLD", "G-TOOLBAR-H2", "G-TOOLBAR-LIST",
+    "G-FOOTER-STATS", "G-READING-VIEW", "G-READING-FLUSH", "G-XSS-READING",
+    "G-KEYMAP", "G-SAVE-CARET-SAFE",
+    "all-LP-gates-1-2-3", "HIDE_MARK_NODES-size-4", "G-CHOKEPOINT-livePreview"
+  ],
+  "node_requirement": ">=20 (nvm use 24.18.0; system node v16.20.2 crashes vitest)",
+  "owner_verify": "cargo tauri dev — focus dim feel + active-line full opacity; typewriter centers caret line, no yank during drag-select, last line reaches center",
+  "replanning_history": []
+}

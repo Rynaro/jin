@@ -1,0 +1,30 @@
+{
+  "envelope_version": "2.0",
+  "ecl_version": "1.0",
+  "message_id": "45a33ff2-caab-49c6-80e6-42fd53efce38",
+  "thread_id": "70e312fe-7994-4f31-bfc8-3163b77026aa",
+  "from": "spectra",
+  "to": "vivi",
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Implement inline live-preview (hide/reveal markdown markers; Obsidian Live Preview) in the Jin CM6 note editor — frontend-only (jin-gui).",
+  "artifact": {
+    "kind": "spec",
+    "payload_ref": "2026-06-28-jin-notes-cm6-live-preview.yaml",
+    "human_payload": "delivered inline in the SPECTRA assistant message (no .md report file written per harness directive)"
+  },
+  "integrity": {
+    "method": "sha256",
+    "value": "8955203ad66daf59b7dd8da236606074d4edf665a288d16fb1fd09647daa5011",
+    "over": "2026-06-28-jin-notes-cm6-live-preview.yaml"
+  },
+  "context_delta": {
+    "repo": "jin-gui",
+    "new_module": "jin-gui/src/lib/notes/livePreview.ts",
+    "edits": "jin-gui/src/lib/notes/editor.ts (import + livePreviewCompartment + extension entry)",
+    "stories": ["LP-1", "LP-2", "LP-3", "LP-4"],
+    "immovable_gates": ["G-XSS@notes_controller.test.ts:505", "G-CHOKEPOINT@markdown.test.ts:366-405"],
+    "node_requirement": ">=20 (nvm v24.18.0)"
+  },
+  "trust_level": "standard"
+}

@@ -1,0 +1,9 @@
+# Dependencies
+/node_modules/
+
+# Build output
+/dist/
+
+# Vite / TS caches
+*.tsbuildinfo
+.vite/

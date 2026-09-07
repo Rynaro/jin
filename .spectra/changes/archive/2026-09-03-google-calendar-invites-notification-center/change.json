@@ -1,0 +1,487 @@
+{
+  "esl_version": "1.1",
+  "change_id": "google-calendar-invites-notification-center",
+  "status": "archived",
+  "tier": "full",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    {
+      "id": "AC-NC-001",
+      "given": "a fresh or previously migrated Jin root",
+      "when": "the Notification Center ledger opens",
+      "then": "additive schema migration SHALL complete idempotently without modifying canonical task or event files",
+      "verify_method": "test: notification_center::schema_migration_is_idempotent"
+    },
+    {
+      "id": "AC-NC-002",
+      "given": "Notification Center is first enabled on an existing root",
+      "when": "bootstrap reconciliation runs",
+      "then": "the center SHALL exclude ended invitations and already delivered historical reminder occurrences",
+      "verify_method": "test: notification_center::bootstrap_suppresses_historical_flood"
+    },
+    {
+      "id": "AC-NC-003",
+      "given": "the same source key and source revision is reconciled repeatedly",
+      "when": "the producer upserts the source",
+      "then": "exactly one notification item SHALL exist",
+      "verify_method": "test: notification_center::source_upsert_is_idempotent"
+    },
+    {
+      "id": "AC-NC-004",
+      "given": "an existing source receives a newer source revision while continuously actionable",
+      "when": "reconciliation refreshes its snapshot",
+      "then": "the item SHALL retain its read defer and dismiss state",
+      "verify_method": "test: notification_center::revision_refresh_preserves_curation"
+    },
+    {
+      "id": "AC-NC-005",
+      "given": "a client submits an outdated expected item version",
+      "when": "a center mutation is requested",
+      "then": "the backend SHALL return `stale_item` with the current item without applying the mutation",
+      "verify_method": "test: notification_center::optimistic_version_rejects_stale_write"
+    },
+    {
+      "id": "AC-NC-006",
+      "given": "an invitation source is cancelled missing ended or no longer eligible",
+      "when": "reconciliation observes the source",
+      "then": "its current item SHALL become `obsolete`",
+      "verify_method": "test: notification_center::missing_or_ineligible_source_obsoletes"
+    },
+    {
+      "id": "AC-NC-007",
+      "given": "a terminal item is older than 30 days",
+      "when": "retention maintenance runs",
+      "then": "the item SHALL be pruned without mutating its canonical source",
+      "verify_method": "test: notification_center::terminal_retention_is_source_safe"
+    },
+    {
+      "id": "AC-NC-008",
+      "given": "an actionable item is deferred to a future instant",
+      "when": "normal list and summary queries run before that instant",
+      "then": "the item SHALL be excluded from visible results and unread badge count",
+      "verify_method": "test: notification_center::deferred_item_is_hidden"
+    },
+    {
+      "id": "AC-NC-009",
+      "given": "a deferred item's visible time has arrived",
+      "when": "reconciliation or listing evaluates it",
+      "then": "the item SHALL become visible and unread",
+      "verify_method": "test: notification_center::deferred_item_wakes_unread"
+    },
+    {
+      "id": "AC-NC-010",
+      "given": "a due task reminder occurrence is claimed",
+      "when": "scheduler delivery runs",
+      "then": "its Notification Center item SHALL commit before the occurrence is marked delivered",
+      "verify_method": "test: scheduler::center_insert_precedes_reminder_delivered"
+    },
+    {
+      "id": "AC-NC-011",
+      "given": "native notification permission is denied or submission fails",
+      "when": "a task reminder is delivered to the center",
+      "then": "the durable task reminder item SHALL remain actionable",
+      "verify_method": "test: scheduler::native_failure_preserves_center_item"
+    },
+    {
+      "id": "AC-NC-012",
+      "given": "a crash occurs after center insertion but before reminder delivery acknowledgement",
+      "when": "the scheduler restarts",
+      "then": "reconciliation SHALL converge without a duplicate center item",
+      "verify_method": "test: scheduler::reminder_crash_reentry_is_idempotent"
+    },
+    {
+      "id": "AC-NC-013",
+      "given": "a task-reminder item refers to a currently open task",
+      "when": "the user chooses Mark done",
+      "then": "the item SHALL become acted only after the canonical task completion succeeds",
+      "verify_method": "test: notification_center::complete_task_orders_source_before_item"
+    },
+    {
+      "id": "AC-NC-014",
+      "given": "a task is completed or deleted outside Notification Center",
+      "when": "task-source reconciliation runs",
+      "then": "its remaining reminder items SHALL become obsolete",
+      "verify_method": "test: notification_center::task_resolution_obsoletes_reminders"
+    },
+    {
+      "id": "AC-NC-015",
+      "given": "native submission has not succeeded",
+      "when": "scheduler delivery truth is evaluated",
+      "then": "reminder occurrence delivery truth SHALL depend on durable center insertion rather than native delivery",
+      "verify_method": "test: scheduler::delivery_truth_is_center_durability"
+    },
+    {
+      "id": "AC-NC-016",
+      "given": "a canonical Google event has a non-self organizer and exactly one `self=true` attendee with `needsAction`",
+      "when": "invitation reconciliation runs before the event ends",
+      "then": "the center SHALL contain one actionable invitation item",
+      "verify_method": "test: invitation_reconcile::eligible_event_creates_item"
+    },
+    {
+      "id": "AC-NC-017",
+      "given": "the connected account is the event organizer",
+      "when": "invitation reconciliation or RSVP validation runs",
+      "then": "Jin SHALL reject invitation action as `organizer_owned`",
+      "verify_method": "test: invitation_reconcile::organizer_owned_is_rejected"
+    },
+    {
+      "id": "AC-NC-018",
+      "given": "no attendee has `self=true`",
+      "when": "invitation reconciliation or RSVP validation runs",
+      "then": "Jin SHALL reject invitation action as `self_attendee_missing`",
+      "verify_method": "test: invitation_reconcile::missing_self_is_rejected"
+    },
+    {
+      "id": "AC-NC-019",
+      "given": "more than one attendee has `self=true`",
+      "when": "invitation reconciliation or RSVP validation runs",
+      "then": "Jin SHALL reject invitation action as `self_attendee_ambiguous`",
+      "verify_method": "test: invitation_reconcile::ambiguous_self_is_rejected"
+    },
+    {
+      "id": "AC-NC-020",
+      "given": "canonical Google invitation sources are available",
+      "when": "invitation eligibility is evaluated",
+      "then": "invitation eligibility SHALL be derived from canonical events by backend code rather than the attendee-omitting indexed event DTO",
+      "verify_method": "test: invitation_reconcile::canonical_projection_owns_eligibility"
+    },
+    {
+      "id": "AC-NC-021",
+      "given": "two accounts contain equal calendar IDs and Google event IDs",
+      "when": "invitation reconciliation or response routing runs",
+      "then": "their invitation items and response operations SHALL remain independently addressable",
+      "verify_method": "test: invitation_reconcile::multi_account_identity_isolated"
+    },
+    {
+      "id": "AC-NC-022",
+      "given": "generated recurring instances inherit one pending master invitation",
+      "when": "invitation reconciliation runs",
+      "then": "Jin SHALL emit one master item rather than one item per generated instance",
+      "verify_method": "test: invitation_reconcile::recurring_master_deduplicates_instances"
+    },
+    {
+      "id": "AC-NC-023",
+      "given": "a detached recurrence exception has its own Google identity or response state",
+      "when": "invitation reconciliation runs",
+      "then": "Jin SHALL preserve it as an independently actionable source",
+      "verify_method": "test: invitation_reconcile::detached_exception_is_independent"
+    },
+    {
+      "id": "AC-NC-024",
+      "given": "an invitation is answered outside Jin",
+      "when": "account sync reconciles the new self response",
+      "then": "its item SHALL resolve as acted with external origin",
+      "verify_method": "test: invitation_reconcile::external_answer_resolves_item"
+    },
+    {
+      "id": "AC-NC-025",
+      "given": "Allow Maybe or Refuse is accepted by the RSVP service",
+      "when": "provider intent is constructed",
+      "then": "Jin SHALL map the choice respectively to `accepted` `tentative` or `declined`",
+      "verify_method": "test: event_mutation::invitation_response_mapping_is_closed"
+    },
+    {
+      "id": "AC-NC-026",
+      "given": "an eligible RSVP intent",
+      "when": "its Google PATCH body is serialized",
+      "then": "the body SHALL contain only one self attendee email and responseStatus plus `attendeesOmitted=true`",
+      "verify_method": "test: google::mapping::rsvp_exact_payload_golden"
+    },
+    {
+      "id": "AC-NC-027",
+      "given": "an MVP RSVP provider request is constructed",
+      "when": "its update-notification query is serialized",
+      "then": "every MVP RSVP provider request SHALL set `sendUpdates=none`",
+      "verify_method": "test: google::client::rsvp_send_updates_none"
+    },
+    {
+      "id": "AC-NC-028",
+      "given": "canonical `attendees_omitted` is true false or absent",
+      "when": "the dedicated RSVP operation commits",
+      "then": "canonical `attendees_omitted` SHALL remain byte-for-byte unchanged",
+      "verify_method": "test: event_mutation::rsvp_preserves_canonical_attendees_omitted"
+    },
+    {
+      "id": "AC-NC-029",
+      "given": "an RSVP is permitted on an otherwise non-editable external event",
+      "when": "capabilities are projected",
+      "then": "generic edit delete organizer and attendee-edit capabilities SHALL remain disabled",
+      "verify_method": "test: event_capabilities::rsvp_does_not_unlock_general_edit"
+    },
+    {
+      "id": "AC-NC-030",
+      "given": "an eligible invitation has an exact account calendar event and recurrence route",
+      "when": "RSVP is queued",
+      "then": "its outbox operation SHALL retain that exact route without alias or default fallback",
+      "verify_method": "test: event_mutation::rsvp_routes_exact_destination"
+    },
+    {
+      "id": "AC-NC-031",
+      "given": "one operation ID is replayed with byte-identical RSVP intent",
+      "when": "the service handles the replay",
+      "then": "it SHALL return the recorded outcome without a second canonical mutation or outbox row",
+      "verify_method": "test: event_mutation::rsvp_operation_is_idempotent"
+    },
+    {
+      "id": "AC-NC-032",
+      "given": "one operation ID is reused with different RSVP intent",
+      "when": "the service handles the request",
+      "then": "it SHALL return `idempotency_conflict` without mutation",
+      "verify_method": "test: event_mutation::rsvp_idempotency_conflict"
+    },
+    {
+      "id": "AC-NC-033",
+      "given": "a valid RSVP is accepted into the recoverable mutation boundary",
+      "when": "center intent and outbox durability complete",
+      "then": "the center item SHALL show `action_pending` with the requested choice",
+      "verify_method": "test: notification_center::rsvp_pending_after_durable_acceptance"
+    },
+    {
+      "id": "AC-NC-034",
+      "given": "the device is offline but authenticated and route-valid",
+      "when": "an accepted RSVP is projected or recovered",
+      "then": "an accepted RSVP SHALL remain durably queued and visible as Pending sync",
+      "verify_method": "test: google::multi_sync::offline_rsvp_remains_queued"
+    },
+    {
+      "id": "AC-NC-035",
+      "given": "the account is disconnected reauthentication-required or route-invalid",
+      "when": "RSVP is requested",
+      "then": "Jin SHALL leave the item active without changing canonical response status",
+      "verify_method": "test: event_mutation::unavailable_route_fails_before_mutation"
+    },
+    {
+      "id": "AC-NC-036",
+      "given": "Google returns HTTP 412 for an RSVP PATCH",
+      "when": "conflict handling runs",
+      "then": "Jin SHALL fetch the exact remote event before considering one retry",
+      "verify_method": "test: google::multi_sync::rsvp_412_fetches_before_retry"
+    },
+    {
+      "id": "AC-NC-037",
+      "given": "the 412 refetch already contains the requested self response",
+      "when": "conflict handling compares intent",
+      "then": "Jin SHALL complete the operation without another PATCH",
+      "verify_method": "test: google::multi_sync::rsvp_412_already_applied_is_success"
+    },
+    {
+      "id": "AC-NC-038",
+      "given": "the 412 refetch remains eligible with a new etag",
+      "when": "conflict handling retries",
+      "then": "Jin SHALL issue exactly one narrow PATCH using the refreshed `If-Match`",
+      "verify_method": "test: google::multi_sync::rsvp_412_retries_once_with_new_etag"
+    },
+    {
+      "id": "AC-NC-039",
+      "given": "the controlled RSVP retry returns another 412 or eligibility changes",
+      "when": "conflict handling terminates",
+      "then": "Jin SHALL apply the normative active superseded or obsolete outcome without overwriting remote state",
+      "verify_method": "test: google::multi_sync::rsvp_second_412_preserves_choice"
+    },
+    {
+      "id": "AC-NC-040",
+      "given": "any RSVP precondition fails",
+      "when": "provider dispatch is evaluated",
+      "then": "Jin SHALL never issue an unconditional PATCH",
+      "verify_method": "test: google::multi_sync::rsvp_never_drops_if_match"
+    },
+    {
+      "id": "AC-NC-041",
+      "given": "a recurring invitation instance",
+      "when": "This occurrence is selected",
+      "then": "Jin SHALL target the exact instance while preserving original-start identity",
+      "verify_method": "test: event_mutation::rsvp_this_occurrence_exact_identity"
+    },
+    {
+      "id": "AC-NC-042",
+      "given": "a recurring invitation with a resolvable master",
+      "when": "Entire series is selected",
+      "then": "Jin SHALL target the master while preserving recurrence and timezone semantics",
+      "verify_method": "test: event_mutation::rsvp_entire_series_targets_master"
+    },
+    {
+      "id": "AC-NC-043",
+      "given": "a caller requests This and following",
+      "when": "RSVP scope validation runs",
+      "then": "Jin SHALL reject the request before canonical or outbox mutation",
+      "verify_method": "test: event_mutation::rsvp_this_and_following_rejected"
+    },
+    {
+      "id": "AC-NC-044",
+      "given": "Notification Center has visible unread items",
+      "when": "the application shell renders",
+      "then": "the Notifications sidebar bell SHALL expose the backend unread count in text-accessible form",
+      "verify_method": "test: notifications_controller.test.ts sidebar_badge_accessible_count"
+    },
+    {
+      "id": "AC-NC-045",
+      "given": "desktop viewport width",
+      "when": "the Notifications route renders",
+      "then": "Notification Center SHALL render a keyboard-operable list and detail workspace",
+      "verify_method": "test: notifications_controller.test.ts desktop_list_detail"
+    },
+    {
+      "id": "AC-NC-046",
+      "given": "mobile viewport width",
+      "when": "the Notifications route renders and detail navigation occurs",
+      "then": "Notification Center SHALL render one column with Back restoring list focus and scroll",
+      "verify_method": "test: notifications_controller.test.ts mobile_back_restores_context"
+    },
+    {
+      "id": "AC-NC-047",
+      "given": "an invitation item is rendered",
+      "when": "its action controls are available",
+      "then": "the UI SHALL show organizer account time location View event and text buttons Allow Maybe Refuse",
+      "verify_method": "test: notifications_render.test.ts invitation_content_and_actions"
+    },
+    {
+      "id": "AC-NC-048",
+      "given": "an invitation response is submitting or queued",
+      "when": "the selected invitation action group renders",
+      "then": "its competing actions SHALL be disabled with `aria-busy` and a polite live-region update",
+      "verify_method": "test: notifications_controller.test.ts rsvp_busy_and_live_region"
+    },
+    {
+      "id": "AC-NC-049",
+      "given": "a task reminder item is rendered",
+      "when": "its controls are available",
+      "then": "the UI SHALL offer Open task Mark done read or unread defer and dismiss without implying provider response",
+      "verify_method": "test: notifications_render.test.ts task_controls"
+    },
+    {
+      "id": "AC-NC-050",
+      "given": "notification DTO fixtures cross the core bridge and frontend boundary",
+      "when": "serialization parity is checked",
+      "then": "Rust Tauri and TypeScript notification DTO fixtures SHALL serialize the same tagged union fields and closed enum values",
+      "verify_method": "test: dto_shapes.test.ts notification_center_rust_fixture_parity"
+    },
+    {
+      "id": "AC-NC-051",
+      "given": "a crash occurs after center intent commits but before RSVP outbox insertion",
+      "when": "startup saga reconciliation runs",
+      "then": "Jin SHALL resume the same operation ID or return the item active with a validation error",
+      "verify_method": "test: invitation_saga::recover_after_center_prepare"
+    },
+    {
+      "id": "AC-NC-052",
+      "given": "a crash occurs after RSVP outbox insertion but before the center queued mirror",
+      "when": "startup saga reconciliation joins by operation ID",
+      "then": "the attempt SHALL converge to queued without a duplicate outbox row",
+      "verify_method": "test: invitation_saga::recover_after_outbox_commit"
+    },
+    {
+      "id": "AC-NC-053",
+      "given": "provider and canonical success commit before the center item becomes acted",
+      "when": "startup saga reconciliation joins the successful operation",
+      "then": "the item SHALL become acted without another provider PATCH",
+      "verify_method": "test: invitation_saga::recover_after_provider_success"
+    },
+    {
+      "id": "AC-NC-054",
+      "given": "an RSVP operation is preparing queued sending or retryable",
+      "when": "canonical state and notification DTOs are projected",
+      "then": "canonical attendee responseStatus SHALL remain provider-confirmed while DTOs show a pending overlay",
+      "verify_method": "test: invitation_saga::pending_overlay_does_not_mutate_canonical"
+    },
+    {
+      "id": "AC-NC-055",
+      "given": "auth generation route generation or provider subject differs from the queued RSVP snapshot",
+      "when": "the provider worker validates authority",
+      "then": "it SHALL quarantine the operation before network access and disable item RSVP controls",
+      "verify_method": "test: invitation_saga::credential_or_route_rotation_blocks_send"
+    },
+    {
+      "id": "AC-NC-056",
+      "given": "a 412 refetch contains a self response different from the pending requested response",
+      "when": "saga outcome reconciliation runs",
+      "then": "the item and attempt SHALL become superseded with both choices preserved",
+      "verify_method": "test: invitation_saga::conflicting_external_response_supersedes"
+    },
+    {
+      "id": "AC-NC-057",
+      "given": "a pending invitation is cancelled deleted or ended",
+      "when": "source or saga reconciliation runs",
+      "then": "the item and attempt SHALL become obsolete without retry",
+      "verify_method": "test: invitation_saga::cancelled_deleted_or_ended_obsoletes"
+    },
+    {
+      "id": "AC-NC-058",
+      "given": "one account event or canonical file fails during invitation scanning",
+      "when": "reconciliation continues",
+      "then": "healthy sources SHALL still commit while the failed source records a bounded error",
+      "verify_method": "test: invitation_reconcile::partial_scan_failure_isolated"
+    },
+    {
+      "id": "AC-NC-059",
+      "given": "Notification Center SQLite is corrupt or a migration cannot commit",
+      "when": "the ledger opens",
+      "then": "Jin SHALL fail safely or rebuild current actionable projections without rewriting canonical sources",
+      "verify_method": "test: notification_center::corrupt_database_recovery_is_source_safe"
+    },
+    {
+      "id": "AC-NC-060",
+      "given": "items are inserted while a multi-page list traversal is active",
+      "when": "the next cursor page is requested",
+      "then": "snapshot-watermark pagination SHALL return no duplicate or skipped preexisting item",
+      "verify_method": "test: notification_center::pagination_snapshot_is_stable"
+    },
+    {
+      "id": "AC-NC-061",
+      "given": "notification provider failures are recorded or reported",
+      "when": "errors logs or telemetry are serialized",
+      "then": "notification provider errors logs and telemetry SHALL exclude tokens raw provider bodies and full attendee lists",
+      "verify_method": "test: notification_center::error_and_log_redaction"
+    },
+    {
+      "id": "AC-NC-062",
+      "given": "a keyboard-only user is on Notification Center",
+      "when": "the user navigates and activates the interface",
+      "then": "filters list rows details action groups and recurrence dialog SHALL be operable in visual focus order",
+      "verify_method": "test: notifications_accessibility.test.ts keyboard_order_and_dialog_trap"
+    },
+    {
+      "id": "AC-NC-063",
+      "given": "an action completes fails or returns stale state",
+      "when": "the UI rerenders the selected item",
+      "then": "focus SHALL return to a valid control and a polite live region SHALL announce the outcome once",
+      "verify_method": "test: notifications_accessibility.test.ts focus_and_single_announcement"
+    },
+    {
+      "id": "AC-NC-064",
+      "given": "Notification Center renders any interactive or status state",
+      "when": "visual and accessible cues are inspected",
+      "then": "unread pending failed superseded disabled and selected states SHALL have text or shape cues independent of color",
+      "verify_method": "test: notifications_accessibility.test.ts state_cues_do_not_require_color"
+    },
+    {
+      "id": "AC-NC-065",
+      "given": "terminal item retention expires while an action attempt is nonterminal",
+      "when": "pruning runs",
+      "then": "foreign-key retention SHALL prevent deletion of the item or orphaning of the attempt",
+      "verify_method": "test: notification_center::nonterminal_attempt_blocks_prune"
+    },
+    {
+      "id": "AC-NC-066",
+      "given": "an eligible terminal item and attempts are pruned",
+      "when": "a historical scan later sees the same source revision",
+      "then": "a source tombstone SHALL prevent recreation until expiry or an explicit new response cycle",
+      "verify_method": "test: notification_center::tombstone_prevents_historical_recreation"
+    },
+    {
+      "id": "AC-NC-067",
+      "given": "an attendee-copy RSVP PATCH uses `sendUpdates=none`",
+      "when": "Google accepts the response update",
+      "then": "release evidence SHALL confirm organizer-copy response propagation without requesting broad guest update mail",
+      "verify_method": "integration: disposable Google attendee-organizer conformance smoke with recorded result"
+    }
+  ],
+  "spec_ref": ".spectra/changes/google-calendar-invites-notification-center/spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-09-03-google-calendar-invites-notification-center",
+  "has_code": true,
+  "memory_preflight": {
+    "ran": true,
+    "records": 0
+  }
+}

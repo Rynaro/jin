@@ -1,0 +1,168 @@
+/** Shared anatomy for persistent application navigation only. */
+
+.jin-navigation-rail {
+  inline-size: var(--navigation-rail-width);
+  min-inline-size: 0;
+  background: var(--workspace-context);
+  border: 0;
+  border-inline-end: 0.5px solid var(--separator);
+}
+
+.jin-navigation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  inline-size: 100%;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jin-navigation-list.jin-navigation-list--inset,
+.jin-navigation-row.jin-navigation-row--inset {
+  inline-size: calc(100% - var(--space-2));
+  margin-inline: var(--space-1);
+}
+
+.jin-navigation-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: var(--rail-row-height);
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label-secondary);
+  box-shadow: none;
+  font-family: var(--font-text);
+  font-size: var(--text-footnote-size);
+  font-weight: 400;
+  line-height: var(--text-footnote-line);
+  cursor: pointer;
+  text-align: start;
+  text-decoration: none;
+}
+
+.jin-navigation-row:hover {
+  color: var(--label);
+  background: var(--workspace-row-hover);
+}
+
+.jin-navigation-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.jin-navigation-row[aria-current="page"],
+.jin-navigation-row.is-active,
+.jin-navigation-row.jin-nav-item--active,
+[role="treeitem"][aria-selected="true"] > .jin-navigation-row {
+  color: var(--label);
+  background: var(--workspace-row-selected);
+  font-weight: 600;
+}
+
+.jin-navigation-row[aria-current="page"]::before,
+.jin-navigation-row.is-active::before,
+.jin-navigation-row.jin-nav-item--active::before,
+[role="treeitem"][aria-selected="true"] > .jin-navigation-row::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  inset-block: 4px 3px;
+  inset-inline-start: 3px;
+  inline-size: 3px;
+  border-radius: 46% 54% 38% 62%;
+  background: var(--ink-stroke);
+  box-shadow:
+    2px 0 5px var(--ink-bleed),
+    -1px 1px 2px var(--ink-bleed);
+  pointer-events: none;
+}
+
+.jin-navigation-row__icon {
+  inline-size: var(--icon-size-standard);
+  block-size: var(--icon-size-standard);
+  min-inline-size: var(--icon-size-standard);
+  max-inline-size: var(--icon-size-standard);
+  flex: none;
+  stroke-width: 1.75;
+}
+
+.jin-navigation-row__label {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jin-navigation-row__meta {
+  min-inline-size: 0;
+  color: var(--label-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.jin-navigation-row__actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-half);
+  min-inline-size: 0;
+}
+
+.jin-navigation-row--tree {
+  grid-template-columns: 14px var(--icon-size-standard) minmax(0, 1fr) auto var(--control-height);
+  column-gap: var(--space-half);
+  padding-inline-start: calc(10px + var(--tree-depth, 0) * 14px);
+  padding-inline-end: var(--space-1);
+  overflow: hidden;
+}
+
+.jin-navigation-row--actions {
+  grid-template-columns: 9px var(--icon-size-standard) minmax(0, 1fr) 56px;
+  column-gap: var(--space-half);
+  overflow: hidden;
+}
+
+.jin-navigation-row--actions > .jin-navigation-row__actions {
+  inline-size: 56px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.jin-navigation-row--actions:hover > .jin-navigation-row__actions,
+.jin-navigation-row--actions:focus-within > .jin-navigation-row__actions,
+.jin-navigation-row--actions > .jin-navigation-row__actions:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .jin-navigation-row--tree {
+    grid-template-columns: 14px var(--icon-size-standard) minmax(0, 1fr) auto var(--coarse-hit-target);
+  }
+
+  .jin-navigation-row--actions {
+    grid-template-columns: 9px var(--icon-size-standard) minmax(0, 1fr) 92px;
+  }
+
+  .jin-navigation-row--actions > .jin-navigation-row__actions {
+    inline-size: 92px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .jin-navigation-row :is(button, a) {
+    min-block-size: var(--coarse-hit-target);
+    min-inline-size: var(--coarse-hit-target);
+  }
+}

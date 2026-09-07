@@ -1,0 +1,25 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "tonberry"
+  },
+  "performative": "INFORM",
+  "objective": "verify_pass",
+  "context_delta": {
+    "acceptance": "14/14",
+    "browser_console": "clean",
+    "checker": "vigil",
+    "determinism": "5/5",
+    "diff_check": "pass",
+    "frontend_tests": "1858/1858",
+    "maker": "vivi",
+    "native_owner_signoff": "obtained",
+    "release_gate": "env RUST_TEST_THREADS=1 make verify-all — exit 0",
+    "tier": "full",
+    "verdict": "verify_pass",
+    "verified_head": "76c393b75c3c00921a71fad0ba9303ca462f63cc"
+  }
+}

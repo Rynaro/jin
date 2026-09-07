@@ -1,0 +1,67 @@
+{
+  "envelope_version": "2.0",
+  "ecl_version": "1.0",
+  "message_id": "23efcbe8-7115-4c32-86d0-0b2c9304c7eb",
+  "thread_id": "b5509730-194c-42b6-a1b6-14894e42d0bf",
+  "from": "spectra",
+  "to": "vivi",
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Live-preview increment #3 — blockquote bar: render a vertical left bar (Decoration.line cm-blockquote-line) on each single-level blockquote line and hide the '>' marker (Decoration.replace, '>' + one trailing space) off the active line, with per-line reveal of the raw '>' (bar persists). Jin CM6 note editor. Frontend-only (jin-gui).",
+  "artifact": {
+    "kind": "spec",
+    "payload_ref": "2026-06-28-jin-notes-lp-blockquote.yaml",
+    "human_payload": "delivered inline in the SPECTRA assistant message (no .md report file written per harness directive)"
+  },
+  "integrity": {
+    "method": "sha256",
+    "value": "17fa0e32237cefdd668a2faf72b1ba6dffa09c00fe0aa158fc04731c46112702",
+    "over": "2026-06-28-jin-notes-lp-blockquote.yaml"
+  },
+  "context_delta": {
+    "repo": "jin-gui",
+    "extends_module": "jin-gui/src/lib/notes/livePreview.ts (add a dedicated 'QuoteMark' branch in buildLivePreviewDecorations: line decoration + '>' hide with conditional trailing-space eat + line-start guard; NO change to atomicDecorationsOf or provide)",
+    "edits": "jin-gui/src/lib/notes/editor.ts (add '.cm-blockquote-line' rule to jinEditorTheme only — border-inline-start + padding-inline-start; no logic change)",
+    "stories": ["LPQ-1", "LPQ-2"],
+    "decisions": {
+      "D-QUOTE-ORDER": "emit Decoration.line at line.from FIRST, then the QuoteMark replace — single shared RangeSetBuilder, no collect-and-sort (line startSide -2e8 < replace ~5e8; QuoteMark is the leading token)",
+      "D-QUOTE-BAR-ACTIVE": "the bar persists on the active line; ONLY the '>' marker toggles (revealed raw)",
+      "D-QUOTE-LINE-START-GUARD": "emit the line deco only when node.from === line.from — one bar per line, dedups nested, prevents list-wrapped throw",
+      "D-QUOTE-NESTED": "v1 single bar for any depth; all '>' on the line hidden off-active",
+      "D-QUOTE-TRAILING-SPACE": "hide '>' + ONE trailing space only (conditional, never '\\n') — mirrors HeaderMark",
+      "D-QUOTE-ATOMIC": "NO change to atomicDecorationsOf — the line deco is already DROPPED (spec.class && !spec.widget); the '>' replace stays atomic",
+      "D-QUOTE-STYLE": "border-inline-start 3px solid var(--separator) + padding-inline-start var(--space-2); NO color (tags.quote already styles the text)"
+    },
+    "immovable_gates": [
+      "G-XSS@notes_controller.test.ts:~486-505",
+      "G-CHOKEPOINT@markdown.test.ts:8 + livePreview source scan:407-420",
+      "HIDE_MARK_NODES-size-4@livePreview.test.ts:97-105 (do NOT add 'QuoteMark')",
+      "G-LP-NO-INNERHTML-base@livePreview.test.ts:378-395",
+      "#1 bullet/checkbox + #2 link gates@livePreview.test.ts:517-1104",
+      "G-SAVE-CARET-SAFE@livePreview.test.ts:451-472",
+      "G-READING-VIEW (browse.css:516-521 / markdown.ts untouched)",
+      "G-TOOLBAR-quote (editor.ts:612 toggleLinePrefix '> ' untouched)",
+      "G-FOOTER-STATS, G-KEYMAP, G-TOOLBAR-*"
+    ],
+    "new_gates": [
+      "G-LP-QUOTE-BAR",
+      "G-LP-QUOTE-REVEAL",
+      "G-LP-QUOTE-MULTILINE",
+      "G-LP-QUOTE-ATOMIC",
+      "G-LP-QUOTE-ROBUST",
+      "G-LP-QUOTE-ORDER",
+      "G-LP-QUOTE-STYLE",
+      "G-LP-QUOTE-SMOKE"
+    ],
+    "verified_firsthand": [
+      "QuoteMark = '>' only (no trailing space); Blockquote spans all lines; multi-line = 1 Blockquote + N QuoteMarks at line starts; nested = nested Blockquote nodes",
+      "RangeSetBuilder: line startSide -2e8 < replace 499999999 < mark 5e8; line-then-replace OK, reverse THROWS",
+      "atomicDecorationsOf already DROPS Decoration.line (spec.class && !spec.widget)",
+      "CM6 plugin decos permit line decos; forbid only block widgets + line-break-crossing replaces (index.js:2737-2739, :8834-8838)",
+      "canonical ranges: 'x\\n> quoted text' cursor@0 => line@(2,2)+replace[2,4); '> a\\n> b\\nplain' cursor@8 => line@0+replace[0,2)+line@4+replace[4,6); 'x\\n> **bold**' => line@2+replace[2,4)+replace[4,6)+replace[10,12)"
+    ],
+    "branch_base": "main AFTER increment #2 (lp-links) merges; rebase if not yet landed (hard dep: atomicDecorationsOf)",
+    "node_requirement": ">=20 (nvm v24.18.0)"
+  },
+  "trust_level": "standard"
+}

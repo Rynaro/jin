@@ -1,0 +1,187 @@
+{
+  "esl_version": "1.1",
+  "change_id": "calendar-chronological-grid-restoration",
+  "status": "archived",
+  "tier": "full",
+  "maker": "Vivi",
+  "checker": "VIGIL",
+  "acceptance_checks": [
+    {
+      "id": "AC-001",
+      "given": "Day mode",
+      "when": "its Event surface renders",
+      "then": "it SHALL contain one chronological timed column with a shared hour rail rather than an Event list",
+      "verify_method": "GUI DOM test plus Playwright Day evidence"
+    },
+    {
+      "id": "AC-002",
+      "given": "Week mode",
+      "when": "its Event surface renders",
+      "then": "it SHALL contain exactly seven aligned chronological day columns with one shared time scale",
+      "verify_method": "GUI DOM test plus Playwright Week evidence"
+    },
+    {
+      "id": "AC-003",
+      "given": "the same timed Event and visible date",
+      "when": "Day and Week models are built",
+      "then": "semantic clipped start/end minutes and continuation flags SHALL match",
+      "verify_method": "unit: shared model projection parity"
+    },
+    {
+      "id": "AC-004",
+      "given": "an Event ending at midnight",
+      "when": "the following date is modeled",
+      "then": "no segment SHALL be emitted for that exclusive end date",
+      "verify_method": "unit: half-open midnight fixture"
+    },
+    {
+      "id": "AC-005",
+      "given": "a timed Event crossing day or visible-window boundaries",
+      "when": "the model is built",
+      "then": "each visible day SHALL receive one half-open clipped segment with correct continuation flags",
+      "verify_method": "unit: multi-day segment matrix"
+    },
+    {
+      "id": "AC-006",
+      "given": "overlapping Events in any input order",
+      "when": "columns are assigned",
+      "then": "the same lowest-free columns and cluster count SHALL result and touching endpoints SHALL not overlap",
+      "verify_method": "unit: shuffled deterministic overlap matrix"
+    },
+    {
+      "id": "AC-007",
+      "given": "a short Event",
+      "when": "visual geometry is calculated",
+      "then": "its block SHALL meet minimum visual height while semantic end duration label and overlap remain unchanged",
+      "verify_method": "unit plus GUI compact-block assertions"
+    },
+    {
+      "id": "AC-008",
+      "given": "all-day Events crossing or overlapping the visible window",
+      "when": "the all-day lane is built",
+      "then": "spans SHALL use exclusive ends deterministic non-colliding lanes and continuation cues",
+      "verify_method": "unit: all-day lane matrix"
+    },
+    {
+      "id": "AC-009",
+      "given": "malformed zero-length or backwards temporal input",
+      "when": "the model is built",
+      "then": "it SHALL fail closed without invalid geometry or runtime error",
+      "verify_method": "unit: malformed temporal matrix"
+    },
+    {
+      "id": "AC-010",
+      "given": "stored wall time with floating TZID offset-shaped and DST-boundary fixtures",
+      "when": "grid position is calculated",
+      "then": "displayed wall-clock minutes SHALL not shift through the browser timezone",
+      "verify_method": "unit: wall-time fidelity matrix"
+    },
+    {
+      "id": "AC-011",
+      "given": "a Day or Week render",
+      "when": "hour labels appear",
+      "then": "they SHALL use the effective locale hour cycle and registry-backed visible/accessibility copy",
+      "verify_method": "GUI locale tests for en and pt-BR"
+    },
+    {
+      "id": "AC-012",
+      "given": "a Jin or Google Event block",
+      "when": "it renders",
+      "then": "source SHALL be conveyed beyond color and its accessible name SHALL include exact Source label",
+      "verify_method": "GUI semantics test"
+    },
+    {
+      "id": "AC-013",
+      "given": "an Event with derived_from",
+      "when": "it renders",
+      "then": "a visible and accessible exact Time block cue SHALL appear regardless of Task availability",
+      "verify_method": "GUI Time block semantics test"
+    },
+    {
+      "id": "AC-014",
+      "given": "overlapping or compact blocks",
+      "when": "keyboard traversal runs",
+      "then": "controls SHALL remain focusable in chronological DOM order and activation SHALL open authoritative detail",
+      "verify_method": "GUI plus Playwright keyboard flow"
+    },
+    {
+      "id": "AC-015",
+      "given": "detail opens from Day or Week",
+      "when": "Back is activated",
+      "then": "the same mode date/week internal scroll and Event focus SHALL be restored",
+      "verify_method": "GUI plus Playwright back restoration"
+    },
+    {
+      "id": "AC-016",
+      "given": "M2 edit is entered from grid Event detail",
+      "when": "Save Cancel stale conflict or error resolves",
+      "then": "no grid-local mutation policy SHALL appear and canonical detail/edit contracts SHALL remain unchanged",
+      "verify_method": "existing M2 suite plus browser smoke"
+    },
+    {
+      "id": "AC-017",
+      "given": "today's visible column",
+      "when": "time advances across a minute boundary",
+      "then": "one now marker SHALL update in place without rebuilding Events changing focus or resetting scroll and other columns SHALL contain none",
+      "verify_method": "fake-timer GUI test"
+    },
+    {
+      "id": "AC-018",
+      "given": "the grid rerenders or controller disconnects",
+      "when": "timers are inspected",
+      "then": "obsolete timers SHALL be cancelled and at most one live refresh schedule SHALL remain",
+      "verify_method": "fake-timer lifecycle test"
+    },
+    {
+      "id": "AC-019",
+      "given": "first entry with timed Events",
+      "when": "initial scroll applies",
+      "then": "internal body SHALL use earliest semantic start minus one hour clamped or 08:00 when empty",
+      "verify_method": "GUI scroll calculation test"
+    },
+    {
+      "id": "AC-020",
+      "given": "a fixed early or late nighttime band",
+      "when": "first rendered rerendered manually toggled or entered by current time",
+      "then": "it SHALL auto-expand for visible Event/current time unless manually collapsed for the active view preserve same-view overrides reset on identity change keep every Event accessible with localized Event-count time-range current-time summary and accurate aria-expanded and share Week band state",
+      "verify_method": "model GUI fake-timer and Playwright nighttime lifecycle flow"
+    },
+    {
+      "id": "AC-021",
+      "given": "due Tasks for selected Day",
+      "when": "Day renders",
+      "then": "Tasks SHALL remain in a separate section after/outside the Event grid",
+      "verify_method": "GUI DOM ordering test"
+    },
+    {
+      "id": "AC-022",
+      "given": "a narrow Week viewport",
+      "when": "the grid renders",
+      "then": "seven columns SHALL remain available through timeline-internal horizontal scroll and the document SHALL not overflow",
+      "verify_method": "Playwright responsive overflow evidence"
+    },
+    {
+      "id": "AC-023",
+      "given": "supported widths themes locales reduced motion and Event states",
+      "when": "visual QA runs",
+      "then": "labels focus blocks rail sticky layers and free space SHALL remain readable without clipping or traps",
+      "verify_method": "Playwright MCP plus native owner sign-off"
+    },
+    {
+      "id": "AC-024",
+      "given": "the complete existing GUI suite",
+      "when": "the change is verified",
+      "then": "M1/M2 detail edit back Google privacy/read-only recurrence create Month and canonical interaction tests SHALL remain green",
+      "verify_method": "command: npm --prefix jin-gui test -- --run"
+    }
+  ],
+  "spec_ref": ".spectra/changes/calendar-chronological-grid-restoration/spec.md",
+  "created_at": "2026-08-26",
+  "drift_checked": true,
+  "archive_path": "archive/2026-08-26-calendar-chronological-grid-restoration",
+  "has_code": true,
+  "memory_preflight": {
+    "ran": true,
+    "records": 0
+  }
+}

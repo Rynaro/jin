@@ -1,0 +1,313 @@
+eidolon: ramza
+version: 1.1.0
+kind: spec
+status: implementation-verified
+created_at: 2026-09-04T20:10:00Z
+thread_id: 01a06bc8-d754-7d44-876f-bf86556694a9
+change_id: settings-navigation-sidebar-overhaul
+esl_version: "1.1"
+esl_tier: full
+maker: vivi
+checker: vigil
+spec_author: ramza-nav-author
+spec_checker: ramza-nav-critic-01
+spec_ref: .spectra/changes/settings-navigation-sidebar-overhaul/spec.md
+machine_spec_ref: .spectra/changes/settings-navigation-sidebar-overhaul/spec.yaml
+source_plan: .spectra/plans/navigation-sidebar-unification.md
+source_criteria: .spectra/plans/navigation-sidebar-unification.criteria.md
+source_handoff: .spectra/plans/navigation-sidebar-unification.handoff.yaml
+criteria_sha256: 055a1ab40820658073ce3e56656bcfa792a2eda409eb5e31930cb3f449c78e02
+confidence: 0.9225
+confidence_verdict: AUTO_PROCEED
+
+intent: >-
+  Unify Main, Settings, Notes, and Tasks navigation sidebars behind one
+  authoritative shared CSS anatomy while preserving controller hooks,
+  per-surface semantics, dirty Settings work, and responsive accessibility.
+
+shared_contract:
+  stylesheet: jin-gui/src/styles/navigation.css
+  standard_rail_width_px: 184
+  row:
+    min_height_px: 32
+    padding_block_px: 0
+    padding_inline_px: 10
+    gap_px: 8
+    radius_px: 6
+    font_size_px: 13
+    line_height_px: 18
+  anatomy:
+    - jin-navigation-rail
+    - jin-navigation-list
+    - jin-navigation-row
+    - jin-navigation-row__icon
+    - jin-navigation-row__label
+    - jin-navigation-row__meta
+    - jin-navigation-row__actions
+  variants:
+    - jin-navigation-row--tree
+    - jin-navigation-row--actions
+    - jin-navigation-row--inset
+  selected_state:
+    page_navigation: aria-current=page
+    tree_navigation: aria-selected=true
+    visuals:
+      - workspace-row-selected wash
+      - 3px ink marker
+
+included_surfaces:
+  - Main navigation links and Settings entry
+  - Settings category navigation
+  - Notes folder tree, All Notes, and saved collections
+  - Tasks smart views and user lists
+
+excluded_surfaces:
+  - Notes content list rows
+  - Task content list and board items
+  - Notifications master-list rows
+  - Today, event, and calendar rows
+  - Menus, dialogs, popovers, toolbars, forms, and detail panes
+
+declared_scope:
+  - jin-gui/index.html
+  - jin-gui/src/styles/tokens.css
+  - jin-gui/src/styles/index.css
+  - jin-gui/src/styles/components.css
+  - jin-gui/src/styles/navigation.css
+  - jin-gui/src/styles/layout.css
+  - jin-gui/src/styles/browse.css
+  - jin-gui/src/styles/settings.css
+  - jin-gui/src/styles/a11y.css
+  - jin-gui/src/lib/lists/render.ts
+  - jin-gui/src/controllers/notes_controller.ts
+  - jin-gui/src/__tests__/notes_visual_system.test.ts
+  - jin-gui/src/__tests__/lists_controller.test.ts
+  - jin-gui/src/__tests__/notes_controller.test.ts
+  - jin-gui/src/__tests__/settings_controller.test.ts
+
+dirty_worktree_contract:
+  baseline: current uncommitted Settings implementation
+  prohibited:
+    - whole-file replacement of dirty Settings files
+    - git checkout or reset of dirty Settings files
+    - regeneration from HEAD
+  evidence_root: .spectra/plans/navigation-sidebar-unification.evidence
+  required:
+    - settings-baseline.patch
+    - settings-baseline.json
+    - settings-preservation.json
+
+migration_stages:
+  - id: S1
+    title: Establish shared navigation contract
+    depends_on: []
+    timebox_days: 1.5
+  - id: S2
+    title: Migrate Main and preserve Settings work
+    depends_on: [S1]
+    timebox_days: 1
+  - id: S3
+    title: Migrate Notes navigation
+    depends_on: [S2]
+    timebox_days: 1.5
+  - id: S4
+    title: Migrate Tasks navigation and actions
+    depends_on: [S3]
+    timebox_days: 2
+  - id: S5
+    title: Remove duplicated visual ownership and harden accessibility
+    depends_on: [S4]
+    timebox_days: 1
+  - id: S6
+    title: Verify migration and preserve evidence
+    depends_on: [S5]
+    timebox_days: 1
+
+rollback:
+  - Keep legacy feature classes as compatibility hooks throughout migration.
+  - Reverse only the failing stage's shared-class additions and selector removals.
+  - Keep --context-rail-width as an alias until all consumers pass.
+  - Use reverse patches for dirty Settings hunks; never restore from HEAD.
+
+verification:
+  maker: vivi
+  checker: vigil
+  maker_checker_distinct: true
+  focused_command: npm --prefix jin-gui test -- src/__tests__/notes_visual_system.test.ts src/__tests__/lists_controller.test.ts src/__tests__/notes_controller.test.ts src/__tests__/settings_controller.test.ts
+  css_lint_command: npm --prefix jin-gui run lint:css
+  build_command: npm --prefix jin-gui run build
+  full_test_command: npm --prefix jin-gui test
+  diff_command: git diff --check
+  browser_viewports:
+    - 1280x800
+    - 720x800
+    - 390x844
+  geometry_tolerance_css_px: 0.5
+  evidence_manifest: .spectra/plans/navigation-sidebar-unification.evidence/manifest.json
+  native_limit: Native Tauri, WKWebView, WebKitGTK rendering, and platform feel require owner sign-off.
+
+acceptance_checks:
+  - id: AC-NAV-001
+    form: ubiquitous
+    then: "the shared navigation rail width token SHALL resolve to 184px at standard text scale"
+    verify_method: "static token assertion in src/__tests__/notes_visual_system.test.ts"
+  - id: AC-NAV-002
+    form: ubiquitous
+    then: "navigation.css SHALL be the authoritative stylesheet for shared navigation rail, list, row, icon, label, meta, and actions anatomy"
+    verify_method: "import-order and selector-ownership assertions in src/__tests__/notes_visual_system.test.ts"
+  - id: AC-NAV-003
+    form: ubiquitous
+    then: "each shared navigation row SHALL use a 32px minimum row height"
+    verify_method: "static CSS contract in src/__tests__/notes_visual_system.test.ts"
+  - id: AC-NAV-004
+    form: ubiquitous
+    then: "each standard shared navigation row SHALL use 0 10px padding"
+    verify_method: "static CSS contract in src/__tests__/notes_visual_system.test.ts"
+  - id: AC-NAV-005
+    form: ubiquitous
+    then: "each standard shared navigation row SHALL use an 8px anatomy gap"
+    verify_method: "static CSS contract in src/__tests__/notes_visual_system.test.ts"
+  - id: AC-NAV-006
+    form: ubiquitous
+    then: "each standard shared navigation row SHALL use the existing 6px small-radius token"
+    verify_method: "static CSS contract in src/__tests__/notes_visual_system.test.ts"
+  - id: AC-NAV-007
+    form: ubiquitous
+    then: "each standard shared navigation row SHALL use the existing 13px by 18px footnote typography tokens"
+    verify_method: "static CSS contract in src/__tests__/notes_visual_system.test.ts"
+  - id: AC-NAV-008
+    form: state-driven
+    given: "a shared page-navigation row exposes aria-current=\"page\""
+    then: "the row SHALL show the shared selected wash and ink marker"
+    verify_method: "selector contract plus browser comparison across Main, Settings, Notes collections, and Tasks"
+  - id: AC-NAV-009
+    form: state-driven
+    given: "a shared tree item exposes aria-selected=\"true\""
+    then: "its child navigation row SHALL show the shared selected wash and ink marker"
+    verify_method: "selector contract plus Notes folder selection browser check"
+  - id: AC-NAV-010
+    form: ubiquitous
+    then: "inactive page-navigation rows SHALL omit aria-current rather than expose aria-current=\"false\" or aria-current=\"true\""
+    verify_method: "jsdom assertions in settings_controller.test.ts, notes_controller.test.ts, and lists_controller.test.ts"
+  - id: AC-NAV-011
+    form: ubiquitous
+    then: "Main navigation links SHALL use the shared navigation rail, list, row, icon, label, and meta classes"
+    verify_method: "static markup assertion in src/__tests__/notes_visual_system.test.ts"
+  - id: AC-NAV-012
+    form: ubiquitous
+    then: "Settings category buttons SHALL use the shared navigation rail, list, row, and label classes"
+    verify_method: "static markup assertion in src/__tests__/notes_visual_system.test.ts"
+  - id: AC-NAV-013
+    form: ubiquitous
+    then: "Notes All Notes, folder rows, and collection rows SHALL use the shared navigation anatomy"
+    verify_method: "markup and renderer assertions in notes_visual_system.test.ts plus notes_controller.test.ts"
+  - id: AC-NAV-014
+    form: ubiquitous
+    then: "Tasks smart-view and list rows SHALL use the shared navigation anatomy"
+    verify_method: "renderer assertions in lists_controller.test.ts"
+  - id: AC-NAV-015
+    form: ubiquitous
+    then: "the Notes All Notes row SHALL fill the available navigation-list width"
+    verify_method: "static shared-row width assertion plus browser bounding-box check"
+  - id: AC-NAV-016
+    form: state-driven
+    given: "a task-list navigation row is rendered in a 184px rail"
+    then: "its icon, label, meta, and action slots SHALL remain inside the rail bounds"
+    verify_method: "184px browser bounding-box assertion with long labels and two action buttons"
+  - id: AC-NAV-017
+    form: event-driven
+    given: "a task-list row shows its count metadata"
+    when: "its action cluster becomes visible"
+    then: "the row label SHALL not shift horizontally"
+    verify_method: "before/after browser bounding-box comparison"
+  - id: AC-NAV-018
+    form: event-driven
+    given: "keyboard focus enters a task-list action button"
+    when: "the row receives focus-within"
+    then: "the shared actions slot SHALL become visibly available"
+    verify_method: "jsdom focus test plus keyboard browser check"
+  - id: AC-NAV-019
+    form: state-driven
+    given: "a coarse pointer is active"
+    then: "task-list row actions SHALL remain discoverable without hover"
+    verify_method: "pointer-coarse CSS assertion plus browser emulation"
+  - id: AC-NAV-020
+    form: state-driven
+    given: "a nested Notes folder row is rendered"
+    then: "the shared tree variant SHALL preserve its depth indentation and reserved chevron, icon, meta, and action tracks"
+    verify_method: "nested-folder renderer assertion plus browser geometry check through four depths"
+  - id: AC-NAV-021
+    form: state-driven
+    given: "navigation text exceeds its available label slot"
+    then: "the shared label SHALL truncate without expanding the 184px rail"
+    verify_method: "static overflow contract plus long-label browser check"
+  - id: AC-NAV-022
+    form: ubiquitous
+    then: "existing router, Stimulus target, data-action, data attribute, drag, menu, collapse, and dialog hooks SHALL remain present"
+    verify_method: "existing router/sidebar/notes/lists/settings suites plus static hook inventory"
+  - id: AC-NAV-023
+    form: ubiquitous
+    then: "the Settings desktop workspace-scroll and compact-or-AX route-scroll contracts SHALL remain unchanged"
+    verify_method: "settings_controller.test.ts and notes_visual_system.test.ts scrolling regressions"
+  - id: AC-NAV-024
+    form: ubiquitous
+    then: "Main sidebar collapse and collapsed-only tooltip behavior SHALL remain unchanged"
+    verify_method: "sidebar_controller.test.ts and router_controller_wiring.test.ts in the full suite"
+  - id: AC-NAV-025
+    form: ubiquitous
+    then: "Notes rail collapse, reveal, tree keyboard navigation, and folder menus SHALL remain unchanged"
+    verify_method: "notes_controller.test.ts plus deterministic browser keyboard check"
+  - id: AC-NAV-026
+    form: ubiquitous
+    then: "Tasks list selection, counts, editing, deletion, and drag reordering SHALL remain unchanged"
+    verify_method: "lists_controller.test.ts plus tasks_lists_modal_wiring.test.ts in the full suite"
+  - id: AC-NAV-027
+    form: state-driven
+    given: "accessibility text scale is active"
+    then: "shared navigation rails SHALL use the existing accessibility rail-width override without page-level horizontal overflow"
+    verify_method: "a11y CSS assertion plus 1280x800 and 390x844 browser checks"
+  - id: AC-NAV-028
+    form: state-driven
+    given: "a coarse pointer is active"
+    then: "interactive shared navigation descendants SHALL retain the existing 44px pointer target contract"
+    verify_method: "pointer-coarse CSS assertion plus browser computed-size check"
+  - id: AC-NAV-029
+    form: state-driven
+    given: "forced colors or increased contrast is active"
+    then: "shared active navigation rows SHALL retain a non-color-only visible marker"
+    verify_method: "a11y selector contract plus browser forced-colors inspection"
+  - id: AC-NAV-030
+    form: state-driven
+    given: "reduced transparency is active"
+    then: "shared structural navigation rails SHALL remain opaque continuous surfaces"
+    verify_method: "a11y CSS assertion plus browser computed-style check"
+  - id: AC-NAV-031
+    form: ubiquitous
+    then: "note lists, task content rows, Notifications master rows, Today/event/calendar rows, menus, dialogs, and detail panes SHALL not receive shared navigation anatomy classes"
+    verify_method: "negative static assertions in src/__tests__/notes_visual_system.test.ts"
+  - id: AC-NAV-032
+    form: ubiquitous
+    then: "feature stylesheets SHALL not redefine the shared row height, padding, gap, radius, typography, selected wash, or ink marker"
+    verify_method: "selector ownership assertions in src/__tests__/notes_visual_system.test.ts"
+  - id: AC-NAV-033
+    form: ubiquitous
+    then: "the shared navigation contract SHALL introduce no raw color literal or new runtime dependency"
+    verify_method: "npm run lint:css plus package-lock/package.json diff inspection"
+  - id: AC-NAV-034
+    form: state-driven
+    given: "all eligible navigation surfaces are rendered at 1280x800"
+    then: "their standard rails and rows SHALL be visually aligned to the Main navigation geometry"
+    verify_method: ".spectra/plans/navigation-sidebar-unification.evidence/geometry.json with rail/row/padding/gap/radius/type/marker comparisons at plus or minus 0.5 CSS px"
+  - id: AC-NAV-035
+    form: state-driven
+    given: "the viewport is 720px wide or narrower"
+    then: "each eligible navigation surface SHALL retain its existing compact layout behavior without clipped navigation actions"
+    verify_method: "deterministic Playwright checks at 720x800 and 390x844"
+  - id: AC-NAV-036
+    form: ubiquitous
+    then: "the pre-existing uncommitted Settings functionality and tests SHALL remain in the resulting worktree"
+    verify_method: "compare settings-baseline.patch and settings-baseline.json to settings-preservation.json under .spectra/plans/navigation-sidebar-unification.evidence"
+  - id: AC-NAV-037
+    form: ubiquitous
+    then: "every browser-produced verification artifact SHALL be indexed by acceptance-criterion ID, viewport, mode, baseline revision, and result"
+    verify_method: "schema/content assertion over .spectra/plans/navigation-sidebar-unification.evidence/manifest.json"

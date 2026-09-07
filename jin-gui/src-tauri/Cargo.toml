@@ -1,0 +1,45 @@
+[package]
+name = "jin-gui"
+version = "0.22.1"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "Jin GUI — Tauri 2.x consumer of jin-core (GUI-S0 scaffold)"
+
+# GUI-S0 invariant: jin-gui must NOT depend on rusqlite directly (VG4 / VG-GUI-1).
+# All index access flows through jin-core's public API.
+# If rusqlite ever appears below as a non-comment dep entry, the VG4 test fails.
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri              = { version = "2", features = [] }
+tauri-plugin-dialog = { version = "2" }
+serde              = { version = "1", features = ["derive"] }
+serde_json         = "1"
+chrono             = { version = "0.4", features = ["serde"] }
+thiserror          = "2"
+tokio              = { version = "1", features = ["macros", "rt", "sync", "time"] }
+# Cross-platform home/config directory resolution (never defaults to cwd).
+dirs               = "5"
+# jin-core is the ONLY path to the index — VG4 is structural.
+jin-core = { path = "../../jin-core" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2                     = "0.6"
+objc2                      = "0.6"
+objc2-foundation           = "0.3"
+objc2-user-notifications   = "0.3"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = ["UI_Notifications"] }
+tauri-winrt-notification = "=0.7.3"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+notify-rust = { version = "=4.18.0", default-features = false, features = ["z"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.dev]
+incremental = true

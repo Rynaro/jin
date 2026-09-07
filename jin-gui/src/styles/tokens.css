@@ -1,0 +1,393 @@
+/**
+ * tokens.css — GUI-S1 design-system token definitions.
+ *
+ * THIS IS THE ONLY CSS FILE ALLOWED TO CONTAIN RAW COLOR VALUES.
+ * All component CSS must reference these tokens via var(--...).
+ *
+ * Structure:
+ *   1. Font stacks
+ *   2. Dynamic Type scale (11 HIG text styles)
+ *   3. Semantic color roles — light (default)
+ *   4. Semantic color roles — dark (media query)
+ *   5. Semantic color roles — dark (explicit data-appearance="dark")
+ *   6. Glass material tokens (adaptive)
+ *   7. Spacing grid (8pt / 4pt)
+ *   8. Corner radii + shape tokens
+ *   9. Motion tokens
+ */
+
+/* ── 1. Font stacks ──────────────────────────────────────────────────────────
+ * On macOS WKWebView, -apple-system resolves to the real San Francisco — free,
+ * correct, native. On Linux WebKitGTK it falls through to bundled Inter (OFL).
+ * SF Pro / New York must NOT be bundled — Apple license allows only on-platform
+ * use. "Inter var" picks up the variable font from @fontsource/inter/variable.
+ */
+:root {
+  --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+               "Inter var", "Inter", system-ui, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code",
+               "Fira Mono", Consolas, monospace;
+
+  /* Display / wordmark stack — evokes the logo's sumi-e ink purpose. Resolves to
+   * a traditional mincho (ink-print) serif where the OS provides one — on macOS
+   * Hiragino Mincho / Yu Mincho, the closest match to the brush-ink identity —
+   * and degrades to Georgia/serif elsewhere. Branding only (the "Jin" wordmark);
+   * the UI keeps --font-text. No fonts are bundled here (OS-provided, per the
+   * same licensing stance as --font-text). */
+  --font-display: "Hiragino Mincho ProN", "Yu Mincho", YuMincho,
+                  "Songti SC", "Noto Serif JP", "Apple Garamond",
+                  "Iowan Old Style", Georgia, "Times New Roman", serif;
+
+/* ── 2. Dynamic Type scale (11 HIG text styles, rem-based) ──────────────────
+ * Values map Apple's pt → px 1:1 then express in rem against the 16px base.
+ * All type tokens are rem so the root multiplier (§5.7) scales everything.
+ * Body is 17/22 (the HIG baseline).
+ */
+  --text-large-title-size: 2.125rem;   /* 34px */
+  --text-large-title-line: 2.5625rem;  /* 41px */
+  --text-large-title-weight: 400;
+
+  --text-title1-size: 1.75rem;         /* 28px */
+  --text-title1-line: 2.125rem;        /* 34px */
+  --text-title1-weight: 400;
+
+  --text-title2-size: 1.375rem;        /* 22px */
+  --text-title2-line: 1.75rem;         /* 28px */
+  --text-title2-weight: 400;
+
+  --text-title3-size: 1.25rem;         /* 20px */
+  --text-title3-line: 1.5625rem;       /* 25px */
+  --text-title3-weight: 400;
+
+  --text-headline-size: 1.0625rem;     /* 17px */
+  --text-headline-line: 1.375rem;      /* 22px */
+  --text-headline-weight: 600;
+
+  --text-body-size: 1.0625rem;         /* 17px */
+  --text-body-line: 1.375rem;          /* 22px */
+  --text-body-weight: 400;
+
+  --text-callout-size: 1rem;           /* 16px */
+  --text-callout-line: 1.3125rem;      /* 21px */
+  --text-callout-weight: 400;
+
+  --text-subheadline-size: 0.9375rem;  /* 15px */
+  --text-subheadline-line: 1.25rem;    /* 20px */
+  --text-subheadline-weight: 400;
+
+  --text-footnote-size: 0.8125rem;     /* 13px */
+  --text-footnote-line: 1.125rem;      /* 18px */
+  --text-footnote-weight: 400;
+
+  --text-caption1-size: 0.75rem;       /* 12px */
+  --text-caption1-line: 1rem;          /* 16px */
+  --text-caption1-weight: 400;
+
+  --text-caption2-size: 0.6875rem;     /* 11px */
+  --text-caption2-line: 0.8125rem;     /* 13px */
+  --text-caption2-weight: 400;
+
+  /* Nanquim display voice. Reserved for prominent titles at 20px and above;
+   * operational copy, controls, prose, and editor text remain in --font-text. */
+  --display-title-size: 1.5rem;       /* 24px */
+  --display-title-line: 1.875rem;     /* 30px */
+  --display-title-weight: 600;
+  --display-title-tracking: -0.018em;
+
+  /* Dynamic Type root multiplier — Settings controller sets this.
+   * All rem-based sizes scale together. Steps mirror Apple's 12 sizes:
+   * xSmall .82 · Small .88 · Medium .94 · Large 1.0 (default) · xLarge 1.12
+   * xxLarge 1.24 · xxxLarge 1.35 · AX1 1.6 · AX2 1.9 · AX3 2.35 · AX4 2.75 · AX5 3.1 */
+  --dynamic-type-scale: 1;
+
+/* ── 3. Semantic color roles — light (default) ───────────────────────────────
+ * Apple's published adaptive values. Hex is allowed ONLY here.
+ * Dark mode overrides below. Two-background-tier depth model.
+ */
+  --label: rgba(0, 0, 0, 1);
+  --label-secondary: rgba(60, 60, 67, 0.6);
+  --label-tertiary: rgba(60, 60, 67, 0.3);
+  --label-quaternary: rgba(60, 60, 67, 0.18);
+
+  --bg-base: #ffffff;
+  --bg-secondary: #f2f2f7;
+  --bg-tertiary: #ffffff;
+  /* Elevated surface tiers — used by sheets, sidebars, modals */
+  --bg-elevated: #ffffff;
+  --bg-elevated-2: #f2f2f7;
+  --bg-elevated-3: #e5e5ea;
+
+  --separator: rgba(60, 60, 67, 0.29);
+  --separator-opaque: #c6c6c8;
+
+  --fill-primary: rgba(120, 120, 128, 0.2);
+  --fill-secondary: rgba(120, 120, 128, 0.16);
+  --fill-tertiary: rgba(118, 118, 128, 0.12);
+  --fill-quaternary: rgba(116, 116, 128, 0.08);
+
+  /* Accent + system colors */
+  --accent: #007aff;
+  /* Text on filled-accent surfaces (buttons, selected tabs) */
+  --color-on-accent: #ffffff;
+  --system-red: #ff3b30;
+  --system-green: #34c759;
+  --system-orange: #ff9500;
+  --system-yellow: #ffcc00;
+  --system-indigo: #5856d6;
+  --system-purple: #af52de;
+  --system-pink: #ff2d55;
+  --system-teal: #5ac8fa;
+  /* Chroma picker stops live here so component styles remain token-only. */
+  --chroma-red: #ff0000;
+  --chroma-yellow: #ffff00;
+  --chroma-green: #00ff00;
+  --chroma-cyan: #00ffff;
+  --chroma-blue: #0000ff;
+  --chroma-magenta: #ff00ff;
+  --chroma-white: #ffffff;
+  --chroma-black: #000000;
+
+  /* Continuous workspace surfaces. Glass belongs to chrome/transient UI only. */
+  --workspace-canvas: #fbfaf8;
+  --workspace-chrome: rgba(245, 246, 248, 0.84);
+  --workspace-context: #f1f2f4;
+  --workspace-row-hover: rgba(60, 60, 67, 0.07);
+  --workspace-row-selected: rgba(33, 31, 28, 0.14);
+  --workspace-transient: rgba(255, 255, 255, 0.88);
+  --workspace-edge-shadow: rgba(33, 31, 28, 0.08);
+
+  /* Sparse nanquim grammar: text, selection stroke/bleed, and dry-brush marks. */
+  --ink-primary: #211f1c;
+  --ink-on: #fbfaf8;
+  --ink-muted: rgba(33, 31, 28, 0.58);
+  --ink-stroke: rgba(33, 31, 28, 0.82);
+  --ink-bleed: rgba(33, 31, 28, 0.10);
+  --ink-dry: rgba(33, 31, 28, 0.38);
+
+  /* Compatibility alias for existing editor rules. */
+  --editor-canvas: var(--workspace-canvas);
+
+  /* Glass material tokens — light */
+  --glass-saturate: 180%;
+  --glass-blur-thin: 20px;
+  --glass-blur-regular: 30px;
+  --glass-blur-thick: 50px;
+  --glass-tint: rgba(255, 255, 255, 0.72);
+  --specular-highlight: rgba(255, 255, 255, 0.5);
+  --elevation-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+
+  /* Cinnabar is reserved for explicit/destructive intent, not navigation. */
+  --seal: #b5402f;                          /* cinnabar seal red — sidebar brand accent */
+  --seal-strong: #9d3324;                   /* pressed / hover seal */
+  --seal-on: #fbf7ef;                       /* text/icon on a filled seal surface (warm white) */
+  --seal-tint: rgba(181, 64, 47, 0.13);     /* active nav pill fill */
+  --seal-shadow: 0 2px 8px rgba(181, 64, 47, 0.30); /* capture-button lift (the stamp press) */
+
+  /* Desktop component geometry. Coarse pointers promote hit targets to 44px. */
+  --app-rail-width: 184px;
+  --app-rail-collapsed-width: 52px;
+  --navigation-rail-width: var(--app-rail-width);
+  --context-rail-width: var(--navigation-rail-width);
+  --toolbar-height: 40px;
+  --control-height: 28px;
+  --control-height-prominent: 32px;
+  --desktop-hit-target: 28px;
+  --coarse-hit-target: 44px;
+  --hit-target: var(--desktop-hit-target);
+  --icon-size-standard: 15px;
+  --icon-size-small: 13px;
+  --check-visual-size: 16px;
+  --check-mark-size: 12px;
+  --check-hit-size: 28px;
+  --switch-track-width: 32px;
+  --switch-track-height: 20px;
+  --switch-thumb-size: 16px;
+  --rail-row-height: 32px;
+  --task-row-height: 40px;
+  --note-row-height: 68px;
+  --reading-width: 760px;
+  --document-title-size: 1.5rem;
+  --document-title-line: 1.875rem;
+  --prose-h1-size: 1.375rem;
+  --prose-h1-line: 1.75rem;
+  --prose-h2-size: 1.1875rem;
+  --prose-h2-line: 1.5625rem;
+  --prose-h3-size: 1.0625rem;
+  --prose-h3-line: 1.4375rem;
+  --editor-text-size: 1rem;
+  --editor-text-line: 1.5rem;
+}
+
+/* ── 4. Semantic color roles — dark via system preference ────────────────────
+ * `:not([data-appearance="light"])` prevents the media query from firing when
+ * the user has explicitly chosen light mode in-app.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-appearance="light"]) {
+    --label: rgba(255, 255, 255, 1);
+    --label-secondary: rgba(235, 235, 245, 0.6);
+    --label-tertiary: rgba(235, 235, 245, 0.3);
+    --label-quaternary: rgba(235, 235, 245, 0.16);
+
+    --bg-base: #000000;
+    --bg-secondary: #1c1c1e;
+    --bg-tertiary: #2c2c2e;
+    /* Dark elevated tiers — each layer adds brightness */
+    --bg-elevated: #1c1c1e;
+    --bg-elevated-2: #2c2c2e;
+    --bg-elevated-3: #3a3a3c;
+
+    --separator: rgba(84, 84, 88, 0.6);
+    --separator-opaque: #38383a;
+
+    --fill-primary: rgba(120, 120, 128, 0.36);
+    --fill-secondary: rgba(120, 120, 128, 0.32);
+    --fill-tertiary: rgba(118, 118, 128, 0.24);
+    --fill-quaternary: rgba(116, 116, 128, 0.18);
+
+    --accent: #0a84ff;
+    --system-red: #ff453a;
+    --system-green: #30d158;
+    --system-orange: #ff9f0a;
+    --system-yellow: #ffd60a;
+    --system-indigo: #5e5ce6;
+    --system-purple: #bf5af2;
+    --system-pink: #ff375f;
+    --system-teal: #64d2ff;
+
+    --workspace-canvas: #151619;
+    --workspace-chrome: rgba(31, 34, 38, 0.86);
+    --workspace-context: #1d2024;
+    --workspace-row-hover: rgba(235, 235, 245, 0.08);
+    --workspace-row-selected: rgba(240, 237, 231, 0.15);
+    --workspace-transient: rgba(38, 38, 41, 0.90);
+    --workspace-edge-shadow: rgba(0, 0, 0, 0.35);
+    --ink-primary: #f0ede7;
+    --ink-on: #151619;
+    --ink-muted: rgba(240, 237, 231, 0.60);
+    --ink-stroke: rgba(240, 237, 231, 0.82);
+    --ink-bleed: rgba(240, 237, 231, 0.10);
+    --ink-dry: rgba(240, 237, 231, 0.36);
+    --editor-canvas: var(--workspace-canvas);
+
+    --glass-tint: rgba(28, 28, 30, 0.72);
+    --specular-highlight: rgba(255, 255, 255, 0.12);
+    --elevation-shadow: 0 8px 32px rgba(0, 0, 0, 0.48);
+
+    --seal: #a83a2b;
+    --seal-strong: #8f2d21;
+    --seal-on: #fbf7ef;
+    --seal-tint: rgba(207, 84, 64, 0.20);
+    --seal-shadow: 0 2px 10px rgba(207, 84, 64, 0.34);
+  }
+}
+
+/* ── 5. Semantic color roles — dark via explicit in-app override ─────────────
+ * Same values as §4. The separate block ensures the explicit override always
+ * wins even when the system preference is light.
+ */
+:root[data-appearance="dark"] {
+  --label: rgba(255, 255, 255, 1);
+  --label-secondary: rgba(235, 235, 245, 0.6);
+  --label-tertiary: rgba(235, 235, 245, 0.3);
+  --label-quaternary: rgba(235, 235, 245, 0.16);
+
+  --bg-base: #000000;
+  --bg-secondary: #1c1c1e;
+  --bg-tertiary: #2c2c2e;
+  --bg-elevated: #1c1c1e;
+  --bg-elevated-2: #2c2c2e;
+  --bg-elevated-3: #3a3a3c;
+
+  --separator: rgba(84, 84, 88, 0.6);
+  --separator-opaque: #38383a;
+
+  --fill-primary: rgba(120, 120, 128, 0.36);
+  --fill-secondary: rgba(120, 120, 128, 0.32);
+  --fill-tertiary: rgba(118, 118, 128, 0.24);
+  --fill-quaternary: rgba(116, 116, 128, 0.18);
+
+  --accent: #0a84ff;
+  --system-red: #ff453a;
+  --system-green: #30d158;
+  --system-orange: #ff9f0a;
+  --system-yellow: #ffd60a;
+  --system-indigo: #5e5ce6;
+  --system-purple: #bf5af2;
+  --system-pink: #ff375f;
+  --system-teal: #64d2ff;
+
+  --workspace-canvas: #151619;
+  --workspace-chrome: rgba(31, 34, 38, 0.86);
+  --workspace-context: #1d2024;
+  --workspace-row-hover: rgba(235, 235, 245, 0.08);
+  --workspace-row-selected: rgba(240, 237, 231, 0.15);
+  --workspace-transient: rgba(38, 38, 41, 0.90);
+  --workspace-edge-shadow: rgba(0, 0, 0, 0.35);
+  --ink-primary: #f0ede7;
+  --ink-on: #151619;
+  --ink-muted: rgba(240, 237, 231, 0.60);
+  --ink-stroke: rgba(240, 237, 231, 0.82);
+  --ink-bleed: rgba(240, 237, 231, 0.10);
+  --ink-dry: rgba(240, 237, 231, 0.36);
+  --editor-canvas: var(--workspace-canvas);
+
+  --glass-tint: rgba(28, 28, 30, 0.72);
+  --specular-highlight: rgba(255, 255, 255, 0.12);
+  --elevation-shadow: 0 8px 32px rgba(0, 0, 0, 0.48);
+
+  --seal: #a83a2b;
+  --seal-strong: #8f2d21;
+  --seal-on: #fbf7ef;
+  --seal-tint: rgba(207, 84, 64, 0.20);
+  --seal-shadow: 0 2px 10px rgba(207, 84, 64, 0.34);
+}
+
+/* ── 6. Spacing grid (8pt / 4pt subdivision) ─────────────────────────────────
+ * All spacing in components MUST be a multiple of 8px with 4px as the only
+ * subdivision. No raw pixel values in component spacing rules.
+ */
+:root {
+  --space-0: 0px;
+  --space-half: 4px;   /* 4pt — only subdivision allowed */
+  --space-1: 8px;      /* 8pt */
+  --space-2: 16px;     /* 16pt */
+  --space-3: 24px;     /* 24pt */
+  --space-4: 32px;     /* 32pt */
+  --space-5: 40px;     /* 40pt */
+  --space-6: 48px;     /* 48pt */
+  --space-8: 64px;     /* 64pt */
+  --space-10: 80px;    /* 80pt */
+  --space-12: 96px;    /* 96pt */
+
+/* ── 7. Corner radii + shape tokens ─────────────────────────────────────────
+ * Concentric formula: outer_radius = inner_radius + padding
+ * Capsule = half container height.
+ * Nested elements derive their radius DOWN via the formula.
+ */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-xxl: 14px;
+  --radius-capsule: 9999px;
+
+/* ── 8. Motion tokens ────────────────────────────────────────────────────────
+ * All transitions/animations are gated by --reduce-motion (see a11y.css).
+ * Durations are informational — fast for micro-feedback, slow for spatial nav.
+ */
+  --duration-instant: 0ms;
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 350ms;
+  --duration-xslow: 500ms;
+
+  /* Spring-out easing (material motion from design.md §5.8) */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0, 1);
+  --ease-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --ease-linear: linear;
+}

@@ -1,0 +1,90 @@
+eidolon: ramza
+kind: spec
+version: 1.0.0
+created_at: 2026-08-26
+change_id: calendar-event-edit-when-surface
+esl_tier: full
+status: deliberated
+maker: Vivi
+checker: VIGIL
+spec_ref: .spectra/changes/calendar-event-edit-when-surface/spec.md
+change_ref: .spectra/changes/calendar-event-edit-when-surface/change.json
+deliberation_ref: .spectra/changes/calendar-event-edit-when-surface/deliberation-forge.md
+intent_class: CHANGE
+intent: >-
+  Apply Add Event's shared compound When surface to M2 detail-resident editing
+  without weakening temporal fidelity, conflict safety, or mutation authority.
+
+right_size:
+  files_touched: 8
+  rubric_score: 8
+  tradeoff_present: true
+  tier: full
+
+decisions:
+  - { id: D-01, decision: Edit reuses the shipped shared range Calendar parser locale and event-when visual contract with no native date picker. }
+  - { id: D-02, decision: One controller-owned edit draft includes start_date and end_date and survives every transient rerender. }
+  - { id: D-03, decision: Canonical ranges initialize losslessly; the draft retains an exact temporal baseline and reuses its start/end verbatim whenever the projection is semantically equal. }
+  - { id: D-04, decision: Calendar selection explicitly resizes endpoints; date-only relative input shifts both dates; timed relative input preserves naive wall-minute duration; all-day plus time becomes one hour. }
+  - { id: D-05, decision: Changed inclusive UI ranges serialize through existing exclusive all-day or naive wall-datetime plus one-TZID behavior; no core change. }
+  - { id: D-06, decision: Dirty/conflict comparison uses composed exact endpoints; Review preserves the whole draft/baseline with a fresh token and Use latest replaces both without writing. }
+  - { id: D-07, decision: Detail-resident M2 focus keyboard pending canonical-refetch and capability contracts remain unchanged. }
+  - { id: D-08, decision: Live en/pt-BR rerenders preserve unsubmitted state and keep generic Calendar Event-agnostic. }
+
+decision_gates:
+  - id: DG-01
+    owner: FORGE
+    status: resolved
+    question: Confirm direct range selection as resize and natural input as duration-preserving relocation for edit context.
+    verdict: Calendar literally replaces dates; relative date-only shifts both dates; relative time preserves timed wall duration or converts all-day to one hour.
+    invariants:
+      - Calendar never silently corrects an invalid retained overnight clock pair
+      - duration means naive wall-clock minutes and introduces no DST elapsed-time policy
+      - all-day plus explicit time discards the former day span and uses one hour
+  - id: DG-02
+    owner: FORGE
+    status: resolved
+    question: Confirm changed temporal serialization remains within existing M2 wall-time/TZID behavior and needs no core change.
+    verdict: Retain an exact temporal baseline for semantic passthrough; only changed projections use the existing minute-resolution one-TZID bridge contract.
+    invariants:
+      - equality is projection/value based rather than action-history based
+      - Review draft preserves its exact baseline while Use latest replaces it
+      - dirty comparison uses composed exact endpoints against latest canonical data
+      - no core bridge schema capability or timezone policy change
+
+scope:
+  in:
+    - eligible M2 detail-resident Event and Time block editing
+    - shared Calendar range and natural input reuse
+    - endpoint draft serialization comparison and conflict preservation
+    - en and pt-BR live locale
+    - Add Event task due grid M1 and M2 regressions
+    - browser and native QA
+  out:
+    - core bridge or capability changes
+    - Google recurring cancelled or series editing
+    - timezone selector and new parser grammar
+    - Capture task promotion or grid creation
+
+stories:
+  - { id: S1, title: Evolve pure edit range draft, risk: P0, depends_on: [] }
+  - { id: S2, title: Render and synchronize shared When, risk: P0, depends_on: [S1] }
+  - { id: S3, title: Preserve locale dirty conflict and cancel lifecycles, risk: P0, depends_on: [S1, S2] }
+  - { id: S4, title: Prove authority conflict no-op and consumer regressions, risk: P0, depends_on: [S1, S2, S3] }
+  - { id: S5, title: Complete browser and native acceptance, risk: P1, depends_on: [S1, S2, S3, S4] }
+
+verification_commands:
+  - npm --prefix jin-gui test -- --run src/__tests__/event_edit.test.ts
+  - npm --prefix jin-gui test -- --run src/__tests__/events_controller.test.ts
+  - npm --prefix jin-gui test -- --run src/__tests__/calendar_controller.test.ts src/__tests__/calendar_natural_language.test.ts
+  - npm --prefix jin-gui test -- --run src/__tests__/calendar_view_controller.test.ts src/__tests__/event_locale.test.ts
+  - npm --prefix jin-gui test -- --run src/__tests__/tasks_controller.test.ts src/__tests__/capture_controller.test.ts
+  - npm --prefix jin-gui test -- --run
+  - npm --prefix jin-gui run build
+  - npm --prefix jin-gui run lint:css
+  - cargo fmt --all -- --check
+  - git diff --check
+
+next_handoff:
+  eidolon: Vivi
+  action: Implement S1-S5 under resolved DG-01 and DG-02, then hand to VIGIL for independent block-mode verification.

@@ -1,0 +1,58 @@
+{
+  "spec_id": "2026-06-28-jin-notes-lp-links",
+  "methodology": "SPECTRA",
+  "methodology_version": "4.10.0",
+  "title": "Live-preview increment #2 — collapse markdown links to clickable label text",
+  "repo": "jin-gui",
+  "scope": "frontend-only",
+  "from": "spectra",
+  "to": "vivi",
+  "created_at": "2026-06-28",
+  "branch_base": "main (after increment #1 PR #9 lands; #1 = commit d2d0e16)",
+  "confidence": 0.90,
+  "decision": "AUTO_PROCEED",
+  "phases": {
+    "clarify": "done — D-CLICKABLE was the only plan-shaping ambiguity; resolved via firsthand Tauri-infra investigation (no opener plugin => Option A)",
+    "scope": "done — CHANGE, standard tier, complexity ~6/12, frontend-only single-builder extension",
+    "pattern": "done — ADAPT (>=85%) of the #1 ListMark widget branch + HIDE branch in livePreview.ts",
+    "explore": "done — A(display-only) vs B(clickable-open) vs split; selected A, B deferred to #2.5",
+    "construct": "done — 2 stories LPK-1, LPK-2",
+    "test": "done — 6-layer; adversarial layer drove the nested-markup throw discovery + safe-scheme guard",
+    "refine": "n/a — first-pass confidence >=85%",
+    "assemble": "done"
+  },
+  "stories": [
+    {
+      "id": "LPK-1",
+      "status": "pending",
+      "depends_on": [],
+      "files": [
+        "jin-gui/src/lib/notes/livePreview.ts",
+        "jin-gui/src/__tests__/livePreview.test.ts"
+      ],
+      "gates": ["G-LP-LINK-COLLAPSE", "G-LP-LINK-REVEAL", "G-LP-LINK-SCHEME", "G-LP-LINK-NESTED-SKIP", "G-LP-LINK-ROBUST", "G-LP-LINK-ATOMIC", "G-LP-LINK-NO-BUFFER-MUTATION"]
+    },
+    {
+      "id": "LPK-2",
+      "status": "pending",
+      "depends_on": ["LPK-1"],
+      "files": [
+        "jin-gui/src/lib/notes/editor.ts",
+        "jin-gui/src/__tests__/livePreview.test.ts"
+      ],
+      "gates": ["G-LP-LINK-STYLE", "G-LP-LINK-SMOKE"]
+    }
+  ],
+  "verified_firsthand": [
+    "lezer Link children for plain label = [LinkMark,LinkMark,LinkMark,URL,LinkMark]; label is UNTYPED text (no node)",
+    "title link keeps LinkTitle child (still collapses); nested label adds StrongEmphasis/InlineCode (skip)",
+    "canonical collapse ranges replace[2,3)/mark[3,8)/replace[8,30) for 'x\\n[label](https://example.com)' cursor@0",
+    "javascript:/non-http URL => raw via SAFE_LINK_SCHEME",
+    "half-typed/[label]/[]()/[ref][id]/nested-bracket/autolink/bare-URL/image => raw or untouched",
+    "NESTED-MARKUP LABEL THROWS 'Ranges must be added sorted by from' without the skip rule (verified)",
+    "per-line reveal: caret on link line => empty set",
+    "no Tauri opener/shell plugin (lib.rs:23 only tauri_plugin_dialog; caps only core:default+dialog:allow-open); no anchor-open bridge anywhere in jin-gui"
+  ],
+  "node_requirement": ">=20 (nvm v24.18.0)",
+  "replanning_history": []
+}

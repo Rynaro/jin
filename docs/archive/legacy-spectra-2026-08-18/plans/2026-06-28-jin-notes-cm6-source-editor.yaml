@@ -1,0 +1,186 @@
+spec_id: 2026-06-28-jin-notes-cm6-source-editor
+methodology: SPECTRA
+methodology_version: 4.10.0
+tier: standard
+intent: CHANGE
+from: spectra
+to: apivr            # consumer: Vivi (loop-native coder)
+performative: PROPOSE
+confidence: 0.88
+gate: AUTO_PROCEED
+scope: FRONTEND-ONLY (jin-gui) — zero Rust/Tauri/schema/SQL changes
+supersedes_design: 2026-06-28-jin-notes-wave2-track-b-editor   # the per-block anti-pattern
+
+objective: >
+  Replace the per-block inline-textarea note editor with a single full-pane CodeMirror 6
+  source editor (markdown + syntax highlighting, NOT full live-preview). Raw markdown stays
+  the on-disk source of truth; add a Reading-view toggle through the existing sanitize
+  chokepoint; rewire autosave to be debounced and CARET-SAFE (no full re-render on save).
+
+runner_contract:
+  node: ">=20 — use nvm v24.18.0 path; system node v16.20.2 crashes vitest"
+  dom_tests: "// @vitest-environment jsdom (per-file pragma, existing convention)"
+
+reuse_verbatim:
+  - "sanitize chokepoint: jin-gui/src/lib/notes/markdown.ts:60 renderMarkdownFragment(src):DocumentFragment"
+  - "save: jin-gui/src/invoke.ts:68-78 editNote(id,{body}) -> returns updated NoteDto (in-place body overwrite; title/folder preserved)"
+  - "state: notes_controller.ts:97 currentNoteId, :100 lastSavedBody; error->app:error pattern :349-356"
+replace:
+  - "jin-gui/src/lib/notes/editor.ts:44-211 renderNoteEditor (per-block) -> CM6 mountEditor"
+  - "body host: jin-gui/src/lib/notes/render.ts:202-208 (call site :207)"
+  - "commit trigger: per-block blur -> debounced CM6 doc-change autosave + flush on blur/switch/toggle/destroy"
+remove_after_replace:
+  - "jin-gui/src/lib/notes/blocks.ts (imported only by old editor.ts + blocks.test.ts; substituteBlock already dead)"
+  - "jin-gui/src/__tests__/blocks.test.ts"
+  - "jin-gui/src/__tests__/editor.test.ts (old renderNoteEditor API) -> replaced"
+keep_green_immovable:
+  - "G-XSS notes_controller.test.ts:497-514"
+  - "G-CHOKEPOINT markdown.test.ts:366,390 (only markdown.ts imports markdown-it/dompurify)"
+
+critical_risk:
+  id: R1
+  severity: P0
+  desc: >
+    commitBody at notes_controller.ts:339-347 calls full renderNoteDetail after every save ->
+    destroys CM6 editor + caret mid-typing.
+  mitigation: >
+    Out-of-band reconcile: on successful save update lastSavedBody=SENT text (no re-fetch, no setDoc),
+    update "updated" timestamp via targeted DOM from editNote's returned DTO, set "Saved" indicator.
+    NEVER call renderNoteDetail and NEVER setDoc on the autosave path. Mount/destroy editor ONLY on
+    note switch. G-SAVE-CARET-SAFE asserts node identity + caret + renderNoteDetail-not-called.
+
+decisions:
+  D-DEPS:
+    runtime_deps:
+      "@codemirror/state": "^6.7.0"
+      "@codemirror/view": "^6.43.4"
+      "@codemirror/commands": "^6.10.4"
+      "@codemirror/language": "^6.12.4"
+      "@codemirror/lang-markdown": "^6.5.0"
+      "@codemirror/autocomplete": "^6.20.3"
+      "@lezer/highlight": "^1.2.3"
+    bundle_estimate: "~110-140 KB gzip added; G-BUNDLE records measured delta; trim via markdown({codeLanguages:[]}) if over"
+    highlight: "hand-rolled HighlightStyle (no heavy theme dep) to match tokens"
+  D-MODULE:
+    file: jin-gui/src/lib/notes/editor.ts
+    api: "mountEditor(parent,{doc,onSave,readOnly?}) -> {getDoc,setDoc,focus,flush,destroy,getView}"
+    notes: "CM6 isolated behind module; extensions in Compartments for fast-follow live-preview; toolbar (reading toggle + status indicator) + CM6 placeholder('Start writing…'); keymap: jin keys FIRST then closeBrackets/history/default"
+  D-SAVE-TRIGGER:
+    debounce_ms: 600
+    flush_on: [blur, note_switch, reading_toggle, destroy]
+    onSave: "guard id===currentNoteId; dirty-check vs lastSavedBody; editNote(id,{body}); on ok lastSavedBody=doc (SENT) + targeted-DOM timestamp + 'Saved'; on err app:error + retain + retry; NO renderNoteDetail, NO setDoc, NO re-fetch"
+  D-TEST-STRATEGY:
+    a_state_level: "EditorState + run command/dispatch txn; assert doc text + selection (Tab/Enter/Bold/etc) — node env, no layout"
+    b_controller: "jsdom + real Stimulus + REAL CM6 mount; vi.useFakeTimers for 600ms; mock ../invoke (existing pattern). Caret/XSS gates MUST use real mount"
+    c_reading: "toggle -> assert via renderMarkdownFragment (sanitized node, no innerHTML); dirty flush first"
+    d_immovable: "G-XSS + G-CHOKEPOINT stay green"
+    jsdom_derisk: "S1 smoke test FIRST: mount EditorView in jsdom; assert getDoc round-trip + .cm-content textContent contains doc"
+
+stories:
+  - id: S0
+    title: Add CM6 dependencies (Kupo)
+    timebox: 1d
+    risk: P1
+    agent_class: builder
+    given_when_then:
+      - "GIVEN package.json WHEN 7 CM6 deps added+installed under nvm v24.18.0 THEN tsc --noEmit && vite build passes; bundle baseline recorded"
+      - "GIVEN install WHEN markdown.test.ts runs THEN G-CHOKEPOINT stays green"
+    gates: [G-BUILD, G-CHOKEPOINT, G-BUNDLE]
+    context: [jin-gui/package.json]
+  - id: S1
+    title: CM6 editor module + behavior gates
+    timebox: "<=3d"
+    risk: P0
+    agent_class: reasoner
+    depends_on: [S0]
+    given_when_then:
+      - "GIVEN a doc WHEN mountEditor runs in jsdom THEN getDoc()==doc AND .cm-content textContent contains it (smoke, FIRST)"
+      - "GIVEN caret on '- item' WHEN Tab runs THEN line gains an indent unit AND focus stays in .cm-editor (no blur); Shift-Tab outdents"
+      - "GIVEN caret end of '- item' WHEN Enter-continue runs THEN new '- ' line; on empty '- ' THEN marker removed (exit); same for '> ' and '- [ ] '"
+      - "GIVEN selection 'word' WHEN Mod+B THEN '**word**' (toggle off on re-run)"
+      - "GIVEN selection WHEN Mod+I/Mod+K/Mod+1..6 THEN *word* / [word](url) caret-in-url / set ATX heading level (replace not stack)"
+      - "GIVEN closeBrackets WHEN type/close/backspace THEN wrap-selection / skip-close / delete-pair"
+      - "GIVEN edit WHEN Mod+Z/Mod+Shift+Z THEN undo/redo restores doc"
+      - "GIVEN empty doc THEN placeholder 'Start writing…' shows"
+      - "GIVEN '# H\\n**b** `c`' THEN highlight layer yields distinct heading/strong/code styling (assert via tags)"
+    gates: [G-EDITOR-TAB, G-EDITOR-ENTER, G-EDITOR-BOLD, G-EDITOR-PAIRS, G-EDITOR-HISTORY, G-EDITOR-PLACEHOLDER, G-CHOKEPOINT]
+    context: [jin-gui/src/lib/notes/editor.ts, jin-gui/src/lib/notes/markdown.ts]
+    note: "ADD mountEditor alongside old renderNoteEditor (transitional); replace editor.test.ts"
+  - id: S2
+    title: Reading-view toggle through the chokepoint
+    timebox: "<=2d"
+    risk: P0
+    agent_class: builder
+    depends_on: [S1]
+    given_when_then:
+      - "GIVEN doc '# H' WHEN toggle to reading THEN host shows sanitized rendered <h1> via renderMarkdownFragment (not raw text, not innerHTML)"
+      - "GIVEN unsaved edits WHEN toggle to reading THEN flush() runs (editNote called) BEFORE render"
+      - "GIVEN '<script>…</script>' WHEN toggled THEN no script node + canary undefined"
+      - "GIVEN reading->edit->reading THEN getDoc() unchanged"
+    gates: [G-READING-VIEW, G-READING-FLUSH, G-XSS-READING]
+    context: [jin-gui/src/lib/notes/markdown.ts]
+  - id: S3
+    title: Controller rewire + caret-safe autosave
+    timebox: "<=3d"
+    risk: P0
+    agent_class: reasoner
+    depends_on: [S1, S2]
+    given_when_then:
+      - "GIVEN mounted note WHEN doc changes + 600ms (fake timers) THEN editNote(id,{body:newDoc}) called once (G-AUTOSAVE)"
+      - "GIVEN focused editor at caret N WHEN autosave completes THEN same EditorView node identity AND renderNoteDetail NOT called AND caret head==N (G-SAVE-CARET-SAFE)"
+      - "GIVEN no change WHEN flush fires THEN editNote NOT called"
+      - "GIVEN dirty note A WHEN open note B THEN A flushed before B mounts; B shows B's body"
+      - "GIVEN editNote rejects JinErrorDto WHEN autosave THEN app:error dispatched + edited text retained + retries (G-SAVE-ERROR)"
+      - "GIVEN CM6 mount THEN notes_controller.test.ts:497-514 G-XSS stays green (no script node, literal text, canary undefined)"
+    gates: [G-AUTOSAVE, G-SAVE-CARET-SAFE, G-SAVE-DIRTY, G-SAVE-FLUSH-SWITCH, G-SAVE-ERROR, G-XSS]
+    context: [jin-gui/src/controllers/notes_controller.ts, jin-gui/src/lib/notes/render.ts, jin-gui/src/invoke.ts]
+    note: "switch render.ts:207 to mountEditor; remove old renderNoteEditor; rewrite G-SAVE block; NO renderNoteDetail/setDoc/re-fetch on save path"
+  - id: S4
+    title: Full-height sizing + calm typography (Kupo)
+    timebox: "<=2d"
+    risk: P1
+    agent_class: builder
+    depends_on: [S3]
+    given_when_then:
+      - "GIVEN detail pane WHEN note opens THEN editor fills height (.note-detail__body flex:1; min-height:0 + parent chain)"
+      - "GIVEN content THEN centered ~66ch column, 18px/1.6 body, ~3rem padding"
+      - "GIVEN theme THEN CM6 EditorView.theme references only token vars (var(--label)/--bg-*/--accent); [data-theme] flips colors"
+      - "GIVEN repo WHEN npm run lint:css THEN passes; no orphan .note-block* selectors"
+    gates: [G-SIZING, G-THEME-TOKENS, G-CSS-LINT, G-CSS-DEADCODE]
+    context: [jin-gui/src/styles/browse.css, jin-gui/src/styles/tokens.css]
+  - id: S5
+    title: Dead-code & dead-test removal (Kupo)
+    timebox: 1d
+    risk: P2
+    agent_class: builder
+    depends_on: [S3, S4]
+    given_when_then:
+      - "GIVEN repo-wide grep WHEN searching notes/blocks + renderNoteEditor THEN zero non-historical hits"
+      - "GIVEN cleanup WHEN npm run build + vitest run THEN pass; G-CHOKEPOINT + G-XSS green"
+    gates: [G-NO-DANGLING-IMPORTS, G-BUILD, G-CHOKEPOINT, G-XSS]
+    context: []
+
+execution_sequence: [S0, S1, S2, S3, S4, S5]
+top_watch: "S3 / G-SAVE-CARET-SAFE (caret-destroying re-render is the #1 regression)"
+
+out_of_scope_fast_follow:
+  - inline live-preview decorations (compartment-ready, zero on-disk-format/save change)
+  - focus mode
+  - typewriter scrolling
+  - theme/font pickers
+  - wikilink autocomplete / slash commands / image paste / task-list interactivity
+  - full out-of-band links/backlinks re-render per autosave (deferred to note-switch)
+
+expected_response:
+  performative: ACKNOWLEDGE
+  shape_hint: >
+    Land S0->S1 (with the jsdom smoke test FIRST to de-risk CM6-in-jsdom) before the S3 rewire.
+    The #1 gate is G-SAVE-CARET-SAFE: the autosave path must NEVER call renderNoteDetail or setDoc
+    on the focused editor; assert EditorView node identity + caret offset survive a save. Reading view
+    MUST render through renderMarkdownFragment (no second CM6 state, no innerHTML). G-XSS + G-CHOKEPOINT
+    are immovable. No shallow tests (no "a div exists"); every behavior gate asserts doc text / call
+    args / node identity / caret. Frontend tests need Node>=20 (nvm v24.18.0).
+
+artifact:
+  human: .spectra/plans/2026-06-28-jin-notes-cm6-source-editor.md
+  sha256: f3b8c65f913738862aa7774117948ab81d004c1b8d523a546999d65fb1a035ab

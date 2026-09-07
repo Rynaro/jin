@@ -1,0 +1,4641 @@
+/**
+ * browse.css — Notes / Tasks / Events browse + detail view styles (GUI-S4).
+ *
+ * All values reference tokens from tokens.css — NO raw hex anywhere.
+ * Visual correctness (glass rendering, layout proportions, motion) is
+ * owner-verified via cargo tauri dev (spec §7.2).
+ *
+ * Class namespaces:
+ *   .browse-*        — shared patterns for all three browse views
+ *   .note-*          — Notes-specific overrides
+ *   .task-*          — Tasks-specific overrides
+ *   .event-browse-*  — Events browse (distinct from .today-event-*)
+ *   .event-detail-*  — Events detail-specific
+ */
+
+/* ── Back button (detail → list) ─────────────────────────────────────────── */
+
+.browse-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  /* item 2: override .tap-target's 44px floor so padding controls the height.
+     Both min-block-size and min-inline-size are explicitly set to auto here;
+     browse.css loads after spacing.css at the same specificity (one class each),
+     so this declaration wins and the button renders ~32px tall — matching the
+     sibling .notes-rail-reveal / .notes-new-note-btn header controls. */
+  min-block-size: auto;
+  min-inline-size: auto;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-capsule);
+  color: var(--accent);
+  font-size: var(--text-subheadline-size);
+  font-weight: 400;
+  line-height: var(--text-subheadline-line);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  margin-bottom: var(--space-2);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.browse-back-btn:hover {
+  background-color: var(--fill-tertiary);
+}
+
+.browse-back-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
+}
+
+/* ── Browse list ─────────────────────────────────────────────────────────── */
+
+.browse-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* ── Browse row (shared list-item shell) ─────────────────────────────────── */
+
+.browse-row {
+  display: block;
+}
+
+.browse-row__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  min-block-size: var(--hit-target);
+  background-color: var(--bg-elevated);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-md);
+  text-align: start;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--label);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.browse-row__inner:hover {
+  background-color: var(--bg-elevated-2);
+}
+
+.browse-row__title {
+  font-size: var(--text-headline-size);
+  font-weight: var(--text-headline-weight);
+  line-height: var(--text-headline-line);
+  color: var(--label);
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browse-row__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+/* ── Status badge (shared — text label + icon; never color-only) ─────────── */
+
+.browse-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  padding: 2px var(--space-1);
+  border-radius: var(--radius-capsule);
+  font-size: var(--text-caption1-size);
+  font-weight: 600;
+  line-height: var(--text-caption1-line);
+  background-color: var(--fill-tertiary);
+  color: var(--label-secondary);
+  flex-shrink: 0;
+}
+
+.browse-status-badge svg,
+.browse-status-badge i svg {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2;
+}
+
+/* Task status color cues (supplementary — text label is primary) */
+.browse-status-badge[data-task-status="todo"] {
+  background-color: var(--fill-tertiary);
+  color: var(--label-secondary);
+}
+
+.browse-status-badge[data-task-status="doing"] {
+  background-color: var(--fill-secondary);
+  color: var(--accent);
+}
+
+.browse-status-badge[data-task-status="done"] {
+  background-color: var(--fill-secondary);
+  color: var(--system-green);
+}
+
+.browse-status-badge[data-task-status="cancelled"] {
+  background-color: var(--fill-tertiary);
+  color: var(--label-tertiary);
+}
+
+/* ── Loading + empty states ──────────────────────────────────────────────── */
+
+.browse-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-6) var(--space-3);
+  color: var(--label-secondary);
+  font-size: var(--text-callout-size);
+  line-height: var(--text-callout-line);
+}
+
+.browse-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-3);
+  color: var(--label-tertiary);
+  text-align: center;
+}
+
+.browse-empty p {
+  margin: 0;
+  font-size: var(--text-callout-size);
+  line-height: var(--text-callout-line);
+  color: var(--label-secondary);
+}
+
+/* ── Browse detail title + meta ──────────────────────────────────────────── */
+
+/* ── Title row: title input (flex:1) + status badge (right-aligned) ─────────
+ * Gap-B fix: wraps the title input and status badge in a single flex row so
+ * the badge is pinned top-right beside the title, above the scroll region.
+ * flex-shrink:0 keeps the row out of the scrollable area.
+ */
+.browse-detail__title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  margin-bottom: var(--space-2);
+}
+
+.browse-detail__title {
+  font-family: var(--font-display);
+  font-size: var(--text-title2-size);
+  font-weight: 600;
+  line-height: var(--text-title2-line);
+  color: var(--label);
+  margin: 0;
+}
+
+/* NN-1: inline-editable title input (K-NN-2). Transparent/borderless until focus;
+   inherits text-title2 metrics; focus ring via token; XSS-safe via .value.
+   flex:1 + min-width:0 inside .browse-detail__title-row: fills available width
+   so the status badge stays right-aligned without clipping. */
+.browse-detail__title--input {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  cursor: text;
+  box-sizing: border-box;
+}
+
+.browse-detail__title--input::placeholder {
+  color: var(--label-tertiary, oklch(var(--label-tertiary-raw, 0 0 0) / 0.3));
+  font-weight: 600;
+}
+
+.browse-detail__title--input:focus {
+  outline: 2px solid var(--accent, var(--system-blue));
+  outline-offset: 2px;
+  border-radius: var(--radius-sm, var(--space-1));
+}
+
+.browse-detail__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+/* ── Links / backlinks section in detail ─────────────────────────────────── */
+
+.browse-detail__links-section {
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 0.5px solid var(--separator);
+}
+
+.browse-detail__links-heading {
+  font-size: var(--text-subheadline-size);
+  font-weight: 600;
+  line-height: var(--text-subheadline-line);
+  color: var(--label-secondary);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  margin: 0 0 var(--space-1) 0;
+}
+
+.browse-detail__links-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+}
+
+/* ── Link row (shared for links + backlinks) ─────────────────────────────── */
+
+.browse-link-row {
+  display: block;
+}
+
+.browse-link-row__btn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-half);
+  min-block-size: var(--hit-target);
+  min-inline-size: unset;
+  padding: var(--space-half) var(--space-1);
+  border-radius: var(--radius-xs);
+  background-color: var(--fill-quaternary);
+  color: var(--accent);
+  font-size: var(--text-callout-size);
+  line-height: var(--text-callout-line);
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.browse-link-row__btn:hover {
+  background-color: var(--fill-tertiary);
+}
+
+.browse-link-row__icon svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 1.75;
+  flex-shrink: 0;
+}
+
+.browse-link-row__label {
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.browse-link-row__id {
+  font-size: var(--text-caption2-size);
+  font-family: var(--font-mono);
+  color: var(--label-tertiary);
+  flex-shrink: 0;
+}
+
+/* ── Note-specific styles (S3: Apple-Notes flat row, scoped under .note-row) ─ */
+
+/*
+ * Override the shared bubble look for note rows ONLY.
+ * Tasks/Events rows keep the .browse-row__inner bubble (R4: no blast radius).
+ *
+ * #2a: real horizontal padding (was var(--space-2) 0 — zero sides).
+ * #2b: continuous ledger rows use a stable separator and neutral hover wash.
+ *      Bottom hairline divider removed; row gap in .browse-list provides separation.
+ */
+.note-row .browse-row__inner {
+  border-radius: var(--radius-md);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-half);
+  padding: var(--space-2);
+  min-block-size: unset;
+}
+
+.note-row .browse-row__inner:hover {
+  background-color: var(--fill-quaternary);
+  /* #2b: border-radius already var(--radius-md) at rest — no shape change on hover */
+}
+
+/* #2c: header row — title only (date moves to .note-row__preview below) */
+.note-row__header {
+  display: flex;
+  align-items: baseline;
+}
+
+/* Override title to single-line ellipsis (title is the visual primary) */
+.note-row .browse-row__title {
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* #2c: preview line — date (shrink:0, muted) then snippet (flex:1, 1-line clamp).
+   Mirrors Apple Notes' "10:30 AM  First line of body…" layout on line 2 of each row. */
+.note-row__preview {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+/* #2c: snippet — 1-line clamp so row height is stable; takes remaining preview width. */
+.note-row__snippet {
+  color: var(--label-secondary);
+  font-size: var(--text-subheadline-size);
+  line-height: var(--text-subheadline-line);
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* #2c: date — first in .note-row__preview; muted, no-wrap, never shrinks into snippet. */
+.note-row__date {
+  font-size: var(--text-caption1-size);
+  color: var(--label-tertiary);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Tags — de-emphasized in the flat layout */
+.note-row__tags {
+  font-size: var(--text-caption1-size);
+  color: var(--label-tertiary);
+  font-family: var(--font-mono);
+}
+
+/* ── Note detail body — Apple-Notes-style flex column host ──────────────── */
+
+/*
+ * Fills the remaining detailContent height below the note title.
+ * Children: .cm-toolbar (shrink:0) → .cm-scroll-region (flex:1) → .cm-footer (shrink:0)
+ */
+.note-detail__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--editor-canvas);
+}
+
+/* ── CM6 formatting toolbar ──────────────────────────────────────────────── */
+
+.cm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-half);
+  padding: var(--space-half) 0;
+  border-bottom: 0.5px solid var(--separator);
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background-color: var(--editor-canvas);
+}
+
+.cm-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Ghost icon buttons in the formatting toolbar */
+.cm-toolbar__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--label-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.cm-toolbar__btn:hover {
+  background-color: var(--fill-tertiary);
+  color: var(--label);
+}
+
+/* Active state for opt-in mode toggles (Focus mode, Typewriter scrolling) */
+.cm-toolbar__btn[aria-pressed="true"] {
+  background-color: var(--fill-secondary);
+  color: var(--accent);
+}
+
+.cm-toolbar__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.cm-toolbar__btn svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.75;
+  flex-shrink: 0;
+}
+
+/* Hairline group separator */
+.cm-toolbar__sep {
+  width: 0.5px;
+  height: 16px;
+  background-color: var(--separator);
+  flex-shrink: 0;
+  margin: 0 var(--space-half);
+}
+
+/* Spacer that pushes the reading-toggle to the right */
+.cm-toolbar__spacer {
+  flex: 1 1 0%;
+  min-width: var(--space-1);
+}
+
+/* Reading-view toggle button (right-aligned in toolbar, class preserved for tests) */
+.cm-toolbar__toggle {
+  padding: var(--space-half) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--fill-tertiary);
+  color: var(--label-secondary);
+  font-family: inherit;
+  font-size: var(--text-footnote-size);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.cm-toolbar__toggle:hover {
+  background: var(--fill-secondary);
+  color: var(--label);
+}
+
+/* ── CM6 scroll region — single scrolling area for editor + related sections ─ */
+
+.cm-scroll-region {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ── CM6 editor wrapper — natural height inside the scroll region ────────── */
+
+.cm-editor-wrapper {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ── CM6 reading view — sanitized rendered markdown ─────────────────────── */
+
+.cm-reading-wrapper {
+  /* item 5: tightened inset to match .cm-content (clamp(16px,4vw,40px)). */
+  padding: 1.5rem clamp(16px, 4vw, 40px);
+  color: var(--label);
+  background-color: var(--editor-canvas);
+}
+
+/* ── Stats footer ────────────────────────────────────────────────────────── */
+
+.cm-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: var(--space-half) 0;
+  border-top: 0.5px solid var(--separator);
+  font-size: var(--text-caption1-size);
+  color: var(--label-tertiary);
+  line-height: var(--text-caption1-line);
+  background-color: var(--editor-canvas);
+}
+
+.cm-footer__stats {
+  flex-shrink: 0;
+}
+
+.cm-footer__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.cm-footer__read-time {
+  flex-shrink: 0;
+}
+
+/* Save-status indicator (class preserved for test compat; now lives in footer) */
+.cm-toolbar__status {
+  font-size: var(--text-caption1-size);
+  color: var(--label-tertiary);
+  flex-shrink: 0;
+}
+
+/* Reading-view prose typography */
+
+.cm-reading-wrapper {
+  font-family: var(--font-text);
+}
+
+.cm-reading-wrapper h1 { font-size: var(--prose-h1-size); line-height: var(--prose-h1-line); font-weight: 700; margin: 0 0 var(--space-2); }
+.cm-reading-wrapper h2 { font-size: var(--prose-h2-size); line-height: var(--prose-h2-line); font-weight: 700; margin: 0 0 var(--space-2); }
+.cm-reading-wrapper h3 { font-size: var(--prose-h3-size); line-height: var(--prose-h3-line); font-weight: 700; margin: 0 0 var(--space-1); }
+.cm-reading-wrapper h4 { font-size: 1.2em; font-weight: 600; margin: 0 0 var(--space-1); }
+.cm-reading-wrapper h5,
+.cm-reading-wrapper h6 { font-size: 1.0em; font-weight: 600; margin: 0 0 var(--space-1); }
+
+.cm-reading-wrapper p { margin: 0 0 var(--space-2); line-height: 1.6; }
+
+.cm-reading-wrapper ul,
+.cm-reading-wrapper ol { margin: 0 0 var(--space-2); padding-left: var(--space-3); }
+
+.cm-reading-wrapper li { line-height: 1.6; }
+
+/* ── Reading-view task lists — GFM checkboxes, matched to the editor ─────────
+ * markdown.ts emits `<li class="task-list-item"><input class="task-list-item-checkbox"
+ * disabled …>` for `- [ ]` / `- [x]` items. The checkbox (appearance: none) mirrors
+ * the live-preview editor's ☐/☑ glyphs (livePreview.ts CheckboxWidget): a crisp
+ * outline square — muted when empty, --accent border + --accent checkmark when
+ * ticked, NO solid fill — so Read mode and Edit mode read the same. The input is
+ * inert (reading view is read-only); the live-preview editor owns toggling. */
+.cm-reading-wrapper .contains-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.cm-reading-wrapper .task-list-item {
+  list-style: none;
+}
+
+.cm-reading-wrapper .task-list-item-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  display: inline-block;
+  flex-shrink: 0;
+  width: 1.05em;
+  height: 1.05em;
+  margin: 0 0.4em 0 0;
+  padding: 0;
+  vertical-align: -0.15em;
+  border: 1.5px solid var(--label-tertiary);
+  border-radius: 0.28em; /* gentle square — clearly not a circle */
+  background-color: transparent;
+  cursor: default;
+  position: relative;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+/* Ticked: accent outline + accent check, matching the editor's accent ☑ (no fill). */
+.cm-reading-wrapper .task-list-item-checkbox:checked {
+  border-color: var(--accent);
+}
+
+/* Drawn checkmark (rotated border L) — em-scaled so it tracks the box size. */
+.cm-reading-wrapper .task-list-item-checkbox:checked::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 47%;
+  width: 0.25em;
+  height: 0.5em;
+  border: solid var(--accent);
+  border-width: 0 0.125em 0.125em 0;
+  transform: translate(-50%, -55%) rotate(45deg);
+}
+
+.cm-reading-wrapper blockquote {
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-2);
+  border-left: 3px solid var(--separator);
+  color: var(--label-secondary);
+}
+
+.cm-reading-wrapper code {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption1-size);
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  padding: 1px 4px;
+}
+
+.cm-reading-wrapper pre {
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  overflow-x: auto;
+  margin: 0 0 var(--space-2);
+}
+
+.cm-reading-wrapper pre code {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+/* ── highlight.js token colors (reading-view, class-based) ──────────────────
+ * Maps hljs-* classes to the same var(--*) palette as the CM6 editor tokens
+ * (D-THEME-CONSISTENCY).  tokens.css supplies dark-mode overrides for every
+ * var() referenced here — no per-mode duplication needed.
+ * NO raw hex allowed (stylelint token_discipline enforces this).
+ * Scoped under .cm-reading-wrapper pre code to avoid leaking globally.
+ */
+
+/* Keywords, control flow, module keywords → --system-pink */
+.cm-reading-wrapper pre code .hljs-keyword,
+.cm-reading-wrapper pre code .hljs-selector-tag,
+.cm-reading-wrapper pre code .hljs-section,
+.cm-reading-wrapper pre code .hljs-name,
+.cm-reading-wrapper pre code .hljs-tag { color: var(--system-pink); }
+
+/* Strings → --system-green */
+.cm-reading-wrapper pre code .hljs-string,
+.cm-reading-wrapper pre code .hljs-meta .hljs-string,
+.cm-reading-wrapper pre code .hljs-addition { color: var(--system-green); }
+
+/* Numbers, booleans, atoms → --system-orange */
+.cm-reading-wrapper pre code .hljs-number,
+.cm-reading-wrapper pre code .hljs-literal,
+.cm-reading-wrapper pre code .hljs-symbol,
+.cm-reading-wrapper pre code .hljs-bullet { color: var(--system-orange); }
+
+/* Comments → --label-tertiary (italic) */
+.cm-reading-wrapper pre code .hljs-comment,
+.cm-reading-wrapper pre code .hljs-quote { color: var(--label-tertiary); font-style: italic; }
+
+/* Types, built-ins, class names → --system-teal */
+.cm-reading-wrapper pre code .hljs-type,
+.cm-reading-wrapper pre code .hljs-built_in,
+.cm-reading-wrapper pre code .hljs-title.class_ { color: var(--system-teal); }
+
+/* Function names → --accent */
+.cm-reading-wrapper pre code .hljs-title,
+.cm-reading-wrapper pre code .hljs-title.function_ { color: var(--accent); }
+
+/* Variables, template vars, properties, params → --label */
+.cm-reading-wrapper pre code .hljs-variable,
+.cm-reading-wrapper pre code .hljs-template-variable,
+.cm-reading-wrapper pre code .hljs-property,
+.cm-reading-wrapper pre code .hljs-params { color: var(--label); }
+
+/* Attribute names → --system-indigo */
+.cm-reading-wrapper pre code .hljs-attr,
+.cm-reading-wrapper pre code .hljs-attribute,
+.cm-reading-wrapper pre code .hljs-selector-attr,
+.cm-reading-wrapper pre code .hljs-selector-pseudo { color: var(--system-indigo); }
+
+/* Operators, punctuation → --label-secondary */
+.cm-reading-wrapper pre code .hljs-operator,
+.cm-reading-wrapper pre code .hljs-punctuation { color: var(--label-secondary); }
+
+/* Metadata, doc-tags → --label-tertiary */
+.cm-reading-wrapper pre code .hljs-meta,
+.cm-reading-wrapper pre code .hljs-meta-keyword,
+.cm-reading-wrapper pre code .hljs-doctag { color: var(--label-tertiary); }
+
+/* Links → --accent */
+.cm-reading-wrapper pre code .hljs-link { color: var(--accent); }
+
+/* Regexp, escape sequences, deletions → --system-red */
+.cm-reading-wrapper pre code .hljs-regexp,
+.cm-reading-wrapper pre code .hljs-deletion,
+.cm-reading-wrapper pre code .hljs-char.escape_ { color: var(--system-red); }
+
+/* ── Code-block chrome (figure wrapper + header) ─────────────────────────────
+ * The <figure class="code-block"> is app-built (codeChrome.ts, post-sanitize).
+ * Wrap the existing <pre> inside with a sticky header showing the language
+ * badge, a soft-wrap toggle, and a copy button.
+ */
+
+.code-block {
+  position: relative;
+  margin: 0 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* Remove default figure margin set by browsers */
+figure.code-block {
+  margin-inline: 0;
+}
+
+/* The code-block figure now owns the spacing; unwrap the raw <pre> margin */
+.code-block pre {
+  margin: 0;
+  border-radius: 0;
+}
+
+/* Header: flex row, left-aligned badge, right-aligned buttons */
+.code-block__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-half) var(--space-1);
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--separator);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption1-size);
+  min-height: 2rem; /* compact header — buttons no longer need a 44px row */
+}
+
+/* Language badge — pushed left, buttons right via margin-left auto */
+.code-block__lang {
+  color: var(--label-secondary);
+  margin-right: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption1-size);
+  user-select: none;
+}
+
+/* Ghost icon buttons (wrap + copy) — compact: tighter than the 44px hit target
+ * so the header reads as code chrome, not a toolbar. */
+.code-block__wrap,
+.code-block__copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--label-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color 80ms ease, background-color 80ms ease;
+}
+
+/* Constrain the Lucide icons to 16px so they match the formatting-toolbar
+ * icons (.cm-toolbar__btn svg). Without this they hydrate at Lucide's default
+ * 24px and read as oversized next to every other icon in the editor. */
+.code-block__wrap svg,
+.code-block__copy svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.75;
+  flex-shrink: 0;
+}
+
+.code-block__wrap:hover,
+.code-block__copy:hover {
+  color: var(--label);
+  background-color: var(--fill-secondary);
+}
+
+/* Wrap toggle: active state */
+.code-block__wrap[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+/* Soft-wrap toggle: flip white-space on the contained <pre> */
+.code-block.is-wrapped pre {
+  white-space: pre-wrap;
+  overflow-x: visible;
+  word-break: break-word;
+}
+
+.cm-reading-wrapper a { color: var(--accent); text-decoration: underline; }
+
+.cm-reading-wrapper hr {
+  border: none;
+  border-top: 1px solid var(--separator);
+  margin: var(--space-2) 0;
+}
+
+.note-detail__tags {
+  font-size: var(--text-caption1-size);
+  color: var(--label-secondary);
+  font-family: var(--font-mono);
+}
+
+/* ── Task-specific styles ────────────────────────────────────────────────── */
+
+.task-detail__due,
+.task-detail__list {
+  font-size: var(--text-callout-size);
+  line-height: var(--text-callout-line);
+  color: var(--label-secondary);
+  margin: var(--space-1) 0;
+}
+
+.task-detail__due-label,
+.task-detail__list-label {
+  font-weight: 600;
+  color: var(--label-tertiary);
+  margin-right: var(--space-half);
+}
+
+.task-detail__due-value,
+.task-detail__list-value {
+  color: var(--label);
+}
+
+/* ── Event-specific styles ────────────────────────────────────────────────── */
+
+/* Browse row source badge */
+.event-browse-row__source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  padding: 2px var(--space-1);
+  border-radius: var(--radius-capsule);
+  font-size: var(--text-caption1-size);
+  font-weight: 600;
+  line-height: var(--text-caption1-line);
+  background-color: var(--fill-tertiary);
+  color: var(--label-secondary);
+  flex-shrink: 0;
+}
+
+.event-browse-row__source-badge svg {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2;
+}
+
+.event-browse-row__source-badge[data-source="jin"] {
+  background-color: var(--fill-secondary);
+  color: var(--accent);
+}
+
+.event-browse-row__source-badge[data-source="google"] {
+  background-color: var(--fill-secondary);
+  color: var(--system-green);
+}
+
+.event-browse-row__time {
+  font-size: var(--text-subheadline-size);
+  font-weight: 400;
+  line-height: var(--text-subheadline-line);
+  color: var(--label-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 56px;
+}
+
+/* Event detail */
+.events-detail-pane {
+  width: min(100%, var(--reading-width));
+  margin-inline: auto;
+  padding: var(--space-3);
+}
+
+.event-detail {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.event-detail__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.event-detail__heading-group { min-width: 0; }
+.event-detail__heading-group h2 { overflow-wrap: anywhere; }
+.event-detail__header-actions { display: flex; align-items: center; gap: var(--space-1); flex-shrink: 0; }
+.event-detail__overflow { position: relative; }
+.event-detail__overflow summary { list-style: none; }
+.event-detail__overflow summary::-webkit-details-marker { display: none; }
+.event-detail__destructive {
+  position: absolute;
+  right: 0;
+  z-index: 2;
+  min-width: 8rem;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--system-red);
+  box-shadow: var(--elevation-shadow);
+}
+
+.event-detail__kind-badge,
+.event-detail__source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  padding: 2px var(--space-1);
+  border-radius: var(--radius-capsule);
+  font-size: var(--text-caption1-size);
+  font-weight: 600;
+  line-height: var(--text-caption1-line);
+  background-color: var(--fill-tertiary);
+  color: var(--label-secondary);
+}
+
+.event-detail__kind-badge { color: var(--label-secondary); }
+.event-detail__read-only,
+.event-detail__privacy,
+.event-detail__operation-status {
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--fill-secondary);
+  color: var(--label-secondary);
+}
+.event-detail__privacy p { margin: var(--space-half) 0 0; }
+.event-detail__context-search { margin-block: var(--space-1); }
+.event-detail__more { color: var(--label-secondary); }
+.event-detail__more p { margin: var(--space-1) 0 0; }
+.confirm-dialog__checkbox { display: flex; gap: var(--space-1); align-items: flex-start; margin-top: var(--space-2); }
+
+.tasks-flexible-group { list-style: none; margin-block: var(--space-2); }
+.tasks-flexible-group__heading { margin: 0 0 var(--space-1); color: var(--label-secondary); }
+.tasks-flexible-group__tasks { list-style: none; margin: 0; padding: 0; }
+
+@media (max-width: 560px) {
+  .events-detail-pane { padding: var(--space-2); }
+  .event-detail__header { align-items: stretch; flex-direction: column; }
+  .event-detail__header-actions { justify-content: flex-end; }
+}
+
+.event-detail__source-badge svg {
+  width: 10px;
+  height: 10px;
+  stroke-width: 2;
+}
+
+.event-detail__source-badge[data-source="jin"] {
+  background-color: var(--fill-secondary);
+  color: var(--accent);
+}
+
+.event-detail__source-badge[data-source="google"] {
+  background-color: var(--fill-secondary);
+  color: var(--system-green);
+}
+
+.event-detail__recurring-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  padding: 2px var(--space-1);
+  border-radius: var(--radius-capsule);
+  font-size: var(--text-caption1-size);
+  font-weight: 600;
+  line-height: var(--text-caption1-line);
+  background-color: var(--fill-tertiary);
+  color: var(--label-tertiary);
+}
+
+.event-detail__time-section {
+  margin-bottom: var(--space-2);
+}
+
+.event-detail__date {
+  font-size: var(--text-headline-size);
+  font-weight: var(--text-headline-weight);
+  line-height: var(--text-headline-line);
+  color: var(--label);
+  margin: 0 0 var(--space-half) 0;
+}
+
+.event-detail__time {
+  font-size: var(--text-callout-size);
+  line-height: var(--text-callout-line);
+  color: var(--label-secondary);
+  margin: 0 0 var(--space-half) 0;
+}
+
+.event-detail__tz {
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+  color: var(--label-tertiary);
+  font-family: var(--font-mono);
+  margin: 0;
+}
+
+.event-detail__description {
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  color: var(--label);
+  margin: var(--space-2) 0;
+  white-space: pre-wrap;
+}
+
+.event-detail__location {
+  font-size: var(--text-callout-size);
+  line-height: var(--text-callout-line);
+  color: var(--label-secondary);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.event-detail__google-metadata {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-block: var(--space-3);
+}
+
+.event-detail__metadata-section {
+  min-width: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--fill-tertiary) 52%, transparent);
+}
+
+.event-detail__metadata-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-1);
+  color: var(--label-secondary);
+}
+
+.event-detail__metadata-heading svg {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+}
+
+.event-detail__identity,
+.event-detail__conference-solution,
+.event-detail__conference-id,
+.event-detail__conference-notes,
+.event-detail__reminder-summary {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.event-detail__metadata-pill,
+.event-detail__response-state {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: var(--fill-secondary);
+  color: var(--label-secondary);
+  font-size: var(--text-caption1-size);
+  line-height: 1.45;
+}
+
+.event-detail__attendee-list,
+.event-detail__conference-links,
+.event-detail__reminder-list {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.event-detail__attendee-limited {
+  margin: 10px 0 0;
+  color: var(--label-secondary);
+}
+
+.event-detail__attendee {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-half) var(--space-1);
+}
+
+.event-detail__attendee-identity {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.event-detail__attendee > .event-detail__metadata-pill {
+  grid-column: 1 / -1;
+}
+
+.event-detail__response-state[data-response="accepted"] { color: var(--system-green); }
+.event-detail__response-state[data-response="declined"] { color: var(--system-red); }
+.event-detail__response-state[data-response="tentative"] { color: var(--system-orange); }
+
+.event-detail__join-link {
+  display: inline-flex;
+  width: fit-content;
+  margin-bottom: var(--space-1);
+  text-decoration: none;
+}
+
+.event-detail__conference-id,
+.event-detail__conference-notes {
+  margin-top: var(--space-half);
+  color: var(--label-secondary);
+}
+
+.event-detail__conference-links,
+.event-detail__reminder-list {
+  margin-top: var(--space-1);
+  color: var(--label-secondary);
+  font-size: var(--text-footnote-size);
+}
+
+.event-detail__conference-link {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.event-detail__conference-entry-label {
+  color: var(--label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.event-detail__conference-credentials {
+  display: grid;
+  gap: 2px;
+  margin: var(--space-half) 0 0;
+  color: var(--label-secondary);
+}
+
+.event-detail__conference-credentials > div {
+  display: grid;
+  grid-template-columns: minmax(6rem, auto) minmax(0, 1fr);
+  gap: var(--space-1);
+}
+
+.event-detail__conference-credentials dt {
+  font-weight: 600;
+}
+
+.event-detail__conference-credentials dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .event-detail__google-metadata { grid-template-columns: 1fr; }
+}
+
+/* Detail-resident Event editor: same reading column, quiet field rhythm. */
+.event-edit {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.event-edit__field {
+  display: grid;
+  gap: var(--space-half);
+  min-width: 0;
+  color: var(--label-secondary);
+  font-size: var(--text-footnote-size);
+}
+
+.event-edit__field > input:not([type="checkbox"]),
+.event-edit__field > textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.event-edit__title {
+  font-size: var(--text-title2-size);
+  font-weight: var(--text-title2-weight);
+}
+
+.event-edit__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: end;
+}
+
+.event-edit__row .event-edit__field:has(input[type="checkbox"]) {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  align-items: center;
+  min-height: 44px;
+}
+
+.event-edit__when {
+  inline-size: min(100%, 460px);
+}
+
+.event-edit__all-day {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-direction: row-reverse;
+  gap: var(--space-1);
+  min-block-size: var(--hit-target);
+  padding-block-start: var(--space-1);
+  border-block-start: 0.5px solid var(--separator);
+}
+
+.event-edit__calendar {
+  max-inline-size: 100%;
+}
+
+.event-edit__linkage,
+.event-edit__feedback,
+.event-edit__conflict {
+  margin: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--fill-secondary);
+  color: var(--label-secondary);
+}
+
+.event-edit__conflict {
+  display: grid;
+  gap: var(--space-1);
+  border: 1px solid var(--separator);
+}
+
+.event-edit__conflict h3,
+.event-edit__conflict p { margin: 0; }
+.event-edit__conflict-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+
+@media (max-width: 560px) {
+  .event-edit__row { grid-template-columns: 1fr; }
+}
+
+/* ── Notes 3-pane layout (Wave 2A) ──────────────────────────────────────── */
+
+/*
+ * .notes-paned: turns the Notes section into a 3-column grid:
+ *   [folder-rail (fixed)] [list-pane (scrollable)] [detail-pane (fill)]
+ *
+ * On narrow viewports the rail is collapsed to icon-only width.
+ * The detail pane uses display:none (via .hidden) rather than grid tracks
+ * so the list pane expands to fill when no note is open.
+ */
+.notes-paned {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  grid-template-rows: 1fr;
+  height: 100%;
+  overflow: hidden;
+  /* Override .jin-content-body padding so the panes go edge-to-edge (Apple-Notes
+     style); each pane supplies its own internal padding. */
+  padding: 0;
+  /* Smooth collapse/reveal transition (D-PANE-TOGGLE). */
+  transition: grid-template-columns var(--duration-base) var(--ease-standard);
+}
+
+/*
+ * When a note is open the list pane is hidden (controller adds .hidden to it),
+ * so detail-open keeps TWO tracks — rail + full-width editor. Declaring a third
+ * 1fr track here left an empty grid column (the list's display:none track),
+ * which showed the grey app background as a wasted gutter beside the editor.
+ */
+.notes-paned.detail-open {
+  grid-template-columns: 200px 1fr;
+}
+
+/* ── Collapsible rail pane (D-PANE-TOGGLE) ───────────────────────────────── */
+
+/*
+ * .rail-collapsed: collapses the folder-rail grid track to 0.
+ * Overrides both base .notes-paned and .detail-open (this rule appears
+ * later in the file so same-specificity cascade ensures it wins).
+ * The transition on .notes-paned provides animation in both directions.
+ */
+.notes-paned.rail-collapsed {
+  grid-template-columns: 0 1fr;
+}
+
+.notes-paned.detail-open.rail-collapsed {
+  grid-template-columns: 0 1fr;
+}
+
+.notes-paned.rail-collapsed .notes-folder-rail {
+  overflow: hidden;
+  /* Ensure content is clipped when the grid track is 0. */
+  min-width: 0;
+}
+
+/* ── Folder rail column ───────────────────────────────────────────────────── */
+
+.notes-folder-rail {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+/* Rail header: title label + collapse control (D-PANE-TOGGLE) */
+.notes-folder-rail__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  border-bottom: 0.5px solid var(--separator);
+  flex-shrink: 0;
+}
+
+.notes-folder-rail__title {
+  color: var(--label-tertiary);
+  font-size: var(--text-caption1-size);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.notes-folder-rail__collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label-secondary);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+  flex-shrink: 0;
+}
+
+.notes-folder-rail__collapse-btn:hover {
+  background-color: var(--fill-tertiary);
+}
+
+.notes-folder-rail__collapse-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.75;
+}
+
+.notes-folder-rail__list {
+  flex: 0 1 42%;
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ── Notes Collections rail (declarative saved views) ─────────────────────── */
+
+.notes-collections {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 0.5px solid var(--separator);
+  padding: var(--space-1) 0;
+}
+
+.notes-collections__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-1) 0 var(--space-2);
+}
+
+.notes-collections__new-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label-secondary);
+  cursor: pointer;
+}
+
+.notes-collections__new-btn:hover {
+  background: var(--fill-tertiary);
+}
+
+.notes-collections__new-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.notes-collections__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.notes-collection-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-half);
+  padding-inline: var(--space-half);
+}
+
+.notes-collection-row {
+  flex: 1;
+  cursor: pointer;
+}
+
+.notes-collection-actions {
+  display: inline-flex;
+  flex: none;
+}
+
+.notes-collection-action {
+  min-block-size: auto;
+  min-inline-size: auto;
+  padding: var(--space-half);
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--label-tertiary);
+  font: inherit;
+  font-size: var(--text-caption2-size);
+  cursor: pointer;
+}
+
+.notes-collection-action:hover,
+.notes-collection-action:focus-visible {
+  background: var(--fill-tertiary);
+  color: var(--label);
+}
+
+.notes-folder-rail__new-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  margin-top: var(--space-1);
+  border: none;
+  border-top: 0.5px solid var(--separator);
+  background: transparent;
+  color: var(--label-secondary);
+  font-size: var(--text-footnote-size);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: start;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.notes-folder-rail__new-btn:hover {
+  background-color: var(--fill-quaternary);
+}
+
+.notes-folder-rail__new-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.75;
+  flex-shrink: 0;
+}
+
+/* ── Reveal control (visible only when rail is collapsed, D-PANE-TOGGLE) ──── */
+
+.notes-rail-reveal {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label-secondary);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+  margin: var(--space-1);
+}
+
+.notes-paned.rail-collapsed .notes-rail-reveal {
+  display: flex;
+}
+
+.notes-rail-reveal:hover {
+  background-color: var(--fill-tertiary);
+}
+
+.notes-rail-reveal svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.75;
+}
+
+/* ── Notes list pane ─────────────────────────────────────────────────────── */
+
+.notes-list-pane {
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+/* ── List pane header + New Note compose button (NN-2 / K-NN-1, K-NN-2) ─── */
+
+.notes-list-pane__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-1) var(--space-1);
+  margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-1)) var(--space-1);
+}
+
+.notes-search {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-half) var(--space-1);
+  min-width: 0;
+  flex: 1;
+  margin-inline-end: var(--space-2);
+}
+
+.notes-search__label {
+  color: var(--label-secondary);
+  font-size: var(--text-footnote-size);
+  white-space: nowrap;
+}
+
+.notes-search__input {
+  min-width: 0;
+  min-block-size: 32px;
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-sm);
+  background: var(--fill-quaternary);
+  color: var(--label);
+  font: inherit;
+  padding-inline: var(--space-1);
+}
+
+.notes-search__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.notes-search__count {
+  grid-column: 2;
+  min-height: var(--text-caption2-line);
+  color: var(--label-tertiary);
+  font-size: var(--text-caption2-size);
+}
+
+.notes-new-note-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label-secondary);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+  flex-shrink: 0;
+}
+
+.notes-new-note-btn:hover {
+  background-color: var(--fill-tertiary);
+}
+
+.notes-new-note-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.75;
+}
+
+/* ── Notes detail pane — S4: full-height flex column ────────────────────── */
+
+.notes-detail-pane {
+  border-inline-start: 0.5px solid var(--separator);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* item 5: reduced from var(--space-2) var(--space-3) (16px 24px) to 16px all-round;
+     the editor inset (clamp(16px,4vw,40px)) provides the comfortable reading margin. */
+  padding: var(--space-2);
+  height: 100%;
+  box-sizing: border-box;
+  /* Cool-white editor canvas background (replaces grey --bg-secondary bleed) */
+  background-color: var(--editor-canvas);
+}
+
+/* detailContent target: flex child that fills remaining pane space. */
+[data-notes-target="detailContent"] {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Notes detail pane header (item 2 + 3 + 1) ───────────────────────────── */
+
+/*
+ * A single flex row housing:
+ *   [rail-reveal (hidden by default)] [back-btn] [breadcrumb (flex:1)] [action-cluster]
+ *
+ * item 2: back button sits inside the header, so we suppress its bottom margin here
+ *         (Tasks/Events contexts keep the base margin-bottom from .browse-back-btn).
+ * item 3: breadcrumb fills the freed horizontal space between back button and actions.
+ * item 1: action cluster (icon-only attach/link buttons) is pinned to the right.
+ */
+.notes-detail-pane__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  margin-bottom: var(--space-2);
+}
+
+/* item 2: override the base margin-bottom on back-btn inside the Notes header row. */
+.notes-detail-pane__header .browse-back-btn {
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
+/* item 3: breadcrumb — fills center space, secondary/muted style. */
+.notes-detail-pane__breadcrumb {
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--label-secondary);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+  user-select: none;
+}
+
+/* item 1: action cluster container — flex row, gap, right-aligned via header flex. */
+.notes-detail-pane__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-half);
+  flex-shrink: 0;
+}
+
+/* ── Note-local stale-write presentation ─────────────────────────────────── */
+
+.notes-conflict {
+  flex-shrink: 0;
+  margin-bottom: var(--space-2);
+  padding: var(--space-2);
+  border: 0.5px solid var(--system-orange);
+  border-radius: var(--radius-md);
+  background: var(--fill-secondary);
+  color: var(--label);
+}
+
+.notes-conflict__title {
+  margin: 0 0 var(--space-half);
+  font-size: var(--text-headline-size);
+  line-height: var(--text-headline-line);
+}
+
+.notes-conflict p {
+  margin: 0 0 var(--space-1);
+  color: var(--label-secondary);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+}
+
+.notes-conflict__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.notes-conflict__status {
+  min-height: var(--text-footnote-line);
+  margin-top: var(--space-1);
+}
+
+/* ── Note history preview (inert text only) ───────────────────────────────── */
+
+.notes-history-dialog {
+  max-width: min(720px, calc(100vw - var(--space-4)));
+}
+
+.notes-history__layout {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) minmax(0, 1fr);
+  gap: var(--space-2);
+  min-height: 240px;
+}
+
+.notes-history__revisions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-half);
+  overflow-y: auto;
+}
+
+.notes-history__revision {
+  text-align: start;
+}
+
+.notes-history__preview {
+  min-width: 0;
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  padding: var(--space-2);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-sm);
+  background: var(--fill-quaternary);
+  color: var(--label);
+  font-family: var(--font-mono);
+  font-size: var(--text-footnote-size);
+  white-space: pre-wrap;
+}
+
+.notes-history__status {
+  min-height: var(--text-footnote-line);
+  color: var(--label-secondary);
+  font-size: var(--text-footnote-size);
+}
+
+/* ── Tooltip balloon (item 1 + item 4) ───────────────────────────────────── */
+
+/*
+ * Pure CSS tooltip via ::after + data-tooltip attribute.
+ * Appears below the element on :hover and :focus-visible.
+ * Glassmorphic: bg-elevated-2 + backdrop-filter + thin border + elevation shadow.
+ * All values are tokens; no raw hex.
+ *
+ * A11y: the host element must carry a descriptive aria-label — the tooltip is
+ * supplementary visual context only (not the primary accessible name).
+ */
+.has-tooltip {
+  position: relative;
+}
+
+.has-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--bg-elevated-2);
+  color: var(--label-secondary);
+  font-size: var(--text-caption1-size);
+  line-height: var(--text-caption1-line);
+  font-weight: 400;
+  white-space: nowrap;
+  padding: 4px var(--space-1);
+  border-radius: var(--radius-capsule);
+  border: 0.5px solid var(--separator);
+  box-shadow: var(--elevation-shadow);
+  backdrop-filter: saturate(var(--glass-saturate)) blur(var(--glass-blur-thin));
+  -webkit-backdrop-filter: saturate(var(--glass-saturate)) blur(var(--glass-blur-thin));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+  z-index: 100;
+}
+
+.has-tooltip:hover::after,
+.has-tooltip:focus-visible::after {
+  opacity: 1;
+}
+
+/* ── Folder tree row (Wave 2B — treeitem) ────────────────────────────────── */
+
+.folder-row {
+  list-style: none;
+}
+
+/* ── Treeitem focus ring (roving tabindex / WAI-ARIA) ───────────────────── */
+
+.folder-row[role="treeitem"]:focus {
+  outline: none;
+}
+
+.folder-row[role="treeitem"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Row body (.folder-row__btn is a non-focusable <div>, D-SELECTOR-STABILITY) */
+
+.folder-row__btn {
+  cursor: pointer;
+}
+
+/* ── Disclosure chevron ──────────────────────────────────────────────────── */
+
+.folder-row__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Reserve fixed width so leaf labels align with parent labels. */
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.folder-row__chevron svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+}
+
+/* Rotate 90° when the parent treeitem is expanded (CSS-driven, no JS needed). */
+[role="treeitem"][aria-expanded="true"] > .folder-row__btn > .folder-row__chevron {
+  transform: rotate(90deg);
+}
+
+/* Leaf spacer: same width as chevron but invisible — aligns labels. */
+.folder-row__chevron--leaf {
+  visibility: hidden;
+}
+
+/* ── Folder icon ─────────────────────────────────────────────────────────── */
+
+/* #1: muted by default so the folder NAME is the visual primary.
+   13px (vs 14px chevron/name) to reduce icon weight further. */
+.folder-row__icon {
+  flex-shrink: 0;
+  color: var(--label-tertiary);
+}
+
+/* #1: restore accent color on the icon only when its row is active — the
+   broader .folder-row__btn rule sets color:accent on the row, but the
+   explicit color on .folder-row__icon above overrides inheritance.
+   This rule's higher specificity (3 vs 1 classes) re-applies accent. */
+[role="treeitem"][aria-selected="true"] > .folder-row__btn .folder-row__icon,
+[role="treeitem"].is-active > .folder-row__btn .folder-row__icon {
+  color: var(--accent);
+}
+
+/* ── Name + count ────────────────────────────────────────────────────────── */
+
+.folder-row__name {
+  flex: 1 1 0%;
+}
+
+.folder-row__count {
+  flex-shrink: 0;
+}
+
+/* ── Per-row kebab button (folder-mgmt) ─────────────────────────────────── */
+
+/* D-SELECTOR-STABILITY: the kebab is INSIDE .folder-row__btn (a non-focusable
+   div) so it does not interfere with the row-select listener. The button
+   itself IS focusable (primary keyboard affordance for folder actions). */
+.folder-row__menu-btn {
+  display: none;  /* hidden until row is hovered/focused for a clean look */
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-inline-start: auto;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label-secondary);
+  cursor: pointer;
+  padding: 0;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+/* Show kebab when the treeitem row is hovered, focused, or active. */
+[role="treeitem"]:hover .folder-row__menu-btn,
+[role="treeitem"]:focus-within .folder-row__menu-btn,
+[role="treeitem"].is-active .folder-row__menu-btn,
+.folder-row__menu-btn:focus-visible {
+  display: flex;
+}
+
+.folder-row__menu-btn:hover {
+  background-color: var(--fill-secondary);
+}
+
+.folder-row__menu-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.75;
+}
+
+/* ── Per-row actions menu (role=menu) ───────────────────────────────────── */
+
+/* The menu is positioned relative to the <li role=treeitem> wrapper. */
+.folder-row {
+  position: relative;
+}
+
+.folder-row__menu {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline-end: 0;
+  z-index: 200;
+  min-width: 160px;
+  padding: var(--space-half) 0;
+  background-color: var(--bg-elevated);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  list-style: none;
+  margin: 0;
+}
+
+.folder-row__menu[hidden] {
+  display: none;
+}
+
+.folder-row__menuitem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--label);
+  font-size: var(--text-subheadline-size);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: start;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.folder-row__menuitem:hover {
+  background-color: var(--fill-quaternary);
+}
+
+.folder-row__menuitem svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.75;
+  flex-shrink: 0;
+}
+
+/* ── Drop target highlight (S4 drag-note-into-folder) ───────────────────── */
+
+.folder-row__btn--drop-target {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+  background-color: var(--fill-quaternary) !important;
+}
+
+/* ── Nested group (<ul role=group>) ─────────────────────────────────────── */
+
+.folder-row__group {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* [hidden] on the group collapses the subtree. */
+.folder-row__group[hidden] {
+  display: none;
+}
+
+/* ── Filter bar (Tasks view) ─────────────────────────────────────────────── */
+
+.tasks-filter-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.tasks-filter-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tasks-filter-controls[hidden] {
+  display: none;
+}
+
+.tasks-filter-toggle {
+  display: none;
+  align-items: center;
+  gap: var(--space-half);
+  flex: 0 0 auto;
+}
+
+.tasks-filter-toggle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tasks-filter-count:not(:empty) {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 18px;
+  block-size: 18px;
+  padding-inline: 4px;
+  border-radius: var(--radius-capsule);
+  background: var(--ink-primary);
+  color: var(--ink-on);
+  font-size: var(--text-caption2-size);
+}
+
+/* Descendant selector — applies both before JinSelect wraps the select (the
+ * shell is transparent, so position in the flex gap is preserved) and after
+ * (the select is still a descendant of .tasks-filter-bar). When inside a
+ * .jin-select shell, padding-inline-end and appearance are overridden by the
+ * .jin-select select rule in forms.css (which loads after this file). */
+.tasks-filter-bar select {
+  padding: var(--space-half) var(--space-1);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-elevated);
+  color: var(--label);
+  font-family: var(--font-text);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+  min-block-size: var(--hit-target);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* ── P6 — View segment (List / Board) ────────────────────────────────────── */
+
+.tasks-view-segment {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 2px;
+  margin-inline-start: auto;
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-capsule);
+  background: var(--fill-quaternary);
+}
+
+.tasks-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-half) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-capsule);
+  background: transparent;
+  color: var(--label-secondary);
+  min-block-size: var(--desktop-hit-target);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.tasks-view-toggle:hover {
+  color: var(--label);
+  background: var(--bg-tertiary);
+}
+
+.tasks-view-toggle[aria-pressed="true"] {
+  color: var(--ink-primary);
+  background: var(--bg-elevated);
+  box-shadow: 0 1px 3px var(--ink-bleed);
+}
+
+.tasks-view-toggle:focus-visible,
+.tasks-filter-toggle:focus-visible {
+  outline: 2px solid var(--ink-stroke);
+  outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+  .tasks-filter-bar {
+    flex-wrap: wrap;
+  }
+
+  .tasks-filter-toggle {
+    display: inline-flex;
+  }
+
+  .tasks-filter-controls {
+    order: 3;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+  }
+}
+
+.tasks-main--detail-open .tasks-filter-bar {
+  flex-wrap: wrap;
+}
+
+.tasks-main--detail-open .tasks-filter-toggle {
+  display: inline-flex;
+}
+
+.tasks-main--detail-open .tasks-filter-controls {
+  order: 3;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+}
+
+/* ── P5/P6 — Section group headers (List view) ───────────────────────────── */
+
+.tasks-section-group {
+  margin-bottom: var(--space-2);
+}
+
+.tasks-section-group__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  border-bottom: 0.5px solid var(--separator);
+  margin-bottom: var(--space-1);
+}
+
+.tasks-section-group__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: none;
+  border: none;
+  color: var(--label-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  transition: color 100ms ease;
+}
+
+.tasks-section-group__toggle:hover {
+  color: var(--label);
+}
+
+.tasks-section-group__toggle svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 200ms ease;
+}
+
+.tasks-section-group__toggle[aria-expanded="false"] svg {
+  transform: rotate(-90deg);
+}
+
+.tasks-section-group__name {
+  flex: 1;
+  color: var(--label);
+  font-weight: 600;
+  cursor: default;
+}
+
+.tasks-section-group__name[title] {
+  cursor: pointer;
+}
+
+.tasks-section-group__rename-input {
+  flex: 1;
+  background: var(--bg-elevated);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-xs);
+  padding: 2px var(--space-half);
+  color: var(--label);
+  font-family: var(--font-text);
+  font-size: var(--text-subheadline-size);
+  font-weight: 600;
+}
+
+.tasks-section-group__count {
+  color: var(--label-secondary);
+  min-inline-size: 20px;
+  text-align: center;
+}
+
+.tasks-section-group__delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: none;
+  border: none;
+  color: var(--label-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  opacity: 0;
+  transition: opacity 150ms ease, color 100ms ease;
+}
+
+.tasks-section-group__header:hover .tasks-section-group__delete-btn {
+  opacity: 1;
+}
+
+.tasks-section-group__delete-btn:hover {
+  color: var(--system-red);
+}
+
+.tasks-section-group__delete-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ── S8: section header drag-to-reorder (AC-S8-01) ───────────────────────── */
+
+.tasks-section-group__header--draggable {
+  cursor: grab;
+}
+
+.tasks-section-group__header--draggable:active {
+  cursor: grabbing;
+}
+
+.tasks-section-group__header--dragging {
+  opacity: 0.5;
+}
+
+.tasks-section-group__add-section-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  padding: var(--space-half) var(--space-1);
+  background: none;
+  border: 0.5px dashed var(--separator);
+  border-radius: var(--radius-sm);
+  color: var(--label-secondary);
+  font-family: var(--font-text);
+  font-size: var(--text-footnote-size);
+  cursor: pointer;
+  margin-top: var(--space-2);
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.tasks-section-group__add-section-btn:hover {
+  color: var(--label);
+  border-color: var(--label-tertiary);
+}
+
+.tasks-section-group__add-section-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ── P6 / S4 — Board view (Kanban by TaskStatus) ─────────────────────────── */
+/*
+ * S4: columns are keyed by TaskStatus (Todo/Doing/Done) now, not section —
+ * `.tasks-board__add-column` (the retired "Add Section" column) is gone,
+ * along with every section-only affordance a status column has no use for
+ * (rename, delete, collapse). `.tasks-board__column-name` /
+ * `.tasks-board__column-count` replace the shared section-header classes for
+ * this context (a fixed, non-editable column no longer needs the collapse
+ * toggle or delete button `.tasks-section-group__header` carries).
+ */
+
+.tasks-board {
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-3);
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+  min-block-size: 200px;
+}
+
+.tasks-board__column {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  transition: opacity 120ms ease;
+}
+
+/* S4 (AC-S4-04/05): an illegal drop target for the card currently being
+   dragged. The column never calls preventDefault() on dragover while this
+   class (and aria-disabled="true") is set — see item.ts / render.ts — so
+   this is purely a visual echo of a refusal that has already happened at
+   the event layer, not the mechanism itself. */
+.tasks-board__column--drop-disabled {
+  opacity: 0.45;
+}
+
+.tasks-board__column-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-bottom: var(--space-1);
+  border-bottom: 0.5px solid var(--separator);
+  margin-bottom: var(--space-1);
+}
+
+.tasks-board__column-name {
+  flex: 1;
+  color: var(--label);
+  font-weight: 600;
+}
+
+.tasks-board__column-count {
+  color: var(--label-secondary);
+  min-inline-size: 20px;
+  text-align: center;
+}
+
+.tasks-board__column-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * Task item — the ONE row/card renderer (S2: buildTaskItem, item.ts).
+ *
+ * `.task-item` is the shared shell; `.task-item--row` / `.task-item--card`
+ * supply ONLY layout differences (flat line vs. boxed card). Every affordance
+ * below is present, and wired identically, in both variants (Approach §1 /
+ * AC-S2-02) — a drift can no longer be expressed in TypeScript, only in CSS,
+ * which is exactly what a "skin" should be. `.task-row__*` / `.task-card__*`
+ * are retired; this section replaces them.
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+.task-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  position: relative;
+}
+
+/* ── Row variant: one clean line (list view) ─────────────────────────────── */
+.task-item--row {
+  padding-inline: var(--space-1);
+  border-bottom: 0.5px solid var(--separator);
+  border-radius: 0;
+}
+
+.task-item--row:hover {
+  background: var(--fill-quaternary);
+}
+
+/* ── Card variant: boxed card, stacked (Board view) ──────────────────────── */
+.task-item--card {
+  align-items: flex-start;
+  background: var(--bg-elevated);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  transition: box-shadow 120ms ease;
+}
+
+.task-item--card:hover {
+  box-shadow: 0 2px 8px -2px var(--elevation-shadow);
+}
+
+/* ── Drag-and-drop manual reorder (identical in both variants) ───────────── */
+
+/* Drag handle — revealed on item hover. Row: fixed-width gutter before the
+   checkbox. Card: absolutely positioned in the top-right corner. */
+.task-item__drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--label-quaternary, var(--label-secondary));
+  opacity: 0;
+  cursor: grab;
+  flex-shrink: 0;
+  transition: opacity 0.1s ease;
+}
+
+.task-item:hover .task-item__drag-handle,
+.task-item:focus-within .task-item__drag-handle {
+  opacity: 1;
+}
+
+.task-item__drag-handle:active {
+  cursor: grabbing;
+}
+
+.task-item--row .task-item__drag-handle {
+  width: 24px;
+  min-width: 24px;
+  height: 100%;
+}
+
+.task-item--row .task-item__drag-handle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.task-item--card .task-item__drag-handle {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+}
+
+.task-item--card .task-item__drag-handle svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Item being dragged */
+.task-item--dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+/* Drop indicator — thin accent line above/below the target item */
+.task-item--drop-above {
+  box-shadow: 0 -2px 0 0 var(--accent);
+}
+
+.task-item--drop-below {
+  box-shadow: 0 2px 0 0 var(--accent);
+}
+
+/* ── Selection (S3 — Approach §2): drives the ONE detail pane ─────────────── */
+.task-item--selected.task-item--row {
+  background: var(--fill-tertiary);
+  box-shadow: inset 2px 0 0 0 var(--accent);
+}
+
+.task-item--selected.task-item--card {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+/* ── S6: nested child items (list view — AC-S6-13/14/15) ──────────────────── */
+/*
+ * `.task-item--child` renders a subtask nested directly beneath its parent
+ * in list view: indented, with a faint left rule tying it visually to the
+ * parent above it. It never carries a drag handle (AC-S6-15 — the builder
+ * removes it entirely, matching the pre-S2 "no DnD wiring" look).
+ */
+.task-item--child.task-item--row {
+  padding-inline-start: calc(var(--space-1) + 24px);
+  border-inline-start: 2px solid var(--separator);
+  margin-inline-start: var(--space-2);
+}
+
+/* Collapse/expand caret — S6 (AC-S6-14). Prepended into a parent item that
+   has children; toggles between chevron-down (expanded) / chevron-right
+   (collapsed) — both already registered in lib/icons/index.ts. */
+.task-item__collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--label-secondary);
+  cursor: pointer;
+}
+
+.task-item__collapse-toggle:hover {
+  color: var(--label);
+}
+
+.task-item__collapse-toggle svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Parent breadcrumb chip — S6: a standalone child (board / smart views /
+   "All Lists") names its parent. Plain text, no icon (Unicode arrow glyph in
+   the label itself — see item.ts), so no icon registration is needed. */
+.task-item__parent-chip {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: var(--fill-quaternary, var(--fill-tertiary));
+  border-radius: var(--radius-capsule);
+  padding: 1px var(--space-1);
+  color: var(--label-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-item__parent-chip:hover {
+  color: var(--accent);
+}
+
+/* ── P10: Reminder chips and editor ───────────────────────────────────────── */
+
+.reminder-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+.reminder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: var(--fill-quaternary, rgba(128, 128, 128, 0.12));
+  border-radius: 12px;
+  color: var(--label);
+  font-size: var(--text-caption2-size);
+  line-height: 1.4;
+}
+
+.reminder-chip svg {
+  width: 12px;
+  height: 12px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.reminder-chip__remove {
+  background: none;
+  border: none;
+  padding: 0 0 0 2px;
+  cursor: pointer;
+  color: var(--label-secondary);
+  font-size: var(--text-footnote-size);
+  line-height: 1;
+}
+
+.reminder-chip__remove:hover {
+  color: var(--system-red, var(--label));
+}
+
+.task-detail__reminders {
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.task-detail__reminders-heading {
+  font-size: var(--text-subheadline-size, 13px);
+  font-weight: 600;
+  color: var(--label-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.reminder-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: none;
+  border: 1px dashed var(--separator);
+  border-radius: 8px;
+  color: var(--label-secondary);
+  font-size: var(--text-caption1-size);
+  cursor: pointer;
+  margin-top: 6px;
+  transition: border-color 0.1s, color 0.1s;
+}
+
+.reminder-add-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.reminder-add-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.reminder-add-dropdown {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 4px;
+  background: var(--bg-secondary, var(--bg-secondary));
+  border: 1px solid var(--separator);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  min-width: 180px;
+  z-index: 100;
+}
+
+.reminder-add-dropdown.hidden {
+  display: none;
+}
+
+.reminder-add-dropdown__option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 12px;
+  background: none;
+  border: none;
+  border-radius: 7px;
+  font-size: var(--text-footnote-size);
+  color: var(--label);
+  cursor: pointer;
+}
+
+.reminder-add-dropdown__option:hover {
+  background: var(--fill-quaternary, rgba(128, 128, 128, 0.12));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Tasks section layout — rail sidebar + scrollable main content flex row
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Override .jin-content-body padding so the rail and main panes are edge-to-edge.
+   Each pane supplies its own internal padding (same pattern as .notes-paned). */
+.jin-content-body[data-section-name="tasks"] {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ── Lists rail (P3) — mirrors .notes-folder-rail (browse.css:1045) ─────────── */
+
+.tasks-lists-rail {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+.tasks-lists-rail__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  border-bottom: 0.5px solid var(--separator);
+  flex-shrink: 0;
+}
+
+.tasks-lists-rail__title {
+  color: var(--label-tertiary);
+  font-size: var(--text-caption1-size);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.tasks-lists-rail__list {
+  flex: 1 1 0%;
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ── Smart Views group (S5) — above the Lists group, same row styling ────────
+ * `.tasks-lists-rail__header` above is reused verbatim for BOTH the
+ * "Smart Views" and "Lists" section titles — the Smart Views one simply has
+ * no trailing button, so `justify-content: space-between` just left-aligns
+ * the label, no extra rule needed. */
+.tasks-lists-rail__smart-list {
+  flex: 0 0 auto;
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) 0;
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.tasks-lists-rail__new-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label-secondary);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+  flex-shrink: 0;
+}
+
+.tasks-lists-rail__new-btn:hover {
+  background-color: var(--fill-tertiary);
+}
+
+.tasks-lists-rail__new-btn svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.75;
+}
+
+/* ── tasks-main — S3: two-column grid (list | detail pane) ────────────────────
+ *
+ * Track 1 (list panel) is always `1fr`; track 2 (the pane) is collapsed to
+ * `0` until `.tasks-main--detail-open` is toggled by TasksController. The
+ * list panel NEVER gets a `.hidden` class (AC-S3-01) — it is always the
+ * first grid item, always laid out, always clickable. This replaces the old
+ * single-column flex stack that page-swapped listPanel <-> detailPanel.
+ */
+.tasks-main {
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  grid-template-rows: 1fr;
+  overflow: hidden;
+  transition: grid-template-columns var(--duration-base) var(--ease-standard);
+}
+
+.tasks-main--detail-open {
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+}
+
+/* List panel (grid track 1) — owns its own scroll + the padding tasks-main
+   used to supply directly (back when it was the lone flex child). */
+[data-tasks-target="listPanel"] {
+  overflow-y: auto;
+  min-width: 0;
+  padding: var(--space-3);
+}
+
+/* ── Detail pane (grid track 2) — the ONE task editor (S3, Approach §2) ───── */
+.tasks-detail-pane {
+  border-inline-start: 0.5px solid var(--separator);
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+  padding: var(--space-3);
+  background-color: var(--bg-elevated);
+}
+
+/* ── Pane header: Delete + Close (S3) ─────────────────────────────────────── */
+.tasks-detail-pane__header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  margin-bottom: var(--space-2);
+}
+
+.tasks-detail-pane__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-half);
+}
+
+.tasks-detail-pane__close-btn,
+.tasks-detail-pane__delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label-secondary);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+
+.tasks-detail-pane__close-btn:hover {
+  background-color: var(--fill-tertiary);
+}
+
+.tasks-detail-pane__delete-btn:hover {
+  background-color: var(--fill-tertiary);
+  color: var(--system-red);
+}
+
+.tasks-detail-pane__close-btn svg,
+.tasks-detail-pane__delete-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * S7 — Bulk panel: the pane switches to this instead of a single task's
+ * fields once 2+ items are selected (Approach: "the pane switches to a bulk
+ * panel"). Reuses `.task-detail__field-row` / `.task-detail__field-label`
+ * (buildFieldRow, shared with the single-task editor) for the Set-status /
+ * Move-to-list rows — only the panel shell and its own controls are new.
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+.tasks-bulk-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tasks-bulk-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.tasks-bulk-panel__title {
+  margin: 0;
+}
+
+.tasks-bulk-panel__clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label-secondary);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+
+.tasks-bulk-panel__clear-btn:hover {
+  background-color: var(--fill-tertiary);
+}
+
+.tasks-bulk-panel__clear-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tasks-bulk-panel__note {
+  color: var(--label-secondary);
+  margin: 0;
+}
+
+.tasks-bulk-panel__status-select,
+.tasks-bulk-panel__list-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tasks-bulk-panel .form-select {
+  min-block-size: var(--space-4);
+  padding-block: var(--space-half);
+  font-size: var(--text-callout-size);
+}
+
+.tasks-bulk-panel__actions {
+  display: flex;
+  margin-block-start: var(--space-1);
+}
+
+.tasks-bulk-panel__delete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.tasks-bulk-panel__delete-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* ── Narrow-viewport collapse (responsive, S3) ────────────────────────────────
+ * Below this width a fixed-width pane column would crush the list (owner
+ * instruction: "don't let it crush the list"). Instead the pane becomes a
+ * slide-over overlay — the grid stays single-track (list keeps full width,
+ * still visible + clickable per AC-S3-01) and the pane floats above it.
+ */
+@media (max-width: 860px) {
+  .tasks-main--detail-open {
+    grid-template-columns: minmax(0, 1fr) 0;
+  }
+
+  .tasks-detail-pane {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-end: 0;
+    width: min(420px, 100vw);
+    z-index: 100;
+    box-shadow: 0 4px 16px -2px var(--elevation-shadow);
+    transform: translateX(100%);
+    transition: transform var(--duration-base) var(--ease-standard);
+  }
+
+  .tasks-main--detail-open .tasks-detail-pane {
+    transform: translateX(0);
+  }
+}
+
+/* ── Content (primary open action + independent metadata/actions) ────────── */
+
+.task-item__content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
+.task-item__body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  padding: var(--space-1) 0;
+  cursor: pointer;
+  text-align: start;
+  font-family: inherit;
+  color: var(--label);
+}
+
+.task-item--card .task-item__content {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+}
+
+.task-item--card .task-item__body {
+  align-items: flex-start;
+  padding: 0;
+  width: 100%;
+}
+
+/* S7: keyboard focus ring (roving tabindex — TasksController's ArrowUp/Down
+   move this real .focus() call between item bodies). The global
+   `:focus-visible` rule (typography.css) already supplies the outline;
+   this only rounds it to match the item's own border-radius. */
+.task-item__body:focus-visible {
+  border-radius: var(--radius-sm);
+}
+
+.task-item__title {
+  font-size: var(--text-callout-size);
+  line-height: var(--text-callout-line);
+  font-weight: 500;
+  color: var(--label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.task-item--row .task-item__title {
+  flex: 1 1 0%;
+}
+
+.task-item--card .task-item__title {
+  font-size: var(--text-headline-size);
+  font-weight: var(--text-headline-weight);
+  white-space: normal;
+  word-break: break-word;
+}
+
+[data-task-status="done"] .task-item__title {
+  text-decoration: line-through;
+  color: var(--label-tertiary);
+}
+
+.task-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-half);
+  flex-shrink: 0;
+}
+
+/* ── Subtask progress slot (populated in S6; inert placeholder here) ─────── */
+.task-item__subtask-progress {
+  font-size: var(--text-caption2-size);
+  line-height: var(--text-caption2-line);
+  color: var(--label-secondary);
+  flex-shrink: 0;
+}
+
+.task-item__subtask-progress:empty {
+  display: none;
+}
+
+/* ── Status badge — .browse-status-badge handles display + colors; this rule
+   is present so the element class is not ruleless. ─────────────────────── */
+.task-item__status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+}
+
+/* Status glyph — <i> element, Lucide replaces its innerHTML with <svg>. */
+.task-item__status-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Status text — visible accessible label inside the badge (not hidden);
+   color and size inherited from .browse-status-badge. */
+.task-item__status-label {
+  font-size: var(--text-caption1-size);
+  line-height: var(--text-caption1-line);
+  color: inherit;
+}
+
+/* ── Priority badge ───────────────────────────────────────────────────────── */
+
+.task-item__priority {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  flex-shrink: 0;
+}
+
+.task-item__priority:not(:has(svg)) {
+  display: none;
+}
+
+/* Priority glyph; color driven by [data-priority] variant rules below. */
+.task-item__priority-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.task-item__priority-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.task-item__priority-icon[data-priority="high"] {
+  color: var(--system-red);
+}
+
+.task-item__priority-icon[data-priority="medium"] {
+  color: var(--system-orange);
+}
+
+.task-item__priority-icon[data-priority="low"] {
+  color: var(--label-secondary);
+}
+
+/* Priority text label */
+.task-item__priority-label {
+  font-size: var(--text-caption1-size);
+  line-height: var(--text-caption1-line);
+  color: var(--label-secondary);
+}
+
+[data-task-status="done"] .task-item__priority,
+[data-task-status="cancelled"] .task-item__priority {
+  opacity: 0.45;
+}
+
+/* ── Tags — chips with separation and a # affordance ─────────────────────── */
+.task-item__tags {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-half);
+  flex-shrink: 0;
+}
+
+/* ── Hover-revealed action cluster (edit + delete) ────────────────────────── */
+
+.task-item__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.task-item:hover .task-item__actions,
+.task-item:focus-within .task-item__actions {
+  opacity: 1;
+}
+
+/* Delete icon button (S3: the edit/pencil button is retired — AC-S3-04) */
+.task-item__delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: var(--space-half);
+  border-radius: var(--radius-sm);
+  color: var(--label-secondary);
+  cursor: pointer;
+  /* Override tap-target's 44px minimum for compact icon buttons in the item. */
+  min-block-size: auto;
+  min-inline-size: auto;
+  width: 28px;
+  height: 28px;
+  transition: background-color var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+
+.task-item__delete-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.task-item__delete-btn:hover {
+  background-color: var(--fill-tertiary);
+  color: var(--system-red);
+}
+
+/* ── S4: Reopen action (done board card, AC-S4-06) ────────────────────────── */
+/*
+ * Always visible (unlike .task-item__actions above) — a `done` card is
+ * otherwise inert on the board (Approach §3: "two honest clicks beat one
+ * lying one"), so its one legal way back must not be hidden behind hover.
+ */
+.task-item__reopen-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  margin-top: var(--space-1);
+  padding: 2px var(--space-1);
+  border-radius: var(--radius-capsule);
+  border: 0.5px solid var(--separator);
+  background: var(--fill-primary);
+  color: var(--accent);
+  font-family: inherit;
+  font-size: var(--text-caption2-size);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.task-item__reopen-btn:hover {
+  background: var(--fill-secondary, var(--fill-primary));
+}
+
+.task-item__reopen-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ── Inline "Add task" row (P1 S1.4) ──────────────────────────────────────────── */
+
+.task-add-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+}
+
+.task-add-row svg {
+  width: 16px;
+  height: 16px;
+  color: var(--label-tertiary);
+  flex-shrink: 0;
+}
+
+/* Inline text input — transparent with border-bottom underline style.
+   Mirrors .form-input padding/font but keeps a lighter, in-list feel. */
+.task-add-input {
+  flex: 1 1 0%;
+  min-width: 0;
+  padding: var(--space-half) var(--space-1);
+  background: transparent;
+  border: none;
+  border-bottom: 0.5px solid var(--separator);
+  color: var(--label);
+  font-family: var(--font-text);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.task-add-input:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+
+.task-add-input::placeholder {
+  color: var(--label-tertiary);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   ToDo visual pass (VG-GUI-8 follow-up).
+   `.task-tag-chip` is the per-chip look shared by `.task-item__tags`
+   (buildTagChips, lib/lists/render.ts) — the row-flattening rules that used
+   to live here are superseded by the unified `.task-item` / `.task-item--row`
+   section above (S2). Tokens only.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+.task-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding-block: 1px;
+  padding-inline: var(--space-1);
+  font-size: var(--text-caption2-size);
+  line-height: var(--text-caption2-line);
+  color: var(--label-secondary);
+  background: var(--fill-tertiary);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+.task-tag-chip::before {
+  content: "#";
+  margin-inline-end: 1px;
+  opacity: 0.5;
+}
+
+.due-chip-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  flex-shrink: 0;
+}
+.tasks-section-group__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Lists rail rows ─────────────────────────────────────────────────────────── */
+.lists-rail__row {
+  list-style: none;
+  cursor: pointer;
+}
+.lists-rail__row--active .lists-rail__row-btn {
+  color: var(--label);
+  font-weight: 600;
+}
+
+/* ── S5: drag-to-reorder visual state (AC-S5-08) ─────────────────────────── */
+.lists-rail__row[draggable="true"] {
+  cursor: grab;
+}
+.lists-rail__row--dragging {
+  opacity: 0.5;
+}
+.lists-rail__swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-sm);
+  background: var(--sw, var(--fill-secondary));
+  flex-shrink: 0;
+}
+.lists-rail__row-btn {
+  flex: 1 1 0%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: start;
+  color: var(--label);
+}
+.lists-rail__name {
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lists-rail__count {
+  color: var(--label-tertiary);
+  flex-shrink: 0;
+}
+.lists-rail__row:hover .lists-rail__count,
+.lists-rail__row:focus-within .lists-rail__count {
+  display: none;
+}
+.lists-rail__edit-btn,
+.lists-rail__delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  min-width: 0;
+  min-height: 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--label-secondary);
+  cursor: pointer;
+}
+.lists-rail__edit-btn:hover,
+.lists-rail__delete-btn:hover {
+  background: var(--fill-tertiary);
+}
+.lists-rail__delete-btn:hover {
+  color: var(--system-red);
+}
+.lists-rail__edit-btn svg,
+.lists-rail__delete-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* List rail colors share the same palette tokens as the global picker. */
+.lists-rail__swatch[data-color="accent"] { --sw: var(--accent); }
+.lists-rail__swatch[data-color="sky"] { --sw: var(--system-teal); }
+.lists-rail__swatch[data-color="danger"] { --sw: var(--system-red); }
+.lists-rail__swatch[data-color="warning"] { --sw: var(--system-yellow); }
+.lists-rail__swatch[data-color="success"] { --sw: var(--system-green); }
+.lists-rail__swatch[data-color="purple"] { --sw: var(--system-purple); }
+.lists-rail__swatch[data-color="pink"] { --sw: var(--system-pink); }
+.lists-rail__swatch[data-color="orange"] { --sw: var(--system-orange); }
+
+/* ── Task detail panel ───────────────────────────────────────────────────────── */
+.task-detail__status,
+.task-detail__priority {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+}
+.task-detail__status-icon,
+.task-detail__priority-icon {
+  display: inline-flex;
+  align-items: center;
+}
+.task-detail__priority-icon[data-priority="high"] { color: var(--system-red); }
+.task-detail__priority-icon[data-priority="medium"] { color: var(--system-orange); }
+.task-detail__priority-icon[data-priority="low"] { color: var(--label-secondary); }
+.task-detail__title-editable {
+  font-size: var(--text-title2-size);
+  line-height: var(--text-title2-line);
+  font-weight: 600;
+  color: var(--label);
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  padding-block: var(--space-half);
+  padding-inline: 0;
+  font-family: inherit;
+}
+.task-detail__title-editable:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+.task-detail__body-section {
+  margin-block-start: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.task-detail__body {
+  width: 100%;
+  min-height: 140px;
+  resize: vertical;
+  padding: var(--space-2);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--label);
+  font-family: inherit;
+  font-size: var(--text-callout-size);
+  line-height: var(--text-callout-line);
+}
+.task-detail__body:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.browse-detail__edit-actions {
+  display: flex;
+  gap: var(--space-1);
+  margin-block-start: var(--space-2);
+}
+.task-detail__save-btn {
+  align-self: flex-start;
+  padding-block: var(--space-1);
+  padding-inline: var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--ink-primary);
+  color: var(--ink-on);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ── ITEM 6 / S2: Checkbox button + done-state item styling ────────────────── */
+
+/* .task-item__checkbox — the status-btn doubles as a simple checkbox for
+   done/todo, in BOTH variants (S2 — one item, two skins). */
+
+/* The status button carries .task-item__status-btn as its JS/test hook and
+   .task-item__checkbox as its skin. This rule exists so the hook class is not
+   ruleless — the seal styling below is what actually paints it. */
+.task-item__status-btn {
+  flex-shrink: 0;
+}
+/* ── Completion toggle — cinnabar seal + nanquim ink brushstroke ────────────────
+   Empty = a quiet unstamped chop (muted cinnabar ring). Checked = the seal
+   presses: solid cinnabar disc + a black-ink brushstroke check knocked out in
+   warm off-white ("signed and sealed"). Brush path via CSS mask so it tints. */
+.task-item__checkbox {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  min-width: 0;
+  min-inline-size: 0;
+  min-block-size: 0;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--seal) 55%, transparent);
+  background: transparent;
+  flex-shrink: 0;
+  margin-top: 1px;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-standard),
+              background-color var(--duration-base) var(--ease-standard),
+              border-color var(--duration-base) var(--ease-standard),
+              box-shadow var(--duration-base) var(--ease-standard);
+}
+
+/* The mark is our ink brushstroke, not the lucide circle glyph */
+.task-item__checkbox svg {
+  display: none;
+}
+
+/* The nanquim ink brushstroke check — off-white knockout, masked, hidden until sealed */
+.task-item__checkbox::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--seal-on);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-width='4' stroke-linecap='round' stroke-linejoin='round' d='M4.5 12.7C6.4 13.9 7.9 15.6 9.5 17.9C12.7 11.9 15.8 8.4 19.8 6'/%3E%3C/svg%3E") center / 82% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-width='4' stroke-linecap='round' stroke-linejoin='round' d='M4.5 12.7C6.4 13.9 7.9 15.6 9.5 17.9C12.7 11.9 15.8 8.4 19.8 6'/%3E%3C/svg%3E") center / 82% no-repeat;
+  opacity: 0;
+  transform: scale(0.4) rotate(-8deg);
+  transition: opacity var(--duration-fast) var(--ease-standard),
+              transform var(--duration-base) cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+}
+
+/* Hover: the chop inks up */
+.task-item__checkbox:hover {
+  border-color: var(--seal);
+  background: var(--seal-tint);
+  transform: scale(1.04);
+}
+
+.task-item__checkbox:active {
+  transform: scale(0.94);
+}
+
+.task-item__checkbox:focus-visible {
+  outline: 2px solid var(--seal);
+  outline-offset: 2px;
+}
+
+/* Checked: the seal stamps — solid cinnabar disc + ink brushstroke + soft press */
+.task-item__checkbox[aria-checked="true"] {
+  border-color: var(--seal);
+  background: var(--seal);
+  box-shadow: var(--seal-shadow);
+}
+
+.task-item__checkbox[aria-checked="true"]::after {
+  opacity: 1;
+  transform: scale(1) rotate(0deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-item__checkbox::after {
+    transition-duration: 1ms;
+  }
+}
+
+/* ── ITEM 4: add-task row calendar button + due label ──────────────────────── */
+
+.task-add-row__cal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-half);
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--label-secondary);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background-color var(--duration-fast) var(--ease-standard);
+}
+
+.task-add-row__cal-btn:hover {
+  color: var(--accent);
+  background-color: var(--fill-tertiary);
+}
+
+.task-add-row__cal-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.task-add-row__due-label {
+  font-size: var(--text-caption1-size);
+  line-height: var(--text-caption1-line);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.task-add-row__due-label:empty {
+  display: none;
+}
+
+/* ── ITEM 5: Detail field editor ──────────────────────────────────────────── */
+
+.task-detail__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-block: var(--space-3);
+}
+
+.task-detail__field-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--space-5);
+}
+
+.task-detail__field-label {
+  flex-shrink: 0;
+  width: 72px;
+  color: var(--label-secondary);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+}
+
+/* Select controls inside the field rows */
+.task-detail__status-select,
+.task-detail__priority-select,
+.task-detail__list-select,
+.task-detail__section-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Due date section */
+.task-detail__due-section {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+}
+
+.task-detail__due-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-sm);
+  padding: var(--space-half) var(--space-2);
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-footnote-size);
+  color: var(--label);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.task-detail__due-btn:hover {
+  border-color: var(--accent);
+}
+
+.task-detail__due-btn svg {
+  width: 13px;
+  height: 13px;
+  color: var(--label-secondary);
+  flex-shrink: 0;
+}
+
+.task-detail__due-clear {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: var(--text-caption1-size);
+  color: var(--label-secondary);
+  padding: 0 var(--space-1);
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.task-detail__due-clear:hover {
+  color: var(--system-red);
+}
+
+/* Tags editor */
+.task-detail__tags-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+}
+
+.task-detail__tags-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-half);
+}
+
+.task-detail__tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  padding: 1px var(--space-1);
+  background: var(--fill-tertiary);
+  border-radius: var(--radius-capsule);
+  font-size: var(--text-caption2-size);
+  line-height: var(--text-caption2-line);
+  color: var(--label);
+}
+
+/* ── S8: tag color picker dialog body (AC-S8-02) ─────────────────────────── */
+.tag-color-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* ── S8: tag color swatch — opens the tag color picker (AC-S8-02) ────────── */
+.task-detail__tag-swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--sw, var(--fill-secondary));
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.task-detail__tag-swatch:hover,
+.task-detail__tag-swatch:focus-visible {
+  outline: 1.5px solid var(--label-secondary);
+  outline-offset: 1px;
+}
+
+/* Swatch color mapping — same JIN_PALETTE tokens as the list/tag color
+   pickers (.lists-color-swatch), legible in both light and dark themes. */
+.task-detail__tag-swatch[data-tag-color="accent"] { --sw: var(--accent); }
+.task-detail__tag-swatch[data-tag-color="sky"] { --sw: var(--system-teal); }
+.task-detail__tag-swatch[data-tag-color="danger"] { --sw: var(--system-red); }
+.task-detail__tag-swatch[data-tag-color="warning"] { --sw: var(--system-yellow); }
+.task-detail__tag-swatch[data-tag-color="success"] { --sw: var(--system-green); }
+.task-detail__tag-swatch[data-tag-color="purple"] { --sw: var(--system-purple); }
+.task-detail__tag-swatch[data-tag-color="pink"] { --sw: var(--system-pink); }
+.task-detail__tag-swatch[data-tag-color="orange"] { --sw: var(--system-orange); }
+
+.task-detail__tag-remove {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--label-secondary);
+  font-size: var(--text-caption1-size);
+  line-height: 1;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.task-detail__tag-remove:hover {
+  color: var(--system-red);
+}
+
+.task-detail__tag-add {
+  display: flex;
+}
+
+.task-detail__tag-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 160px;
+}
+
+/* Title editable (ITEM 5) */
+.task-detail__title-editable {
+  outline: none;
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-1);
+  margin-inline-start: calc(-1 * var(--space-1));
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.task-detail__title-editable:focus {
+  background-color: var(--fill-tertiary);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Density pass — tighten the "toy" sizing (rows, checkbox, detail editor, swatches)
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* Simple-list completion: the circle IS the affordance — hide the redundant
+   textual status badge for todo/done (kept for Doing/Cancelled). Applies to
+   both variants (S2): the root .task-item carries data-task-status too. */
+.task-item[data-task-status="todo"] .task-item__status-badge,
+.task-item[data-task-status="done"] .task-item__status-badge {
+  display: none;
+}
+
+/* Smaller color-picker swatches (override tap-target's 44px min) */
+.lists-color-swatch {
+  width: 22px;
+  height: 22px;
+  min-width: 0;
+  min-inline-size: 0;
+  min-block-size: 0;
+  border-width: 1.5px;
+}
+
+/* Detail editor — compact fields (scoped so global .form-select is unaffected) */
+.task-detail__body {
+  min-height: 76px;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-callout-size);
+  line-height: var(--text-callout-line);
+}
+.task-detail__fields {
+  gap: var(--space-1);
+  margin-block: var(--space-2);
+}
+.task-detail__field-row {
+  min-block-size: 0;
+  gap: var(--space-1);
+}
+.task-detail__fields .form-select,
+.task-detail__due-btn,
+.task-detail__fields .task-detail__tag-input {
+  min-block-size: var(--space-4);
+  padding-block: var(--space-half);
+  font-size: var(--text-callout-size);
+}
+.task-detail__tag-chip {
+  padding-inline: var(--space-1);
+}
+
+/* Read-only fallback labels (unused in editor mode, styled for completeness) */
+.task-detail__status-label,
+.task-detail__priority-label {
+  font-size: var(--text-footnote-size);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   S6 — Subtasks: pane disabled selects + the Subtasks section
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* AC-S6-12: a subtask's list/section selects are disabled — "moves with
+   parent" (the `title` attribute set in render.ts supplies the tooltip). */
+.task-detail__list-select:disabled,
+.task-detail__section-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.task-detail__subtasks {
+  margin-block-start: var(--space-3);
+}
+
+.task-detail__subtasks-heading {
+  margin-block-end: var(--space-1);
+  color: var(--label);
+}
+
+.task-detail__subtasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.task-detail__subtask-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-block: var(--space-half);
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.task-detail__subtask-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--separator);
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.task-detail__subtask-status[aria-checked="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.task-detail__subtask-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: none;
+  text-align: start;
+  font-family: inherit;
+  font-size: var(--text-callout-size);
+  color: var(--label);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-detail__subtask-row[data-task-status="done"] .task-detail__subtask-title {
+  text-decoration: line-through;
+  color: var(--label-tertiary);
+}
+
+.task-detail__subtask-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: var(--space-half);
+  color: var(--label-secondary);
+  cursor: pointer;
+}
+
+.task-detail__subtask-delete:hover {
+  color: var(--system-red);
+}
+
+.task-detail__subtask-delete svg {
+  width: 13px;
+  height: 13px;
+}
+
+.task-detail__subtask-add {
+  margin-block-start: var(--space-1);
+}
+
+.task-detail__subtask-add-input {
+  width: 100%;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * Continuous Ink Workspace composition — Notes and representative Tasks UI.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+.notes-paned {
+  grid-template-columns: var(--context-rail-width) minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+  background: var(--workspace-canvas);
+}
+
+.notes-paned.detail-open {
+  grid-template-columns: var(--context-rail-width) minmax(0, 1fr);
+}
+
+.notes-paned.rail-collapsed,
+.notes-paned.detail-open.rail-collapsed {
+  grid-template-columns: 0 1fr;
+}
+
+.notes-detail-pane {
+  border: 0;
+}
+
+.notes-folder-rail__header {
+  min-height: var(--toolbar-height);
+  margin: 0;
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.notes-folder-rail__collapse-btn,
+.notes-new-note-btn,
+.notes-rail-reveal,
+.notes-detail-pane__actions .cm-toolbar__btn {
+  width: var(--hit-target);
+  height: var(--hit-target);
+  min-width: var(--hit-target);
+  min-height: var(--hit-target);
+}
+
+.notes-folder-rail__list {
+  padding: 0;
+}
+
+.notes-folder-rail__new-btn {
+  width: 100%;
+  min-height: var(--rail-row-height);
+  margin: 0;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-top: 0.5px solid var(--separator);
+  border-radius: 0;
+  background: transparent;
+  color: var(--label-secondary);
+  box-shadow: none;
+  justify-content: flex-start;
+}
+
+.notes-folder-rail__new-btn:hover {
+  background: var(--workspace-row-hover);
+}
+
+.folder-row + .folder-row {
+  margin-top: 0;
+}
+
+.notes-list-pane {
+  padding: 0 var(--space-3) var(--space-8);
+  background: var(--workspace-canvas);
+}
+
+.notes-list-pane__header {
+  width: auto;
+  min-height: var(--toolbar-height);
+  margin: 0 calc(-1 * var(--space-3)) var(--space-2);
+  padding: 0 var(--space-3);
+}
+
+.notes-list-pane > .browse-list {
+  width: min(100%, var(--reading-width));
+  margin-inline: auto;
+  gap: 0;
+}
+
+.notes-list-pane .note-row {
+  width: 100%;
+}
+
+.notes-list-pane .note-row:nth-child(3n + 2) {
+  width: 100%;
+}
+
+.notes-list-pane .note-row:nth-child(3n) {
+  width: 100%;
+}
+
+.note-row .browse-row__inner.jin-list-row {
+  min-block-size: var(--note-row-height);
+  max-block-size: var(--note-row-height);
+  gap: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-bottom: 0.5px solid var(--separator);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.note-row .browse-row__inner.jin-list-row:hover {
+  background: var(--workspace-row-hover);
+  transform: none;
+}
+
+.note-row .browse-row__title {
+  padding-inline-end: 36%;
+  font-size: var(--text-subheadline-size);
+  line-height: var(--text-subheadline-line);
+  font-weight: 600;
+}
+
+.note-row .browse-row__meta {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-end: var(--space-2);
+  max-width: 34%;
+  overflow: hidden;
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+}
+
+.note-row__snippet,
+.note-row__date,
+.note-row__tags {
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+}
+
+.note-row__tags {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-detail-pane {
+  padding: 0;
+  background: var(--workspace-canvas);
+}
+
+.notes-detail-pane__header {
+  min-height: var(--toolbar-height);
+  margin: 0 0 var(--space-3);
+  padding: 0 var(--space-2);
+}
+
+.notes-detail-pane__header .browse-back-btn {
+  padding: 0 var(--space-2);
+}
+
+.notes-detail-pane__actions .cm-toolbar__btn {
+  border-radius: var(--radius-sm);
+}
+
+.notes-detail-pane .browse-detail__title-row {
+  width: min(calc(100% - var(--space-6)), var(--reading-width));
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 auto var(--space-3);
+}
+
+.notes-detail-pane .browse-detail__title--input.jin-title-field {
+  min-height: var(--control-height-prominent);
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: var(--font-display);
+  font-size: var(--document-title-size);
+  font-weight: 600;
+  line-height: var(--document-title-line);
+  letter-spacing: -0.012em;
+}
+
+.notes-detail-pane .browse-detail__title--input.jin-title-field:focus {
+  background: transparent;
+  border-bottom-color: var(--ink-stroke);
+  box-shadow: none;
+}
+
+.notes-detail-pane .note-detail__status {
+  margin-top: var(--space-1);
+}
+
+.notes-detail-pane .note-detail__body,
+.notes-detail-pane .cm-toolbar,
+.notes-detail-pane .cm-footer,
+.notes-detail-pane .cm-reading-wrapper {
+  background-color: transparent;
+}
+
+.notes-detail-pane .cm-toolbar,
+.notes-detail-pane .cm-footer {
+  width: min(100%, var(--reading-width));
+  margin-inline: auto;
+  padding-inline: var(--space-3);
+}
+
+.notes-detail-pane .cm-editor-wrapper,
+.notes-detail-pane .cm-reading-wrapper,
+.notes-detail-pane .browse-detail__meta,
+.notes-detail-pane .browse-detail__links-section {
+  width: min(calc(100% - var(--space-6)), var(--reading-width));
+  margin-inline: auto;
+  box-sizing: border-box;
+}
+
+.notes-detail-pane .cm-content {
+  padding: var(--space-3) var(--space-3) var(--space-8);
+  font-size: var(--editor-text-size);
+  line-height: var(--editor-text-line);
+}
+
+.notes-detail-pane .cm-reading-wrapper {
+  font-size: var(--editor-text-size);
+  line-height: var(--editor-text-line);
+}
+
+@media (max-width: 900px) {
+  .notes-list-pane {
+    padding: 0 var(--space-2) var(--space-8);
+  }
+
+  .notes-list-pane > .browse-list {
+    width: 100%;
+    margin-inline-start: 0;
+  }
+
+  .notes-list-pane .note-row,
+  .notes-list-pane .note-row:nth-child(3n + 2),
+  .notes-list-pane .note-row:nth-child(3n) {
+    width: 100%;
+  }
+
+  .notes-detail-pane {
+    padding-inline: 0;
+  }
+
+  .notes-detail-pane .browse-detail__title-row,
+  .notes-detail-pane .cm-editor-wrapper,
+  .notes-detail-pane .cm-reading-wrapper,
+  .notes-detail-pane .browse-detail__meta,
+  .notes-detail-pane .browse-detail__links-section {
+    margin-inline: 0;
+  }
+}
+
+/* Folder rows reserve every track, including the actions track. Selection and
+ * menu reveal therefore cannot change Field Notes' height or label width. */
+.folder-row__name {
+  min-width: 0;
+}
+
+.folder-row__menu-btn,
+[role="treeitem"]:hover .folder-row__menu-btn,
+[role="treeitem"]:focus-within .folder-row__menu-btn,
+[role="treeitem"].is-active .folder-row__menu-btn,
+.folder-row__menu-btn:focus-visible {
+  display: inline-flex;
+  width: var(--control-height);
+  height: var(--control-height);
+}
+
+.folder-row__menu-btn {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    visibility 0s linear var(--duration-fast),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+[role="treeitem"]:hover .folder-row__menu-btn,
+[role="treeitem"]:focus-within .folder-row__menu-btn,
+[role="treeitem"].is-active .folder-row__menu-btn,
+.folder-row__menu-btn:focus-visible {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+/* Representative Tasks migration: the rail and list are continuous ledger
+ * surfaces. Board cards intentionally retain their existing card treatment. */
+.jin-content-body[data-section-name="tasks"].jin-split-view {
+  display: grid;
+  grid-template-columns: var(--context-rail-width) minmax(0, 1fr);
+  gap: 0;
+  background: var(--workspace-canvas);
+}
+
+.tasks-lists-rail__header.jin-section-header {
+  min-height: var(--toolbar-height);
+  padding: 0 var(--space-1) 0 var(--space-2);
+}
+
+.tasks-lists-rail__smart-list,
+.tasks-lists-rail__list {
+  padding: 0;
+}
+
+.tasks-lists-rail__new-btn {
+  width: var(--control-height);
+  height: var(--control-height);
+  min-width: var(--desktop-hit-target);
+  min-height: var(--desktop-hit-target);
+}
+
+.lists-rail__row-btn {
+  min-width: 0;
+  min-height: var(--rail-row-height);
+}
+
+.lists-rail__row:hover .lists-rail__count,
+.lists-rail__row:focus-within .lists-rail__count {
+  display: inline;
+}
+
+.lists-rail__edit-btn,
+.lists-rail__delete-btn {
+  width: var(--control-height);
+  height: var(--control-height);
+  min-width: var(--desktop-hit-target);
+  min-height: var(--desktop-hit-target);
+}
+
+.tasks-main.jin-workspace-pane {
+  background: var(--workspace-canvas);
+}
+
+[data-tasks-target="listPanel"] {
+  padding: 0 var(--space-3) var(--space-8);
+  background: var(--workspace-canvas);
+}
+
+.tasks-filter-bar.jin-toolbar-strip {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  min-height: var(--toolbar-height);
+  margin: 0 calc(-1 * var(--space-3)) var(--space-2);
+  padding: var(--space-half) var(--space-3);
+  border-width: 0 0 0.5px;
+}
+
+.tasks-filter-bar select {
+  min-block-size: var(--control-height);
+  padding-block: 0;
+}
+
+[data-tasks-target="list"].jin-list {
+  width: 100%;
+  max-width: var(--reading-width);
+  margin-inline: auto;
+}
+
+.task-item--row.jin-list-row {
+  display: grid;
+  grid-template-columns: 20px 28px minmax(160px, 1fr) auto 28px;
+  gap: var(--space-1);
+  min-height: var(--task-row-height);
+  height: var(--task-row-height);
+  max-height: var(--task-row-height);
+  padding: 0 var(--space-1);
+  border-bottom: 0.5px solid var(--separator);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.tasks-main--detail-open .task-item--row.jin-list-row {
+  grid-template-columns: 20px 28px minmax(96px, 1fr) auto 28px;
+}
+
+.task-item--row .task-item__status-badge {
+  display: none;
+}
+
+.task-item--row .task-item__drag-handle {
+  width: 20px;
+  min-width: 20px;
+}
+
+.task-item--row .task-item__checkbox {
+  width: var(--control-height);
+  height: var(--control-height);
+  min-width: var(--desktop-hit-target);
+  min-height: var(--desktop-hit-target);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.task-item__checkbox.jin-check::before,
+.task-detail__subtask-status.jin-check::before {
+  width: var(--check-visual-size);
+  height: var(--check-visual-size);
+  border: 1.5px solid var(--label-tertiary);
+  border-radius: var(--radius-xs);
+  background: transparent;
+}
+
+.task-item__checkbox.jin-check::after,
+.task-detail__subtask-status.jin-check::after {
+  inset: auto;
+  width: 5px;
+  height: 9px;
+  max-width: var(--check-mark-size);
+  max-height: var(--check-mark-size);
+  border: solid var(--ink-on);
+  border-width: 0 1.5px 1.5px 0;
+  background: transparent;
+  -webkit-mask: none;
+          mask: none;
+  opacity: 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.task-item__checkbox.jin-check[aria-checked="true"]::before,
+.task-detail__subtask-status.jin-check[aria-checked="true"]::before {
+  border-color: var(--ink-stroke);
+  background: var(--ink-stroke);
+}
+
+.task-item__checkbox.jin-check[aria-checked="true"]::after,
+.task-detail__subtask-status.jin-check[aria-checked="true"]::after {
+  opacity: 1;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.task-item--row .task-item__content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: var(--task-row-height);
+  padding: 0;
+  overflow: hidden;
+}
+
+.task-item--row .task-item__body {
+  width: auto;
+  flex: 1 1 auto;
+  padding: 0;
+  overflow: hidden;
+}
+
+.task-item--row .task-item__title {
+  width: 100%;
+  min-width: 0;
+}
+
+.task-item--row .task-item__meta {
+  width: auto;
+  max-width: 48%;
+  min-width: 0;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.task-item--row .task-item__priority-label {
+  display: none;
+}
+
+.task-item--row .due-chip-group,
+.task-item--row .task-item__tags {
+  max-width: 100%;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.task-item--row .task-item__tags {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.task-item--row .task-tag-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-item--row .task-item__actions {
+  display: inline-flex;
+  width: var(--control-height);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.task-item--row:hover .task-item__actions,
+.task-item--row:focus-within .task-item__actions {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.task-item__delete-btn,
+.due-reschedule__btn {
+  min-width: var(--desktop-hit-target);
+  min-height: var(--desktop-hit-target);
+}
+
+.due-reschedule {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-half);
+}
+
+.task-detail__subtask-status.jin-check {
+  width: var(--check-hit-size);
+  height: var(--check-hit-size);
+  min-width: var(--check-hit-size);
+  min-height: var(--check-hit-size);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+
+.tasks-detail-pane {
+  background: var(--workspace-canvas);
+}
+
+@media (pointer: coarse) {
+  .tasks-lists-rail__new-btn,
+  .lists-rail__edit-btn,
+  .lists-rail__delete-btn,
+  .task-item--row .task-item__checkbox,
+  .task-detail__subtask-status.jin-check,
+  .task-item__delete-btn,
+  .due-reschedule__btn {
+    min-width: var(--coarse-hit-target);
+    min-height: var(--coarse-hit-target);
+  }
+}
+
+/* Keep clipping on the two text-bearing lines, not their positioned popup
+ * host. The transient may now leave the fixed 40px ledger row without
+ * changing its geometry. */
+.task-item--row .task-item__content,
+.task-item--row .task-item__meta,
+.task-item--row .due-chip-group {
+  overflow: visible;
+}
+
+.task-item--row .task-item__body,
+.task-item--row .task-item__title,
+.task-item--row .task-item__tags {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Task Detail is a compact inspector, not a stack of default form controls.
+ * It uses continuous separators and calm paper fields rather than cards. */
+.tasks-detail-pane {
+  padding: var(--space-2) var(--space-3) var(--space-4);
+  background: var(--workspace-canvas);
+}
+
+.tasks-detail-pane__header {
+  min-height: var(--control-height);
+  margin-bottom: var(--space-1);
+}
+
+.tasks-detail-pane__close-btn.jin-control,
+.tasks-detail-pane__delete-btn.jin-control {
+  width: var(--control-height);
+  height: var(--control-height);
+  min-width: var(--control-height);
+  min-height: var(--control-height);
+  border: 0.5px solid transparent;
+}
+
+.tasks-detail-pane__delete-btn.jin-control:hover {
+  color: var(--system-red);
+}
+
+.tasks-detail-pane .browse-detail__title,
+.task-detail__title-editable {
+  margin: 0;
+  padding: var(--space-half) 0 var(--space-1);
+  font-size: var(--text-title3-size);
+  font-family: var(--font-display);
+  line-height: var(--text-title3-line);
+  font-weight: 650;
+  letter-spacing: var(--display-title-tracking);
+}
+
+.task-detail__title-editable {
+  border-radius: 0;
+  border-bottom: 0.5px solid transparent;
+}
+
+.task-detail__title-editable:focus {
+  background: transparent;
+  border-bottom-color: var(--ink-stroke);
+}
+
+.task-detail__body-section {
+  gap: var(--space-half);
+  margin-block-start: var(--space-2);
+}
+
+.task-detail__body-section > .form-label,
+.task-detail__field-label,
+.task-detail__subtasks-heading,
+.task-detail__reminders-heading {
+  color: var(--ink-muted);
+  font-size: var(--text-caption2-size);
+  line-height: var(--text-caption2-line);
+  font-weight: 600;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.task-detail__body.form-input {
+  min-height: 112px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--separator);
+  border-radius: 7px;
+  background: var(--workspace-row-hover);
+  box-shadow: inset 0 0.5px 0 var(--specular-highlight);
+  font-size: var(--text-callout-size);
+  line-height: var(--text-body-line);
+}
+
+.task-detail__body.form-input:focus {
+  border-color: var(--ink-stroke);
+  background: var(--workspace-canvas);
+}
+
+.task-detail__fields {
+  gap: 0;
+  margin-block: var(--space-2);
+  border-block: 0.5px solid var(--separator);
+}
+
+.task-detail__field-row {
+  min-height: 40px;
+  gap: var(--space-2);
+  padding-block: var(--space-half);
+  border-bottom: 0.5px solid var(--separator);
+}
+
+.task-detail__field-row:last-child {
+  border-bottom: 0;
+}
+
+.task-detail__field-label {
+  width: 64px;
+}
+
+.task-detail__fields .form-select,
+.task-detail__due-btn.jin-control,
+.task-detail__fields .task-detail__tag-input {
+  min-height: var(--control-height-prominent);
+  height: var(--control-height-prominent);
+  padding: 0 var(--space-1);
+  border: 0.5px solid var(--separator);
+  border-radius: 7px;
+  background-color: var(--workspace-row-hover);
+  box-shadow: inset 0 0.5px 0 var(--specular-highlight);
+  color: var(--label);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+}
+
+.task-detail__fields .form-select:focus,
+.task-detail__due-btn.jin-control:focus-visible,
+.task-detail__fields .task-detail__tag-input:focus {
+  border-color: var(--ink-stroke);
+  background-color: var(--workspace-canvas);
+}
+
+.task-detail__due-btn.jin-control {
+  justify-content: flex-start;
+  flex: 1 1 auto;
+}
+
+.task-detail__due-clear {
+  min-height: var(--control-height);
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-caption2-size);
+}
+
+.task-detail__subtasks,
+.task-detail__reminders {
+  margin-block-start: var(--space-2);
+  padding-block-start: var(--space-2);
+  border-top: 0.5px solid var(--separator);
+}
+
+.task-detail__subtask-row {
+  min-height: 36px;
+  padding-block: var(--space-half);
+}
+
+.task-detail__subtask-add-input.form-input {
+  min-height: var(--control-height-prominent);
+  border-radius: 7px;
+  background: var(--workspace-row-hover);
+  box-shadow: inset 0 0.5px 0 var(--specular-highlight);
+  font-size: var(--text-footnote-size);
+}

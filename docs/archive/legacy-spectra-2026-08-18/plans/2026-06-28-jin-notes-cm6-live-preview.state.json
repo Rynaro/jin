@@ -1,0 +1,79 @@
+{
+  "session_id": "2026-06-28-jin-notes-cm6-live-preview",
+  "spec_title": "Inline live-preview (hide/reveal markdown markers) for the Jin CM6 note editor",
+  "methodology": "SPECTRA",
+  "methodology_version": "4.10.0",
+  "from": "spectra",
+  "to": "vivi",
+  "performative": "PROPOSE",
+  "repo": "jin-gui",
+  "created_at": "2026-06-28",
+  "complexity": "9/12",
+  "routing": "extended-single-pass",
+  "confidence": 0.90,
+  "decision": "AUTO_PROCEED",
+  "phases": {
+    "clarify": "skipped-justified (owner locked architecture+scope+gates; intent unambiguous)",
+    "scope": "done",
+    "pattern": "done (recall: wave2-track-b crystal 9a893cc6; d9d03aa3 not surfaced -> verified firsthand)",
+    "explore": "done (H1 selected; H2/H3/H4/npm rejected)",
+    "construct": "done (LP-1..LP-4)",
+    "test": "done (6-layer)",
+    "refine": "not-needed (confidence >=85% first pass)",
+    "assemble": "done"
+  },
+  "steps": [
+    {
+      "id": "LP-1",
+      "title": "Pure decoration core — syntax-tree walk + per-line reveal",
+      "status": "pending",
+      "depends_on": [],
+      "files": ["jin-gui/src/lib/notes/livePreview.ts (new)", "jin-gui/src/__tests__/editor.test.ts (or new livePreview.test.ts)"],
+      "gates": ["G-LP-HIDE", "G-LP-REVEAL", "G-LP-NO-INNERHTML"],
+      "timebox": "<=2d",
+      "risk": "P0"
+    },
+    {
+      "id": "LP-2",
+      "title": "ViewPlugin wrapper — viewport-aware rebuild + atomicRanges provide",
+      "status": "pending",
+      "depends_on": ["LP-1"],
+      "files": ["jin-gui/src/lib/notes/livePreview.ts"],
+      "gates": ["G-LP-ATOMIC", "G-LP-REBUILD"],
+      "timebox": "<=1d",
+      "risk": "P0"
+    },
+    {
+      "id": "LP-3",
+      "title": "Compose into editor.ts via livePreviewCompartment (default-on)",
+      "status": "pending",
+      "depends_on": ["LP-2"],
+      "files": ["jin-gui/src/lib/notes/editor.ts"],
+      "gates": ["G-LP-SMOKE", "G-SAVE-CARET-SAFE", "G-XSS", "G-CHOKEPOINT", "G-KEYMAP", "G-TOOLBAR-BOLD", "G-TOOLBAR-H2", "G-TOOLBAR-LIST", "G-FOOTER-STATS", "G-READING-VIEW"],
+      "timebox": "<=1d",
+      "risk": "P0"
+    },
+    {
+      "id": "LP-4",
+      "title": "Caret + robustness hardening + owner visual checklist",
+      "status": "pending",
+      "depends_on": ["LP-3"],
+      "files": ["jin-gui/src/lib/notes/livePreview.ts", "jin-gui/src/__tests__/editor.test.ts"],
+      "gates": ["G-LP-ROBUST", "G-LP-SELECTION", "G-LP-CARET-MOVE"],
+      "timebox": "<=1d",
+      "risk": "P1"
+    }
+  ],
+  "replanning_history": [],
+  "verified_firsthand": {
+    "compartments_present": ["languageCompartment", "highlightCompartment", "keymapCompartment", "themeCompartment"],
+    "lezer_node_names": ["ATXHeading1-6", "HeaderMark", "Emphasis", "StrongEmphasis", "EmphasisMark", "Strikethrough", "StrikethroughMark", "InlineCode", "CodeMark", "CodeText"],
+    "gfm_enabled": true,
+    "cm6_apis": ["syntaxTree@language", "atomicRanges@view", "Decoration.replace", "ViewPlugin"],
+    "g_xss_anchor": "notes_controller.test.ts:505",
+    "g_chokepoint_scanner": "markdown.test.ts:366-405",
+    "node_requirement": ">=20 (nvm v24.18.0; system node v16 crashes vitest)",
+    "ecl_version_present": true,
+    "conventions_file_present": false
+  }
+}

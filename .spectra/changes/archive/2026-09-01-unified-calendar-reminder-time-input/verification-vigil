@@ -1,0 +1,20 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "ESCALATE",
+  "objective": "[ROOT-CAUSE] Invalid-time blur validation reveals a layout-shifting error before pointer-up, swallowing the first Set Date click; AC-UCRT-003 and AC-UCRT-008 fail. Repair the browser interaction and return for independent verification.",
+  "context_delta": {
+    "evidence": ".spectra/changes/unified-calendar-reminder-time-input/verification-vigil.md",
+    "failed_acceptance_checks": [
+      "AC-UCRT-003",
+      "AC-UCRT-008"
+    ],
+    "root_cause": "blur error visibility changes footer geometry during the confirmation pointer sequence, so no click event reaches temporal-editor#confirm",
+    "verdict": "FAIL"
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "esl_version": "1.1",
+  "change_id": "events-calendar-ui-augmentation",
+  "status": "archived",
+  "tier": "full",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    {
+      "id": "AC-ECUA-01",
+      "given": "a Month containing an event title wider than its day",
+      "when": "the calendar renders",
+      "then": "every week SHALL retain seven equal-width columns, the title SHALL ellipsize inside its cell, and the event control SHALL retain the complete accessible title",
+      "verify_method": "calendar controller tests, CSS assertions, and visual QA"
+    },
+    {
+      "id": "AC-ECUA-02",
+      "given": "Jin and Google timed and all-day events",
+      "when": "Week or Day renders",
+      "then": "the shared surface SHALL use color-led styling without visible G or J glyphs while preserving source meaning and time-grid behavior",
+      "verify_method": "calendar controller and time-grid tests plus visual QA"
+    },
+    {
+      "id": "AC-ECUA-03",
+      "given": "two Google calendars with the same display name but different account and calendar IDs",
+      "when": "preferences are stored and events render",
+      "then": "each exact route SHALL retain an independent color across Month, Week, Day, and all-day presentation",
+      "verify_method": "calendar color and controller tests"
+    },
+    {
+      "id": "AC-ECUA-04",
+      "given": "an open calendar and Calendar Accounts settings",
+      "when": "a valid color is selected",
+      "then": "local storage SHALL contain the normalized preference and the open calendar SHALL rerender without refetching events",
+      "verify_method": "calendar preference and listener tests"
+    },
+    {
+      "id": "AC-ECUA-05",
+      "given": "calendar, list, and tag color controls",
+      "when": "their choices render",
+      "then": "all SHALL use the shared picker with eight presets followed by one chroma control",
+      "verify_method": "picker DOM tests and source inspection"
+    },
+    {
+      "id": "AC-ECUA-06",
+      "given": "a shared color picker",
+      "when": "the chroma control is reopened and the picker is destroyed",
+      "then": "at most one lazy Jin modal SHALL be owned, focus SHALL restore, and modal resources SHALL be removed",
+      "verify_method": "picker lifecycle tests"
+    },
+    {
+      "id": "AC-ECUA-07",
+      "given": "the custom color dialog",
+      "when": "HEX or RGB drafts are edited, committed, or invalid",
+      "then": "valid input SHALL synchronize without disrupting caret or composition, shorthand SHALL canonicalize on commit, and invalid input SHALL not reach styling or persistence",
+      "verify_method": "picker draft, IME, validation, and Apply tests"
+    },
+    {
+      "id": "AC-ECUA-08",
+      "given": "the custom color dialog",
+      "when": "Hue, Saturation, or Brightness changes through map, keyboard, or native ranges",
+      "then": "spectrum, preview, outputs, ARIA values, and marker SHALL synchronize and values SHALL clamp to bounds",
+      "verify_method": "picker interaction tests and visual QA"
+    },
+    {
+      "id": "AC-ECUA-09",
+      "given": "an existing committed color and a changed custom draft",
+      "when": "the dialog is dismissed or Apply is activated",
+      "then": "dismissal SHALL emit no mutation and Apply SHALL emit exactly one canonical color",
+      "verify_method": "picker callbacks and consumer tests"
+    },
+    {
+      "id": "AC-ECUA-10",
+      "given": "palette, custom, invalid, and unknown legacy values",
+      "when": "GUI color application runs",
+      "then": "only semantic palette state or validated canonical HEX SHALL enter the designated CSS property and invalid values SHALL fall back safely",
+      "verify_method": "safe color application tests"
+    },
+    {
+      "id": "AC-ECUA-11",
+      "given": "list create or edit color input",
+      "when": "core receives a palette token, valid HEX, or invalid color",
+      "then": "core SHALL persist normalized valid colors and reject invalid colors before mutation",
+      "verify_method": "jin-core list color tests"
+    },
+    {
+      "id": "AC-ECUA-12",
+      "given": "an existing tag",
+      "when": "core recolor receives a valid or invalid color",
+      "then": "valid values SHALL persist canonically and invalid values SHALL preserve prior color",
+      "verify_method": "jin-core tag color tests and GUI callbacks"
+    },
+    {
+      "id": "AC-ECUA-13",
+      "given": "representative passive metadata badges",
+      "when": "affected surfaces render",
+      "then": "badges SHALL derive structure from jin-badge while preserving semantic cues and excluding interactive chips",
+      "verify_method": "DOM and source assertions plus visual QA"
+    },
+    {
+      "id": "AC-ECUA-14",
+      "given": "supported themes, accessibility modes, and viewport widths",
+      "when": "affected calendar and color surfaces are exercised",
+      "then": "controls SHALL remain legible, contained, focus-visible, operable, and repository release gates SHALL pass",
+      "verify_method": "make verify-all and GUI visual evidence"
+    }
+  ],
+  "spec_ref": "spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-09-03-events-calendar-ui-augmentation",
+  "has_code": true
+}

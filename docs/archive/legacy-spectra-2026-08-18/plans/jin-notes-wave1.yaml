@@ -1,0 +1,130 @@
+spec:
+  id: jin-notes-wave1
+  title: "Jin Notes Rebuild — Wave 1"
+  methodology: SPECTRA
+  methodology_version: 4.10.0
+  tier: standard
+  intent_type: CHANGE
+  complexity: 9
+  confidence: 0.86
+  decision: AUTO_PROCEED
+  date: 2026-06-27
+  from: spectra
+  to: apivr            # Vivi (coder)
+  scope_note: "Wave 1 ONLY. Folders + Obsidian editor are Wave 2 (seams only)."
+
+decisions:
+  D1_snippet_source: "index-side excerpt column for list + disk-read body for detail"
+  D2_excerpt: "whitespace-collapse + trim + first 200 chars on UTF-8 char boundary; empty->''"
+  D3_get_note_body: "read from NoteRow.file_path via fs::read_note; propagate read errors"
+  D4_list_date: "display `updated`; pure formatNoteDate(iso, now) -> Today/Yesterday/MMM D/MMM D, YYYY"
+  D5_migration: "CREATE includes column + guarded idempotent ALTER (mandatory) + version-gated one-time rebuild (K1)"
+
+stories:
+  - id: S1
+    title: "Fix the title-only note bug (detail body)"
+    priority: P0
+    timebox: "<=1d"
+    depends_on: []
+    blocks: [K3]
+    agent_hint: { class: debugger, also: builder }
+    files:
+      - "jin-core/src/dto/note.rs:7-18,36-58,61-74"
+      - "jin-core/src/ops/api.rs:25-33"
+      - "jin-core/src/store/fs.rs:72-80"
+      - "jin-gui/src/types/dto.ts:39-44"
+    actions:
+      - "Add body_markdown: Option<String> to NoteDto"
+      - "from_model -> Some(note.body); from_row -> None"
+      - "api::get_note: read body from row.file_path via fs::read_note, then with_backlinks"
+    acceptance: [AC1.1, AC1.2, AC1.3, AC1.4, AC1.5, AC1.6]
+    gates: [VG1.1, VG1.2, VG1.3, VG1.4, VG1.5, VG1.6]
+
+  - id: S2
+    title: "Backend excerpt for the list (schema + migration + projection)"
+    priority: P1   # P0 if guarded ALTER omitted (crash risk R1)
+    timebox: "<=2d"
+    depends_on: []
+    blocks: [S3, K1]
+    agent_hint: { class: builder }
+    files:
+      - "jin-core/src/index/schema.rs:15-24,113-116"
+      - "jin-core/src/index/rebuild.rs:33-55"
+      - "jin-core/src/index/query.rs:10-19,78-100,125-143"
+      - "jin-core/src/dto/note.rs:7-18,36-58,61-74"
+      - "jin-gui/src/types/dto.ts:29-45"
+    actions:
+      - "Add excerpt TEXT NOT NULL DEFAULT '' to CREATE TABLE notes + guarded ALTER in schema::apply"
+      - "derive_excerpt(body) pure fn (D2)"
+      - "rebuild: write derive_excerpt(&note.body) into excerpt column"
+      - "NoteRow.excerpt + include excerpt in list/get SELECTs and mappers"
+      - "NoteDto.excerpt: Option<String>; from_row Some, from_model None"
+    acceptance: [AC2.1, AC2.2, AC2.3, AC2.4, AC2.5, AC2.6]
+    gates: [VG2.1, VG2.2, VG2.3]
+
+  - id: S3
+    title: "Apple-Notes-style list row (title + snippet + date)"
+    priority: P1
+    timebox: "<=2d"
+    depends_on: [S2]
+    blocks: [K2]
+    agent_hint: { class: builder }
+    files:
+      - "jin-gui/src/lib/notes/transform.ts (new formatNoteDate)"
+      - "jin-gui/index.html:1268-1280"
+      - "jin-gui/src/__tests__/notes_controller.test.ts:115-130"
+      - "jin-gui/src/lib/notes/render.ts:226-262"
+      - "jin-gui/src/styles/browse.css:49-99,271-275"
+    actions:
+      - "formatNoteDate(iso, now?) pure helper (D4)"
+      - "Restructure #tmpl-note-row: title + .note-row__snippet (2-line) + .note-row__date; keep existing hooks"
+      - "Update TEST fixture template in lock-step (R2)"
+      - "buildNoteRow: snippet via textContent=excerpt; date via formatNoteDate(updated)"
+      - "Replace bubble CSS with flat Apple-Notes rows SCOPED under .note-row (leave Tasks/Events unchanged)"
+    acceptance: [AC3.1, AC3.2, AC3.3, AC3.4, AC3.5]
+    gates: [VG2.4, VG2.5, VG2.7, VG2.8]
+
+kupo_tasks:
+  - id: K1
+    title: "Version-gated one-time rebuild (populate existing-note excerpts)"
+    timebox: "<=0.5d"
+    depends_on: [S2]
+    files: ["jin-core/src/ops/init.rs:8-12", "jin-core/src/index/schema.rs:10-13"]
+    gates: [VG-K1]
+  - id: K2
+    title: "Template/fixture parity guard test"
+    timebox: "<=0.5d"
+    depends_on: [S3]
+    files: ["jin-gui/index.html:1268-1280", "new test parsing index.html"]
+    gates: [VG-K2]
+  - id: K3
+    title: "dto.ts comment + dto_shapes drift test"
+    timebox: "<=0.25d"
+    depends_on: [S1, S2]
+    files: ["jin-gui/src/types/dto.ts:39-45", "jin-gui/src/__tests__/dto_shapes.test.ts:143-159"]
+    gates: [VG1.6]
+
+build_order: [S1, S2, "K1||S3", K2, K3]
+
+anti_shallow_gates: [VG1.1, VG1.4, VG2.2, VG2.4]
+
+project_gates:
+  - "cargo test -p jin-core"
+  - "cargo test"               # jin-gui bridge integration
+  - "cargo clippy --all-targets -- -D warnings"
+  - "npm test"                 # vitest
+  - "TS typecheck/build"
+
+risks:
+  - { id: R1, sev: P0, what: "migration no-such-column crash on existing index", fix: "D5 guarded ALTER + VG2.3" }
+  - { id: R2, sev: P1, what: "test fixture template diverges from production template", fix: "S3 step3 + K2" }
+  - { id: R3, sev: P1, what: "stale-empty snippets for pre-existing notes", fix: "K1" }
+  - { id: R4, sev: P1, what: "shared .browse-row CSS blast radius onto Tasks/Events", fix: "scope flat look under .note-row" }
+  - { id: R5, sev: P2, what: "get_note errors when file missing (behavior change)", fix: "documented" }
+  - { id: R6, sev: P1, what: "existing tests feed body by hand only", fix: "VG1.1+VG1.4+K3" }
+
+wave2_seams:
+  - "get_note reads NoteRow.file_path (folder-safe)"
+  - "NoteRow/NoteDto/notes table: add folder_path additively"
+  - "api::list_notes / query::list_notes_by_tag: add optional folder/recursive param"
+  - "fs::list_note_paths -> recursive in Wave 2; excerpt/rebuild flow unchanged"

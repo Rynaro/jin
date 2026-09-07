@@ -1,0 +1,17 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "FORGE"
+  },
+  "to": {
+    "eidolon": "Vivi"
+  },
+  "performative": "DECIDE",
+  "objective": "Reuse the shared When surface in M2 editing without losing exact canonical intervals or conflict safety.",
+  "context_delta": {
+    "dg_01": "Direct Calendar selection explicitly resizes endpoint dates; relative date input relocates by day delta; timed relative input preserves naive wall-minute duration; all-day plus explicit time becomes one hour.",
+    "dg_02": "Keep an exact temporal baseline in the GUI draft; passthrough baseline start/end on semantic equality; serialize only changed values through the existing one-TZID wall-time bridge; no core change.",
+    "conflict": "Review preserves the entire draft and its exact baseline with the fresh token; Use latest replaces both; neither choice writes.",
+    "dirty": "Compare composed exact temporal values against latest, including both endpoints and type/TZID semantics, rather than using action history."
+  }
+}

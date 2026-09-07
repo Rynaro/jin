@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "command": ".eidolons/harness/hooks/codex-UserPromptSubmit.sh"
+      }
+    ],
+    "SessionStart": [
+      {
+        "command": ".eidolons/harness/hooks/codex-SessionStart.sh"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "command": ".eidolons/harness/hooks/codex-PreToolUse.sh"
+      }
+    ]
+  }
+}

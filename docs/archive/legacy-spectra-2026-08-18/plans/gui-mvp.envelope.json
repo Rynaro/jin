@@ -1,0 +1,59 @@
+{
+  "envelope_version": "1.0",
+  "message_id": "b70176db-115b-4991-b38d-4a10f95fdf52",
+  "thread_id": "6a9a8db3-2548-4f5b-b922-01856fdb9e90",
+  "parent_id": null,
+  "from": {
+    "eidolon": "spectra",
+    "version": "4.10.0"
+  },
+  "to": {
+    "eidolon": "apivr",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Propose the GUI MVP build specification for project Jin: a Tauri 2.11 desktop app that is a pure consumer of jin-core, mirroring the CLI hero flow visually with an approximated Apple HIG / Liquid Glass aesthetic.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/gui-mvp.md",
+    "sha256": "2506475fd1f8f5cacb9ba23152b7cae4082b1b8565efb9472b4a1d04bd140c29",
+    "size_bytes": 80408
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 5400,
+    "input_handles": [
+      "design.md",
+      "docs/adr/0003-runtime-and-gui-contract.md",
+      ".spectra/plans/mvp-integrated-thin-slice.md",
+      "docs/adr/0001-data-model-and-linking.md"
+    ],
+    "summary": "Decision-ready dual-format spec for the Jin GUI MVP. Architecture fixed by ADR-0003 (Tauri 2.11 + in-process jin-core + VG4 no-direct-SQLite). Decomposes the presentation layer and the command bridge into 9 INVEST stories (GUI-S0..S8) with GIVEN/WHEN/THEN criteria, 8 GUI validation gates, and a 4-milestone sequence. Defines: the recommended 6-view scope (Today/agenda hero + Notes/Tasks/Events browse+detail + Capture/Create + Sync/Settings); HIG sidebar IA with Today-as-home; a concrete web mapping of design.md (11-style type scale to rem, semantic color roles light/dark, Liquid Glass via backdrop-filter with reduced-transparency/increased-contrast/reduced-motion fallbacks, 8pt grid, concentric radii, 44pt targets, Dynamic-Type scaling); the #[tauri::command] surface returning existing DTOs in the existing envelope with exit-code-to-error-state mapping; a frontend stack recommendation (Svelte 5 + Vite + TS, upgrade Node 16 -> 20 LTS); and a headless-aware verification approach (bridge + frontend-logic tests run headless; visual correctness requires owner cargo-tauri-dev sign-off). Open decisions are tagged [USER-DECISION]/[FORGE]/[SPEC]/[GAP]/[ASSUMPTION]; UD4 (framework) and UD5 (Node) should be resolved with the owner before scaffolding. APIVR/builder should start with GUI-S0 (scaffold + command bridge), the fully-headless-verifiable spine, gated on VG-GUI-1/2/4."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "expected_response": {
+    "performative": "ACKNOWLEDGE",
+    "shape_hint": "resolve [USER-DECISION] UD4/UD5 with owner, then build GUI-S0 (scaffold + command bridge) and report; or orchestrator fan-out decision for GUI-S4||S5 + GUI-S7 after GUI-S2"
+  },
+  "confidence": 0.87,
+  "assumptions": [
+    "jin-core DTO field names (NoteDto/TaskDto/EventDto/AgendaDto/AgendaEventDto with originating_task + prep_notes) match the spec section 4.3 - confirm against jin-core/src/dto/* at GUI-S0.",
+    "Tauri 2.11 command/serde interop returns the DTO envelope cleanly across the IPC boundary.",
+    "The CLI verb grammar + exit-code taxonomy (thin-slice S3) is the canonical surface the GUI mirrors.",
+    "WebKitGTK media-query support for prefers-reduced-transparency/prefers-contrast is inconsistent, so manual in-app a11y toggles are mandatory (GAP G1)."
+  ],
+  "integrity": {
+    "method": "sha256",
+    "value": "2506475fd1f8f5cacb9ba23152b7cae4082b1b8565efb9472b4a1d04bd140c29"
+  },
+  "trace": {
+    "ts": "2026-06-27T00:00:00Z",
+    "host": "claude-code",
+    "model": "claude-opus-4-8-1m",
+    "tier": "standard"
+  }
+}

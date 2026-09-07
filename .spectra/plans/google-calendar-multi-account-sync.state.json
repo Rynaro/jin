@@ -1,0 +1,187 @@
+{
+  "schema": "ramza/plan-state.v1",
+  "plan": "google-calendar-multi-account-sync",
+  "created_at": "2026-08-26T23:12:20Z",
+  "tier": "full",
+  "phase": "DONE",
+  "phases_done": [
+    "RS",
+    "S",
+    "P",
+    "E",
+    "C",
+    "T",
+    "R",
+    "T",
+    "A",
+    "DONE"
+  ],
+  "rightsize": {
+    "score": 8,
+    "computed_tier": "full",
+    "inputs": {
+      "files_est": 30,
+      "new_dep": false,
+      "public_api": true,
+      "migration": true,
+      "security": true,
+      "novel": true,
+      "stakes": "high"
+    }
+  },
+  "refine_cycles": 1,
+  "skips": [],
+  "gates": [
+    {
+      "rubric": "complexity",
+      "total": 11,
+      "dims": {
+        "scope": 3,
+        "ambiguity": 2,
+        "dependencies": 3,
+        "risk": 3
+      },
+      "verdict": "human_loop",
+      "at": "2026-08-26T23:12:21Z"
+    },
+    {
+      "rubric": "explore",
+      "total": 73,
+      "dims": {
+        "alignment": 9,
+        "correctness": 7,
+        "maintainability": 8,
+        "performance": 7,
+        "simplicity": 5,
+        "risk": 5,
+        "innovation": 8
+      },
+      "verdict": "solid",
+      "at": "2026-08-26T23:20:31Z",
+      "label": "candidate-b-anonymous"
+    },
+    {
+      "rubric": "explore",
+      "total": 76.5,
+      "dims": {
+        "alignment": 7,
+        "correctness": 8,
+        "maintainability": 8,
+        "performance": 8,
+        "simplicity": 8,
+        "risk": 8,
+        "innovation": 6
+      },
+      "verdict": "solid",
+      "at": "2026-08-26T23:20:31Z",
+      "label": "candidate-a-anonymous"
+    },
+    {
+      "rubric": "explore",
+      "total": 87,
+      "dims": {
+        "alignment": 9,
+        "correctness": 9,
+        "maintainability": 9,
+        "performance": 8,
+        "simplicity": 8,
+        "risk": 9,
+        "innovation": 8
+      },
+      "verdict": "elite",
+      "at": "2026-08-26T23:22:26Z",
+      "label": "merged-cycle-3"
+    },
+    {
+      "rubric": "refine",
+      "cycle": 1,
+      "total": 4.8,
+      "min": 4,
+      "dims": {
+        "clarity": 5,
+        "completeness": 5,
+        "actionability": 5,
+        "efficiency": 4,
+        "testability": 5
+      },
+      "verdict": "pass",
+      "at": "2026-08-26T23:25:49Z"
+    },
+    {
+      "rubric": "confidence",
+      "total": 92.5,
+      "dims": {
+        "pattern_match": 90,
+        "requirement_clarity": 95,
+        "decomposition_stability": 89,
+        "constraint_compliance": 96
+      },
+      "verdict": "AUTO_PROCEED",
+      "at": "2026-08-26T23:28:02Z"
+    }
+  ],
+  "amendments": [
+    {
+      "prev": "b90c79ef9060fdcf25ccc158cde24af9c11d0a0a7c4a08d3dd7f57cbf7d20868",
+      "new": "21e3759c41ac5c16f01d3e4f0b7459dbd9bc4f3da6c4abcc1e2418c5bbd6170c",
+      "reason": "Tonberry C7 requires explicit non-empty given and when fields for ubiquitous/state-driven manifest entries; assertions and verification methods unchanged.",
+      "at": "2026-08-26T23:30:19Z"
+    },
+    {
+      "prev": "21e3759c41ac5c16f01d3e4f0b7459dbd9bc4f3da6c4abcc1e2418c5bbd6170c",
+      "new": "1c6090ebe746fb1cad15fd87631c083e9ff1e807f1b8cb432b3929f05fe620fc",
+      "reason": "FORGE conditional no-go reconciliation: bind stable provider subject; transactional migration and downgrade guard; credential/refresh isolation; composite recurrence keys; quarantine/review; exact intent routes; complete 412 audit; disconnect/reconnect safety; hard barriers and stale-write precedence.",
+      "at": "2026-08-26T23:37:42Z"
+    },
+    {
+      "prev": "1c6090ebe746fb1cad15fd87631c083e9ff1e807f1b8cb432b3929f05fe620fc",
+      "new": "81da28e8086440353334e35d4ca888a7ad5d0f82beaeb2cd5776f36150f67110",
+      "reason": "Align RAMZA handoff status with persisted full-tier ESL transition proposed-to-deliberated after FORGE objections closed.",
+      "at": "2026-08-26T23:38:39Z"
+    },
+    {
+      "prev": "81da28e8086440353334e35d4ca888a7ad5d0f82beaeb2cd5776f36150f67110",
+      "new": "e7173c289f64713adbfebf09808f7043c29cbdba46db603acf1d540ae945ed60",
+      "reason": "Apply the recorded AC-GCAL-043 planner amendment: current Jin fails closed on legacy singleton operations while the pinned historical-binary counterexample remains an explicit non-retroactivity boundary.",
+      "at": "2026-09-01T15:22:52Z"
+    }
+  ],
+  "declared_scope": [
+    ".spectra/changes/google-calendar-multi-account-sync/**",
+    ".spectra/plans/google-calendar-multi-account-sync*",
+    "jin-core/src/config.rs",
+    "jin-core/src/model/event.rs",
+    "jin-core/src/google/**",
+    "jin-core/src/sync/**",
+    "jin-core/src/ops/events.rs",
+    "jin-core/src/ops/promote.rs",
+    "jin-core/src/ops/sync.rs",
+    "jin-core/src/dto/**",
+    "jin-core/src/index/**",
+    "jin/src/main.rs",
+    "jin/tests/**",
+    "jin-gui/src-tauri/src/**",
+    "jin-gui/src-tauri/tests/**",
+    "jin-gui/src/types/**",
+    "jin-gui/src/invoke.ts",
+    "jin-gui/src/controllers/settings_controller.ts",
+    "jin-gui/src/controllers/events_controller.ts",
+    "jin-gui/src/controllers/calendar_view_controller.ts",
+    "jin-gui/src/lib/settings/**",
+    "jin-gui/src/lib/events/**",
+    "jin-gui/src/__tests__/**",
+    "jin-gui/src/styles/**",
+    "jin-gui/index.html",
+    "docs/adr/0004-google-calendar-sync.md",
+    "docs/google-smoke-test.md",
+    "docs/testing.md"
+  ],
+  "criteria_sha256": "e7173c289f64713adbfebf09808f7043c29cbdba46db603acf1d540ae945ed60",
+  "critic": {
+    "author": "ramza-trance",
+    "checker": "g3-independent-evaluator",
+    "at": "2026-08-26T23:25:49Z"
+  },
+  "scope_declared_at": "2026-08-26T23:28:21Z",
+  "criteria_frozen_at": "2026-08-26T23:28:21Z"
+}

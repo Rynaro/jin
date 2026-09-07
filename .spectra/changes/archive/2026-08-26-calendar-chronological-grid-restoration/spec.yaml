@@ -1,0 +1,176 @@
+eidolon: ramza
+kind: spec
+version: 1.0.0
+created_at: 2026-08-26
+change_id: calendar-chronological-grid-restoration
+esl_tier: full
+status: deliberated
+maker: Vivi
+checker: VIGIL
+spec_ref: .spectra/changes/calendar-chronological-grid-restoration/spec.md
+change_ref: .spectra/changes/calendar-chronological-grid-restoration/change.json
+intent_class: CHANGE
+
+intent: >-
+  Restore Day and Week as a shared chronological wall-time grid inspired by
+  HEY Calendar's calm reading of time, while preserving Jin identity and the
+  archived M1/M2 detail, edit, source, privacy, and canonical boundaries.
+
+diagnosis:
+  week: seven static flex columns containing unpositioned chips
+  day: sorted Event list with no temporal y-axis
+  missing:
+    - shared hour rail and separators
+    - positioned duration and overlap geometry
+    - all-day lane and continuation
+    - current-time marker and internal timeline scroll
+    - committed pure time-grid history
+  prototype_policy: read-only reference; re-implement seams and do not wholesale-copy its older controller
+
+official_references:
+  - url: https://help.hey.com/article/800-calendar-overview
+    principle: Day is one readable continuous line of time; Week shows how days fit together.
+  - url: https://help.hey.com/article/846-nighttime
+    principle: Nighttime is collapsed from 22:00 to 06:00 and can be revealed.
+  - url: https://www.hey.com/calendar/
+    principle: Preserve continuous time and visible uninterrupted free space.
+
+decisions:
+  - id: D-01
+    decision: One pure wall-time model feeds Day with one date and Week with exactly seven dates.
+  - id: D-02
+    decision: Stored wall-clock components are parsed directly without browser timezone conversion.
+  - id: D-03
+    decision: Timed and all-day intervals use half-open clipping with continuation flags.
+  - id: D-04
+    decision: Overlap columns are stable by semantic start, semantic end, and Event id; touching endpoints do not overlap.
+  - id: D-05
+    decision: Minimum visual height never changes semantic duration or overlap truth.
+  - id: D-06
+    decision: Day and Week share sticky date/all-day structure, hour rail, internal timed scroll, and now marker.
+  - id: D-07
+    decision: Initial scroll is earliest timed Event minus one hour or 08:00 when empty, and later rerenders do not reset it.
+  - id: D-08
+    decision: Source and Time block identity use text/icon/accessibility semantics beyond color; activation routes to detail only.
+  - id: D-09
+    decision: Locale owns hour cycle and all copy; narrow Week retains seven columns via internal horizontal scroll.
+  - id: D-10
+    decision: Each early/late nighttime band auto-expands when any visible Event segment or today's current-time marker intersects it; Week shares the band state across seven columns.
+  - id: D-11
+    decision: Manual nighttime choices are active-view-local, survive same-view rerenders and detail Back, and reset on mode/date/week change or disconnect.
+
+decision_gates:
+  - id: DG-01
+    owner: FORGE
+    status: resolved
+    verdict: auto-expand occupied/current nighttime; empty bands remain compressed; explicit manual collapse may override for the active view
+    invariants:
+      - no Event leaves DOM or accessibility
+      - aria-expanded is accurate
+      - Week toggles a shared band across seven columns
+      - hours remain fixed at 22:00–06:00
+  - id: DG-02
+    owner: FORGE
+    status: resolved
+    verdict: active-view-local state, not app-session-wide or persistent
+    invariants:
+      - no canonical or synced preference
+      - no unexpected recollapse during interaction
+
+scope:
+  in:
+    - pure time-grid model
+    - Day one-column and Week seven-column shared renderer
+    - hour rail, separators, sticky headers, all-day lane
+    - half-open clipping, deterministic overlap, continuation, visual minimum
+    - safe today-only now marker
+    - internal scroll and deterministic initial position
+    - fixed compressed/revealable nighttime
+    - source and Time block semantics beyond color
+    - keyboard, accessibility, locales, themes, responsive QA
+    - M1/M2 detail/edit/back preservation
+    - due Tasks outside grid
+  out:
+    - drag or resize
+    - click/drag empty-space creation
+    - configurable hours
+    - timezone selector
+    - virtualization
+    - new mutation authority or recurrence behavior
+    - Month redesign
+
+stories:
+  - id: S1
+    title: Freeze pure temporal geometry
+    timebox: 3d
+    risk: P0
+    depends_on: []
+  - id: S2
+    title: Build the shared accessible renderer
+    timebox: 4d
+    risk: P0
+    depends_on: [S1]
+  - id: S3
+    title: Restore Day as a continuous line of time
+    timebox: 2d
+    risk: P1
+    depends_on: [S2]
+  - id: S4
+    title: Restore Week as seven aligned days
+    timebox: 3d
+    risk: P1
+    depends_on: [S2]
+  - id: S5
+    title: Add safe now and nighttime behavior
+    timebox: 2d
+    risk: P0
+    depends_on: [S3, S4]
+  - id: S6
+    title: Complete locale, theme, responsive, and focus fidelity
+    timebox: 3d
+    risk: P1
+    depends_on: [S3, S4, S5]
+  - id: S7
+    title: Verify preserved calendar boundaries
+    timebox: 2d
+    risk: P0
+    depends_on: [S1, S2, S3, S4, S5, S6]
+
+acceptance_criteria:
+  - { id: AC-001, given: Day mode, when: its Event surface renders, then: it SHALL contain one chronological timed column with a shared hour rail rather than an Event list, verify_method: "GUI DOM test plus Playwright Day evidence" }
+  - { id: AC-002, given: Week mode, when: its Event surface renders, then: it SHALL contain exactly seven aligned chronological day columns with one shared time scale, verify_method: "GUI DOM test plus Playwright Week evidence" }
+  - { id: AC-003, given: the same timed Event and visible date, when: Day and Week models are built, then: semantic clipped start/end minutes and continuation flags SHALL match, verify_method: "unit: shared model projection parity" }
+  - { id: AC-004, given: an Event ending at midnight, when: the following date is modeled, then: no segment SHALL be emitted for that exclusive end date, verify_method: "unit: half-open midnight fixture" }
+  - { id: AC-005, given: a timed Event crossing day or visible-window boundaries, when: the model is built, then: each visible day SHALL receive one half-open clipped segment with correct continuation flags, verify_method: "unit: multi-day segment matrix" }
+  - { id: AC-006, given: overlapping Events in any input order, when: columns are assigned, then: the same lowest-free columns and cluster count SHALL result and touching endpoints SHALL not overlap, verify_method: "unit: shuffled deterministic overlap matrix" }
+  - { id: AC-007, given: a short Event, when: visual geometry is calculated, then: its block SHALL meet minimum visual height while semantic end duration label and overlap remain unchanged, verify_method: "unit plus GUI compact-block assertions" }
+  - { id: AC-008, given: all-day Events crossing or overlapping the visible window, when: the all-day lane is built, then: spans SHALL use exclusive ends deterministic non-colliding lanes and continuation cues, verify_method: "unit: all-day lane matrix" }
+  - { id: AC-009, given: malformed zero-length or backwards temporal input, when: the model is built, then: it SHALL fail closed without invalid geometry or runtime error, verify_method: "unit: malformed temporal matrix" }
+  - { id: AC-010, given: stored wall time with floating TZID offset-shaped and DST-boundary fixtures, when: grid position is calculated, then: displayed wall-clock minutes SHALL not shift through the browser timezone, verify_method: "unit: wall-time fidelity matrix" }
+  - { id: AC-011, given: a Day or Week render, when: hour labels appear, then: they SHALL use the effective locale hour cycle and registry-backed visible/accessibility copy, verify_method: "GUI locale tests for en and pt-BR" }
+  - { id: AC-012, given: a Jin or Google Event block, when: it renders, then: source SHALL be conveyed beyond color and its accessible name SHALL include exact Source label, verify_method: "GUI semantics test" }
+  - { id: AC-013, given: an Event with derived_from, when: it renders, then: a visible and accessible exact Time block cue SHALL appear regardless of Task availability, verify_method: "GUI Time block semantics test" }
+  - { id: AC-014, given: overlapping or compact blocks, when: keyboard traversal runs, then: controls SHALL remain focusable in chronological DOM order and activation SHALL open authoritative detail, verify_method: "GUI plus Playwright keyboard flow" }
+  - { id: AC-015, given: detail opens from Day or Week, when: Back is activated, then: the same mode date/week internal scroll and Event focus SHALL be restored, verify_method: "GUI plus Playwright back restoration" }
+  - { id: AC-016, given: M2 edit is entered from grid Event detail, when: Save Cancel stale conflict or error resolves, then: no grid-local mutation policy SHALL appear and canonical detail/edit contracts SHALL remain unchanged, verify_method: "existing M2 suite plus browser smoke" }
+  - { id: AC-017, given: today's visible column, when: time advances across a minute boundary, then: one now marker SHALL update in place without rebuilding Events changing focus or resetting scroll and other columns SHALL contain none, verify_method: "fake-timer GUI test" }
+  - { id: AC-018, given: the grid rerenders or controller disconnects, when: timers are inspected, then: obsolete timers SHALL be cancelled and at most one live refresh schedule SHALL remain, verify_method: "fake-timer lifecycle test" }
+  - { id: AC-019, given: first entry with timed Events, when: initial scroll applies, then: "internal body SHALL use earliest semantic start minus one hour clamped or 08:00 when empty", verify_method: "GUI scroll calculation test" }
+  - { id: AC-020, given: a fixed early or late nighttime band, when: first rendered rerendered manually toggled or entered by current time, then: it SHALL auto-expand for visible Event/current time unless manually collapsed for the active view preserve same-view overrides reset on identity change keep every Event accessible with localized Event-count time-range current-time summary and accurate aria-expanded and share Week band state, verify_method: "model GUI fake-timer and Playwright nighttime lifecycle flow" }
+  - { id: AC-021, given: due Tasks for selected Day, when: Day renders, then: Tasks SHALL remain in a separate section after/outside the Event grid, verify_method: "GUI DOM ordering test" }
+  - { id: AC-022, given: a narrow Week viewport, when: the grid renders, then: seven columns SHALL remain available through timeline-internal horizontal scroll and the document SHALL not overflow, verify_method: "Playwright responsive overflow evidence" }
+  - { id: AC-023, given: supported widths themes locales reduced motion and Event states, when: visual QA runs, then: labels focus blocks rail sticky layers and free space SHALL remain readable without clipping or traps, verify_method: "Playwright MCP plus native owner sign-off" }
+  - { id: AC-024, given: the complete existing GUI suite, when: the change is verified, then: M1/M2 detail edit back Google privacy/read-only recurrence create Month and canonical interaction tests SHALL remain green, verify_method: "command: npm --prefix jin-gui test -- --run" }
+
+verification_commands:
+  - npm --prefix jin-gui test -- --run src/__tests__/calendar_time_grid.test.ts
+  - npm --prefix jin-gui test -- --run src/__tests__/calendar_view_controller.test.ts
+  - npm --prefix jin-gui test -- --run src/__tests__/events_controller.test.ts src/__tests__/event_edit.test.ts src/__tests__/event_locale.test.ts
+  - npm --prefix jin-gui test -- --run
+  - npm --prefix jin-gui run build
+  - npm --prefix jin-gui run lint:css
+  - git diff --check
+
+next_handoff:
+  eidolon: Vivi
+  action: transition to in_progress and implement S1-S7 within D-10/D-11 without configurable hours or persistent preferences

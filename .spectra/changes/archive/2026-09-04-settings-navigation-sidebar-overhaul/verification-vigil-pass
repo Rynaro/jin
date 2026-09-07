@@ -1,0 +1,65 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "idg"
+  },
+  "performative": "INFORM",
+  "objective": "verify_pass: independent VIGIL verification accepts settings-navigation-sidebar-overhaul against AC-NAV-001..037",
+  "context_delta": {
+    "acceptance_check_ids": [
+      "AC-NAV-001",
+      "AC-NAV-002",
+      "AC-NAV-003",
+      "AC-NAV-004",
+      "AC-NAV-005",
+      "AC-NAV-006",
+      "AC-NAV-007",
+      "AC-NAV-008",
+      "AC-NAV-009",
+      "AC-NAV-010",
+      "AC-NAV-011",
+      "AC-NAV-012",
+      "AC-NAV-013",
+      "AC-NAV-014",
+      "AC-NAV-015",
+      "AC-NAV-016",
+      "AC-NAV-017",
+      "AC-NAV-018",
+      "AC-NAV-019",
+      "AC-NAV-020",
+      "AC-NAV-021",
+      "AC-NAV-022",
+      "AC-NAV-023",
+      "AC-NAV-024",
+      "AC-NAV-025",
+      "AC-NAV-026",
+      "AC-NAV-027",
+      "AC-NAV-028",
+      "AC-NAV-029",
+      "AC-NAV-030",
+      "AC-NAV-031",
+      "AC-NAV-032",
+      "AC-NAV-033",
+      "AC-NAV-034",
+      "AC-NAV-035",
+      "AC-NAV-036",
+      "AC-NAV-037"
+    ],
+    "ci_status": "LOGIC VERIFIED — VISUALS NOT VERIFIED",
+    "fresh_context": true,
+    "native_limitation": "Native Tauri/WKWebView/WebKitGTK rendering and feel not exercised; owner visual sign-off outstanding.",
+    "report_path": ".spectra/changes/settings-navigation-sidebar-overhaul/verification-vigil.md",
+    "tests": {
+      "css_lint": "passed",
+      "focused_navigation": "4 files / 403 tests passed",
+      "full_frontend": "51 files / 1873 tests passed",
+      "git_diff_check": "passed",
+      "playwright": "passed; 0 console errors/warnings",
+      "production_build": "passed"
+    },
+    "verdict": "verify_pass"
+  }
+}

@@ -1,0 +1,316 @@
+/**
+ * a11y.css — HIG-mandated accessibility fallbacks (dual mechanism).
+ *
+ * Each of the three HIG a11y modes is implemented TWICE:
+ *   1. CSS media query (standard, may be unreliable on WebKitGTK — GAP G1)
+ *   2. Manual in-app toggle via root data-attribute (always works)
+ *
+ * The Appearance Stimulus controller (src/controllers/appearance_controller.ts)
+ * sets these data-attributes and persists them in localStorage so the owner's
+ * Linux preferences survive app restarts even when WebKitGTK media queries
+ * don't fire.
+ *
+ * Data-attributes override their corresponding media queries when set to "1".
+ * Set to "0" means the manual toggle is explicitly OFF (not absent).
+ *
+ * All values reference tokens from tokens.css — NO raw hex here.
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 1. Reduced Transparency
+ *    Glass materials become opaque; backdrop-filter is removed.
+ *    Legibility must remain ≥4.5:1 (the glass tint uses --bg-secondary instead).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Via media query */
+@media (prefers-reduced-transparency: reduce) {
+  .material-thin,
+  .material-regular,
+  .material-thick,
+  .glass {
+    background-color: var(--bg-secondary);
+    -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+    /* Keep the hairline border for visual separation */
+    border: 1px solid var(--separator-opaque);
+    box-shadow: none;
+  }
+
+
+  .jin-chrome,
+  .jin-transient,
+  .action-dialog,
+  .capture-modal,
+  .jin-select-field__listbox {
+    background-color: var(--bg-elevated) !important;
+    -webkit-backdrop-filter: none !important;
+            backdrop-filter: none !important;
+    border: 1px solid var(--separator-opaque) !important;
+    box-shadow: none !important;
+  }
+}
+
+/* Via manual in-app toggle */
+[data-reduce-transparency="1"] .material-thin,
+[data-reduce-transparency="1"] .material-regular,
+[data-reduce-transparency="1"] .material-thick,
+[data-reduce-transparency="1"] .glass {
+  background-color: var(--bg-secondary);
+  -webkit-backdrop-filter: none;
+          backdrop-filter: none;
+  border: 1px solid var(--separator-opaque);
+  box-shadow: none;
+}
+
+[data-reduce-transparency="1"] .jin-chrome,
+[data-reduce-transparency="1"] .jin-transient,
+[data-reduce-transparency="1"] .action-dialog,
+[data-reduce-transparency="1"] .capture-modal,
+[data-reduce-transparency="1"] .jin-select-field__listbox {
+  background-color: var(--bg-elevated) !important;
+  -webkit-backdrop-filter: none !important;
+          backdrop-filter: none !important;
+  border: 1px solid var(--separator-opaque) !important;
+  box-shadow: none !important;
+}
+
+/* Structural rails stay continuous in opaque mode. The generic glass
+ * fallback above uses a complete border for floating chrome; rails only need
+ * their content-edge separator. */
+@media (prefers-reduced-transparency: reduce) {
+  .jin-navigation-rail {
+    background-color: var(--workspace-context) !important;
+    border: 0 !important;
+    border-inline-end: 1px solid var(--separator-opaque) !important;
+    box-shadow: none !important;
+  }
+}
+
+[data-reduce-transparency="1"] .jin-navigation-rail {
+  background-color: var(--workspace-context) !important;
+  border: 0 !important;
+  border-inline-end: 1px solid var(--separator-opaque) !important;
+  box-shadow: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 2. Increased Contrast
+ *    Stark separators, secondary labels gain full-contrast treatment.
+ *    Color independence remains — states still carry icon/shape/text.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Via media query */
+@media (prefers-contrast: more) {
+  :root {
+    --separator: var(--separator-opaque);
+    --label-secondary: var(--label);
+    --fill-primary: var(--fill-secondary);
+  }
+
+
+  .jin-chrome,
+  .jin-transient,
+  .action-dialog,
+  .capture-modal {
+    border-color: var(--separator-opaque) !important;
+  }
+
+  .jin-navigation-row[aria-current="page"]::before,
+  .jin-navigation-row.is-active::before,
+  .jin-navigation-row.jin-nav-item--active::before,
+  [role="treeitem"][aria-selected="true"] > .jin-navigation-row::before,
+  .jin-list-row[aria-selected="true"]::before,
+  .jin-list-row.task-item--selected::before {
+    background: var(--label) !important;
+  }
+}
+
+/* Via manual in-app toggle */
+[data-increase-contrast="1"] {
+  --separator: var(--separator-opaque);
+  --label-secondary: var(--label);
+  --fill-primary: var(--fill-secondary);
+}
+
+[data-increase-contrast="1"] .material-thin,
+[data-increase-contrast="1"] .material-regular,
+[data-increase-contrast="1"] .material-thick,
+[data-increase-contrast="1"] .glass {
+  border: 1px solid var(--separator-opaque);
+}
+
+[data-increase-contrast="1"] .jin-chrome,
+[data-increase-contrast="1"] .jin-transient,
+[data-increase-contrast="1"] .action-dialog,
+[data-increase-contrast="1"] .capture-modal {
+  border-color: var(--separator-opaque) !important;
+}
+
+[data-increase-contrast="1"] .jin-navigation-row[aria-current="page"]::before,
+[data-increase-contrast="1"] .jin-navigation-row.is-active::before,
+[data-increase-contrast="1"] .jin-navigation-row.jin-nav-item--active::before,
+[data-increase-contrast="1"] [role="treeitem"][aria-selected="true"] > .jin-navigation-row::before,
+[data-increase-contrast="1"] .jin-list-row[aria-selected="true"]::before,
+[data-increase-contrast="1"] .jin-list-row.task-item--selected::before {
+  background: var(--label) !important;
+}
+
+/* At accessibility text sizes, fixed ledger heights become minimums so text
+ * can reflow instead of clipping. Controls keep their full pointer targets. */
+@supports (font-size: max(1rem, 1px)) {
+  :root {
+    --rail-row-height: max(2rem, 1.65em);
+    --task-row-height: max(2.5rem, 2.15em);
+    --note-row-height: max(4.25rem, 3.6em);
+  }
+}
+
+/* AX text sizes retain the normal compact rail at standard scales, then grant
+ * labels enough inline space to reflow at 1.6x–3.1x. The upper bound protects
+ * the workspace and the existing collapsed rail remains available. */
+:root[data-text-scale="accessibility"] {
+  --app-rail-width: clamp(240px, 24vw, 320px);
+}
+
+:root[data-text-scale="accessibility"] .jin-sidebar:not(.is-collapsed) {
+  width: var(--app-rail-width);
+}
+
+:root[data-text-scale="accessibility"] :is(
+  .jin-nav-item,
+  .jin-capture-btn,
+  .jin-settings-btn
+) {
+  height: auto;
+  white-space: normal;
+}
+
+@media (max-width: 720px) {
+  :root[data-text-scale="accessibility"] {
+    --app-rail-width: min(44vw, 288px);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 3. Reduced Motion
+ *    All animations and transitions are disabled.
+ *    Transitions communicate hierarchy (design.md §5.8); when disabled,
+ *    instant transitions replace directional slides.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Via media query */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Via manual in-app toggle */
+[data-reduce-motion="1"] *,
+[data-reduce-motion="1"] *::before,
+[data-reduce-motion="1"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 4. Color independence baseline
+ *    Every state must carry: color AND icon/shape AND text label.
+ *    These helpers enforce the pattern for status badges.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Screen-reader-only text — visually hidden but announced by Orca/VoiceOver */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Skip-to-main-content link (keyboard users) */
+.skip-to-content {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 9999;
+  padding: var(--space-1) var(--space-2);
+  background-color: var(--bg-elevated);
+  color: var(--accent);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--separator-opaque);
+  text-decoration: none;
+  font-weight: 600;
+  transform: translateY(-200%);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.skip-to-content:focus {
+  transform: translateY(0);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 5. Print — always opaque, no glass
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+@media print {
+  .material-thin,
+  .material-regular,
+  .material-thick,
+  .glass,
+  .jin-chrome,
+  .jin-transient,
+  .action-dialog,
+  .capture-modal {
+    background-color: var(--bg-base);
+    -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+    box-shadow: none;
+    border: 1px solid var(--separator-opaque);
+  }
+}
+
+/* Forced-colors keeps Nanquim state marks semantic without depending on ink
+ * or seal pigments. Decorative dry-brush rules disappear entirely. */
+@media (forced-colors: active) {
+  .jin-chrome,
+  .jin-transient,
+  .jin-navigation-rail,
+  .jin-list-row,
+  .today-event-row {
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+
+  .jin-navigation-row[aria-current="page"]::before,
+  .jin-navigation-row.is-active::before,
+  .jin-navigation-row.jin-nav-item--active::before,
+  [role="treeitem"][aria-selected="true"] > .jin-navigation-row::before,
+  .jin-list-row[aria-selected="true"]::before,
+  .jin-list-row.task-item--selected::before {
+    background: Highlight;
+    box-shadow: none;
+  }
+
+  .jin-section-header::after,
+  .today-section__heading::after,
+  .jin-sidebar-header::after {
+    display: none;
+  }
+
+  .calendar-widget__day-btn[data-state="selected"] {
+    color: HighlightText;
+    background: Highlight;
+  }
+}

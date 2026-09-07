@@ -1,0 +1,99 @@
+{
+  "spec_id": "2026-06-29-jin-notes-folder-mgmt",
+  "session_id": "spectra-2026-06-29-folder-mgmt",
+  "created_at": "2026-06-29",
+  "status": "ready_for_handoff",
+  "handoff_to": "vivi",
+  "base_branch": "main",
+  "complexity": 9,
+  "confidence": 0.90,
+  "ecl_envelope": false,
+  "phase_log": {
+    "recall": "done",
+    "clarify": "skipped (intent unambiguous; owner-locked decisions + open decisions all resolved in spec section 3)",
+    "scope": "done",
+    "pattern": "done (ADAPT: move_note + bridge round-trip + renderFolderTree/<dialog> harness)",
+    "explore": "done (per-note move_note selected; fs::rename / soft-delete / SQL-rename / right-click-only rejected)",
+    "construct": "done (5 stories + 4 kupo tasks)",
+    "test": "done (6-layer)",
+    "refine": "not entered (confidence >= 85% at first assemble)",
+    "assemble": "done"
+  },
+  "steps": [
+    {
+      "id": "S1",
+      "name": "Backend rename_folder core op + parent_of helper",
+      "status": "pending",
+      "depends_on": [],
+      "files": ["jin-core/src/ops/notes.rs", "jin-core/src/store/fs.rs"],
+      "gates": ["VG-RENAME-CORE"],
+      "verification": "pending"
+    },
+    {
+      "id": "S2",
+      "name": "Backend delete_folder (move-to-parent) core op",
+      "status": "pending",
+      "depends_on": ["S1"],
+      "files": ["jin-core/src/ops/notes.rs"],
+      "gates": ["VG-DELETE-CORE"],
+      "verification": "pending"
+    },
+    {
+      "id": "S3",
+      "name": "Tauri commands + invoke bindings + anti-shallow bridge round-trips",
+      "status": "pending",
+      "depends_on": ["S1", "S2"],
+      "files": [
+        "jin-gui/src-tauri/src/commands/folders.rs",
+        "jin-gui/src-tauri/src/lib.rs",
+        "jin-gui/src/invoke.ts",
+        "jin-gui/src-tauri/tests/bridge.rs"
+      ],
+      "gates": ["VG-RENAME-BRIDGE", "VG-DELETE-BRIDGE"],
+      "verification": "pending"
+    },
+    {
+      "id": "S4",
+      "name": "Drag note -> folder (frontend-only)",
+      "status": "pending",
+      "depends_on": [],
+      "files": [
+        "jin-gui/src/lib/notes/render.ts",
+        "jin-gui/src/controllers/notes_controller.ts",
+        "jin-gui/index.html",
+        "jin-gui/src/styles/browse.css",
+        "jin-gui/src/__tests__/notes_controller.test.ts"
+      ],
+      "gates": ["VG-DND"],
+      "verification": "pending"
+    },
+    {
+      "id": "S5",
+      "name": "Per-row kebab menu (Rename / Delete / New Subfolder)",
+      "status": "pending",
+      "depends_on": ["S3", "K1", "K2", "K3", "K4"],
+      "files": [
+        "jin-gui/index.html",
+        "jin-gui/src/lib/notes/render.ts",
+        "jin-gui/src/controllers/notes_controller.ts",
+        "jin-gui/src/lib/icons/index.ts",
+        "jin-gui/src/styles/browse.css",
+        "jin-gui/src/__tests__/notes_controller.test.ts"
+      ],
+      "gates": ["VG-KEBAB-RENAME", "VG-KEBAB-RENAME-NESTED", "VG-KEBAB-DELETE", "VG-SUBFOLDER", "VG-CURRENT-SYNC", "VG-A11Y-KEBAB"],
+      "preserve_gates": ["VG-FE", "VG-FE-FOLDER-OPEN", "VG-FE-TMPL", "folderTree-pure", "VG-NEW-FOLDER", "G-XSS"],
+      "verification": "pending"
+    }
+  ],
+  "kupo_tasks": [
+    { "id": "K1", "file": "jin-gui/src/invoke.ts", "story": "S3", "status": "pending" },
+    { "id": "K2", "file": "jin-gui/src/lib/icons/index.ts", "story": "S5", "status": "pending" },
+    { "id": "K3", "file": "jin-gui/src/styles/browse.css", "story": "S4/S5", "status": "pending" },
+    { "id": "K4", "file": "jin-gui/index.html", "story": "S4/S5", "status": "pending" }
+  ],
+  "execution_order": ["S1", "S2", "S3", "S4", "S5"],
+  "parallelizable_after_S3": ["S4", "S5"],
+  "gate_order_constraint": "backend gates green before frontend stories",
+  "replanning_history": []
+}
+</content>

@@ -1,0 +1,240 @@
+{
+  "schema": "ramza/plan-state.v1",
+  "plan": "todo-loop-closure",
+  "created_at": "2026-07-14T14:18:44Z",
+  "tier": "full",
+  "phase": "A",
+  "phases_done": [
+    "RS",
+    "S",
+    "P",
+    "E",
+    "C",
+    "T",
+    "R",
+    "T",
+    "A"
+  ],
+  "rightsize": {
+    "score": 6,
+    "computed_tier": "full",
+    "inputs": {
+      "files_est": 22,
+      "new_dep": false,
+      "public_api": true,
+      "migration": true,
+      "security": false,
+      "novel": false,
+      "stakes": "high"
+    }
+  },
+  "refine_cycles": 1,
+  "skips": [],
+  "gates": [
+    {
+      "rubric": "complexity",
+      "total": 11,
+      "dims": {
+        "scope": 3,
+        "ambiguity": 2,
+        "dependencies": 3,
+        "risk": 3
+      },
+      "verdict": "human_loop",
+      "at": "2026-07-14T14:23:44Z"
+    },
+    {
+      "rubric": "explore",
+      "total": 56,
+      "dims": {
+        "alignment": 5,
+        "correctness": 6,
+        "maintainability": 3,
+        "performance": 8,
+        "simplicity": 8,
+        "risk": 6,
+        "innovation": 2
+      },
+      "verdict": "weak",
+      "at": "2026-07-14T14:26:18Z",
+      "label": "H-A patch-in-place"
+    },
+    {
+      "rubric": "explore",
+      "total": 82,
+      "dims": {
+        "alignment": 10,
+        "correctness": 9,
+        "maintainability": 9,
+        "performance": 7,
+        "simplicity": 6,
+        "risk": 6,
+        "innovation": 6
+      },
+      "verdict": "solid",
+      "at": "2026-07-14T14:26:18Z",
+      "label": "H-B unified-item + selection-pane + kanban-by-status"
+    },
+    {
+      "rubric": "explore",
+      "total": 68,
+      "dims": {
+        "alignment": 7,
+        "correctness": 7,
+        "maintainability": 7,
+        "performance": 7,
+        "simplicity": 7,
+        "risk": 6,
+        "innovation": 5
+      },
+      "verdict": "weak",
+      "at": "2026-07-14T14:26:18Z",
+      "label": "H-C port notes 3-pane wholesale"
+    },
+    {
+      "rubric": "explore",
+      "total": 62,
+      "dims": {
+        "alignment": 6,
+        "correctness": 7,
+        "maintainability": 9,
+        "performance": 6,
+        "simplicity": 3,
+        "risk": 3,
+        "innovation": 9
+      },
+      "verdict": "weak",
+      "at": "2026-07-14T14:26:18Z",
+      "label": "H-D state-container rewrite"
+    },
+    {
+      "rubric": "explore",
+      "total": 62,
+      "dims": {
+        "alignment": 5,
+        "correctness": 8,
+        "maintainability": 7,
+        "performance": 8,
+        "simplicity": 4,
+        "risk": 4,
+        "innovation": 6
+      },
+      "verdict": "weak",
+      "at": "2026-07-14T14:26:19Z",
+      "label": "H-E core-first smart views"
+    },
+    {
+      "rubric": "confidence",
+      "total": 84.25,
+      "dims": {
+        "pattern_match": 80,
+        "requirement_clarity": 85,
+        "decomposition_stability": 82,
+        "constraint_compliance": 90
+      },
+      "verdict": "VALIDATE",
+      "at": "2026-07-14T14:31:15Z"
+    },
+    {
+      "rubric": "refine",
+      "cycle": 1,
+      "total": 4.2,
+      "min": 4,
+      "dims": {
+        "clarity": 4,
+        "completeness": 4,
+        "actionability": 4,
+        "efficiency": 4,
+        "testability": 5
+      },
+      "verdict": "pass",
+      "at": "2026-07-14T14:45:30Z"
+    },
+    {
+      "rubric": "confidence",
+      "total": 87.5,
+      "dims": {
+        "pattern_match": 85,
+        "requirement_clarity": 88,
+        "decomposition_stability": 85,
+        "constraint_compliance": 92
+      },
+      "verdict": "AUTO_PROCEED",
+      "at": "2026-07-14T14:45:30Z"
+    },
+    {
+      "rubric": "refine",
+      "cycle": 2,
+      "total": 4.4,
+      "min": 4,
+      "dims": {
+        "clarity": 4,
+        "completeness": 5,
+        "actionability": 4,
+        "efficiency": 4,
+        "testability": 5
+      },
+      "verdict": "pass",
+      "at": "2026-07-14T14:51:34Z"
+    }
+  ],
+  "amendments": [
+    {
+      "prev": "c159dc176971ed899a8363ea0a9e703eabfaa87668a09b4edb93c994b4010d9b",
+      "new": "2e7ab173109ef9d77afb4b6656d842d6346a5ea37c33320f6b4c3b45444789e0",
+      "reason": "R2: ESL tonberry.verify C3 (spec.yaml emitted) + C7 (39 trigger-less criteria given truthful GIVEN/WHEN; surfaced+closed a second supersession pair AC-S2-04 -> AC-S4-08). No criterion assertion weakened; no precondition fabricated.",
+      "at": "2026-07-14T14:51:34Z"
+    },
+    {
+      "prev": "2e7ab173109ef9d77afb4b6656d842d6346a5ea37c33320f6b4c3b45444789e0",
+      "new": "c75cca5080b228a53b575e545a74620a10b260d636bc6201decee0a40c2de783",
+      "reason": "R2b: gate-log accuracy — the refine phase transition for R2 was DENIED (refine is T-only; plan already at A). Preflight now records the DENY and the amendment-chain path instead of claiming a cycle that did not happen.",
+      "at": "2026-07-14T14:52:12Z"
+    },
+    {
+      "prev": "c75cca5080b228a53b575e545a74620a10b260d636bc6201decee0a40c2de783",
+      "new": "b38298918452245000c56c5d04f455c0504709381db8af45c8031a497d1f36c6",
+      "reason": "R3 (post-S1, implementation feedback): AC-X-01 + AC-S1-01 verify_method were UNPASSABLE (grep matched English prose in comments, not code) -> replacements independently re-verified on the real tree in both directions; AC-S1-04 gained an anti-vacuity CONSTRAINT (parse the Rust FSM, 8-arm guard) after a TS-table-vs-TS-table implementation; AC-X-* block split into per-PR / per-PR-regression / story-bound-else-wave-exit (AC-X-03 binds at S8, AC-X-07 at S6). No criterion assertion weakened: AC-X-04 explicitly held AT per-PR against the proposed relaxation.",
+      "at": "2026-07-14T15:39:12Z"
+    },
+    {
+      "prev": "b38298918452245000c56c5d04f455c0504709381db8af45c8031a497d1f36c6",
+      "new": "c744cbcf835e955b916032b8953d511e8639d9bcca42cd66a2a22f8ad285a6f6",
+      "reason": "R4 (post-S3): AC-S3-04 was a third unpassable grep (matched ListsController's correct, out-of-scope code that S5 KEEPS). Triggered a full both-directions audit of all 9 command-based verify_methods against the real tree. 5 amended: AC-S3-04 (scoped), AC-S1-01 (scope: __tests__ may legitimately name the literal), AC-S1-07 (PERMISSIVE - line-based regex missed a multi-line call; now -U + scoped away from invoke.ts which declares view?), AC-S2-06 (verified NON-VACUOUS against pre-S2 source; -U + comment-excluded), AC-S2-01/AC-S5-07 (comment/test exclusions), AC-S8-03 (STRENGTHENED - scope extended to tasks_controller.ts; would have passed with the dead Stimulus targets still declared). No assertion weakened; two gates that could never FAIL were closed. D1 recorded CLOSED+VERIFIED at S3.",
+      "at": "2026-07-14T17:14:57Z"
+    },
+    {
+      "prev": "c744cbcf835e955b916032b8953d511e8639d9bcca42cd66a2a22f8ad285a6f6",
+      "new": "9de4dd15ac9e87c32070aa6b8ea219a1da7837bc197512e15553266f59f83fb0",
+      "reason": "R5 (post-S7 review): AC-S7-02's worked example was ARITHMETICALLY IMPOSSIBLE - {done,todo} intersects to EMPTY, not [todo] (a status is never its own successor). Corrected to {done,doing}. A wrong worked example CONCEALS the case it gets wrong: the empty-intersection case had no criterion -> AC-S7-09 (new). Re-derived all 11 FSM-quoting criteria by parsing can_transition_to from Rust (8 arms, anti-vacuity asserted); the other 10 are TRUE. The derivation also surfaced an uncovered edge: the FSM has no self-transitions, so a card dropped back into its SOURCE column would call setTaskStatus(id, same) -> InvalidStateTransition -> AC-S4-09 (new), AC-S4-05 clarified. Criteria 77 -> 79; no existing id renumbered. New rule recorded in the spec: THE WORKED-EXAMPLE RULE.",
+      "at": "2026-07-14T21:51:18Z"
+    }
+  ],
+  "declared_scope": [
+    "jin-core/src/model/task.rs",
+    "jin-core/src/ops/tasks.rs",
+    "jin-core/src/dto/task.rs",
+    "jin-core/src/index/*.rs",
+    "jin-gui/src-tauri/src/commands/tasks.rs",
+    "jin-gui/src/invoke.ts",
+    "jin-gui/src/types/dto.ts",
+    "jin-gui/src/lib/tasks/*.ts",
+    "jin-gui/src/lib/lists/*.ts",
+    "jin-gui/src/lib/icons/index.ts",
+    "jin-gui/src/controllers/tasks_controller.ts",
+    "jin-gui/src/controllers/lists_controller.ts",
+    "jin-gui/index.html",
+    "jin-gui/src/styles/browse.css",
+    "jin-gui/src/__tests__/*.ts",
+    "jin/tests/s4_tasks_notes_crud.rs",
+    "jin-gui/package.json"
+  ],
+  "criteria_sha256": "9de4dd15ac9e87c32070aa6b8ea219a1da7837bc197512e15553266f59f83fb0",
+  "critic": {
+    "author": "ramza",
+    "checker": "kupo",
+    "at": "2026-07-14T14:51:34Z"
+  },
+  "scope_declared_at": "2026-07-14T14:45:38Z",
+  "criteria_frozen_at": "2026-07-14T14:45:38Z"
+}

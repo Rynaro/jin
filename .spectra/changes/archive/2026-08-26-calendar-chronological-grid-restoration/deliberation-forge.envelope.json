@@ -1,0 +1,18 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "FORGE"
+  },
+  "to": {
+    "eidolon": "Vivi"
+  },
+  "performative": "DECIDE",
+  "objective": "Restore readable chronology by auto-expanding occupied/current fixed nighttime bands with active-view-local manual overrides.",
+  "context_delta": {
+    "anti_scope": "no configurable hours; no session-wide, local-storage, settings, canonical, or sync persistence",
+    "dg_01": "auto-expand occupied/current early or late nighttime; empty bands compressed; explicit manual collapse allowed",
+    "dg_02": "manual choice scoped to active Day date or Week window and mode; survives same-view rerenders/detail Back; resets on identity change/disconnect",
+    "memory_preflight": "attempted; Crystalium transport closed; zero records",
+    "week_parity": "one shared state per band across seven columns"
+  }
+}

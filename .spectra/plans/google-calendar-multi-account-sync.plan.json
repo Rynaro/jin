@@ -1,0 +1,31 @@
+{
+  "thread_id": "9206d943-dde5-43c1-bb84-4a03691cb4a0",
+  "tier": "trance",
+  "enforce": "fail-fast",
+  "executor": "container",
+  "steps": [
+    {
+      "step_id": "S0",
+      "from": {
+        "eidolon": "ramza",
+        "version": "0.1.0"
+      },
+      "to": {
+        "eidolon": "vivi",
+        "version": "1.4.0"
+      },
+      "performative": "DELEGATE",
+      "edge_origin": "roster",
+      "objective": "Implement the frozen multi-account Google Calendar plan across hard A-to-B-to-C-to-D barriers and its 54 acceptance checks.",
+      "artifact": {
+        "kind": "spec",
+        "schema_version": "1.0",
+        "path": ".spectra/plans/google-calendar-multi-account-sync.md"
+      },
+      "model_tier_hint": "reasoning-class",
+      "constraints": {
+        "trust_level": "standard"
+      }
+    }
+  ]
+}

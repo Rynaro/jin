@@ -1,0 +1,284 @@
+methodology: SPECTRA
+methodology_version: 4.10.0
+spec_id: 2026-06-28-jin-notes-lp-links
+title: "Live-preview increment #2 — collapse markdown links to clickable label text (Jin CM6 note editor)"
+intent_type: CHANGE
+tier: standard
+date: 2026-06-28
+repo: jin-gui
+scope: frontend-only
+from: spectra
+to: vivi
+performative: PROPOSE
+confidence: 0.90
+branch_base: "main (branch AFTER increment #1 PR #9 lands; #1 = commit d2d0e16 'lp increment 1 list bullets + task checkboxes')"
+
+# ─────────────────────────────────────────────────────────────────────────────
+objective: >
+  In the CM6 live-preview editor, an explicit markdown link [label](url) on a NON-active
+  line collapses to just the label, styled as a link (accent + underline), with the
+  surrounding syntax ([, ](url), closing )) hidden via Decoration.replace({}). On the
+  active line the existing per-line reveal shows the raw [label](url) for editing.
+  Pure builder extension of buildLivePreviewDecorations; CM6/lezer ONLY; no innerHTML;
+  no markdown-it/dompurify in livePreview.ts.
+
+# ─────────────────────────────────────────────────────────────────────────────
+foundation:
+  builder: "jin-gui/src/lib/notes/livePreview.ts — buildLivePreviewDecorations(state, ranges?) (pure)"
+  established_patterns:
+    - "HIDE_MARK_NODES branch (livePreview.ts:170-180) — hide marker node ranges on inactive lines"
+    - "ListMark widget branch (livePreview.ts:136-166) — per-node handling NOT in HIDE_MARK_NODES (precedent for a new 'Link' branch)"
+    - "activeLines per-line reveal (livePreview.ts:116-123)"
+    - "atomicRanges provide == decoration set (livePreview.ts:218-222) — single source"
+    - "glyph CSS lives in jinEditorTheme in editor.ts (editor.ts:159-173), NOT in livePreview.ts"
+  test_file: "jin-gui/src/__tests__/livePreview.test.ts — pure-builder gates via forceParse(state)=ensureSyntaxTree + collectRanges/collectWidgets helpers"
+  node_requirement: ">=20 (nvm v24.18.0; system node v16 crashes vitest)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FIRSTHAND lezer verification (dumped from markdown({base: markdownLanguage}); see notes)
+lezer_facts:
+  explicit_link: "[label](url) => Link node with children in order: LinkMark '[', URL? no — label is UNTYPED TEXT (NO node), LinkMark ']', LinkMark '(', URL, (LinkTitle?), LinkMark ')'"
+  label_is_not_a_node: "CRITICAL — the label has NO syntax node. label range = [firstLinkMark.to, closeBracketLinkMark.from). Must be computed, not read from a child."
+  plain_label_children: "[LinkMark, LinkMark, LinkMark, URL, LinkMark]"
+  title_link_children: "[LinkMark, LinkMark, LinkMark, URL, LinkTitle, LinkMark] (LinkTitle present, KEEP collapsing — hidden by closing-syntax replace which spans to Link.to)"
+  nested_label_children: "[LinkMark, StrongEmphasis|InlineCode|..., LinkMark, LinkMark, URL, LinkMark] (extra inline node => DO NOT collapse, see R2)"
+  half_typed_open_paren: "'[label](' => Link [.. ] with only 2 LinkMarks ([ and ]), NO URL => degrade to raw"
+  no_url: "'[label]' => Link, 2 LinkMarks, no URL => raw"
+  empty: "'[]()' => Link, 4 LinkMarks, NO URL node, empty label => raw"
+  nested_brackets: "'[outer [inner] x](u)' => only inner '[inner]' parses as a Link (no URL) => raw; outer is NOT a Link"
+  reference: "'[ref][id]' => Link with LinkLabel child, no URL => raw"
+  autolink: "'<https://x>' => Autolink node (NOT Link) => untouched"
+  bare_url: "'bare https://x here' => standalone URL node, no Link parent => untouched"
+  image: "'![alt](u)' => Image node (NOT Link) => untouched"
+  verified_collapse_ranges:
+    - "doc 'x\\n[label](https://example.com)' cursor@0 => replace[2,3) ('['), mark[3,8) ('label'), replace[8,30) ('](https://example.com)')"
+    - "doc 'x\\n[ok](https://x.io) tail' cursor@0 => replace[2,3), mark[3,5), replace[5,20); ' tail' untouched"
+    - "doc 'x\\n[a](https://1.io) and [c](https://2.io)' cursor@0 => replace[2,3),mark[3,4),replace[4,19),replace[24,25),mark[25,26),replace[26,41)"
+    - "doc 'x\\n[t](javascript:alert(1))' cursor@0 => [] (unsafe scheme => raw)"
+    - "doc 'x\\n[**bold** x](https://y.io)' cursor@0 => only inner emphasis replaces [3,5),[9,11); NO link collapse, NO mark (nested-skip)"
+    - "doc '[label](https://example.com)' cursor@2 (caret ON link line) => [] (per-line reveal => raw)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+decisions:
+  D-CLICKABLE:
+    pick: "Option A — display-only collapse + link styling; click POSITIONS THE CARET (activates line => existing per-line reveal shows raw for editing). NOT clickable-to-open in this increment."
+    rationale: >
+      The Jin app has NO Tauri opener/shell plugin. src-tauri/src/lib.rs:23 registers ONLY
+      tauri_plugin_dialog; capabilities/default.json grants ONLY ['core:default','dialog:allow-open'].
+      There is NO anchor-click / external-open bridge anywhere in jin-gui (grep: zero hits for
+      window.open / openUrl / location.href / target=_blank). Even the reading view's sanitized
+      <a href> anchors are NOT wired to open externally today — Option B's machinery does not exist.
+      Adding clickable-open (Option B) REQUIRES src-tauri changes (Cargo.toml tauri-plugin-opener +
+      .plugin(tauri_plugin_opener::init()) in lib.rs + an 'opener:allow-open-url' capability +
+      @tauri-apps/plugin-opener npm dep + an opener bridge passed into editor.ts as a callback).
+      That breaks the FRONTEND-ONLY constraint and is a materially larger surface. Lower-risk
+      shippable option = A. B is split to increment #2.5 with the exact plumbing identified below.
+    tradeoff: "Owner asked for 'clickable text'. A delivers the visual link affordance + click-to-edit; it does NOT open the URL. #2.5 adds opening. Accepted: A is consistent with #1's display-only call and respects frontend-only."
+    fast_follow_2_5_plumbing:
+      npm: "add @tauri-apps/plugin-opener (frontend)"
+      cargo: "add tauri-plugin-opener to jin-gui/src-tauri/Cargo.toml"
+      register: "jin-gui/src-tauri/src/lib.rs:23 — add .plugin(tauri_plugin_opener::init()) next to tauri_plugin_dialog"
+      capability: "jin-gui/src-tauri/capabilities/default.json permissions — add 'opener:allow-open-url'"
+      bridge: "pass an onOpenUrl(url) callback into mountEditor opts; livePreview.ts stays PURE — wire a click handler in editor.ts that, on click of a .cm-link-label (or via EditorView.domEventHandlers), reads the URL from the (then-active/raw) Link node OR a data-attr and calls onOpenUrl; controller supplies openUrl from @tauri-apps/plugin-opener."
+      security: "reuse SAFE_LINK_SCHEME (http/https/mailto only) at the open seam; G-LP-LINK-OPEN must drive a REAL DOM click and assert (a) opener invoked with the URL for https, (b) opener NOT invoked for javascript:/file:/data:."
+  D-LABEL-NODE: "label range = [firstLinkMark.to, closeBracketLinkMark.from) — computed; label is NOT a node."
+  D-COLLAPSE-RULE: >
+    Collapse a Link node ONLY when ALL hold: (1) has a URL child; (2) >=4 LinkMark children;
+    (3) non-empty label (lt > lf); (4) NO nested-markup child — every child name ∈ {LinkMark, URL, LinkTitle};
+    (5) URL passes SAFE_LINK_SCHEME; (6) line is NOT active. Else emit nothing for the Link (degrade to raw).
+  D-SCHEME: >
+    SAFE_LINK_SCHEME = /^(?:https?|mailto):/i — LOCAL const in livePreview.ts, mirroring
+    markdown.ts ALLOWED_URI_REGEXP (markdown.ts:42). Deliberate DUPLICATION: do NOT import from
+    markdown.ts (it imports markdown-it+dompurify => would taint the chokepoint). Relative/anchor
+    links (#x, ./x, /x) are NOT http/mailto => stay RAW in v1 (documented limitation).
+  D-NESTED: >
+    Labels containing nested markdown (StrongEmphasis/InlineCode/Emphasis/etc.) DO NOT collapse —
+    skip the Link. VERIFIED HAZARD: collapsing them throws 'Ranges must be added sorted by from'
+    because the closing-syntax replace (high from) is added at Link-enter, then iteration descends
+    into the label's inner marks (low from) => out-of-order RangeSetBuilder.add. With the skip, the
+    inner EmphasisMark/CodeMark are still hidden by the existing HIDE branch (link syntax shown raw);
+    no throw. Detection: any Link child whose name ∉ {LinkMark, URL, LinkTitle}.
+  D-ATOMIC: >
+    atomicRanges must contain the hidden-syntax REPLACE ranges (caret-trap prevention on zero-width
+    hidden content) but MUST EXCLUDE the label MARK (the label is real, editable, clickable text;
+    making it atomic would coarsen click-to-position — the whole point of the increment). Implement an
+    exported pure projection atomicDecorationsOf(set) that keeps replace/widget decorations and drops
+    mark decorations; the plugin 'provide' returns EditorView.atomicRanges.of(view =>
+    atomicDecorationsOf(plugin.decorations)). Regression-safe: existing decorations are all
+    replace/widget => projection is identity for non-link docs => existing G-LP-ATOMIC gates unchanged.
+  D-STYLE: >
+    Label styling lives in jinEditorTheme in editor.ts (NOT livePreview.ts):
+    '.cm-link-label': { color: 'var(--accent)', textDecoration: 'underline' }. NO cursor:pointer in
+    v1 (it is edit-on-click text, not open — pointer would falsely imply opening; #2.5 adds it).
+  D-SCOPE: "Explicit [label](url) ONLY. Autolinks <...>, bare linkified URLs, reference [a][id], images ![..](..) are OUT of scope and left untouched (verified they parse as distinct/non-Link nodes)."
+  D-BUILDER-SHAPE: "New 'Link' branch in buildLivePreviewDecorations (sibling of the ListMark/HIDE branches). 'Link' is NOT added to HIDE_MARK_NODES (size stays 4 — mirrors ListMark precedent)."
+
+# ─────────────────────────────────────────────────────────────────────────────
+stories:
+  - id: LPK-1
+    title: "Extend the pure buildLivePreviewDecorations with the Link-collapse branch + SAFE_LINK_SCHEME + atomic projection"
+    user_story: "As a Jin note writer, I want [label](url) on inactive lines to show as just the label so my notes read cleanly, while the raw link reappears when I move my cursor onto that line to edit it."
+    timebox: "1d"
+    files:
+      - "jin-gui/src/lib/notes/livePreview.ts (EDIT — add Link branch + SAFE_LINK_SCHEME const + atomicDecorationsOf projection; wire provide)"
+      - "jin-gui/src/__tests__/livePreview.test.ts (EDIT — NEW describe block only; do NOT touch link-free base tests)"
+    action_plan:
+      - "Add: const SAFE_LINK_SCHEME = /^(?:https?|mailto):/i  (top of file, with mirror-of-markdown.ts comment)"
+      - "In buildLivePreviewDecorations enter(): add an 'if (node.name === Link)' branch BEFORE the HIDE_MARK_NODES branch (sibling of the ListMark branch ~livePreview.ts:136)"
+      - "Branch: materialize node.node; iterate children — collect LinkMark[], URL, detect nested (child.name ∉ {LinkMark,URL,LinkTitle}); guard: !url || marks.length<4 || nested => return"
+      - "Compute open=marks[0], closeB=marks[1], lf=open.to, lt=closeB.from; guard lt<=lf => return (empty label)"
+      - "Guard !SAFE_LINK_SCHEME.test(doc.sliceString(url.from,url.to)) => return"
+      - "Per-line reveal: if activeLines.has(doc.lineAt(node.from).number) => return"
+      - "Emit IN ORDER: builder.add(node.from, open.to, Decoration.replace({})); builder.add(lf, lt, Decoration.mark({class:'cm-link-label'})); builder.add(closeB.from, node.to, Decoration.replace({}))"
+      - "Add exported pure atomicDecorationsOf(set: DecorationSet): DecorationSet — rebuild a RangeSet keeping decorations EXCEPT marks (drop spec.class && !spec.widget); used by provide"
+      - "Change provide to: EditorView.atomicRanges.of(view => atomicDecorationsOf(view.plugin(p)?.decorations ?? Decoration.none))"
+    acceptance_criteria:
+      - id: AC-LPK1.1
+        given: "doc 'x\\n[label](https://example.com)' with the caret on line 1 (offset 0)"
+        when: "buildLivePreviewDecorations(state) runs (forceParse first)"
+        then: "the set contains replace[2,3), a mark[3,8) (spec.class==='cm-link-label'), and replace[8,30); the doc text is unchanged (decorations never mutate the buffer)"
+      - id: AC-LPK1.2
+        given: "the caret is ON the link line (doc '[label](https://example.com)', offset 2)"
+        when: "the builder runs"
+        then: "the set is EMPTY for that link (raw [label](url) shown for editing)"
+      - id: AC-LPK1.3
+        given: "doc 'x\\n[t](javascript:alert(1))' caret line 1"
+        when: "the builder runs"
+        then: "no Link decoration is produced (SAFE_LINK_SCHEME rejects javascript: => raw)"
+      - id: AC-LPK1.4
+        given: "half-typed '[label](', '[label]', empty '[]()', reference '[ref][id]', nested-bracket '[o [i] x](u)', autolink '<https://x>', bare 'see https://x', image '![a](u)' each on an inactive line"
+        when: "the builder runs"
+        then: "NONE throw and NONE produce a link collapse (label mark) for these forms (degrade to raw / untouched)"
+      - id: AC-LPK1.5
+        given: "doc 'x\\n[**bold** x](https://y.io)' caret line 1 (nested markup in label)"
+        when: "the builder runs"
+        then: "it does NOT throw; NO link collapse and NO cm-link-label mark is produced; the inner EmphasisMark replaces are still present (existing HIDE behavior)"
+      - id: AC-LPK1.6
+        given: "a decoration set = [replace[2,3), mark[3,8) class cm-link-label, replace[8,30)]"
+        when: "atomicDecorationsOf(set) runs"
+        then: "the result contains exactly [2,3) and [8,30) (the mark is EXCLUDED); replaces/widgets are preserved"
+    gates: [G-LP-LINK-COLLAPSE, G-LP-LINK-REVEAL, G-LP-LINK-SCHEME, G-LP-LINK-NESTED-SKIP, G-LP-LINK-ROBUST, G-LP-LINK-ATOMIC, G-LP-LINK-NO-BUFFER-MUTATION]
+    immovable_gates: [HIDE_MARK_NODES-size-4, G-LP-NO-INNERHTML-base-link-free, G-CHOKEPOINT-livePreview-source-scan, all-existing-LP-gates]
+    agent_hints:
+      agent_class: "Builder (Vivi/apivr) — speed-class; the algorithm is fully specified + range-verified"
+      context_files:
+        - "jin-gui/src/lib/notes/livePreview.ts:111-186 (pure builder)"
+        - "jin-gui/src/lib/notes/livePreview.ts:200-226 (plugin + provide)"
+        - "jin-gui/src/__tests__/livePreview.test.ts:516-780 (the #1 widget describe block — mirror its style)"
+      risk_tags: [P1]
+
+  - id: LPK-2
+    title: "Style the collapsed label (.cm-link-label) in jinEditorTheme + DOM smoke"
+    user_story: "As a Jin note writer, I want the collapsed label to look like a link (accent color + underline) so I can tell it is a link at a glance."
+    timebox: "0.5d"
+    files:
+      - "jin-gui/src/lib/notes/editor.ts (EDIT — add '.cm-link-label' rule to jinEditorTheme ~editor.ts:159-173)"
+      - "jin-gui/src/__tests__/livePreview.test.ts (EDIT — DOM smoke in the new describe block)"
+    action_plan:
+      - "Add to jinEditorTheme: '.cm-link-label': { color: 'var(--accent)', textDecoration: 'underline' }"
+      - "DOM smoke: mountEditor with 'x\\n[label](https://example.com)\\nplain', move caret to line 3 so the link line is inactive, assert a '.cm-link-label' span exists in .cm-content with textContent 'label' and getDoc()===initial"
+    acceptance_criteria:
+      - id: AC-LPK2.1
+        given: "mountEditor with a doc containing an inactive [label](url) line and caret elsewhere"
+        when: "the editor renders"
+        then: "a span.cm-link-label with textContent 'label' appears in .cm-content; getDoc() equals the initial doc (buffer never mutated)"
+      - id: AC-LPK2.2
+        given: "the live-preview module source"
+        when: "scanned"
+        then: "livePreview.ts still assigns no innerHTML and imports neither markdown-it nor dompurify (existing G-CHOKEPOINT/G-LP-NO-INNERHTML source scans stay green)"
+    gates: [G-LP-LINK-STYLE, G-LP-LINK-SMOKE]
+    immovable_gates: [G-LP-NO-INNERHTML, G-CHOKEPOINT, G-READING-VIEW, G-FOOTER-STATS, G-SAVE-CARET-SAFE, G-KEYMAP, G-TOOLBAR-link-insert]
+    depends_on: [LPK-1]
+    agent_hints:
+      agent_class: "Builder (Vivi/apivr) — speed-class"
+      context_files:
+        - "jin-gui/src/lib/notes/editor.ts:117-174 (jinEditorTheme — glyph CSS precedent at :159-173)"
+        - "jin-gui/src/__tests__/livePreview.test.ts:731-779 (G-LP-SMOKE(ext) DOM smoke pattern to mirror)"
+      risk_tags: [P2]
+
+# ─────────────────────────────────────────────────────────────────────────────
+gates:
+  - id: G-LP-LINK-COLLAPSE
+    bites: "off-line [label](url) => replace[node.from,open.to) + mark[lf,lt) (class cm-link-label) + replace[closeB.from,node.to); EXACT from/to asserted (use verified ranges); label TEXT remains in doc"
+    location: "jin-gui/src/__tests__/livePreview.test.ts (new describe)"
+  - id: G-LP-LINK-REVEAL
+    bites: "caret on the link's line => NO link decorations for that Link (raw shown)"
+  - id: G-LP-LINK-SCHEME
+    bites: "[t](javascript:alert(1)), [t](file:///x), [t](data:...) => no collapse, no mark (SAFE_LINK_SCHEME); [t](https://x) DOES collapse — assert both branches"
+  - id: G-LP-LINK-NESTED-SKIP
+    bites: "[**bold** x](https://y.io) and [`code` x](https://y.io) => NO throw, NO cm-link-label mark; inner EmphasisMark/CodeMark replaces still present"
+  - id: G-LP-LINK-ROBUST
+    bites: "'[label](', '[label]', '[]()', '[ref][id]', '[o [i] x](u)', '<https://x>', 'see https://x', '![a](u)' => no throw; no cm-link-label mark produced (degrade to raw / untouched)"
+  - id: G-LP-LINK-ATOMIC
+    bites: "atomicDecorationsOf([replace[2,3),mark[3,8),replace[8,30)]) === exactly [2,3),[8,30) (hidden syntax atomic; label mark EXCLUDED)"
+  - id: G-LP-LINK-NO-BUFFER-MUTATION
+    bites: "after building, state.doc.toString() unchanged; mark range [3,8) sliceString === 'label'"
+  - id: G-LP-LINK-STYLE
+    bites: "span.cm-link-label exists in .cm-content for an inactive link line, textContent === label"
+  - id: G-LP-LINK-SMOKE
+    bites: "mountEditor with a link doc: no throw, getDoc()===initial, .cm-link-label present when link line inactive"
+  immovable:
+    - "G-XSS @ notes_controller.test.ts:~486-505"
+    - "G-CHOKEPOINT @ markdown.test.ts:8 + livePreview source scan @ livePreview.test.ts:406-419"
+    - "HIDE_MARK_NODES size===4 @ livePreview.test.ts:96-104 (do NOT add 'Link')"
+    - "G-LP-NO-INNERHTML base link-free test @ livePreview.test.ts:377-394 (keep its doc link-free)"
+    - "G-LP-HIDE/REVEAL/SELECTION/CARET-MOVE/REBUILD/ROBUST/ATOMIC + #1 bullet/checkbox gates @ livePreview.test.ts"
+    - "G-SAVE-CARET-SAFE @ livePreview.test.ts:450-471"
+    - "G-READING-VIEW (renderMarkdownFragment chokepoint untouched — this increment does NOT touch markdown.ts/reading view)"
+    - "G-TOOLBAR-link-insert (toggleLink editor.ts:224-239 untouched), G-FOOTER-STATS, G-KEYMAP"
+
+# ─────────────────────────────────────────────────────────────────────────────
+risks:
+  - id: R1
+    p: P1
+    risk: "javascript:/file:/data: URL presented as a styled (later openable) link"
+    mitigation: "SAFE_LINK_SCHEME guard => unsafe schemes stay RAW; gated by G-LP-LINK-SCHEME; same allow-list reused at the #2.5 open seam"
+  - id: R2
+    p: P1
+    risk: "RangeSetBuilder 'must be added sorted by from' throw on labels with nested markup (VERIFIED)"
+    mitigation: "D-NESTED skip rule (children ∉ {LinkMark,URL,LinkTitle}); gated by G-LP-LINK-NESTED-SKIP + G-LP-LINK-ROBUST"
+  - id: R3
+    p: P2
+    risk: "atomic/caret feel — atomic label would coarsen click-to-position precision"
+    mitigation: "D-ATOMIC excludes the label mark from atomicRanges; replaces stay atomic"
+  - id: R4
+    p: P2
+    risk: "chokepoint taint if livePreview.ts imports markdown.ts for the regex"
+    mitigation: "local duplicate SAFE_LINK_SCHEME const + cross-ref comment; existing G-CHOKEPOINT source scan stays green"
+  - id: R5
+    p: P2
+    risk: "regressing the link-free base G-LP-NO-INNERHTML test by introducing a non-replace (mark) decoration"
+    mitigation: "new mark assertions in a NEW describe block; keep the base test's doc link-free (mirror K-LPL-C from #1)"
+  - id: R6
+    p: P3
+    risk: "reference/relative/anchor links degrade to raw (surprising)"
+    mitigation: "documented v1 limitation; allow-list can expand later"
+
+# ─────────────────────────────────────────────────────────────────────────────
+kupo_micro_tasks:
+  - "K1: add SAFE_LINK_SCHEME const near HIDE_MARK_NODES (livePreview.ts:~34) with 'mirrors markdown.ts:42 ALLOWED_URI_REGEXP' comment"
+  - "K2: insert the Link branch as the FIRST check in enter() (before ListMark/HIDE), livePreview.ts:~132"
+  - "K3: child scan loop collecting LinkMark[]/URL + nested flag; guards in the documented order"
+  - "K4: emit 3 decorations strictly in from-order: replace, mark, replace"
+  - "K5: export atomicDecorationsOf(set) pure projection (drop marks: spec.class && !spec.widget)"
+  - "K6: switch provide (livePreview.ts:220-221) to atomicDecorationsOf(...)"
+  - "K7: editor.ts jinEditorTheme — add '.cm-link-label' { color:var(--accent), textDecoration:'underline' } (after :173)"
+  - "K8: new describe block in livePreview.test.ts with G-LP-LINK-* gates using verified ranges; DOM smoke mirrors :731-779"
+  - "K9: run gates on Node>=20 (nvm use 24) — npm test (or vitest) green incl. all immovable gates"
+
+# ─────────────────────────────────────────────────────────────────────────────
+execution_plan:
+  order: [LPK-1, LPK-2]
+  verification: "npm test in jin-gui under nvm v24; assert new G-LP-LINK-* gates bite AND every immovable gate stays green"
+  out_of_scope:
+    - "Clickable-OPEN (Option B) => increment #2.5 (plumbing identified in decisions.D-CLICKABLE.fast_follow_2_5_plumbing)"
+    - "Autolinks, bare linkified URLs, reference links, images, relative/anchor links"
+    - "Any src-tauri change (Cargo.toml / lib.rs / capabilities) — this increment is frontend-only"
+
+confidence_report:
+  pattern_match: "0.95 — direct ADAPT of the #1 ListMark widget branch + HIDE branch patterns"
+  requirement_clarity: "0.92 — detailed brief; D-CLICKABLE resolved via firsthand Tauri-infra investigation"
+  decomposition_stability: "0.90 — 2 tightly-scoped stories; gates map 1:1 to verified behaviors"
+  constraint_compliance: "0.90 — chokepoint/atomic/per-line-reveal/no-innerHTML/scheme-sanitization all verified headlessly"
+  overall: 0.90
+  decision: AUTO_PROCEED

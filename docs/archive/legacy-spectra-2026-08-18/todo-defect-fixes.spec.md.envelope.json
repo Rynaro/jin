@@ -1,0 +1,39 @@
+{
+  "envelope_version": "1.0",
+  "message_id": "0197e6a1-7b3c-7c2a-9f4d-todo-defectfix01",
+  "thread_id": "0197e6a1-7b3c-7c2a-9f4d-todo-defectfix00",
+  "parent_id": null,
+  "from": { "eidolon": "spectra", "version": "4.10.0" },
+  "to": { "eidolon": "apivr", "version": "n/a" },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Propose the implementation spec for fixing 4 Jin GUI Tasks/ToDo defects (DT-1..DT-4) plus a reusable JinModal/ConfirmDialog + JinSelect primitive, targeting jin-gui.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": "todo-defect-fixes.spec.md",
+    "sha256": "2a38e04b0e465a22e4eb3ef467e98b95bef8b045521998e1e80d0fd0dbf13cd0",
+    "size_bytes": 34954
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 0,
+    "input_handles": [
+      ".eidolons/scout/todo-defects-scout-report.md",
+      "orchestrator-corrections (verified against jin-core + user runtime)"
+    ],
+    "summary": "7 stories. S1 JinModal base (self-hosting at #jin-modal-root, callback-wired buttons -> removes the Stimulus-scoping foot-gun that caused DT-2) + complete .action-dialog__* CSS. S2 ConfirmDialog->task delete. S3 edit-task + shared in-place due-date. S4 New List styling (DT-1). S5 JinSelect over native <select> (DT-3a). S6 list id/name canonicalization: fix name-assuming readers/writers, keep the correct id-based filter, add an id!=name test (DT-3b). S7 board view for sectionless lists (DT-4). Build S1 before S2/S3/S4; S1/S5/S6/S7 parallelizable. Key gates: real-index.html wiring tests (RISK-1) and the id!=name fixture."
+  },
+  "constraints": { "trust_level": "standard" },
+  "confidence": 0.88,
+  "integrity": {
+    "method": "sha256",
+    "value": "2a38e04b0e465a22e4eb3ef467e98b95bef8b045521998e1e80d0fd0dbf13cd0"
+  },
+  "trace": {
+    "ts": "2026-07-02T00:00:00Z",
+    "host": "claude-code",
+    "model": "claude-opus-4-8",
+    "tier": "standard"
+  }
+}

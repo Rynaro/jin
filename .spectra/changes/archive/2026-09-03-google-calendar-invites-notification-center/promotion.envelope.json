@@ -1,0 +1,18 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "idg"
+  },
+  "to": {
+    "eidolon": "orchestrator"
+  },
+  "performative": "INFORM",
+  "objective": "INFORM(promotion): archived change \"google-calendar-invites-notification-center\" ready for CRYSTALIUM Semantic promotion.",
+  "context_delta": {
+    "archive_path": "archive/2026-09-03-google-calendar-invites-notification-center",
+    "change_id": "google-calendar-invites-notification-center",
+    "intent": "promotion",
+    "spec_ref": ".spectra/changes/google-calendar-invites-notification-center/spec.md",
+    "summary": "Verified + archived spec; route to mcp__crystalium__ingest (Semantic layer). tonberry does not call crystalium."
+  }
+}

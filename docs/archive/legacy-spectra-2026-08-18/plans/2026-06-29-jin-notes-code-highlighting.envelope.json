@@ -1,0 +1,70 @@
+{
+  "envelope_version": "2.0",
+  "ecl_version": "1.0",
+  "message_id": "344720c2-e053-428d-ad08-70a1b67fa4c4",
+  "thread_id": "9c0b0c76-6f8e-4894-94c8-f7e2f09135e2",
+  "from": "spectra",
+  "to": "vivi",
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Notes QoL — code-block syntax highlighting + dynamic code features for the Jin CM6 editor + reading view. CODE-1 EDITOR highlighting: wire @codemirror/language-data `languages` into markdown({codeLanguages}) (grammars lazy-load per fence) + augment jinHighlightStyle (editor.ts:91-114) with code-token tag entries on the shared var(--*) palette. CODE-2 READING-VIEW highlighting: add a markdown-it highlight(code,lang) callback using highlight.js/lib/common (class-based; getLanguage guard, try/catch, NEVER highlightAuto, MAX_HIGHLIGHT_BYTES=50000) INSIDE the markdown.ts chokepoint — returns inner hljs spans so md-it keeps the language-* class and DOMPurify (UNCHANGED) keeps the hljs-* class spans (Shiki would be stripped by FORBID_ATTR:['style']). CODE-3 READING-VIEW dynamic header (copy via navigator.clipboard — no Tauri clipboard plugin exists; language badge; per-block soft-wrap) built post-sanitize as app DOM in a new codeChrome.ts decorateCodeBlocks() called by renderMarkdownFragment. Frontend-only (jin-gui), 2 new deps, Node>=20.",
+  "artifact": {
+    "kind": "spec",
+    "payload_ref": "2026-06-29-jin-notes-code-highlighting.yaml",
+    "human_payload": "delivered inline in the SPECTRA assistant message (no .md report file written per harness directive; matches the LP-increment / cozy-extras convention)"
+  },
+  "integrity": {
+    "method": "sha256",
+    "value": "c9db2b70df4bd472a9e2a11c9c995fcf0f8f693884d1feaec79223a8a93c569c",
+    "over": "2026-06-29-jin-notes-code-highlighting.yaml"
+  },
+  "context_delta": {
+    "repo": "jin-gui",
+    "base_version": "main = v0.3.0 (Notes rebuild + 4 live-preview increments)",
+    "branch": "feat/notes-code-highlighting off main (after sidebar-bug-fix PR; no file overlap)",
+    "new_deps": ["@codemirror/language-data@^6 (lazy grammars)", "highlight.js@^11 (lib/common, class-based)"],
+    "new_modules": [
+      "jin-gui/src/lib/notes/codeChrome.ts — decorateCodeBlocks(root) builds the per-<pre> header (badge/copy/wrap) as app DOM (createElement/textContent, NEVER innerHTML); imports NO markdown-it/dompurify/highlight.js (G-CHOKEPOINT-clean)"
+    ],
+    "edits": [
+      "jin-gui/src/lib/notes/editor.ts (import {languages} + {LanguageDescription} from '@codemirror/language-data'; export const NOTE_CODE_LANGUAGES=languages; wire codeLanguages into markdown() :592-595; augment jinHighlightStyle :91-114 with code-token entries; reading-view toggle :705 hydrate Lucide icons after replaceChildren)",
+      "jin-gui/src/lib/notes/markdown.ts (import hljs from 'highlight.js/lib/common'; add highlight(code,lang) to the MarkdownIt config :21-26; MAX_HIGHLIGHT_BYTES=50000; call decorateCodeBlocks(frag) in renderMarkdownFragment :60-66 AFTER DOMPurify; DOMPurify config UNCHANGED)",
+      "jin-gui/src/styles/browse.css (hljs-* token CSS + .code-block/header/badge/copy/wrap/.is-wrapped near :545-560; var(--*) only)",
+      "jin-gui/src/lib/icons/* (register Lucide copy + wrap-text if absent)",
+      "jin-gui/src/__tests__/markdown.test.ts + editor.test.ts (new G-CODE-* gates; extend G-CHOKEPOINT to highlight.js; extend G-HIGHLIGHT)"
+    ],
+    "stories": ["CODE-1", "CODE-2", "CODE-3"],
+    "decisions": {
+      "D-EDITOR-LANGS": "FULL @codemirror/language-data languages (lazy per-fence import); export NOTE_CODE_LANGUAGES test seam; rejected curated subset (saves ~nothing — grammars already lazy)",
+      "D-READING-HLJS": "highlight.js/lib/common, return INNER spans (no leading '<pre' -> md-it keeps language-* class + nests hljs spans); getLanguage guard + try/catch + 50KB cap; NEVER highlightAuto; rejected Shiki (inline style= stripped)",
+      "D-COPY-MECHANISM": "navigator.clipboard.writeText (no Tauri clipboard plugin/capability exists — capabilities=core:default+dialog:allow-open); try/catch -> aria status; rejected @tauri-apps/plugin-clipboard-manager (needless Rust dep + capability)",
+      "D-DYNAMIC-SURFACE": "READING VIEW gets copy/badge/wrap; EDITOR gets highlighting only (live CM6 hover-toolbar = higher-risk block widget, deferred)",
+      "D-DYNAMIC-LOCATION": "new codeChrome.ts decorateCodeBlocks() called by renderMarkdownFragment POST-sanitize -> single guaranteed path, chokepoint-clean, app DOM cannot reintroduce XSS; rejected inlining in markdown.ts (scope creep) and decorate-in-consumer (forgettable)",
+      "D-THEME-CONSISTENCY": "shared palette_map: CM6 lezer tags AND hljs-* classes -> same var(--*) tokens; tokens.css supplies dark variants so one ref set covers light+dark",
+      "D-LARGE-BLOCK": "MAX_HIGHLIGHT_BYTES=50000 -> plain <pre> (header still applies)"
+    },
+    "new_gates": ["G-CODE-EDITOR-LANGS", "G-HIGHLIGHT-EXTENDED", "G-CODE-READING-HLJS", "G-CODE-HLJS-SANITIZE", "G-CODE-LARGE-SKIP", "G-CHOKEPOINT-HLJS", "G-CODE-COPY", "G-CODE-BADGE", "G-CODE-WRAP", "G-CODE-HEADER-INERT"],
+    "immovable_gates": [
+      "G-XSS @ markdown.test.ts:185-205",
+      "G-SANITIZE adversarial suite @ markdown.test.ts:207-355 (assertInert forbids <svg> in the fragment)",
+      "language-js fence control @ markdown.test.ts:163-170",
+      "G-CHOKEPOINT singleton + no-bypass @ markdown.test.ts:357-406",
+      "G-HIGHLIGHT @ editor.test.ts:613-637",
+      "G-READING-VIEW @ editor.test.ts:643-716 + G-READING-FLUSH @ :722+",
+      "ALL G-EDITOR-*/G-KEYMAP @ editor.test.ts; ALL live-preview gates @ livePreview.test.ts; G-SAVE-CARET-SAFE; token_discipline (no raw hex)"
+    ],
+    "decisive_constraint": "sanitizer-vs-highlighter: hljs CLASS spans survive the DOMPurify allow-list (ALLOWED_ATTR has 'class'); Shiki inline style= is stripped by FORBID_ATTR:['style']. G-CODE-HLJS-SANITIZE (script-in-fence stays inert + hljs spans survive) is the non-negotiable bite.",
+    "verified_firsthand": [
+      "editor.ts:593 markdown({base}) has NO codeLanguages; jinHighlightStyle :91-114 has NO code-token tags; {tags} already imported :48; EditorView.lineWrapping already global :611 (wrap toggle = reading-view-only)",
+      "markdown.ts:21-26 no highlight callback; DOMPurify :31-47 allows pre/code/span + class, FORBID style tag+attr -> hljs classes survive / Shiki stripped; RETURN_DOM_FRAGMENT + html:false + validateLink intact",
+      "md-it fence wrap: non-'<pre' highlight return -> <pre><code class=language-<lang>>{inner}</code></pre> preserves the language-js control test",
+      "capabilities/default.json = core:default + dialog:allow-open ONLY; no clipboard plugin dep -> navigator.clipboard is the path",
+      "reading view single consumer: editor.ts:696-719 toggle -> renderMarkdownFragment; render.ts:224 mountEditor is the only body render path -> decorate in renderMarkdownFragment covers all",
+      "tokens.css palette + dark variants present; browse.css:545-560 code styles; @codemirror/language-data + highlight.js NOT yet deps"
+    ],
+    "node_requirement": ">=20 (nvm v24.18.0; system node v16.20.2 crashes vitest)",
+    "owner_verify": "cargo tauri dev — editor fenced-code colors; reading-view colors MATCH editor; copy writes clipboard; badge shows language; per-block wrap toggles; light+dark parity; >50KB fence stays plain + responsive",
+    "risk_flags": ["R1 sanitizer-vs-highlighter (P0, decisive)", "R2 bundle size (hljs/lib/common eager)", "R3 clipboard capability (navigator.clipboard)", "R4 large-block perf (50KB cap)", "R5 theme consistency (shared palette)", "R6 icon hydration", "R7 grammar async-load flakiness"]
+  },
+  "trust_level": "standard"
+}

@@ -1,0 +1,35 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "idg"
+  },
+  "performative": "INFORM",
+  "objective": "verify_pass: AC-UCRT-001 through AC-UCRT-009 pass after independent retry verification, including production Chromium smoke and direct physical invalid Set Date click evidence.",
+  "context_delta": {
+    "acceptance_checks": [
+      "AC-UCRT-001",
+      "AC-UCRT-002",
+      "AC-UCRT-003",
+      "AC-UCRT-004",
+      "AC-UCRT-005",
+      "AC-UCRT-006",
+      "AC-UCRT-007",
+      "AC-UCRT-008",
+      "AC-UCRT-009"
+    ],
+    "ci_status": "LOGIC VERIFIED — VISUALS NOT VERIFIED",
+    "full_tests": "1775/1775",
+    "physical_invalid_click": {
+      "active": "jin-due-time",
+      "clicks": 1,
+      "dialog_open": true,
+      "invalid_text_preserved": true
+    },
+    "production_due_smoke": "pass",
+    "report": ".spectra/changes/unified-calendar-reminder-time-input/verification-vigil.md",
+    "verdict": "verify_pass"
+  }
+}

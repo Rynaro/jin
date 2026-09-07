@@ -1,0 +1,744 @@
+# RAMZA spec — machine-readable mirror of spec.md (tier=full dual-format artifact).
+# GENERATED from spec.md: every acceptance-criterion id/form/given/when/then/verify
+# below is PARSED out of the frozen spec.md, never re-typed, so the two cannot drift.
+# spec.md is authoritative; criteria_sha256 gates it.
+eidolon: ramza
+kind: spec
+version: 1.5.0
+created_at: 2026-07-14
+change_id: todo-loop-closure
+esl_tier: full
+maker: vivi
+checker: kupo
+spec_ref: .spectra/changes/todo-loop-closure/spec.md
+plan_state: .spectra/plans/todo-loop-closure.state.json
+criteria_sha256: 9de4dd15ac9e87c32070aa6b8ea219a1da7837bc197512e15553266f59f83fb0
+
+intent_class: CHANGE
+
+gates:
+  rightsize: { tier: full, score: 6, signals: [files-est-22, public-api, migration, stakes-high] }
+  complexity: { total: 11, max: 12, verdict: human_loop, honored_as: 8 owner-gated PRs }
+  explore: { selected: H-B, score: 82, verdict: solid, rejected: [{id: H-C, score: 68}, {id: H-D, score: 62}, {id: H-E, score: 62}, {id: H-A, score: 56}] }
+  refine: { cycles_transitioned: 1, r2_scored_but_transition_denied: true, r2_path: freeze-amend-chain }
+  critic: { author: ramza, checker: kupo, findings: 13, critical: 5, all_closed: true }
+  confidence: { total: 87.5, verdict: AUTO_PROCEED }
+  lints: { ramza_lint: pass, ramza_ears_lint: "77/77 pass", ramza_verify_emit: pass }
+
+out_of_scope:
+  - "recurrence (absent from core)"
+  - "reminder firing / any scheduler (reminders are stored, never fired)"
+  - "tag create/rename/delete (absent from core)"
+  - "list nesting (ListDto.parent_id stays ignored)"
+  - "cross-list manual ordering on the board"
+  - "D7 on-disk list-name-to-id migration (owner decision; see deferred)"
+
+deferred:
+  - id: D7
+    what: "forward migration of pre-fix task files whose frontmatter.list holds a list NAME, not an id"
+    why_deferred: "owner decision required; the on-disk half is unverified (only the owner's macOS store can witness it)"
+    if_confirmed: "becomes S0 and MUST run before S5, because the Inbox smart view will not surface orphans either"
+
+hard_dependencies:
+  - id: PR#30
+    what: "D1 hotfix (notes erased on edit), v0.14.1 — openEditDialog hydrates via getTaskById"
+    blocks: S3
+    why: "S3 deletes the very editor PR #30 repairs; starting on an unmerged main loses the fix in the rebase"
+
+owner_screenshot_required: [S2, S6]   # both ship new browse.css; no logic gate in this repo can see CSS
+
+supersessions:   # criteria that legitimately expire when a later story lands
+  - { retired: AC-S1-08, superseded_by: AC-S4-07, at_story: S4, action: "the S4 PR MUST DELETE the test view_toggle_disabled_without_list_scope, not update it" }
+  - { retired: AC-S2-04, superseded_by: AC-S4-08, at_story: S4, action: "the S4 PR MUST DELETE the test board_columns_have_add_task_row, not update it" }
+
+stories:
+  - id: S1
+    title: "Honest controls, honest errors, honest view state"
+    timebox_days: 2
+    risk_tag: P0
+    executor_tier: mid
+    depends_on: []
+    owner_screenshot_required: false
+    closes: ["D2 illegal status transitions", "D3 phantom critical priority", "D10 silent failures", "D5 (partial) per-list view reflow"]
+    acceptance_criteria: [AC-S1-01, AC-S1-02, AC-S1-03, AC-S1-04, AC-S1-05, AC-S1-06, AC-S1-07, AC-S1-08]
+    green_but_shallow_watch: "A test that only calls legalNextStatuses('done') proves nothing: it must render the detail status select for a done task and assert the DOM carries no doing/cancelled option."
+  - id: S2
+    title: "One task item, two skins"
+    timebox_days: 4
+    risk_tag: P0
+    executor_tier: frontier
+    depends_on: [S1]
+    owner_screenshot_required: true
+    closes: ["D6 two divergent item renderers", "board create/edit/delete parity", "board ignores sort_mode"]
+    acceptance_criteria: [AC-S2-01, AC-S2-02, AC-S2-03, AC-S2-04, AC-S2-05, AC-S2-06]
+    green_but_shallow_watch: "Two traps: a class-name parity test proves nothing about behavior (AC-S2-02 forbids it as the assertion); and jsdom cannot see CSS, so this visual rewrite needs an owner screenshot."
+  - id: S3
+    title: "Detail pane replaces both editors"
+    timebox_days: 5
+    risk_tag: P0
+    executor_tier: frontier
+    depends_on: [S2, PR#30]
+    owner_screenshot_required: false
+    closes: ["owner complaint #3", "owner complaint #4", "D4 three inconsistent per-item surfaces", "structural cure for D1"]
+    acceptance_criteria: [AC-S3-01, AC-S3-02, AC-S3-03, AC-S3-04, AC-S3-05, AC-S3-06, AC-S3-07, AC-S3-08, AC-S3-09, AC-S3-10, AC-S3-11]
+    green_but_shallow_watch: "The notes-preservation test MUST build its fixture from a list_tasks-shaped DTO (body: ''). Hand-feeding a body is exactly how the original D1 stayed green (tasks_controller.test.ts:741)."
+  - id: S4
+    title: "Board becomes a Kanban by status"
+    timebox_days: 3
+    risk_tag: P0
+    executor_tier: frontier
+    depends_on: [S2, S3]
+    owner_screenshot_required: false
+    closes: ["owner complaint #1", "D5 view toggle dead button"]
+    acceptance_criteria: [AC-S4-01, AC-S4-02, AC-S4-03, AC-S4-04, AC-S4-05, AC-S4-09, AC-S4-06, AC-S4-07, AC-S4-08]
+    green_but_shallow_watch: "An illegal-drop test asserting 'an error toast appeared' is backwards — it would mean the call was made. Assert setTaskStatus call-count is 0."
+  - id: S5
+    title: "A sidebar that actually works"
+    timebox_days: 5
+    risk_tag: P0
+    executor_tier: frontier
+    depends_on: [S1]
+    owner_screenshot_required: false
+    closes: ["owner complaint #2", "D8 stateless/stale rail", "dead reorderList"]
+    acceptance_criteria: [AC-S5-01, AC-S5-02, AC-S5-03, AC-S5-04, AC-S5-05, AC-S5-06, AC-S5-07, AC-S5-08, AC-S5-09]
+    green_but_shallow_watch: "A count-refresh test that calls loadLists() directly tests the function that already worked. It must mutate a task through the controller and assert the badge changed."
+  - id: S6
+    title: "Subtasks are real tasks"
+    timebox_days: 5
+    risk_tag: P1
+    executor_tier: frontier
+    depends_on: [S2, S3]
+    owner_screenshot_required: true
+    closes: ["subtasks (the only core model change)"]
+    acceptance_criteria: [AC-S6-01, AC-S6-02, AC-S6-03, AC-S6-04, AC-S6-05, AC-S6-05b, AC-S6-06, AC-S6-07, AC-S6-08, AC-S6-09, AC-S6-10, AC-S6-11, AC-S6-12, AC-S6-13, AC-S6-14, AC-S6-15]
+    green_but_shallow_watch: "LOUDEST: a serde round-trip on TaskFrontmatter passes while list_tasks/get_task return parent: null forever, because both project through TaskDto::from_row off the SQLite index. Same bug class as the shipped Notes body_markdown defect. AC-S6-04 forbids mocks and hand-fed fixtures."
+  - id: S7
+    title: "Bulk multi-select and keyboard flow"
+    timebox_days: 4
+    risk_tag: P1
+    executor_tier: mid
+    depends_on: [S3]
+    owner_screenshot_required: false
+    closes: ["bulk ops", "keyboard flow"]
+    acceptance_criteria: [AC-S7-01, AC-S7-02, AC-S7-03, AC-S7-04, AC-S7-05, AC-S7-06, AC-S7-07, AC-S7-09, AC-S7-08]
+    green_but_shallow_watch: "The bulk test must inject a rejection mid-array (item 3 of 5) and assert both the partial-success report and that items 4-5 were still attempted."
+  - id: S8
+    title: "Free wins and convention cleanup"
+    timebox_days: 3
+    risk_tag: P2
+    executor_tier: mid
+    depends_on: []
+    owner_screenshot_required: false
+    closes: ["D9 raw section dialogs", "dead reorderSection", "dead setTagColor"]
+    acceptance_criteria: [AC-S8-01, AC-S8-02, AC-S8-03]
+    green_but_shallow_watch: "Low. The three bridge functions already exist and are tested in core; the risk is only in the wiring."
+
+cross_cutting_scope:   # [R3] AC-X-* is NOT a uniform per-story obligation
+  per_pr_gate: [AC-X-01, AC-X-04, AC-X-05, AC-X-08]                 # every PR, no exceptions
+  per_pr_regression_gate: [AC-X-02, AC-X-06]                        # existing tests; must stay green every PR
+  story_bound_else_wave_exit:
+    AC-X-03: { binds_at: S8, condition: "a story introduces a new data-lucide name; S8 owns the sweep and creates the test" }
+    AC-X-07: { binds_at: S6, condition: "first core change; no Rust is touched before S6" }
+  note: "AC-X-04 is NOT negotiable down to wave-exit: a PR that does not build cannot merge."
+
+cross_cutting_criteria: [AC-X-01, AC-X-02, AC-X-03, AC-X-04, AC-X-05, AC-X-06, AC-X-07, AC-X-08]   # re-checked at EVERY story boundary
+
+declared_scope:   # ramza-drift --declare; anything outside these globs is DRIFT
+  - "jin-core/src/model/task.rs"
+  - "jin-core/src/ops/tasks.rs"
+  - "jin-core/src/dto/task.rs"
+  - "jin-core/src/index/*.rs"
+  - "jin-gui/src-tauri/src/commands/tasks.rs"
+  - "jin-gui/src/invoke.ts"
+  - "jin-gui/src/types/dto.ts"
+  - "jin-gui/src/lib/tasks/*.ts"
+  - "jin-gui/src/lib/lists/*.ts"
+  - "jin-gui/src/lib/icons/index.ts"
+  - "jin-gui/src/controllers/tasks_controller.ts"
+  - "jin-gui/src/controllers/lists_controller.ts"
+  - "jin-gui/index.html"
+  - "jin-gui/src/styles/browse.css"
+  - "jin-gui/src/__tests__/*.ts"
+  - "jin/tests/s4_tasks_notes_crud.rs"
+  - "jin-gui/package.json"
+
+acceptance_criteria:   # PARSED from spec.md — 79 criteria, one assertion each
+  - id: AC-X-01
+    form: event-driven
+    scope: "per_pr_gate"
+    given: "the tasks surface source tree (`jin-gui/src`) at any story boundary in this wave"
+    when: "the verification gate scans it for webview-illegal dialog *call sites*"
+    then: "the tasks surface SHALL contain no call to `window.prompt`, `window.alert` or `window.confirm` (they are no-ops in the Tauri webview)"
+    verify_method: "command: `rg -n \"window\\.(prompt|alert|confirm)\\s*\\(\" jin-gui/src | rg -v ':\\s*(\\*|//|/\\*)'` returns no match"
+    constraint: "the R2 command (`rg -n \"window\\.(prompt|alert|confirm)\" jin-gui/src`) was DEFECTIVE — it could never pass. It matched English prose in comments on the unmodified tree (`lists_controller.ts` header; `notes_controller.ts:390`, which *documents* that `window.prompt()` is a Tauri no-op), in files no story touches. A permanently-red gate trains everyone to ignore it, which is worse than no gate. The replacement requires an opening paren (a call site, not a mention) and drops comment lines. Verified in BOTH directions on the real tree: clean on the current tree, and it still catches an injected `const x = window.confirm(\"really?\")`. It fails CLOSED — a violation hidden in a *trailing* comment (`foo(); // window.confirm(`) still trips it, which is the safe direction."
+  - id: AC-X-02
+    form: event-driven
+    scope: "per_pr_regression_gate"
+    given: "a modal introduced by this wave, in the tasks surface mounted from the real `index.html`"
+    when: "the modal is opened"
+    then: "every modal introduced by this wave SHALL be a `JinModal` instance hosted at `#jin-modal-root`, never a Stimulus-targeted raw `<dialog>`"
+    verify_method: "test: jin-gui/src/__tests__/tasks_lists_modal_wiring.test.ts (anti-DT-2 gate, mounts the real index.html)"
+  - id: AC-X-03
+    form: event-driven
+    scope: "story_bound_else_wave_exit(S8)"
+    given: "a story that introduces a new `data-lucide` name, or the wave-exit gate after S8 (which owns the icon sweep and creates the test file)"
+    when: "`initIcons()` runs against the rendered tasks surface"
+    then: "every `data-lucide` icon name rendered by the tasks surface SHALL be registered in `jin-gui/src/lib/icons/index.ts`"
+    verify_method: "test: jin-gui/src/__tests__/icons_registry.test.ts#every_task_icon_is_registered (created by S8)"
+    constraint: "does NOT bind on a story that introduces no icon (S1 introduces none). An unregistered icon renders nothing, silently — hence the gate; but the gate lives where the icons do."
+  - id: AC-X-04
+    form: event-driven
+    scope: "per_pr_gate"
+    given: "the working tree at any story boundary in this wave"
+    when: "`make verify` and `make verify-gui` are run (fmt, clippy, cargo test, tsc, vitest, stylelint, vite build)"
+    then: "the repository SHALL pass `make verify` and `make verify-gui` (fmt, clippy, cargo test, tsc, vitest, stylelint, vite build) at every story boundary"
+    verify_method: "command: `nvm use v24.18.0 && make verify && make verify-gui`"
+  - id: AC-X-05
+    form: unwanted-behavior
+    scope: "per_pr_gate"
+    given: "any task or list bridge call in the tasks surface"
+    when: "the bridge rejects"
+    then: "an `app:error` event SHALL be dispatched on the bubbling channel `error_controller.ts` listens to, with no unhandled promise rejection"
+    verify_method: "test: jin-gui/src/__tests__/tasks_error_surfacing.test.ts#every_bridge_callback_surfaces_rejection"
+  - id: AC-X-06
+    form: event-driven
+    scope: "per_pr_regression_gate"
+    given: "a task whose `list` is a list id, and a filter carrying that same id"
+    when: "`filterTasksList` is called"
+    then: "`filterTasksList` SHALL keep matching `task.list` against a list **id** (never a name)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#S6_filter_is_id_based"
+  - id: AC-X-07
+    form: event-driven
+    scope: "story_bound_else_wave_exit(S6)"
+    given: "a task file written before this wave (no `parent` key in its frontmatter), at S6 or later — no core change lands before S6"
+    when: "the current core parses it"
+    then: "it SHALL parse without error, with every new frontmatter field taking its `#[serde(default)]` value"
+    verify_method: "test: jin-core/src/model/task.rs#serde_default_legacy_task_file_parses_without_parent (created by S6)"
+    constraint: "not applicable to S1..S5, which touch no Rust. Binds the moment S6 adds `parent`, and again at wave exit."
+  - id: AC-X-08
+    form: event-driven
+    scope: "per_pr_gate"
+    given: "any task-mutating bridge call in the tasks surface (`createTask`, `editTask`, `setTaskStatus`, `moveTask`, `deleteTask`, `reseedPositions`)"
+    when: "the call resolves successfully"
+    then: "a `jin:tasks-changed` event SHALL be dispatched by the `mutate()` chokepoint (Approach §8), never by a per-callback bespoke dispatch"
+    verify_method: "test: jin-gui/src/__tests__/tasks_error_surfacing.test.ts#every_task_mutation_dispatches_tasks_changed — the test drives each mutating callback and asserts the event fires; a story that adds a mutating call outside `mutate()` fails this criterion"
+  - id: AC-S1-01
+    form: event-driven
+    scope: "story:S1"
+    given: "the GUI source tree after S1"
+    when: "the verification gate scans it for a `critical` priority *literal*"
+    then: "the priority options offered anywhere in the GUI SHALL be exactly `none`, `low`, `medium`, `high`"
+    verify_method: "command: `rg -n \"'critical'|\\\"critical\\\"\" jin-gui/src/lib jin-gui/src/controllers jin-gui/index.html` returns no match"
+    constraint: "the R2 command (`rg -n \"critical\" jin-gui/src`) was DEFECTIVE — it could never pass. It matched the ordinary English word in `settings_controller.ts`, `settings.css`, `livePreview.ts` and `today_controller.test.ts` (\"the critical caveat\", \"non-critical\", \"critical for…\"). The defect was never the word; it was a phantom `'critical'` **`Priority` option** (`render.ts:921`) that hard-errors at `parse_priority`. The replacement matches the quoted literal only. Verified in BOTH directions on the real tree: clean on the S1 tree (the phantom option is genuinely gone from `render.ts`), and it catches a reintroduced `PRIORITY_OPTIONS = [… ,'critical']`. scope narrowed to exclude `__tests__` — an anti-regression test that asserts the literal is ABSENT (`expect(PRIORITY_OPTIONS).not.toContain('critical')`) would otherwise turn this gate permanently red, which is the exact class of defect it is being fixed for. Audited: clean on the S1 tree."
+  - id: AC-S1-02
+    form: event-driven
+    scope: "story:S1"
+    given: "a task whose status is `done`"
+    when: "the detail pane renders its status select"
+    then: "the detail status select SHALL render exactly two options — `done` (current) and `todo` (the only legal successor)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#status_select_offers_only_legal_transitions_for_done"
+  - id: AC-S1-03
+    form: event-driven
+    scope: "story:S1"
+    given: "a task whose status is `cancelled`"
+    when: "the detail pane renders its status select"
+    then: "the detail status select SHALL NOT render a `done` option"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#status_select_hides_done_for_cancelled"
+  - id: AC-S1-04
+    form: event-driven
+    scope: "story:S1"
+    given: "each of the five `TaskStatus` values in turn"
+    when: "`legalNextStatuses` is called with it"
+    then: "`legalNextStatuses` SHALL return, for each of the five statuses, exactly the successor set encoded by `TaskStatus::can_transition_to` in `jin-core/src/model/task.rs:49-61`"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#legal_next_statuses_mirrors_core_fsm — derived from the Rust source, with the 8-arm anti-vacuity guard"
+    constraint: "this is a CROSS-LANGUAGE PARITY criterion and it is satisfiable-while-useless by the obvious implementation. A TS test asserting a TS table against a second TS table is both-sides-TypeScript: changing `can_transition_to` in **Rust** would not fail it, which is the entire failure mode this criterion exists to prevent. The test MUST therefore derive its expected map by PARSING the Rust source (`jin-core/src/model/task.rs`, the `matches!` arms of `can_transition_to`) — not by re-typing the pairs in TypeScript. It MUST carry an ANTI-VACUITY GUARD: assert the parse found exactly 8 arms (todo→doing, todo→done, todo→cancelled, doing→done, doing→cancelled, doing→todo, done→todo, cancelled→todo) and fail LOUDLY if it finds zero — a parser that silently matches nothing turns this into a test that passes against an empty expectation. Same reasoning as AC-S6-04's anti-mock clause: when the bug class is \"the two sides drift apart\", a test that reads only one side certifies the drift."
+  - id: AC-S1-05
+    form: unwanted-behavior
+    scope: "story:S1"
+    given: "the detail editor's priority save"
+    when: "`editTask` rejects"
+    then: "the controller SHALL dispatch `app:error` rather than swallow the rejection"
+    verify_method: "test: jin-gui/src/__tests__/tasks_error_surfacing.test.ts#priority_save_rejection_dispatches_app_error"
+  - id: AC-S1-06
+    form: event-driven
+    scope: "story:S1"
+    given: "the view is set to `board`"
+    when: "the user switches from one list to another"
+    then: "the view SHALL remain `board` (view is a global preference in `localStorage['jin.tasks.view']`)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#view_persists_globally_across_list_switch"
+  - id: AC-S1-07
+    form: event-driven
+    scope: "story:S1"
+    given: "the GUI source tree after S1 (view state now lives in `localStorage['jin.tasks.view']`)"
+    when: "the verification gate scans it for `editList` calls carrying a `view` key"
+    then: "the GUI SHALL make no call to `editList` with a `view` key"
+    verify_method: "command: `rg -nU \"editList\\([^)]*view\" jin-gui/src/controllers jin-gui/src/lib` returns no match"
+    constraint: "the R2 command was DEFECTIVE IN THE PERMISSIVE DIRECTION — the opposite of the other three, and the more dangerous one for a removal gate. `rg` is line-based by default, so a reintroduced call formatted across lines (`editList(id, {\\n  view: newView,\\n })`) MISSES entirely; verified against an injected probe. `-U` (multiline) closes that hole, but an unscoped `-U` regex is then permanently RED on `invoke.ts:237`, where the bridge wrapper legitimately DECLARES `view?: string` in its input type — the core keeps the field; only the GUI stops calling it. Hence: multiline AND scoped to call sites. Audited both directions: clean on the tree, catches the multi-line injection."
+  - id: AC-S1-08
+    form: event-driven
+    scope: "retired_by_S4"
+    given: "main is at S1..S3 (S4 not yet merged) and no single list is the active scope"
+    when: "the filter bar renders"
+    then: "the view-toggle button SHALL be `disabled` with `aria-disabled=\"true\"`"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#view_toggle_disabled_without_list_scope (deleted by the S4 PR)"
+    constraint: "this criterion is scoped to S1 through S3 and is SUPERSEDED by AC-S4-07, which requires the opposite (the board renders in every scope, so the toggle is never disabled). The two do not conflict: they hold at different points on main. The S4 PR MUST DELETE the `view_toggle_disabled_without_list_scope` test — not \"update\" it — and MUST name AC-S1-08 as retired in its description. A checker seeing this test still present after S4 has found a defect."
+  - id: AC-S2-01
+    form: event-driven
+    scope: "story:S2"
+    given: "the GUI source tree after S2"
+    when: "the verification gate scans it for the two retired item builders"
+    then: "`buildTaskRow` and `buildTaskCard` SHALL no longer exist; `buildTaskItem` SHALL be the only task-item builder"
+    verify_method: "command: `rg -n \"buildTaskRow|buildTaskCard\" jin-gui/src/lib jin-gui/src/controllers | rg -v ':\\s*(\\*|//|/\\*)'` returns no match"
+    constraint: "comment lines dropped (a comment NAMING the retired builders is not a builder) and `__tests__` excluded (a test asserting their removal would name them). A test still *calling* a deleted export cannot compile, so the `tsc` half of AC-X-04 covers that hole — defense in depth, not a gap. Audited: clean on the S2 tree."
+  - id: AC-S2-02
+    form: event-driven
+    scope: "story:S2"
+    given: "the same `TaskDto` rendered by `buildTaskItem` as both a row and a card"
+    when: "each corresponding action is activated on each variant (select, status toggle, delete, drag start)"
+    then: "both variants SHALL fire the identical callback with identical arguments for that action"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#row_and_card_fire_identical_callbacks"
+    constraint: "the test MUST render BOTH variants and assert, per action, that the SAME spy fires with the same arguments. Comparing class names, selectors, `outerHTML`, or DOM shape is explicitly FORBIDDEN as the assertion for this criterion — a class-name parity test proves nothing about behavior and fails this AC by construction."
+  - id: AC-S2-03
+    form: event-driven
+    scope: "story:S2"
+    given: "a task rendered as a board card"
+    when: "the user activates the card's delete control"
+    then: "the same `onDeleteRequest` callback SHALL fire that the list row fires"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#card_delete_fires_same_callback_as_row"
+  - id: AC-S2-04
+    form: event-driven
+    scope: "retired_by_S4"
+    given: "a board rendered at S2 or S3 (columns are still section-keyed; S4 re-keys them to status)"
+    when: "the board renders"
+    then: "every board column SHALL contain an add-task row when the list variant would have one"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#board_columns_have_add_task_row (deleted by the S4 PR)"
+    constraint: "a SECOND supersession pair, of the same class as AC-S1-08/AC-S4-07 (which Kupo caught) — found while re-deriving the triggers. At S2 the board is still section-keyed, so every column gets the add row that only the list had. AC-S4-08 REPLACES this criterion the moment S4 re-keys the columns to status, where an add row under Done would be a lie (core always creates at `todo`). The S4 PR MUST DELETE the `board_columns_have_add_task_row` test — not \"update\" it — and MUST name AC-S2-04 as retired in its description. A checker seeing this test still present after S4 has found a defect."
+  - id: AC-S2-05
+    form: event-driven
+    scope: "story:S2"
+    given: "the active sort mode is `priority`"
+    when: "the board renders"
+    then: "the cards within a column SHALL be ordered by `sortTasksForMode(tasks, 'priority')`, not by `position`"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#board_honors_active_sort_mode"
+  - id: AC-S2-06
+    form: event-driven
+    scope: "story:S2"
+    given: "the board renderer after S2 (it now honors the active sort mode)"
+    when: "the verification gate scans `render.ts` for a hardcoded `'manual'` sort argument"
+    then: "the board renderer SHALL contain no hardcoded `'manual'` sort argument"
+    verify_method: "command: `rg -nU \"sortTasksForMode\\([^)]*'manual'\\)\" jin-gui/src/lib/tasks/render.ts | rg -v ':\\s*(\\*|//|/\\*)'` returns no match"
+    constraint: "audited for VACUITY — the opposite risk from the other greps. A gate that can never FIRE is as worthless as one that can never pass, and it fails silently. Verified against the PRE-S2 source (`e1c16ea:render.ts:360`, `const sorted = sortTasksForMode(group.tasks, 'manual');`): the regex DOES fire on the real defect, so the gate is not vacuous. `-U` closes the multi-line-formatting escape; comment lines are dropped because `render.ts`'s own doc comments now narrate the retired hardcode (lines 236, 343) and would otherwise re-redden it."
+  - id: AC-S3-01
+    form: event-driven
+    scope: "story:S3"
+    given: "the task list is rendered"
+    when: "the user clicks a task item"
+    then: "the list SHALL remain visible in the DOM (no `hidden` class added to the list panel)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#selecting_a_task_keeps_the_list_visible"
+  - id: AC-S3-02
+    form: event-driven
+    scope: "story:S3"
+    given: "a task is selected and its pane is open"
+    when: "the user clicks a different task item"
+    then: "the pane SHALL re-hydrate for the newly clicked task in a single click (no intermediate back navigation)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#pane_switches_task_in_one_click"
+  - id: AC-S3-03
+    form: event-driven
+    scope: "story:S3"
+    given: "a task is selected"
+    when: "the list renders"
+    then: "exactly one rendered item SHALL carry `aria-selected=\"true\"`"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#exactly_one_item_is_aria_selected"
+  - id: AC-S3-04
+    form: event-driven
+    scope: "story:S3"
+    given: "the GUI source tree and `index.html` after S3 (the pane is the only editor)"
+    when: "the verification gate scans them for the retired row-edit-modal path"
+    then: "the pencil/edit modal path SHALL be gone — no `#jin-task-edit-dialog`, no `openEditDialog`, no `onEditRequest`"
+    verify_method: "command: `rg -n \"jin-task-edit-dialog|openEditDialog|onEditRequest\" jin-gui/src/controllers/tasks_controller.ts jin-gui/src/lib/tasks jin-gui/index.html | rg -v ':\\s*(\\*|//|/\\*)'` returns no match"
+    constraint: "the R2 command was UNSCOPED (`… jin-gui/src jin-gui/index.html`) and could never pass — it matched `ListsController`'s legitimate, correct, out-of-scope list-editing code (`lib/lists/render.ts:19,165-169`; `lists_controller.ts:181,252`; `lists_controller.test.ts`), which S5 explicitly KEEPS (\"already compliant\"). The replacement is scoped to the task-edit surface and drops comment lines. Audited in both directions on the S3 tree: clean, and it still catches an injected `private openEditDialog(id) { … }`."
+  - id: AC-S3-05
+    form: unwanted-behavior
+    scope: "story:S3"
+    given: "a task whose stored notes are non-empty, rendered from a `list_tasks` projection where `body` is `\"\"`"
+    when: "the user renames that task from the detail pane"
+    then: "the stored notes SHALL be unchanged after the save (the pane hydrates via `getTaskById`, never from the list projection)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#renaming_from_pane_never_erases_notes_D1_regression"
+  - id: AC-S3-06
+    form: event-driven
+    scope: "story:S3"
+    given: "a task is open in the detail pane"
+    when: "the pane renders"
+    then: "the detail pane SHALL expose an editable control for every field core supports: title, status, priority, due, list, section, tags, body, reminders"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#pane_exposes_every_core_field"
+    constraint: "this criterion covers the EDITABLE FIELDS only. The pane's three non-field surfaces are gated separately and are NOT optional: Delete (AC-S3-07), backlinks (AC-S3-10), promote (AC-S3-11). A pane that satisfies AC-S3-06 while missing any of those three fails the story."
+  - id: AC-S3-07
+    form: event-driven
+    scope: "story:S3"
+    given: "a task is open in the pane"
+    when: "the user activates the pane's Delete control and confirms"
+    then: "`deleteTask` SHALL be called for that task id (the old page-swap detail had no delete at all)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#pane_delete_calls_delete_task"
+  - id: AC-S3-08
+    form: event-driven
+    scope: "story:S3"
+    given: "a deep link arrives as a `jin:open-detail` event for a task outside the active scope"
+    when: "the controller handles it"
+    then: "the scope SHALL switch to that task's list before the task is selected"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#deep_link_switches_scope_then_selects"
+  - id: AC-S3-09
+    form: event-driven
+    scope: "story:S3"
+    given: "the pane is open"
+    when: "the user presses Escape or activates the pane's close control"
+    then: "the selection SHALL be cleared and the pane collapsed"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#escape_clears_selection_and_closes_pane"
+  - id: AC-S3-10
+    form: event-driven
+    scope: "story:S3"
+    given: "a task with at least one backlink is open in the pane"
+    when: "the pane renders"
+    then: "the pane SHALL render that backlink in a backlinks section (parity with the retired page-swap detail, which had one)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#pane_renders_backlinks_section"
+  - id: AC-S3-11
+    form: event-driven
+    scope: "story:S3"
+    given: "a task is open in the pane"
+    when: "the pane renders"
+    then: "the pane SHALL expose the promote-to-event action, which dispatches `jin:open-promote` for that task id"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#pane_exposes_promote_action"
+  - id: AC-S4-01
+    form: event-driven
+    scope: "story:S4"
+    given: "any scope with tasks in it"
+    when: "the board renders"
+    then: "the board SHALL render exactly three columns — Todo, Doing, Done — keyed by `TaskStatus`"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#board_renders_three_status_columns"
+  - id: AC-S4-02
+    form: event-driven
+    scope: "story:S4"
+    given: "a task whose status is `cancelled` is in the active scope"
+    when: "the board renders"
+    then: "a task whose status is `cancelled` SHALL NOT appear on the board"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#board_excludes_cancelled_tasks"
+  - id: AC-S4-03
+    form: event-driven
+    scope: "story:S4"
+    given: "a task with status `todo` on the board"
+    when: "the user drops its card into the Doing column"
+    then: "`setTaskStatus(id, 'doing')` SHALL be called exactly once"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#legal_board_drop_calls_set_task_status"
+  - id: AC-S4-04
+    form: unwanted-behavior
+    scope: "story:S4"
+    given: "a task with status `done` (core rejects `done → doing`)"
+    when: "the user drags its card over the Doing column"
+    then: "`setTaskStatus` SHALL NOT be called even once — the Doing column refuses the drop"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#illegal_board_drop_never_calls_bridge"
+  - id: AC-S4-05
+    form: event-driven
+    scope: "story:S4"
+    given: "a `done` card (whose only legal successor is `todo`, so the Doing column is an illegal target)"
+    when: "the card's `dragstart` handler runs"
+    then: "every column that is neither the card's own current-status column nor a legal successor SHALL carry `aria-disabled=\"true\"`"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#illegal_columns_are_aria_disabled_during_drag"
+    constraint: "the R1..R4 wording said \"every column that is not a legal successor\", which — since the FSM has NO self-transition arms (`can_transition_to(X, X)` is false for every X) — literally required greying out the card's OWN column mid-drag. That is safe but visually wrong: a user dragging a Done card would see the Done column go dead. The card's home column is not an illegal *target*; it is the place the card already is. It stays enabled, and a drop into it is a no-op cancel (AC-S4-09)."
+  - id: AC-S4-09
+    form: unwanted-behavior
+    scope: "story:S4"
+    given: "a card being dragged on the board, and an FSM with no self-transition arms (`can_transition_to(X, X)` is false for every status X)"
+    when: "the user drops the card back into the column it was dragged from"
+    then: "`setTaskStatus` SHALL NOT be called (the gesture is a no-op cancel, not a transition request)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#dropping_a_card_back_into_its_source_column_makes_no_bridge_call"
+    constraint: "found by re-deriving the FSM from `can_transition_to` rather than trusting the spec's own prose. A handler that treats every drop as a transition would fire `setTaskStatus(id, <same status>)`, which core REJECTS as `InvalidStateTransition` — so the most innocent gesture on the board (pick a card up, change your mind, put it back) would raise an error toast. Neither the drop-refusal criteria (AC-S4-04/05) nor the legal-drop criterion (AC-S4-03) covered the source column, because the source column is neither illegal nor a successor."
+  - id: AC-S4-06
+    form: event-driven
+    scope: "story:S4"
+    given: "a `done` task on the board"
+    when: "the user activates its Reopen action"
+    then: "`setTaskStatus(id, 'todo')` SHALL be called (the legal way back)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#reopen_action_transitions_done_to_todo"
+  - id: AC-S4-07
+    form: event-driven
+    scope: "supersedes_AC-S1-08"
+    given: "the active scope is a smart view (no single list)"
+    when: "the board renders"
+    then: "the board SHALL still render, with the view toggle enabled (never `disabled`, never `aria-disabled`)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#board_renders_in_smart_view_scope"
+    constraint: "this criterion RETIRES AC-S1-08. The S4 PR deletes the S1 test `view_toggle_disabled_without_list_scope`."
+  - id: AC-S4-08
+    form: event-driven
+    scope: "supersedes_AC-S2-04"
+    given: "a board rendered after S4 (columns are status-keyed)"
+    when: "the board renders"
+    then: "the add-task row on the board SHALL exist only in the Todo column"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#board_add_row_only_in_todo_column"
+    constraint: "this criterion RETIRES AC-S2-04. The S4 PR deletes the S2 test `board_columns_have_add_task_row`. Both supersession pairs in this wave (AC-S1-08 → AC-S4-07, AC-S2-04 → AC-S4-08) exist for the same reason: S4 re-keys the board's columns from sections to statuses, which legitimately invalidates two S2/S1-era guarantees. Neither is a contradiction; each holds at a different point on main."
+  - id: AC-S5-01
+    form: event-driven
+    scope: "story:S5"
+    given: "the tasks surface is mounted"
+    when: "the sidebar rail renders"
+    then: "the sidebar SHALL render four smart views — Inbox, Today, Upcoming, Completed — above the user lists"
+    verify_method: "test: jin-gui/src/__tests__/lists_controller.test.ts#sidebar_renders_four_smart_views"
+  - id: AC-S5-02
+    form: event-driven
+    scope: "story:S5"
+    given: "a scope is active"
+    when: "the sidebar rail renders"
+    then: "exactly one sidebar row SHALL carry `aria-current=\"true\"`"
+    verify_method: "test: jin-gui/src/__tests__/lists_controller.test.ts#exactly_one_row_is_aria_current"
+  - id: AC-S5-03
+    form: event-driven
+    scope: "story:S5"
+    given: "the Inbox scope shows a badge count of N"
+    when: "the user creates a task in Inbox through the controller"
+    then: "the badge SHALL read N+1 without a page reload"
+    verify_method: "test: jin-gui/src/__tests__/lists_controller.test.ts#counts_refresh_after_task_create"
+  - id: AC-S5-04
+    form: event-driven
+    scope: "story:S5"
+    given: "a task is deleted through the controller"
+    when: "the deletion resolves"
+    then: "a `jin:tasks-changed` event SHALL be dispatched"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#task_mutations_dispatch_tasks_changed"
+  - id: AC-S5-05
+    form: event-driven
+    scope: "story:S5"
+    given: "a task set mixing `todo`, `doing`, `done` and `cancelled` tasks"
+    when: "`computeSidebarCounts` is called"
+    then: "sidebar counts SHALL count only open tasks (status `todo` or `doing`)"
+    verify_method: "test: jin-gui/src/__tests__/lists_controller.test.ts#counts_exclude_done_and_cancelled"
+  - id: AC-S5-06
+    form: event-driven
+    scope: "story:S5"
+    given: "a task set mixing due dates (overdue, today, future, none) and statuses"
+    when: "the Today scope is applied via `applyScope`"
+    then: "the Today smart view SHALL contain exactly the open tasks whose due date is today or earlier"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#today_scope_selects_open_overdue_and_due_today"
+  - id: AC-S5-07
+    form: event-driven
+    scope: "story:S5"
+    given: "`index.html` and the GUI source tree after S5 (the rail is the only scope control)"
+    when: "the verification gate scans them for the retired list-filter select"
+    then: "the duplicate list-filter select `#tasks-list-filter` SHALL be gone from the filter bar (the rail is the only scope control)"
+    verify_method: "command: `rg -n \"tasks-list-filter\" jin-gui/index.html jin-gui/src/controllers jin-gui/src/lib jin-gui/src/styles | rg -v ':\\s*(\\*|//|/\\*)'` returns no match"
+    constraint: "comment lines dropped and `__tests__` excluded — S5's own PR migrates those tests to `jin:scope-changed` and will inevitably NAME the removed id while doing so. Audited: 2 hits today, both the real markup (`index.html:956,958`) — the intended RED, since S5 has not shipped. No CSS rule references the id, so nothing else can keep it red after removal."
+  - id: AC-S5-08
+    form: event-driven
+    scope: "story:S5"
+    given: "two lists in the rail"
+    when: "the user drags the second list above the first"
+    then: "`reorderList` SHALL be called with a rank key strictly less than the first list's position"
+    verify_method: "test: jin-gui/src/__tests__/lists_controller.test.ts#list_drag_reorder_calls_reorder_list"
+  - id: AC-S5-09
+    form: event-driven
+    scope: "story:S5"
+    given: "the `#tasks-list-filter` select has been removed from the filter bar (AC-S5-07) and list L2 is not the active scope"
+    when: "the user activates L2's row in the rail"
+    then: "the rendered task items SHALL be exactly L2's tasks (scope switching still works through `jin:scope-changed`, with the removed select gone)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#rail_scope_switch_renders_target_list_without_filter_select"
+    constraint: "AC-S5-07 is a grep for the removal; this criterion is the functional half. A PR that deletes the select and breaks scope switching passes AC-S5-07 and fails here."
+  - id: AC-S6-01
+    form: event-driven
+    scope: "story:S6"
+    given: "a task file whose frontmatter carries no `parent` key"
+    when: "`parse_fm` parses it"
+    then: "a task file with no `parent` key SHALL parse with `parent == None`"
+    verify_method: "test: jin-core/src/model/task.rs#serde_default_legacy_task_file_parses_without_parent"
+  - id: AC-S6-02
+    form: unwanted-behavior
+    scope: "story:S6"
+    given: "a task B whose parent is task A"
+    when: "a caller attempts to create task C with `parent = B` (depth 2)"
+    then: "`create_task` SHALL return a validation error rather than write the file"
+    verify_method: "test: jin-core/src/ops/tasks.rs#subtask_depth_is_capped_at_one"
+  - id: AC-S6-03
+    form: unwanted-behavior
+    scope: "story:S6"
+    given: "task A"
+    when: "a caller attempts to set A's parent to A"
+    then: "`edit_task` SHALL return a validation error"
+    verify_method: "test: jin-core/src/ops/tasks.rs#self_parenting_is_rejected"
+  - id: AC-S6-04
+    form: event-driven
+    scope: "story:S6"
+    given: "a subtask created with `parent = A` through the real `create_task` op against a temp store, with the SQLite index rebuilt from the files on disk"
+    when: "`api::list_tasks` returns its `TaskDto`"
+    then: "`parent` SHALL equal `A` (the field survives the index projection, not merely the model)"
+    verify_method: "test: jin/tests/s4_tasks_notes_crud.rs#parent_survives_index_rebuild_and_list_tasks (CLI-driven, real temp store, no mocks)"
+    constraint: "the test MUST drive the REAL pipeline end to end — `create_task` writes a task file → `index::rebuild` reads that file → `api::list_tasks` queries the index → `TaskDto::from_row` projects it. Mocking or stubbing `from_row`, the index, or the store, and hand-feeding a `TaskDto`/`TaskRow`/frontmatter fixture, are explicitly FORBIDDEN and fail this criterion. This is the exact shape of the shipped Notes `body_markdown` defect; a mocked test here is worse than no test, because it certifies the bug."
+  - id: AC-S6-05
+    form: event-driven
+    scope: "story:S6"
+    given: "parent A has children B (todo) and C (doing)"
+    when: "A transitions to `done`"
+    then: "B and C SHALL both be `done` (completion cascades down)"
+    verify_method: "test: jin-core/src/ops/tasks.rs#parent_completion_cascades_to_open_children"
+    constraint: "the cascade writes N files with no transaction. Children are written first and the parent last, so a crash mid-cascade leaves the parent open (recoverable by re-completing) rather than a completed parent with open children. Crash-recovery behavior is MANUAL-TEST-ONLY (kill the process mid-cascade); this AC covers the happy path only, and the ordering guarantee is what makes the unhappy path survivable."
+  - id: AC-S6-05b
+    form: event-driven
+    scope: "story:S6"
+    given: "parent A has children B (todo) and C (doing)"
+    when: "A transitions to `cancelled`"
+    then: "B and C SHALL both be `cancelled` (cancellation cascades down exactly as completion does)"
+    verify_method: "test: jin-core/src/ops/tasks.rs#parent_cancellation_cascades_to_open_children"
+    constraint: "`done` and `cancelled` are parallel cascade cases in the Approach §6 rollup table. An implementation that cascades on `done` and forgets `cancelled` stays green against AC-S6-05 alone; this criterion is what makes that impossible."
+  - id: AC-S6-06
+    form: event-driven
+    scope: "story:S6"
+    given: "parent A is `done` with children B and C `done`"
+    when: "A transitions to `todo` (reopen)"
+    then: "B and C SHALL remain `done` (no reverse cascade)"
+    verify_method: "test: jin-core/src/ops/tasks.rs#parent_reopen_does_not_reopen_children"
+  - id: AC-S6-07
+    form: event-driven
+    scope: "story:S6"
+    given: "parent A has children B and C, and all children complete"
+    when: "C transitions to `done`"
+    then: "A SHALL remain in its current status (no upward auto-complete)"
+    verify_method: "test: jin-core/src/ops/tasks.rs#children_completion_never_auto_completes_parent"
+  - id: AC-S6-08
+    form: event-driven
+    scope: "story:S6"
+    given: "parent A in list L1 with child B"
+    when: "A is edited to list L2"
+    then: "B's list SHALL become L2 (a subtask lives with its parent)"
+    verify_method: "test: jin-core/src/ops/tasks.rs#child_list_follows_parent_list_change"
+  - id: AC-S6-09
+    form: event-driven
+    scope: "story:S6"
+    given: "parent A with child B"
+    when: "A is soft-deleted"
+    then: "B SHALL be soft-deleted as well"
+    verify_method: "test: jin-core/src/ops/tasks.rs#parent_delete_cascades_to_children"
+  - id: AC-S6-10
+    form: event-driven
+    scope: "story:S6"
+    given: "a subtask whose own due date is today"
+    when: "the Today smart view renders"
+    then: "it SHALL appear in the Today smart view as a standalone item carrying a parent breadcrumb chip"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#subtask_surfaces_independently_in_today"
+  - id: AC-S6-11
+    form: event-driven
+    scope: "story:S6"
+    given: "a parent task with 5 children of which 2 are done"
+    when: "its item renders"
+    then: "its rendered item SHALL show a `2/5` progress indicator"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#parent_item_shows_subtask_progress"
+  - id: AC-S6-12
+    form: event-driven
+    scope: "story:S6"
+    given: "a subtask is open in the detail pane"
+    when: "the pane renders"
+    then: "the pane's list and section selects SHALL be disabled"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#subtask_pane_disables_list_and_section"
+  - id: AC-S6-13
+    form: event-driven
+    scope: "story:S6"
+    given: "a list scope in list view, where parent A (expanded) has children B and C"
+    when: "the list renders"
+    then: "B and C SHALL render as child items directly beneath A, each carrying the child modifier class `task-item--child`, and SHALL NOT also render as top-level items"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#children_render_nested_under_parent_not_top_level"
+  - id: AC-S6-14
+    form: event-driven
+    scope: "story:S6"
+    given: "parent A is expanded with children B and C visible"
+    when: "the user activates A's collapse caret"
+    then: "B's and C's items SHALL no longer be present in the rendered list"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#collapsing_parent_hides_child_items"
+  - id: AC-S6-15
+    form: event-driven
+    scope: "story:S6"
+    given: "a child item in list view (child reorder is out of scope for v1)"
+    when: "the list renders"
+    then: "a child item SHALL expose no drag handle and SHALL NOT be `draggable` (child reorder is out of scope for v1)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#child_items_are_not_draggable"
+  - id: AC-S7-01
+    form: event-driven
+    scope: "story:S7"
+    given: "three tasks are rendered"
+    when: "the user cmd/ctrl-clicks all three"
+    then: "all three SHALL carry `aria-selected=\"true\"`"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#ctrl_click_multi_selects"
+  - id: AC-S7-02
+    form: event-driven
+    scope: "story:S7"
+    given: "a multi-selection containing one `done` task and one `doing` task"
+    when: "the bulk panel renders its status control"
+    then: "the bulk status control SHALL offer only `todo` — the intersection of the two tasks' legal successors: `legalNextStatuses('done')` = `[todo]`, `legalNextStatuses('doing')` = `[todo, done, cancelled]`, so `[todo] ∩ [todo, done, cancelled]` = `[todo]`"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#bulk_status_offers_only_intersection_of_legal_transitions"
+    constraint: "the R1..R4 example was `{done, todo}` and claimed it yields `[todo]`. That is ARITHMETICALLY IMPOSSIBLE. A status is never its own successor (the FSM has no self-transition arms), so `legalNextStatuses('done')` = `[todo]` and `legalNextStatuses('todo')` = `[doing, done, cancelled]` — their intersection is **EMPTY**. No correct implementation of \"the intersection\" produces `[todo]` from that pair; an implementer who trusted the example and reverse-engineered logic to satisfy it would have built something WRONG that passed its own test. The pair that actually yields `[todo]` — and that matches this criterion's stated intent — is `{done, doing}`. Re-derived mechanically from `can_transition_to`, not from memory. The intersection MUST be computed from S1's `legalNextStatuses` (one FSM mirror, parsed from Rust per AC-S1-04), never from a second hand-typed table."
+  - id: AC-S7-03
+    form: unwanted-behavior
+    scope: "story:S7"
+    given: "a bulk delete of five tasks where the third bridge call rejects"
+    when: "the operation completes"
+    then: "the controller SHALL report \"4 of 5\" through `app:error` and SHALL still have attempted items four and five"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#bulk_partial_failure_reports_and_continues"
+  - id: AC-S7-04
+    form: event-driven
+    scope: "story:S7"
+    given: "focus is on the task list and no input is focused"
+    when: "the user presses ArrowDown"
+    then: "the selection SHALL move to the next item"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#arrow_down_moves_selection"
+  - id: AC-S7-05
+    form: event-driven
+    scope: "story:S7"
+    given: "an item is selected via keyboard"
+    when: "the user presses Enter"
+    then: "the detail pane SHALL open for that item"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#enter_opens_pane"
+  - id: AC-S7-06
+    form: event-driven
+    scope: "story:S7"
+    given: "an item is selected via keyboard"
+    when: "the user presses Delete"
+    then: "the delete confirmation SHALL open for that item"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#delete_key_opens_confirm"
+  - id: AC-S7-07
+    form: unwanted-behavior
+    scope: "story:S7"
+    given: "the caret is inside the quick-add input"
+    when: "the user types the letter `n`"
+    then: "the quick-add shortcut SHALL NOT fire (shortcuts are inert inside text inputs)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#shortcuts_inert_in_inputs"
+  - id: AC-S7-09
+    form: unwanted-behavior
+    scope: "story:S7"
+    given: "a multi-selection containing one `done` task and one `todo` task — the most natural mixed selection a user can make, and one whose legal-successor intersection is EMPTY (`[todo]` ∩ `[doing, done, cancelled]` = `{}`)"
+    when: "the bulk panel renders its status control"
+    then: "the panel SHALL render an explicit \"no status change is valid for every selected task\" message in place of the status control, never a dead empty select"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#bulk_empty_intersection_explains_itself_never_empty_select"
+    constraint: "this case had NO criterion at all, and the reason is instructive: AC-S7-02's broken example asserted a NON-empty result for the one pair that intersects to empty, so the empty case looked like it could not arise. A wrong worked example does not merely mislead — it CONCEALS the edge case it gets wrong. The behavior exists in the S7 implementation already; this criterion is what stops a future change from regressing it back to an empty dropdown."
+  - id: AC-S7-08
+    form: event-driven
+    scope: "story:S7"
+    given: "a bulk operation over five selected tasks, of which one bridge call rejects"
+    when: "the batch settles"
+    then: "exactly one `jin:tasks-changed` event SHALL be dispatched for the whole batch (never zero, never N)"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#bulk_dispatches_tasks_changed_exactly_once"
+    constraint: "zero dispatches leaves the sidebar counts stale behind every bulk op — the exact defect S5 exists to kill. N dispatches thrash the rail. The count assertion is the point of this criterion."
+  - id: AC-S8-01
+    form: event-driven
+    scope: "story:S8"
+    given: "two sections in a list"
+    when: "the user drags the second section above the first"
+    then: "`reorderSection` SHALL be called with a rank key strictly less than the first section's position"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#section_drag_calls_reorder_section"
+  - id: AC-S8-02
+    form: event-driven
+    scope: "story:S8"
+    given: "a tag chip"
+    when: "the user picks a new color in the tag color modal"
+    then: "`setTagColor(slug, color)` SHALL be called"
+    verify_method: "test: jin-gui/src/__tests__/tasks_controller.test.ts#tag_color_picker_calls_set_tag_color"
+  - id: AC-S8-03
+    form: event-driven
+    scope: "story:S8"
+    given: "`index.html` after S8"
+    when: "the verification gate scans it for the two retired raw `<dialog>` section targets"
+    then: "the add-section and delete-section dialogs SHALL be `JinModal`-hosted, with no `data-tasks-target=\"addSectionDialog\"` or `deleteSectionDialog` remaining"
+    verify_method: "command: `rg -n \"addSectionDialog|deleteSectionDialog\" jin-gui/index.html jin-gui/src/controllers/tasks_controller.ts | rg -v ':\\s*(\\*|//|/\\*)'` returns no match"
+    constraint: "scope EXTENDED to `tasks_controller.ts` — a STRENGTHENING, the only one in this audit. The R2 check looked at `index.html` alone, so it would have gone green while the controller still declared the dead Stimulus targets (`'addSectionDialog'`, `declare addSectionDialogTarget`, `tasks_controller.ts:139-175`) — leaving in place exactly the subtree-scoping foot-gun (DT-2) that porting these dialogs to `JinModal` exists to remove. 10 hits across both files today (the intended RED); S8 must clear all of them."

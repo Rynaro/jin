@@ -1,0 +1,60 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "77e8945f-8406-4cfe-a5a9-aece0eec0def",
+  "thread_id": "e6061ee8-d388-4ed4-aa85-7a33c03d61cb",
+  "parent_id": null,
+  "from": { "eidolon": "spectra", "version": "4.10.0" },
+  "to": { "eidolon": "apivr", "version": "n/a" },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Propose the Jin Notes QoL spec: a FRONTEND-ONLY sidebar 'New Note' action + inline-editable note title (which also fills the missing rename-any-note gap). Reuses create_note + edit_note — NO Rust/Tauri/schema. Branch off main (v0.4.0; CM6 editor, folder tree, createNote, editNote all already present). Two INVEST stories + two Kupo micro-tasks. NN-1: replace the static detail-header <h2 class='browse-detail__title'> (render.ts:350-353) with an always-editable <input> (keep the class for caret-safe node-identity selectors); commit-on-blur/Enter, Escape reverts, dirty-check + committing guard, allow empty title; renderNoteDetail gains onTitleSave param; the controller's onTitleSave does a defensive editorHandle.flush() then editNote(id,{title}) then a TARGETED list-row DOM update (mirror onSave 531-539) and NEVER calls renderNoteDetail / touches editorHandle (caret-safe; EditorView + .cm-editor identity preserved). edit_note keeps the ULID on rename (ops/notes.rs:117-128) so body autosave still routes by id. NN-2: add a .notes-list-pane__header compose button (.notes-new-note-btn, square-pen, click->notes#newNote) and a newNote() action = createNote({title:'', body:'', folder: currentFolder ?? ''}) -> loadList({folder:currentFolder}) -> loadDetail(newId) -> focus+select the title input. Empty title is backend-safe (slugify('')='untitled', fs.rs:49); list shows 'Untitled' via a new noteDisplayTitle helper, detail input uses placeholder. Anti-shallow controller-driven gates: G-TITLE-EDIT-SAVE (caret-safe, top), G-TITLE-EDIT-ENTER/-ESCAPE, G-TITLE-DIRTY-NOOP, G-TITLE-EMPTY-ALLOWED, G-TITLE-RENAME-BODY-SAVE-STILL-WORKS, G-NEWNOTE-DEFAULT-FOLDER, G-NEWNOTE-SELECTED-FOLDER, G-NEWNOTE-IN-LIST, G-NEWNOTE-OPENS-EDITABLE-TITLE. Preserve G-XSS + all body-save caret gates. Required harness edits: add createNote to the invoke mock+import (test:60-70) and to the controller import (notes_controller.ts:44); migrate test:453 .textContent -> .value. Frontend gates need Node >= 20 (system v16 crashes vitest; use nvm v24.x).",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/2026-06-29-jin-notes-newnote-and-title.md",
+    "sha256": "bca31befb182cf90685a9994899c4f538d9acf48287ad6f77b391d76070d9396",
+    "size_bytes": 21370
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 4200,
+    "input_handles": [
+      "jin-gui/src/invoke.ts",
+      "jin-gui/src/types/dto.ts",
+      "jin-gui/src/lib/notes/render.ts",
+      "jin-gui/src/lib/notes/editor.ts",
+      "jin-gui/src/lib/notes/transform.ts",
+      "jin-gui/src/controllers/notes_controller.ts",
+      "jin-gui/src/__tests__/notes_controller.test.ts",
+      "jin-gui/src/styles/browse.css",
+      "jin-gui/index.html",
+      "jin-gui/package.json",
+      "jin-core/src/ops/notes.rs",
+      "jin-core/src/store/fs.rs"
+    ],
+    "summary": "Decision-ready dual-format spec. FRONTEND-ONLY; reuses create_note + edit_note (no Rust). Two stories: NN-1 inline-editable title (+rename any note, caret-safe), NN-2 sidebar New Note (create-in-target-folder + open + focus). Owner-locked decisions resolved: D-BUTTON-PLACEMENT (list-pane compose header, square-pen), D-DEFAULT-TITLE (empty '' — backend-safe via slugify=untitled), D-TITLE-COMPONENT (styled <input>, keep .browse-detail__title class), D-TITLE-SAVE-TRIGGER (blur+Enter commit, Escape revert, dirty-check+guard, allow empty), D-CARET-SAFE (no renderNoteDetail/editorHandle on commit; targeted DOM only; ULID preserved on rename so body saves still route), D-NEW-NOTE-FLOW, D-EMPTY-TITLE-DISPLAY (noteDisplayTitle 'Untitled' in list, placeholder in detail). Top risk R-CARET (P0) guarded by G-TITLE-EDIT-SAVE asserting EditorView+.cm-editor identity. R-RENAME-INTERACTION (P1) guarded by defensive flush + per-field read-modify-write + G-TITLE-RENAME-BODY-SAVE-STILL-WORKS.",
+    "wave_scope": "Notes QoL follow-up after Wave-2 (folders + live editor). Deferred: rename confirmation dialog, title-from-first-line autotitling, multi-select rename, undo for rename."
+  },
+  "constraints": { "trust_level": "standard" },
+  "expected_response": {
+    "performative": "ACKNOWLEDGE",
+    "shape_hint": "Land NN-1 before NN-2 (NN-2 focuses the NN-1 input). The caret-safe invariant is load-bearing: title commit MUST be targeted DOM only — NEVER call renderNoteDetail or touch editorHandle; G-TITLE-EDIT-SAVE asserts handle.getView() + .cm-editor node identity across a rename. edit_note keeps the ULID so body autosave still routes by id post-rename — assert G-TITLE-RENAME-BODY-SAVE-STILL-WORKS. Empty title is intended and backend-safe (slugify('')='untitled'); show 'Untitled' in the list and a placeholder in the detail input — do NOT force a value. Required harness edits up front: add createNote to the invoke mock+import (test:60-70) and the controller import (notes_controller.ts:44); migrate the detail-title assertion (test:453) from .textContent to .value. Run all gates under Node >= 20 (nvm v24.x; system v16 crashes vitest)."
+  },
+  "confidence": 0.92,
+  "assumptions": [
+    "create_note accepts title:'' and produces <ULID>--untitled.md (slugify('')='untitled', fs.rs:49-50); edit_note accepts title:'' likewise.",
+    "edit_note title-change preserves frontmatter.id (ULID) and renames in the same folder; get_note/body-save route by id via find_note_path, so body autosave keeps working after a rename (ops/notes.rs:81-137,56-59).",
+    "renderNoteDetail returning the EditorHandle and exposing getView()/.cm-editor (editor.ts:74,839) lets gates assert no-remount node identity.",
+    "Controller-driven gates inject the real index.html body (BODY_CONTENT) so the New Note button's data-action wires through Stimulus; thus the button must live in index.html."
+  ],
+  "integrity": {
+    "method": "sha256",
+    "value": "bca31befb182cf90685a9994899c4f538d9acf48287ad6f77b391d76070d9396"
+  },
+  "trace": {
+    "ts": "2026-06-29T16:21:20Z",
+    "host": "claude-code",
+    "model": "claude-opus-4-8",
+    "tier": "standard"
+  }
+}

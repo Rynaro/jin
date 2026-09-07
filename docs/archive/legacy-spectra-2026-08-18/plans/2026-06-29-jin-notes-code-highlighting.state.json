@@ -1,0 +1,65 @@
+{
+  "session_id": "jin-notes-code-highlighting",
+  "spec": "2026-06-29-jin-notes-code-highlighting.yaml",
+  "methodology": "SPECTRA 4.10.0",
+  "created_at": "2026-06-29",
+  "handoff": { "from": "spectra", "to": "apivr", "executor": "Vivi" },
+  "branch": "feat/notes-code-highlighting (off main, after sidebar-bug-fix PR)",
+  "execution_order": ["CODE-1", "CODE-2", "CODE-3"],
+  "steps": [
+    {
+      "id": "CODE-1",
+      "title": "Editor fenced-code syntax highlighting (codeLanguages + CM6 code-token HighlightStyle)",
+      "status": "pending",
+      "depends_on": [],
+      "files": [
+        "jin-gui/package.json",
+        "jin-gui/src/lib/notes/editor.ts",
+        "jin-gui/src/__tests__/editor.test.ts"
+      ],
+      "gates": ["G-CODE-EDITOR-LANGS", "G-HIGHLIGHT-EXTENDED"],
+      "preserve_gates": ["G-EDITOR-*", "G-KEYMAP", "G-READING-VIEW", "G-READING-FLUSH"],
+      "new_deps": ["@codemirror/language-data@^6"],
+      "risk": "P1"
+    },
+    {
+      "id": "CODE-2",
+      "title": "Reading-view highlight.js highlighting through the sanitize chokepoint",
+      "status": "pending",
+      "depends_on": [],
+      "files": [
+        "jin-gui/package.json",
+        "jin-gui/src/lib/notes/markdown.ts",
+        "jin-gui/src/styles/browse.css",
+        "jin-gui/src/__tests__/markdown.test.ts"
+      ],
+      "gates": ["G-CODE-READING-HLJS", "G-CODE-HLJS-SANITIZE", "G-CODE-LARGE-SKIP", "G-CHOKEPOINT-HLJS"],
+      "preserve_gates": ["G-XSS", "G-SANITIZE", "language-js-control", "G-CHOKEPOINT"],
+      "new_deps": ["highlight.js@^11"],
+      "risk": "P0"
+    },
+    {
+      "id": "CODE-3",
+      "title": "Reading-view dynamic code header (copy + language badge + soft-wrap)",
+      "status": "pending",
+      "depends_on": ["CODE-2"],
+      "files": [
+        "jin-gui/src/lib/notes/codeChrome.ts",
+        "jin-gui/src/lib/notes/markdown.ts",
+        "jin-gui/src/lib/notes/editor.ts",
+        "jin-gui/src/styles/browse.css",
+        "jin-gui/src/lib/icons/*",
+        "jin-gui/src/__tests__/markdown.test.ts"
+      ],
+      "gates": ["G-CODE-COPY", "G-CODE-BADGE", "G-CODE-WRAP", "G-CODE-HEADER-INERT"],
+      "preserve_gates": ["G-READING-VIEW", "G-READING-FLUSH", "G-XSS", "G-SANITIZE", "G-CHOKEPOINT"],
+      "new_deps": [],
+      "risk": "P1"
+    }
+  ],
+  "kupo_micro_tasks": ["K-DEPS", "K-CSS-HLJS", "K-CSS-CHROME", "K-CSS-CM6", "K-ICONS"],
+  "node_requirement": ">=20 (nvm v24.18.0; system node v16.20.2 crashes vitest)",
+  "replanning_history": [],
+  "confidence": 0.89,
+  "decision": "AUTO_PROCEED"
+}

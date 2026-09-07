@@ -1,0 +1,323 @@
+methodology: SPECTRA
+methodology_version: 4.10.0
+spec_id: 2026-06-28-jin-notes-lp-blockquote
+title: "Live-preview increment #3 — blockquote bar (vertical rule + hide/reveal of the > marker) in the Jin CM6 note editor"
+intent_type: CHANGE
+tier: standard
+date: 2026-06-28
+repo: jin-gui
+scope: frontend-only
+from: spectra
+to: vivi
+performative: PROPOSE
+confidence: 0.92
+branch_base: >
+  main AFTER increment #2 (lp-links) merges. HARD DEPENDENCY: this increment relies on
+  atomicDecorationsOf (introduced by #2, livePreview.ts:264-276) ALREADY dropping any
+  class-bearing / non-widget decoration. If #2 is not yet on main, rebase onto it first —
+  the QuoteMark branch is independent of the Link branch but shares enter() + atomicDecorationsOf.
+
+# ─────────────────────────────────────────────────────────────────────────────
+objective: >
+  In the CM6 live-preview editor, every line of a single-level markdown blockquote (> quoted
+  text) renders Obsidian/Apple-style: a vertical bar on the left edge (a Decoration.line with
+  class cm-blockquote-line → CSS border-inline-start + inline padding) and the leading >
+  marker hidden via Decoration.replace({}) (the > plus ONE trailing space) on every line the
+  caret does NOT touch. On the active line the existing per-line reveal shows the raw >, while
+  the BAR PERSISTS (only the marker toggles). Pure builder extension of
+  buildLivePreviewDecorations; CM6/lezer ONLY; no innerHTML; no markdown-it/dompurify.
+
+# ─────────────────────────────────────────────────────────────────────────────
+foundation:
+  builder: "jin-gui/src/lib/notes/livePreview.ts — buildLivePreviewDecorations(state, ranges?) (pure)"
+  established_patterns:
+    - "HIDE_MARK_NODES branch (livePreview.ts:230-241) — hide marker node ranges on inactive lines; HeaderMark trailing-space eat at :236-240 is the EXACT precedent for the QuoteMark trailing-space eat"
+    - "Link branch (livePreview.ts:145-192) — per-node handling NOT in HIDE_MARK_NODES (precedent for a new dedicated 'QuoteMark' branch)"
+    - "ListMark widget branch (livePreview.ts:197-228) — another non-HIDE per-node branch"
+    - "activeLines per-line reveal set (livePreview.ts:124-132)"
+    - "atomicDecorationsOf projection (livePreview.ts:264-276) — keeps replace/widget, DROPS spec.class && !spec.widget"
+    - "jinLivePreview() provide returns atomicRanges from atomicDecorationsOf(decorations) (livePreview.ts:310-313)"
+    - "glyph/label CSS lives in jinEditorTheme in editor.ts (editor.ts:159-181), NOT in livePreview.ts"
+    - "tags.quote highlight ALREADY styles quoted TEXT italic + var(--label-secondary) (editor.ts:104) → .cm-blockquote-line needs only the BAR + indent, NOT text color"
+    - "reading-view blockquote bar precedent: browse.css:516-521 border-left:3px solid var(--separator); padding-left:var(--space-2); color:var(--label-secondary) — mirror for visual parity"
+    - "toolbar quote button inserts '> ' via toggleLinePrefix (editor.ts:407 + :612) → live-preview must render the bar on toolbar-inserted quotes; do NOT break G-TOOLBAR-quote"
+  test_file: "jin-gui/src/__tests__/livePreview.test.ts — pure-builder gates via forceParse(state)=ensureSyntaxTree + collectRanges/collectDecos/collectWidgets helpers"
+  node_requirement: ">=20 (nvm v24.18.0; system node v16.20.2 crashes vitest)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FIRSTHAND lezer verification — dumped from markdown({base: markdownLanguage}) under node v24.18.0
+lezer_facts:
+  blockquote_node: "Blockquote node spans the ENTIRE quote including all lines (multi-line: ONE Blockquote covering both lines)."
+  quotemark_node: "QuoteMark token is EXACTLY the '>' char — it does NOT include the trailing space. ('> quoted text' => QuoteMark[2,3)='>' ; the space at 3 belongs to the inner Paragraph.)"
+  quotemark_no_space: "'>quoted' (no space) => QuoteMark[2,3)='>' (still just the '>'). So the trailing-space eat must be CONDITIONAL — eat one space only when sliceString(markTo,markTo+1)===' ' (mirrors HeaderMark, never eats '\\n')."
+  multiline: "'> a\\n> b' => ONE Blockquote[0,7); TWO QuoteMark children at [0,1) and [4,5), each at its own line start; inner Paragraph[2,7) spans 'a\\n> b'."
+  nested: "'>> nested' => OUTER Blockquote[0,9) QuoteMark[0,1); INNER Blockquote[1,9) QuoteMark[1,2); Paragraph[3,9). Two QuoteMarks on the SAME line — outer at line.from(0), inner at 1 (NOT line.from)."
+  with_inline_markup: "'> **bold**' => Blockquote[0,10) QuoteMark[0,1) Paragraph StrongEmphasis EmphasisMark[2,4] EmphasisMark[8,10]. QuoteMark is the LEADING token; inner marks come AFTER it in document order."
+  empty_marker: "'> ' => Blockquote[0,2) QuoteMark[0,1) Paragraph[2,2) (empty). markTo=2 == line.to=2 → replace[0,2) does NOT cross the line break."
+  lazy_continuation: "'> line one\\nlazy line' => ONE Blockquote[0,20), ONLY ONE QuoteMark[0,1); the 2nd (lazy) line has NO QuoteMark → gets NO bar in v1 (documented limitation)."
+  blockquote_with_list: "'> - item' => Blockquote[0,8) QuoteMark[0,1) BulletList ListItem ListMark[2,3) Paragraph[4,8). QuoteMark@0 then ListMark@2 → ascending; bar + hidden '>' + bullet glyph, no throw."
+  verified_build_ranges:
+    - "doc 'x\\n> quoted text' cursor@0 => lineDeco@(2,2) cm-blockquote-line + replace[2,4) ('> ' incl trailing space)"
+    - "doc 'x\\n> quoted text' cursor@4 (caret ON quote line) => lineDeco@(2,2) STILL present; replace[2,4) ABSENT (marker revealed, bar persists)"
+    - "doc '> a\\n> b\\nplain' cursor@8 (line 3) => lineDeco@(0,0) + replace[0,2) AND lineDeco@(4,4) + replace[4,6)"
+    - "doc 'x\\n> **bold**' cursor@0 => lineDeco@(2,2) + replace[2,4) + replace[4,6) + replace[10,12); strictly ascending, no throw"
+    - "doc '>> nested' cursor@5 (off-line via... single line so test cursor on a parked 2nd line) => lineDeco@(0,0) once + replace[0,1) + replace[1,3); single bar, '>>' hidden"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TECHNICAL RISK (the brief flagged it #1): RangeSetBuilder ordering of a line decoration
+# vs inline replace/mark at the SAME from. RESOLVED EMPIRICALLY (node v24.18.0):
+rangesetbuilder_proof:
+  startsides: "Decoration.line startSide=-200000000 ; Decoration.replace startSide=499999999 ; Decoration.mark startSide=500000000. RangeSetBuilder orders by (from, then startSide)."
+  must_add_line_first: "line@0 THEN replace[0,2) => OK. replace[0,2) THEN line@0 => THROW 'Ranges must be added sorted by from position and startSide'. Same for mark."
+  realistic_line: "add line@(2,2) THEN replace[2,4) THEN mark/replace[4,8) => OK (the exact blockquote-with-inline-markup shape)."
+  nested_dup_ok: "line@0 THEN line@0 (duplicate) does NOT throw — but the line-start guard makes dedup unnecessary."
+  conclusion: >
+    Emit the line decoration at the line's from FIRST, inside the QuoteMark branch, BEFORE the
+    QuoteMark replace. Because QuoteMark is the LEADING token of its line (verified) and the line
+    decoration's startSide (-2e8) sorts before inline replace/mark (~5e8) at the same from, the
+    single shared RangeSetBuilder stays monotonic with ZERO collect-and-sort and ZERO second builder.
+
+# CM6 plugin-decoration constraint (the 2nd risk): RESOLVED by reading the installed source.
+cm6_plugin_constraint:
+  source: "node_modules/@codemirror/view/dist/index.js:2737-2739 + facet doc :8834-8838"
+  rule: "Plugin-provided (function-form) decoration sets MAY NOT contain block widgets, NOR replacing decorations that cover a line break. They MAY contain LINE decorations."
+  compliance: "jinLivePreview provides decorations via a function (livePreview.ts:309). We add NO block widgets; the QuoteMark replace eats at most ONE space (never '\\n'), so it never covers a line break. Line decorations are explicitly permitted (same class as the stock highlightActiveLine extension)."
+
+# ─────────────────────────────────────────────────────────────────────────────
+decisions:
+  D-QUOTE-ORDER:
+    pick: "Emit Decoration.line at line.from FIRST (inside the QuoteMark branch), THEN the QuoteMark replace — single shared RangeSetBuilder, no collect-and-sort, no second builder."
+    rationale: >
+      Of the three options the brief listed (emit-line-first / collect+sort / second builder merged
+      via Decoration.set), emit-line-first is correct AND cheapest because (a) QuoteMark is the
+      leading token of its line (lezer-verified), so nothing on that line has a smaller from, and
+      (b) line startSide (-2e8) < replace/mark startSide (~5e8), so line-then-replace at the same
+      from is the REQUIRED order and is accepted (empirically proven; the reverse THROWS). Inner
+      inline marks on the same line (e.g. EmphasisMark) are visited AFTER QuoteMark in document
+      order and have from >= QuoteMark.from, so they append in ascending order automatically.
+  D-QUOTE-BAR-ACTIVE:
+    pick: "The bar (line decoration) PERSISTS on the active line; only the > marker toggles (revealed raw)."
+    rationale: >
+      (1) Editing stability — the quote block keeps its visual identity while you type, matching
+      Obsidian/Apple Notes. (2) The line decoration is independent of the marker replace; decoupling
+      them is natural. (3) It avoids a layout jump: the bar's inline padding/indent would otherwise
+      collapse the moment the caret enters the line. Implementation: emit the line decoration
+      UNCONDITIONALLY (subject only to the line-start guard); gate ONLY the replace on
+      !activeLines.has(lineNo).
+  D-QUOTE-LINE-START-GUARD:
+    pick: "Emit the line decoration ONLY when node.from === state.doc.lineAt(node.from).from (the QuoteMark is the first char of the line ⇒ top-level blockquote line)."
+    rationale: >
+      This single guard does three jobs: (a) exactly one bar per top-level blockquote line; (b) it
+      naturally dedups nested '>>' (the inner QuoteMark is NOT at line.from → no second bar); (c) it
+      PREVENTS a RangeSetBuilder throw for list-wrapped quotes '- > q' (QuoteMark not at line.from →
+      no line deco is added mid-line after the bullet replace, which would otherwise DECREASE
+      startSide at the same from and throw). The replace (hide '>') is still emitted for ALL
+      off-active QuoteMarks regardless of the guard.
+  D-QUOTE-NESTED:
+    pick: "v1 = SINGLE bar for any depth. '>> nested' → one line decoration (outer mark only, via the line-start guard); ALL '>' markers on the line are hidden off-active (multiple replace ranges)."
+    rationale: "Don't over-engineer multi-level bars. Deeper nesting (indented per-level bars) is a documented limitation / future increment. Verified no-throw."
+  D-QUOTE-TRAILING-SPACE:
+    pick: "QuoteMark replace = [node.from, markTo) where markTo = node.to + (sliceString(node.to, node.to+1)===' ' ? 1 : 0). Eat ONE trailing space only; never '\\n'."
+    rationale: >
+      QuoteMark is just '>' (lezer-verified); the space belongs to the Paragraph. Eating one space
+      makes '> ' fully disappear so the quoted text sits flush against the bar's padding — EXACT
+      mirror of the HeaderMark '# ' rule (livePreview.ts:236-240). Conditional eat guarantees the
+      replace never crosses a line break (CM6 plugin constraint) for empty '>' / '>>' cases.
+  D-QUOTE-ATOMIC:
+    pick: "NO change to atomicDecorationsOf. The line decoration is already correctly EXCLUDED from atomicRanges; the QuoteMark replace remains atomic."
+    rationale: >
+      VERIFIED firsthand: Decoration.line({class:'cm-blockquote-line'}) has spec.class truthy and
+      spec.widget undefined → the existing filter (keep iff !spec.class || spec.widget) DROPS it,
+      exactly like the cm-link-label mark. A line decoration must NEVER be atomic (it is not a
+      hidden range; making the whole line atomic would break caret motion). The QuoteMark replace
+      has no class and no widget → KEPT → atomic (correct: prevents caret-trap inside the hidden '>').
+      The atomicDecorationsOf 'drop class-bearing non-widget decos' rule already generalizes to line
+      decos — no code change, but a NEW gate (G-LP-QUOTE-ATOMIC) pins this behavior.
+  D-QUOTE-STYLE:
+    pick: "Bar lives in jinEditorTheme (editor.ts): '.cm-blockquote-line': { borderInlineStart: '3px solid var(--separator)', paddingInlineStart: 'var(--space-2)' }. NO color (tags.quote already styles the text)."
+    rationale: >
+      Mirrors the reading-view blockquote (browse.css:516-521) for visual parity, using logical
+      properties (border-inline-start / padding-inline-start) for RTL safety per the brief. Token
+      vars only — never raw hex (G-token-discipline). Text color/italic already handled by the
+      tags.quote highlight (editor.ts:104), so .cm-blockquote-line must NOT re-set color (avoids
+      double-muting / conflict).
+  D-QUOTE-SCOPE:
+    pick: "Single-level blockquote bar + > hide/reveal ONLY."
+    out: "Multi-level nested bars (one bar only); lazy-continuation lines (no bar on the continuation line); list-wrapped quotes (degrade: no bar, no throw); reading-view blockquote (untouched — separate sanitized path, G-READING-VIEW)."
+  D-BUILDER-SHAPE: >
+    New dedicated 'QuoteMark' branch in buildLivePreviewDecorations (sibling of the Link/ListMark/HIDE
+    branches). QuoteMark is NOT added to HIDE_MARK_NODES (size stays 4 — mirrors the Link/ListMark
+    precedent). Reason it cannot reuse the HIDE branch: it needs the EXTRA line decoration + the
+    line-start guard + bar-persists-on-active-line semantics that the HIDE branch does not have.
+
+# ─────────────────────────────────────────────────────────────────────────────
+stories:
+  - id: LPQ-1
+    title: "Extend the pure buildLivePreviewDecorations with the Blockquote bar (QuoteMark branch: line decoration + > hide w/ trailing-space eat + line-start guard)"
+    user_story: "As a Jin note writer, I want blockquote lines to show a clean left bar with the > hidden, while the raw > reappears (bar staying) when I put my cursor on the line to edit it."
+    timebox: "1d"
+    files:
+      - "jin-gui/src/lib/notes/livePreview.ts (EDIT — add a 'QuoteMark' branch in buildLivePreviewDecorations; no change to atomicDecorationsOf or provide)"
+      - "jin-gui/src/__tests__/livePreview.test.ts (EDIT — NEW describe block ONLY; do NOT touch existing base/list/link tests)"
+    action_plan:
+      - "In buildLivePreviewDecorations enter(): add an 'if (node.name === \"QuoteMark\")' branch (sibling of the Link branch, ~livePreview.ts:194, BEFORE the HIDE_MARK_NODES branch)"
+      - "Compute const line = state.doc.lineAt(node.from); const lineNo = line.number"
+      - "BAR (always, per D-QUOTE-BAR-ACTIVE + D-QUOTE-LINE-START-GUARD): if (node.from === line.from) builder.add(line.from, line.from, Decoration.line({ class: 'cm-blockquote-line' }))"
+      - "Per-line reveal: if (activeLines.has(lineNo)) return  // bar already added; skip the > hide on the active line"
+      - "HIDE the marker (D-QUOTE-TRAILING-SPACE): let markTo = node.to; if (state.doc.sliceString(markTo, markTo + 1) === ' ') markTo += 1; builder.add(node.from, markTo, Decoration.replace({}))"
+      - "return (QuoteMark fully handled; do not fall through to HIDE_MARK_NODES)"
+      - "Confirm (no code): atomicDecorationsOf already DROPS the line decoration (spec.class && !spec.widget) → add G-LP-QUOTE-ATOMIC to pin it"
+    acceptance_criteria:
+      - id: AC-LPQ1.1
+        given: "doc 'x\\n> quoted text' with the caret on line 1 (offset 0)"
+        when: "buildLivePreviewDecorations(state) runs (forceParse first)"
+        then: "the set contains a LINE decoration at (2,2) with spec.class==='cm-blockquote-line' AND a replace[2,4) (hides '> ' incl. the trailing space); the doc text is unchanged"
+      - id: AC-LPQ1.2
+        given: "the caret is ON the quote line (doc 'x\\n> quoted text', offset 4)"
+        when: "the builder runs"
+        then: "the LINE decoration at (2,2) IS still present (bar persists) but the replace[2,4) is ABSENT (raw '>' revealed for editing)"
+      - id: AC-LPQ1.3
+        given: "doc '> a\\n> b\\nplain' with the caret on line 3 (offset 8)"
+        when: "the builder runs"
+        then: "there are LINE decorations at (0,0) AND (4,4), and replace[0,2) AND replace[4,6) (bar + hidden '>' on BOTH quote lines)"
+      - id: AC-LPQ1.4
+        given: "doc 'x\\n> **bold**' with the caret on line 1 (offset 0)"
+        when: "the builder runs"
+        then: "it does NOT throw; the set contains line@(2,2) + replace[2,4) (bar + hidden '>') + replace[4,6) + replace[10,12) (bold EmphasisMarks hidden by the HIDE branch); ranges are monotonically non-decreasing by from"
+      - id: AC-LPQ1.5
+        given: "a synthetic set built [ line@(2,2) cm-blockquote-line, replace[2,4) ]"
+        when: "atomicDecorationsOf(set) runs"
+        then: "the result contains EXACTLY replace[2,4); the line decoration is EXCLUDED (a line deco is never atomic)"
+      - id: AC-LPQ1.6
+        given: "degenerate forms '>> nested', '> ' (empty), '> line one\\nlazy line' (lazy), '> - item' (list inside) each on an inactive context"
+        when: "the builder runs"
+        then: "NONE throw; '>>' yields exactly ONE line decoration + both '>' hidden; the lazy continuation line gets NO bar (documented limitation); '> - item' yields bar + hidden '>' + a BulletWidget"
+    gates: [G-LP-QUOTE-BAR, G-LP-QUOTE-REVEAL, G-LP-QUOTE-MULTILINE, G-LP-QUOTE-ATOMIC, G-LP-QUOTE-ROBUST, G-LP-QUOTE-ORDER]
+    immovable_gates: [HIDE_MARK_NODES-size-4, G-LP-NO-INNERHTML-base, G-CHOKEPOINT-livePreview-source-scan, all-existing-LP-gates-1-and-2]
+    agent_hints:
+      agent_class: "Builder (Vivi/apivr) — speed-class; algorithm fully specified + range-verified firsthand"
+      context_files:
+        - "jin-gui/src/lib/notes/livePreview.ts:120-247 (pure builder; insert the QuoteMark branch ~:194)"
+        - "jin-gui/src/lib/notes/livePreview.ts:230-241 (HIDE branch + HeaderMark trailing-space eat — copy the eat pattern)"
+        - "jin-gui/src/lib/notes/livePreview.ts:264-276 (atomicDecorationsOf — confirm it drops the line deco; NO edit)"
+        - "jin-gui/src/__tests__/livePreview.test.ts:790-1104 (the #2 link describe block — mirror its style + collectDecos helper)"
+      risk_tags: [P1]
+
+  - id: LPQ-2
+    title: "Style the bar (.cm-blockquote-line) in jinEditorTheme + DOM smoke"
+    user_story: "As a Jin note writer, I want the quote bar to look like the reading view's bar (a subtle vertical rule with the text indented) so quotes are visually consistent across edit + read modes."
+    timebox: "0.5d"
+    files:
+      - "jin-gui/src/lib/notes/editor.ts (EDIT — add a '.cm-blockquote-line' rule to jinEditorTheme, after the link-label rule ~editor.ts:181)"
+      - "jin-gui/src/__tests__/livePreview.test.ts (EDIT — DOM smoke in the new describe block)"
+    action_plan:
+      - "Add to jinEditorTheme: '.cm-blockquote-line': { borderInlineStart: '3px solid var(--separator)', paddingInlineStart: 'var(--space-2)' }  (mirror browse.css:516-521; no color — tags.quote handles text)"
+      - "DOM smoke: mountEditor with 'plain\\n> quoted\\ntail', move the caret to line 3 (start of 'tail') so the quote line is inactive, assert a '.cm-line.cm-blockquote-line' exists in .cm-content and getDoc()===initial; no throw"
+    acceptance_criteria:
+      - id: AC-LPQ2.1
+        given: "mountEditor with a doc containing an inactive '> quoted' line and the caret elsewhere"
+        when: "the editor renders"
+        then: "a .cm-line carrying class cm-blockquote-line appears in .cm-content; getDoc() equals the initial doc (buffer never mutated); no throw"
+      - id: AC-LPQ2.2
+        given: "the live-preview module source"
+        when: "scanned"
+        then: "livePreview.ts still assigns no innerHTML and imports neither markdown-it nor dompurify (existing G-CHOKEPOINT/G-LP-NO-INNERHTML source scans stay green)"
+    gates: [G-LP-QUOTE-STYLE, G-LP-QUOTE-SMOKE]
+    immovable_gates: [G-LP-NO-INNERHTML, G-CHOKEPOINT, G-READING-VIEW, G-FOOTER-STATS, G-SAVE-CARET-SAFE, G-KEYMAP, G-TOOLBAR-quote]
+    depends_on: [LPQ-1]
+    agent_hints:
+      agent_class: "Builder (Vivi/apivr) — speed-class"
+      context_files:
+        - "jin-gui/src/lib/notes/editor.ts:117-182 (jinEditorTheme — glyph/label CSS precedent at :159-181)"
+        - "jin-gui/src/styles/browse.css:516-521 (reading-view blockquote bar — mirror for parity)"
+        - "jin-gui/src/__tests__/livePreview.test.ts:1066-1103 (G-LP-LINK-SMOKE DOM smoke pattern to mirror)"
+      risk_tags: [P2]
+
+# ─────────────────────────────────────────────────────────────────────────────
+gates:
+  - id: G-LP-QUOTE-BAR
+    bites: "off-line 'x\\n> quoted text' cursor@0 => a LINE decoration at (2,2) spec.class cm-blockquote-line AND replace[2,4) (hides '> ' incl trailing space); EXACT ranges asserted; doc text unchanged"
+    location: "jin-gui/src/__tests__/livePreview.test.ts (new describe)"
+  - id: G-LP-QUOTE-REVEAL
+    bites: "caret ON the quote line (cursor@4) => replace[2,4) ABSENT (raw '>' shown) BUT the line@(2,2) cm-blockquote-line decoration is STILL present (bar persists — D-QUOTE-BAR-ACTIVE)"
+  - id: G-LP-QUOTE-MULTILINE
+    bites: "'> a\\n> b\\nplain' cursor@8 => line@(0,0) AND line@(4,4); replace[0,2) AND replace[4,6) (bar on BOTH lines, BOTH QuoteMarks hidden off-active)"
+  - id: G-LP-QUOTE-ATOMIC
+    bites: "atomicDecorationsOf([ line@(2,2) cm-blockquote-line, replace[2,4) ]) === EXACTLY [2,4); the line decoration is EXCLUDED (line deco is never atomic; replace stays atomic)"
+  - id: G-LP-QUOTE-ROBUST
+    bites: "'>> nested' (single bar, both '>' hidden), '> ' (empty), '> line one\\nlazy line' (lazy: line 2 no bar), '> - item' (bar + '>' + BulletWidget) => NONE throw"
+  - id: G-LP-QUOTE-ORDER
+    bites: "'x\\n> **bold**' cursor@0 => line@(2,2) + replace[2,4) + replace[4,6) + replace[10,12) added in strictly non-decreasing from-order (no RangeSetBuilder throw); BOTH the bar and the bold-marker hide present"
+  - id: G-LP-QUOTE-STYLE
+    bites: ".cm-line.cm-blockquote-line exists in .cm-content for an inactive quote line (border-inline-start bar applied)"
+  - id: G-LP-QUOTE-SMOKE
+    bites: "mountEditor with a quote doc: no throw, getDoc()===initial, .cm-blockquote-line present when the quote line is inactive"
+  immovable:
+    - "G-XSS @ notes_controller.test.ts:~486-505"
+    - "G-CHOKEPOINT @ markdown.test.ts:8 + livePreview source scan @ livePreview.test.ts:407-420"
+    - "HIDE_MARK_NODES size===4 @ livePreview.test.ts:97-105 (do NOT add 'QuoteMark')"
+    - "G-LP-NO-INNERHTML base test @ livePreview.test.ts:378-395 (keep its doc quote-free; mirror K-LPL-C)"
+    - "G-LP-HIDE/REVEAL/SELECTION/CARET-MOVE/REBUILD/ROBUST/ATOMIC @ livePreview.test.ts"
+    - "#1 bullet/checkbox gates + #2 link gates @ livePreview.test.ts:517-1104 (unchanged)"
+    - "G-SAVE-CARET-SAFE @ livePreview.test.ts:451-472"
+    - "G-READING-VIEW (browse.css:516-521 + markdown.ts chokepoint untouched — this increment does NOT touch the reading view)"
+    - "G-TOOLBAR-quote (toggleLinePrefix '> ' editor.ts:612 untouched), G-TOOLBAR-* , G-FOOTER-STATS, G-KEYMAP"
+
+# ─────────────────────────────────────────────────────────────────────────────
+risks:
+  - id: R1
+    p: P1
+    risk: "RangeSetBuilder 'must be added sorted by from position and startSide' throw when mixing the LINE decoration with inline replace/mark at the same from (TOP risk per brief)"
+    mitigation: "D-QUOTE-ORDER — emit line@line.from FIRST (line startSide -2e8 < replace/mark ~5e8), relying on QuoteMark being the leading token. Empirically proven (reverse order THROWS). Gated by G-LP-QUOTE-ORDER + the monotonic assertion in AC-LPQ1.4."
+  - id: R2
+    p: P1
+    risk: "List-wrapped quote '- > q' could add a line deco mid-line AFTER the bullet replace → startSide DECREASE at same from → throw"
+    mitigation: "D-QUOTE-LINE-START-GUARD — only add the line deco when node.from === line.from. Gated by G-LP-QUOTE-ROBUST."
+  - id: R3
+    p: P1
+    risk: "CM6 rejects a plugin-provided LINE decoration (block/line-break rule)"
+    mitigation: "Verified in installed source (index.js:2737-2739, :8834-8838): only block widgets + line-break-crossing replaces are forbidden via plugins; line decos are allowed. The conditional one-space eat guarantees the replace never crosses '\\n'. Gated by G-LP-QUOTE-SMOKE (real mount)."
+  - id: R4
+    p: P2
+    risk: "Bar vanishes while editing a quote (jarring) if the line deco were gated on active state"
+    mitigation: "D-QUOTE-BAR-ACTIVE — line deco emitted unconditionally; only the > replace toggles. Gated by G-LP-QUOTE-REVEAL (asserts bar present AND replace absent on the active line)."
+  - id: R5
+    p: P2
+    risk: "Double-muting / color conflict if .cm-blockquote-line sets text color on top of tags.quote"
+    mitigation: "D-QUOTE-STYLE — bar CSS sets border + padding ONLY; text color/italic stays with tags.quote (editor.ts:104)."
+  - id: R6
+    p: P2
+    risk: "Regressing the quote-free base G-LP-NO-INNERHTML test by adding a non-replace (line) decoration"
+    mitigation: "New assertions in a NEW describe block; keep the base test's doc quote-free (mirror K-LPL-C from #1). atomicDecorationsOf is identity-safe for non-quote docs."
+  - id: R7
+    p: P3
+    risk: "Lazy-continuation / deeper-nested blockquotes under-render (no bar on lazy line; single bar for '>>')"
+    mitigation: "Documented v1 limitation (D-QUOTE-SCOPE); robustness (no throw) is gated by G-LP-QUOTE-ROBUST; richer rendering deferred."
+
+# ─────────────────────────────────────────────────────────────────────────────
+kupo_micro_tasks:
+  - "K1: insert the QuoteMark branch in enter() as a sibling of the Link branch (livePreview.ts:~194), BEFORE the HIDE_MARK_NODES branch"
+  - "K2: const line = state.doc.lineAt(node.from); if (node.from === line.from) builder.add(line.from, line.from, Decoration.line({ class: 'cm-blockquote-line' }))  // bar first"
+  - "K3: if (activeLines.has(line.number)) return;  // per-line reveal — bar already added, skip the > hide"
+  - "K4: let markTo = node.to; if (state.doc.sliceString(markTo, markTo+1) === ' ') markTo += 1; builder.add(node.from, markTo, Decoration.replace({})); return;  // hide '> ', conditional space eat (mirror HeaderMark :236-240)"
+  - "K5: editor.ts jinEditorTheme — add '.cm-blockquote-line': { borderInlineStart: '3px solid var(--separator)', paddingInlineStart: 'var(--space-2)' } after the .cm-link-label rule (:181). Token vars only; mirror browse.css:516-521; NO color."
+  - "K6: new describe block in livePreview.test.ts with G-LP-QUOTE-* gates using the verified ranges; reuse the collectDecos helper (:793) and the G-LP-LINK-SMOKE DOM-smoke pattern (:1066)"
+  - "K7: run gates on Node>=20 (nvm use 24.18.0) — npm test green incl. ALL immovable gates (HIDE_MARK_NODES size===4, #1+#2 LP gates, G-XSS, G-CHOKEPOINT, G-SAVE-CARET-SAFE, G-TOOLBAR-quote, G-READING-VIEW, G-FOOTER-STATS, G-KEYMAP)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+execution_plan:
+  order: [LPQ-1, LPQ-2]
+  verification: "npm test in jin-gui under nvm v24.18.0; assert the new G-LP-QUOTE-* gates bite AND every immovable gate stays green"
+  out_of_scope:
+    - "Multi-level nested bars (v1 = single bar)"
+    - "Bar on lazy-continuation lines (no QuoteMark → no bar)"
+    - "Reading-view blockquote (browse.css:516-521 / markdown.ts — separate sanitized path)"
+    - "Any src-tauri change — this increment is frontend-only"
+
+confidence_report:
+  pattern_match: "0.95 — direct ADAPT of the #1/#2 per-node branch patterns + the HeaderMark trailing-space eat"
+  requirement_clarity: "0.93 — detailed brief; all open decisions (ordering / bar-on-active / nested / atomic) resolved firsthand"
+  decomposition_stability: "0.92 — 2 tightly-scoped stories; gates map 1:1 to verified behaviors"
+  constraint_compliance: "0.90 — RangeSetBuilder ordering, CM6 plugin line-deco rule, atomicDecorationsOf line-deco drop, chokepoint, per-line reveal all verified headlessly"
+  overall: 0.92
+  decision: AUTO_PROCEED

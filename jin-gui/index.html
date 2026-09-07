@@ -1,0 +1,3643 @@
+<!DOCTYPE html>
+<html lang="en" data-appearance="auto">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jin</title>
+    <!--
+      CSS is injected by main.ts via Vite (no static <link> needed).
+      The inline preload hint keeps FOUC minimal on the initial load.
+    -->
+  </head>
+  <body data-controller="appearance">
+    <!--
+      GUI-S1 layout shell skeleton.
+      Appearance controller (data-controller="appearance" on <body>) manages:
+        - data-appearance on <html> (light / dark / auto)
+        - data-reduce-transparency, data-increase-contrast, data-reduce-motion
+        - --dynamic-type-scale CSS custom property
+
+      RouterController (GUI-S4) on .jin-shell handles:
+        - Sidebar nav clicks → router#navigateTo
+        - today:navigate events → router#handleTodayNavigate
+        - jin:navigate events  → router#handleNavigate
+    -->
+
+    <a href="#main-content" class="skip-to-content">Skip to main content</a>
+
+    <div
+      class="jin-shell"
+      data-controller="router capture actions"
+      data-action="today:navigate->router#handleTodayNavigate jin:navigate->router#handleNavigate jin:open-promote->actions#openPromote jin:open-attach->actions#openAttach jin:open-link->actions#openLink"
+    >
+      <!-- ── Sidebar navigation ─────────────────────────────────────────── -->
+      <aside
+        class="jin-sidebar jin-navigation-rail jin-chrome"
+        role="navigation"
+        aria-label="Application navigation"
+        data-controller="sidebar"
+      >
+        <div class="jin-sidebar-header">
+          <span class="jin-app-name" aria-label="Jin">
+            <svg class="jin-brand-mark" viewBox="0 0 22 16" aria-hidden="true" focusable="false">
+              <path d="M2 8.5c4.2-5.4 9.1-6.5 13.8-2.7-2.6.3-4.7 1.1-6.2 2.5 1.7 1.2 3.8 1.8 6.3 1.8C11.3 14 6.3 13.3 2 8.5Z" />
+              <path d="M15 5.5c2-1.7 3.7-2.3 5-1.8-.3 1.8-1.2 3.3-2.7 4.5 1.4 1 2.3 2.3 2.7 4-1.8.2-3.6-.5-5.2-2" />
+            </svg>
+            <span class="jin-app-name__label">Jin</span>
+            <span class="jin-app-name__seal" aria-hidden="true"></span>
+          </span>
+          <button
+            type="button"
+            class="jin-sidebar-toggle tap-target"
+            aria-label="Collapse sidebar"
+            aria-expanded="true"
+            data-sidebar-target="toggle"
+            data-action="click->sidebar#toggle"
+          >
+            <i data-lucide="panel-left-close" class="jin-sidebar-toggle__icon jin-sidebar-toggle__icon--close" aria-hidden="true"></i>
+            <i data-lucide="panel-left-open" class="jin-sidebar-toggle__icon jin-sidebar-toggle__icon--open" aria-hidden="true"></i>
+          </button>
+        </div>
+
+        <!-- Quick capture — cozy primary action, pinned to the top (CAP-1) -->
+        <div class="jin-sidebar-actions">
+          <button
+            class="jin-capture-btn tap-target"
+            type="button"
+            aria-label="Quick capture (Ctrl+N)"
+            data-tooltip="Capture"
+            data-action="click->capture#open"
+          >
+            <i data-lucide="plus" aria-hidden="true"></i>
+            <span>Capture</span>
+          </button>
+        </div>
+
+        <nav class="jin-nav" aria-label="Primary navigation">
+          <ul class="jin-nav-list jin-navigation-list" role="list">
+            <li role="none">
+              <a
+                href="#notifications"
+                class="jin-nav-item jin-navigation-row tap-target"
+                aria-label="Notifications, 0 unread"
+                data-tooltip="Notifications"
+                data-section="notifications"
+                data-notifications-nav
+                data-router-target="navItem"
+                data-action="click->router#navigateTo"
+              >
+                <i data-lucide="bell" class="jin-navigation-row__icon" aria-hidden="true"></i>
+                <span class="jin-navigation-row__label">Notifications</span>
+                <span class="jin-nav-badge jin-navigation-row__meta" data-notifications-badge hidden aria-hidden="true">0</span>
+                <span class="sr-only" data-notifications-badge-label>0 unread notifications</span>
+              </a>
+            </li>
+
+            <li role="none">
+              <a
+                href="#today"
+                class="jin-nav-item jin-navigation-row jin-nav-item--active tap-target"
+                aria-current="page"
+                aria-label="Today — agenda view"
+                data-tooltip="Today"
+                data-section="today"
+                data-router-target="navItem"
+                data-action="click->router#navigateTo"
+              >
+                <i data-lucide="calendar" class="jin-navigation-row__icon" aria-hidden="true"></i>
+                <span class="jin-navigation-row__label">Today</span>
+              </a>
+            </li>
+
+            <li role="none">
+              <a
+                href="#notes"
+                class="jin-nav-item jin-navigation-row tap-target"
+                aria-label="Notes"
+                data-tooltip="Notes"
+                data-section="notes"
+                data-router-target="navItem"
+                data-action="click->router#navigateTo"
+              >
+                <i data-lucide="file-text" class="jin-navigation-row__icon" aria-hidden="true"></i>
+                <span class="jin-navigation-row__label">Notes</span>
+              </a>
+            </li>
+
+            <li role="none">
+              <a
+                href="#tasks"
+                class="jin-nav-item jin-navigation-row tap-target"
+                aria-label="Tasks"
+                data-tooltip="Tasks"
+                data-section="tasks"
+                data-router-target="navItem"
+                data-action="click->router#navigateTo"
+              >
+                <i data-lucide="check-square" class="jin-navigation-row__icon" aria-hidden="true"></i>
+                <span class="jin-navigation-row__label">Tasks</span>
+              </a>
+            </li>
+
+            <li role="none">
+              <a
+                href="#events"
+                class="jin-nav-item jin-navigation-row tap-target"
+                aria-label="Events"
+                data-tooltip="Events"
+                data-section="events"
+                data-router-target="navItem"
+                data-action="click->router#navigateTo"
+              >
+                <i data-lucide="calendar-days" class="jin-navigation-row__icon" aria-hidden="true"></i>
+                <span class="jin-navigation-row__label">Events</span>
+              </a>
+            </li>
+
+          </ul>
+        </nav>
+
+        <div class="jin-sidebar-foot">
+          <!-- Settings — labeled rail row with collapsed-only tooltip (SET-1).
+               Still a router navItem (data-section="settings") so navigation
+               and active state behave exactly like the other sections. -->
+          <a
+            href="#settings"
+            class="jin-settings-btn jin-navigation-row tap-target"
+            aria-label="Settings"
+            data-tooltip="Settings"
+            data-section="settings"
+            data-router-target="navItem"
+            data-action="click->router#navigateTo"
+          >
+            <i data-lucide="settings" class="jin-navigation-row__icon" aria-hidden="true"></i>
+            <span class="jin-navigation-row__label">Settings</span>
+          </a>
+        </div>
+      </aside>
+
+      <!-- ── Main content area ────────────────────────────────────────────── -->
+      <main
+        id="main-content"
+        class="jin-content"
+        data-controller="error"
+        role="main"
+      >
+        <!-- Error banner (ErrorController renders into this) -->
+        <div
+          data-error-target="container"
+          class="jin-error-container hidden"
+          role="alert"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+
+        <!--
+          GUI-S3 — Today / Agenda hero view.
+          TodayController manages this section: loads today_agenda, clones
+          templates, and renders the merged all-day + timed schedule.
+
+          data-router-target="section" / data-section-name: used by RouterController
+          to show/hide this section when navigating between views.
+        -->
+        <section
+          class="jin-content-body"
+          aria-label="Today's agenda"
+          data-controller="today"
+          data-action="jin:refresh-today@window->today#refreshAgenda"
+          data-today-date-value=""
+          data-router-target="section"
+          data-section-name="today"
+        >
+          <!-- ── Date navigation toolbar ──────────────────────────────────── -->
+          <div
+            class="today-date-nav"
+            role="toolbar"
+            aria-label="Date navigation"
+          >
+            <button
+              type="button"
+              class="today-date-nav__btn tap-target"
+              data-action="click->today#prevDay"
+              aria-label="Previous day"
+            >
+              <i data-lucide="chevron-left" aria-hidden="true"></i>
+            </button>
+
+            <div class="today-date-nav__center">
+              <!-- Human-readable date label (updated by controller) -->
+              <output
+                data-today-target="dateLabel"
+                class="today-date-nav__label"
+                aria-live="polite"
+                aria-atomic="true"
+                aria-label="Current date"
+              >Today</output>
+
+              <!--
+                Date input — visually hidden by default; keyboard-focusable.
+                Receives focus when the user tabs to it; shown via :focus CSS.
+                Synced by controller via dateInputTarget.value = "YYYY-MM-DD".
+              -->
+              <label class="visually-hidden" for="today-date-input">Jump to date</label>
+              <input
+                id="today-date-input"
+                type="date"
+                class="today-date-nav__date-input"
+                data-today-target="dateInput"
+                data-action="change->today#dateChanged"
+                aria-label="Jump to date"
+              />
+            </div>
+
+            <button
+              type="button"
+              class="today-date-nav__btn tap-target"
+              data-action="click->today#nextDay"
+              aria-label="Next day"
+            >
+              <i data-lucide="chevron-right" aria-hidden="true"></i>
+            </button>
+
+            <button
+              type="button"
+              class="today-date-nav__today-btn tap-target"
+              data-action="click->today#goToday"
+              aria-label="Go to today"
+            >
+              Today
+            </button>
+          </div>
+
+          <!-- ── Loading state ─────────────────────────────────────────────── -->
+          <div
+            data-today-target="loadingState"
+            class="today-loading"
+            role="status"
+            aria-live="polite"
+            aria-label="Loading agenda…"
+          >
+            <i data-lucide="refresh-cw" aria-hidden="true"></i>
+            <span>Loading…</span>
+          </div>
+
+          <!-- ── Empty state ───────────────────────────────────────────────── -->
+          <div
+            data-today-target="emptyState"
+            class="today-empty hidden"
+            role="status"
+            aria-label="No events scheduled"
+          >
+            <i data-lucide="calendar-off" aria-hidden="true"></i>
+            <p class="text-callout">Nothing scheduled for this day.</p>
+          </div>
+
+          <!-- ── All-day bucket ────────────────────────────────────────────── -->
+          <section
+            data-today-target="allDaySection"
+            class="today-section hidden"
+            aria-label="All-day events"
+          >
+            <h3 class="today-section__heading">All Day</h3>
+            <ul
+              data-today-target="allDayList"
+              class="today-event-list"
+              role="list"
+              aria-label="All-day events list"
+            ></ul>
+          </section>
+
+          <!-- ── Timed schedule ────────────────────────────────────────────── -->
+          <section
+            data-today-target="timedSection"
+            class="today-section hidden"
+            aria-label="Scheduled events"
+          >
+            <h3 class="today-section__heading">Schedule</h3>
+            <ul
+              data-today-target="timedList"
+              class="today-event-list"
+              role="list"
+              aria-label="Scheduled events list"
+            ></ul>
+          </section>
+        </section>
+
+        <!--
+          GUI-S4 — Notes browse + detail view (Wave 2A: 3-pane layout).
+          NotesController manages this section: loads list_folders + list_notes,
+          renders folder rail, note list, and note detail.
+
+          Pane layout: [folder-rail] | [list-pane] | [detail-pane]
+
+          data-action "jin:open-detail->notes#openDetail":
+            RouterController fires jin:open-detail (bubbles:false) directly on
+            this element when navigating here with a detail id.
+        -->
+        <section
+          class="jin-content-body notes-paned jin-split-view hidden"
+          aria-label="Notes"
+          data-controller="notes"
+          data-router-target="section"
+          data-section-name="notes"
+          data-action="jin:open-detail->notes#openDetail"
+        >
+          <!-- ── Folder rail (Wave 2B — tree + collapse) ──────────────────── -->
+          <div class="notes-folder-rail jin-context-rail jin-navigation-rail jin-chrome" data-notes-target="folderRail" aria-label="Note folders">
+            <!-- Rail header: title + collapse control -->
+            <div class="notes-folder-rail__header jin-section-header">
+              <span class="notes-folder-rail__title text-caption1">Folders</span>
+              <button
+                type="button"
+                class="notes-folder-rail__collapse-btn jin-control jin-control--icon tap-target"
+                data-action="click->notes#togglePane"
+                aria-label="Collapse sidebar"
+              >
+                <i data-lucide="panel-left-close" aria-hidden="true"></i>
+              </button>
+            </div>
+            <!-- Tree container: keydown delegated to controller for WAI-ARIA nav -->
+            <ul
+              class="notes-folder-rail__list jin-navigation-list jin-navigation-list--inset"
+              data-notes-target="folderList"
+              role="tree"
+              aria-label="Folders"
+              data-action="keydown->notes#onTreeKeydown"
+            ></ul>
+            <section class="notes-collections" aria-label="Collections">
+              <div class="notes-collections__header">
+                <span class="notes-folder-rail__title text-caption1">Collections</span>
+                <button
+                  type="button"
+                  class="notes-collections__new-btn jin-control jin-control--icon tap-target"
+                  data-action="click->notes#newCollection"
+                  aria-label="New collection"
+                >
+                  <i data-lucide="plus" aria-hidden="true"></i>
+                </button>
+              </div>
+              <button
+                type="button"
+                class="notes-collection-row jin-navigation-row jin-navigation-row--inset is-active"
+                data-notes-target="allNotesButton"
+                data-action="click->notes#selectAllNotes"
+                aria-current="page"
+              >
+                <i data-lucide="book-open" class="jin-navigation-row__icon" aria-hidden="true"></i>
+                <span class="jin-navigation-row__label">All Notes</span>
+              </button>
+              <ul
+                class="notes-collections__list jin-navigation-list jin-navigation-list--inset"
+                data-notes-target="collectionList"
+                role="list"
+                aria-label="Saved collections"
+              ></ul>
+            </section>
+            <button
+              type="button"
+              class="notes-folder-rail__new-btn jin-control tap-target"
+              data-action="click->notes#newFolder"
+              aria-label="New folder"
+            >
+              <i data-lucide="folder-plus" aria-hidden="true"></i>
+              <span>New Folder</span>
+            </button>
+          </div>
+
+          <!-- ── List panel ─────────────────────────────────────────────────── -->
+          <div class="notes-list-pane jin-workspace-pane" data-notes-target="listPanel">
+            <!-- Reveal control: shown only when .rail-collapsed is active -->
+            <button
+              type="button"
+              class="notes-rail-reveal jin-control jin-control--icon tap-target"
+              data-action="click->notes#togglePane"
+              aria-label="Show sidebar"
+            >
+              <i data-lucide="panel-left-open" aria-hidden="true"></i>
+            </button>
+            <!-- NN-2: List pane header — compose button (K-NN-1) -->
+            <div class="notes-list-pane__header jin-toolbar-strip jin-chrome">
+              <div class="notes-search">
+                <label class="notes-search__label" for="notes-search-input">Search notes</label>
+                <input
+                  id="notes-search-input"
+                  type="search"
+                  class="notes-search__input"
+                  placeholder="Search notes"
+                  autocomplete="off"
+                  data-notes-target="searchInput"
+                  data-action="input->notes#onSearchInput keydown->notes#onSearchKeydown"
+                />
+                <span
+                  class="notes-search__count"
+                  data-notes-target="searchCount"
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                ></span>
+              </div>
+              <button
+                type="button"
+                class="notes-new-note-btn jin-control jin-control--icon tap-target"
+                data-action="click->notes#newNote"
+                aria-label="New note"
+              >
+                <i data-lucide="square-pen" aria-hidden="true"></i>
+              </button>
+            </div>
+            <div
+              data-notes-target="loadingState"
+              class="browse-loading"
+              role="status"
+              aria-live="polite"
+              aria-label="Loading notes…"
+            >
+              <i data-lucide="refresh-cw" aria-hidden="true"></i>
+              <span>Loading…</span>
+            </div>
+
+            <div
+              data-notes-target="emptyState"
+              class="browse-empty jin-empty-state hidden"
+              role="status"
+              aria-label="No notes"
+            >
+              <svg class="jin-empty-state__ink" viewBox="0 0 64 44" aria-hidden="true" focusable="false">
+                <path d="M7 31C18 17 30 11 54 9M10 34C23 27 37 24 57 25M20 38C30 34 39 33 48 34" />
+              </svg>
+              <p>No notes yet.</p>
+            </div>
+
+            <ul
+              data-notes-target="list"
+              class="browse-list jin-list hidden"
+              role="list"
+              aria-label="Notes list"
+            ></ul>
+          </div>
+
+          <!-- ── Detail panel (hidden until note opened) ──────────────────── -->
+          <div class="notes-detail-pane jin-workspace-pane hidden" data-notes-target="detailPanel">
+            <!--
+              items 1 + 2 + 3: single flex header row.
+                LEFT:   rail-reveal (only when sidebar collapsed) + back button
+                CENTER: breadcrumb (current folder path, set by controller)
+                RIGHT:  icon-only attach/link action cluster (set by render.ts)
+            -->
+            <div class="notes-detail-pane__header jin-toolbar-strip jin-chrome">
+              <!-- Reveal control: shown only when .rail-collapsed is active -->
+              <button
+                type="button"
+                class="notes-rail-reveal jin-control jin-control--icon tap-target"
+                data-action="click->notes#togglePane"
+                aria-label="Show sidebar"
+              >
+                <i data-lucide="panel-left-open" aria-hidden="true"></i>
+              </button>
+              <button
+                type="button"
+                class="browse-back-btn jin-control tap-target"
+                data-action="click->notes#showList"
+                aria-label="Back to notes list"
+              >
+                <i data-lucide="arrow-left" aria-hidden="true"></i>
+                <span>All Notes</span>
+              </button>
+              <!-- item 3: breadcrumb — filled by NotesController.loadDetail -->
+              <span
+                class="notes-detail-pane__breadcrumb"
+                data-notes-target="detailBreadcrumb"
+                aria-hidden="true"
+              ></span>
+              <!-- item 1: icon-only action cluster — populated by renderNoteDetail -->
+              <div
+                class="notes-detail-pane__actions"
+                data-notes-target="detailActions"
+              ></div>
+            </div>
+
+            <div
+              data-notes-target="detailLoadingState"
+              class="browse-loading hidden"
+              role="status"
+              aria-live="polite"
+              aria-label="Loading note…"
+            >
+              <i data-lucide="refresh-cw" aria-hidden="true"></i>
+              <span>Loading…</span>
+            </div>
+
+            <div
+              data-notes-target="detailNotFoundState"
+              class="browse-empty jin-empty-state hidden"
+              role="status"
+              aria-label="Note not found"
+            >
+              <svg class="jin-empty-state__ink" viewBox="0 0 64 44" aria-hidden="true" focusable="false">
+                <path d="M7 31C18 17 30 11 54 9M10 34C23 27 37 24 57 25M20 38C30 34 39 33 48 34" />
+              </svg>
+              <p>Note not found.</p>
+            </div>
+
+            <section
+              class="notes-conflict hidden"
+              data-notes-target="conflictPanel"
+              role="alert"
+              tabindex="-1"
+              aria-live="assertive"
+              aria-label="Note conflict"
+            >
+              <h2 class="notes-conflict__title">This note changed elsewhere</h2>
+              <p class="notes-conflict__message" data-notes-target="conflictMessage"></p>
+              <p>Your local draft remains in the editor. Saving is paused until you choose what to do.</p>
+              <div class="notes-conflict__actions">
+                <button type="button" class="btn-secondary" data-action="click->notes#requestConflictReload">Reload latest</button>
+                <button type="button" class="btn-secondary" data-action="click->notes#copyConflictDraft">Copy local draft</button>
+                <button type="button" class="btn-secondary" data-action="click->notes#openHistory">Review history</button>
+              </div>
+              <p class="notes-conflict__status" data-notes-target="conflictStatus" aria-live="polite"></p>
+            </section>
+
+            <div data-notes-target="detailContent"></div>
+          </div>
+
+          <!-- ── New Folder modal dialog (Wave 2A) ──────────────────────────── -->
+          <!--
+            Managed by NotesController.
+            Opened by the "New Folder" button (data-action="click->notes#newFolder").
+            Submit wired to notes#submitNewFolder; cancel/backdrop to notes#closeNewFolder.
+          -->
+          <dialog
+            id="jin-new-folder-modal"
+            class="action-dialog"
+            aria-label="Create new folder"
+            data-notes-target="newFolderModal"
+            aria-modal="true"
+          >
+            <div class="action-dialog__inner">
+              <div class="action-dialog__header">
+                <h2 class="action-dialog__title">New Folder</h2>
+                <button
+                  type="button"
+                  class="modal-close-btn jin-control jin-control--icon tap-target"
+                  aria-label="Close"
+                  data-action="click->notes#closeNewFolder"
+                >
+                  <i data-lucide="x" aria-hidden="true"></i>
+                </button>
+              </div>
+
+              <form
+                class="action-dialog__form"
+                novalidate
+                data-action="submit->notes#submitNewFolder"
+              >
+                <div class="form-group">
+                  <label class="form-label" for="new-folder-name">
+                    Folder name <span aria-hidden="true">*</span>
+                  </label>
+                  <input
+                    id="new-folder-name"
+                    type="text"
+                    class="form-input"
+                    placeholder="e.g. Work or Work/Projects"
+                    aria-required="true"
+                    data-notes-target="newFolderInput"
+                  />
+                </div>
+
+                <p
+                  class="form-error hidden"
+                  aria-live="polite"
+                  data-form-error
+                  data-notes-target="newFolderError"
+                ></p>
+
+                <div class="form-actions">
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                    aria-label="Cancel"
+                    data-action="click->notes#closeNewFolder"
+                  >Cancel</button>
+                  <button
+                    type="submit"
+                    class="btn-primary jin-control jin-control--primary"
+                    aria-label="Create folder"
+                  >Create</button>
+                </div>
+              </form>
+            </div>
+          </dialog>
+
+          <!--
+            Rename folder dialog — managed by NotesController.
+            Opened by renameFolder(path) controller method (kebab menu → Rename).
+            Submit wired to notes#submitRenameFolder; cancel to notes#closeRenameFolder.
+          -->
+          <dialog
+            id="jin-rename-folder-modal"
+            class="action-dialog"
+            aria-label="Rename folder"
+            data-notes-target="renameFolderModal"
+            aria-modal="true"
+          >
+          <div class="action-dialog__inner">
+            <div class="action-dialog__header">
+              <h2 class="action-dialog__title">Rename Folder</h2>
+              <button
+                type="button"
+                class="modal-close-btn jin-control jin-control--icon tap-target"
+                aria-label="Close"
+                data-action="click->notes#closeRenameFolder"
+              >
+                <i data-lucide="x" aria-hidden="true"></i>
+              </button>
+            </div>
+
+            <form
+              class="action-dialog__form"
+              novalidate
+              data-action="submit->notes#submitRenameFolder"
+            >
+              <div class="form-group">
+                <label class="form-label" for="rename-folder-name">
+                  New name <span aria-hidden="true">*</span>
+                </label>
+                <input
+                  id="rename-folder-name"
+                  type="text"
+                  class="form-input"
+                  placeholder="e.g. Job"
+                  aria-required="true"
+                  data-notes-target="renameFolderInput"
+                />
+              </div>
+
+              <p
+                class="form-error hidden"
+                aria-live="polite"
+                data-form-error
+                data-notes-target="renameFolderError"
+              ></p>
+
+              <div class="form-actions">
+                <button
+                  type="button"
+                  class="btn-secondary"
+                  aria-label="Cancel"
+                  data-action="click->notes#closeRenameFolder"
+                >Cancel</button>
+                <button
+                  type="submit"
+                  class="btn-primary jin-control jin-control--primary"
+                  aria-label="Rename folder"
+                >Rename</button>
+              </div>
+            </form>
+          </div>
+        </dialog>
+
+        <!--
+          Delete folder confirm dialog — managed by NotesController.
+          Opened by deleteFolder(path) controller method (kebab menu → Delete).
+          Confirm wired to notes#confirmDeleteFolder; cancel to notes#closeDeleteFolder.
+        -->
+        <dialog
+          id="jin-delete-folder-modal"
+          class="action-dialog"
+          aria-label="Delete folder"
+          data-notes-target="deleteFolderModal"
+          aria-modal="true"
+        >
+          <div class="action-dialog__inner">
+            <div class="action-dialog__header">
+              <h2 class="action-dialog__title">Delete Folder</h2>
+              <button
+                type="button"
+                class="modal-close-btn jin-control jin-control--icon tap-target"
+                aria-label="Close"
+                data-action="click->notes#closeDeleteFolder"
+              >
+                <i data-lucide="x" aria-hidden="true"></i>
+              </button>
+            </div>
+
+            <div class="action-dialog__body">
+              <p
+                class="action-dialog__message"
+                data-notes-target="deleteFolderMessage"
+              ></p>
+            </div>
+
+            <div class="form-actions">
+              <button
+                type="button"
+                class="btn-secondary"
+                aria-label="Cancel"
+                data-action="click->notes#closeDeleteFolder"
+              >Cancel</button>
+              <button
+                type="button"
+                class="btn-danger jin-control jin-control--danger"
+                aria-label="Confirm delete folder"
+                data-action="click->notes#confirmDeleteFolder"
+              >Delete</button>
+            </div>
+          </div>
+        </dialog>
+
+        <!-- Declarative collection editor: no raw query-language field is exposed. -->
+        <dialog
+          id="jin-collection-modal"
+          class="action-dialog"
+          aria-label="Create collection"
+          data-notes-target="collectionModal"
+          aria-modal="true"
+        >
+          <div class="action-dialog__inner">
+            <div class="action-dialog__header">
+              <h2 class="action-dialog__title">New Collection</h2>
+              <button type="button" class="modal-close-btn jin-control jin-control--icon tap-target" aria-label="Close" data-action="click->notes#closeCollection">
+                <i data-lucide="x" aria-hidden="true"></i>
+              </button>
+            </div>
+            <form class="action-dialog__form" novalidate data-action="submit->notes#submitCollection">
+              <div class="form-group">
+                <label class="form-label" for="collection-name">Name <span aria-hidden="true">*</span></label>
+                <input id="collection-name" type="text" class="form-input" data-notes-target="collectionNameInput" aria-required="true" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="collection-filter">Show notes</label>
+                <select id="collection-filter" class="form-input" data-notes-target="collectionFilterInput">
+                  <option value="all">All notes</option>
+                  <option value="tag">With tag</option>
+                  <option value="status">With status</option>
+                  <option value="body_contains">Containing text</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="collection-filter-value">Filter value</label>
+                <input id="collection-filter-value" type="text" class="form-input" data-notes-target="collectionFilterValueInput" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="collection-sort">Sort by</label>
+                <select id="collection-sort" class="form-input" data-notes-target="collectionSortInput">
+                  <option value="updated">Last updated</option>
+                  <option value="created">Created</option>
+                  <option value="title">Title</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="collection-direction">Order</label>
+                <select id="collection-direction" class="form-input" data-notes-target="collectionDirectionInput">
+                  <option value="desc">Newest first</option>
+                  <option value="asc">Oldest first</option>
+                </select>
+              </div>
+              <p class="form-error hidden" aria-live="polite" data-form-error data-notes-target="collectionError"></p>
+              <div class="form-actions">
+                <button type="button" class="btn-secondary" data-action="click->notes#closeCollection">Cancel</button>
+                <button type="submit" class="btn-primary jin-control jin-control--primary">Create</button>
+              </div>
+            </form>
+          </div>
+        </dialog>
+
+        <dialog
+          id="jin-rename-collection-modal"
+          class="action-dialog"
+          aria-label="Rename collection"
+          data-notes-target="renameCollectionModal"
+          aria-modal="true"
+        >
+          <div class="action-dialog__inner">
+            <div class="action-dialog__header">
+              <h2 class="action-dialog__title">Rename Collection</h2>
+              <button type="button" class="modal-close-btn jin-control jin-control--icon tap-target" aria-label="Close" data-action="click->notes#closeRenameCollection">
+                <i data-lucide="x" aria-hidden="true"></i>
+              </button>
+            </div>
+            <form class="action-dialog__form" novalidate data-action="submit->notes#submitRenameCollection">
+              <div class="form-group">
+                <label class="form-label" for="rename-collection-name">New name <span aria-hidden="true">*</span></label>
+                <input id="rename-collection-name" type="text" class="form-input" data-notes-target="renameCollectionInput" aria-required="true" />
+              </div>
+              <p class="form-error hidden" aria-live="polite" data-form-error data-notes-target="renameCollectionError"></p>
+              <div class="form-actions">
+                <button type="button" class="btn-secondary" data-action="click->notes#closeRenameCollection">Cancel</button>
+                <button type="submit" class="btn-primary jin-control jin-control--primary">Rename</button>
+              </div>
+            </form>
+          </div>
+        </dialog>
+
+        <dialog
+          id="jin-delete-collection-modal"
+          class="action-dialog"
+          aria-label="Delete collection"
+          data-notes-target="deleteCollectionModal"
+          aria-modal="true"
+        >
+          <div class="action-dialog__inner">
+            <div class="action-dialog__header">
+              <h2 class="action-dialog__title">Delete Collection</h2>
+              <button type="button" class="modal-close-btn jin-control jin-control--icon tap-target" aria-label="Close" data-action="click->notes#closeDeleteCollection">
+                <i data-lucide="x" aria-hidden="true"></i>
+              </button>
+            </div>
+            <div class="action-dialog__body">
+              <p class="action-dialog__message" data-notes-target="deleteCollectionMessage"></p>
+              <p>Your notes will remain unchanged.</p>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn-secondary" data-action="click->notes#closeDeleteCollection">Cancel</button>
+              <button type="button" class="btn-danger jin-control jin-control--danger" data-action="click->notes#confirmDeleteCollection">Delete</button>
+            </div>
+          </div>
+        </dialog>
+
+        <dialog
+          id="jin-note-history-modal"
+          class="action-dialog"
+          aria-label="Note history"
+          data-notes-target="historyModal"
+          aria-modal="true"
+        >
+          <div class="action-dialog__inner notes-history-dialog">
+            <div class="action-dialog__header">
+              <h2 class="action-dialog__title">Note History</h2>
+              <button type="button" class="modal-close-btn jin-control jin-control--icon tap-target" aria-label="Close" data-action="click->notes#closeHistory">
+                <i data-lucide="x" aria-hidden="true"></i>
+              </button>
+            </div>
+            <div class="action-dialog__body">
+              <p class="notes-history__status" data-notes-target="historyStatus" role="status" aria-live="polite"></p>
+              <div class="notes-history__layout">
+                <div class="notes-history__revisions" data-notes-target="historyRevisionList" role="list" aria-label="Available revisions"></div>
+                <pre class="notes-history__preview" data-notes-target="historyPreview" aria-label="Selected revision preview"></pre>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="btn-secondary" data-action="click->notes#closeHistory">Close</button>
+              <button type="button" class="btn-primary jin-control jin-control--primary" data-notes-target="restoreRevisionButton" data-action="click->notes#requestRestoreRevision" disabled>Restore selected revision</button>
+            </div>
+          </div>
+        </dialog>
+
+        <dialog
+          id="jin-restore-revision-confirm-modal"
+          class="action-dialog"
+          aria-label="Confirm restore revision"
+          data-notes-target="restoreRevisionConfirmModal"
+          aria-modal="true"
+        >
+          <div class="action-dialog__inner">
+            <div class="action-dialog__header"><h2 class="action-dialog__title">Restore Revision?</h2></div>
+            <div class="action-dialog__body"><p class="action-dialog__message" data-notes-target="restoreRevisionMessage"></p></div>
+            <div class="form-actions">
+              <button type="button" class="btn-secondary" data-action="click->notes#closeRestoreRevisionConfirm">Cancel</button>
+              <button type="button" class="btn-primary jin-control jin-control--primary" data-action="click->notes#confirmRestoreRevision">Restore</button>
+            </div>
+          </div>
+        </dialog>
+
+        <dialog
+          id="jin-conflict-reload-confirm-modal"
+          class="action-dialog"
+          aria-label="Confirm reload latest note"
+          data-notes-target="conflictReloadModal"
+          aria-modal="true"
+        >
+          <div class="action-dialog__inner">
+            <div class="action-dialog__header"><h2 class="action-dialog__title">Discard local draft?</h2></div>
+            <div class="action-dialog__body"><p class="action-dialog__message">Reloading replaces the local draft with the latest saved note. Copy the draft first if you need it.</p></div>
+            <div class="form-actions">
+              <button type="button" class="btn-secondary" data-action="click->notes#closeConflictReload">Cancel</button>
+              <button type="button" class="btn-danger jin-control jin-control--danger" data-action="click->notes#confirmConflictReload">Reload latest</button>
+            </div>
+          </div>
+        </dialog>
+        </section>
+
+        <!-- ── Template: folder treeitem (Wave 2B + folder-mgmt, K2/K4) ─────── -->
+        <!--
+          D-SELECTOR-STABILITY: .folder-row__btn[data-folder-path] is kept as a
+          non-focusable <div> with a click-to-select listener so VG-FE /
+          VG-FE-FOLDER-OPEN gates continue to find folders via
+          querySelectorAll('.folder-row__btn').find(b => b.dataset.folderPath === X).click().
+
+          The <li> owns role=treeitem + roving tabindex (WAI-ARIA Tree View pattern).
+          .folder-row__group is the nested <ul role=group> for children.
+
+          folder-mgmt additions (K4):
+          - .folder-row__menu-btn: focusable kebab button (aria-haspopup=menu)
+          - .folder-row__menu (role=menu): dropdown with 3 menuitems
+            (Rename / Delete / New Subfolder)
+        -->
+        <template id="tmpl-folder-row">
+          <li class="folder-row" role="treeitem" tabindex="-1" aria-selected="false">
+            <div class="folder-row__btn jin-navigation-row jin-navigation-row--tree" data-folder-path="">
+              <span class="folder-row__chevron jin-navigation-row__tree-toggle" data-folder-toggle aria-hidden="true">
+                <i data-lucide="chevron-right"></i>
+              </span>
+              <i data-lucide="folder" class="folder-row__icon jin-navigation-row__icon" aria-hidden="true"></i>
+              <span class="folder-row__name jin-navigation-row__label"></span>
+              <span class="folder-row__count jin-navigation-row__meta"></span>
+              <button
+                type="button"
+                class="folder-row__menu-btn jin-navigation-row__actions jin-control jin-control--icon"
+                aria-label="Folder actions"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                tabindex="-1"
+              >
+                <i data-lucide="ellipsis-vertical" aria-hidden="true"></i>
+              </button>
+            </div>
+            <div class="folder-row__menu" role="menu" hidden>
+              <button type="button" class="folder-row__menuitem" role="menuitem">
+                <i data-lucide="pencil" aria-hidden="true"></i>
+                <span>Rename</span>
+              </button>
+              <button type="button" class="folder-row__menuitem" role="menuitem">
+                <i data-lucide="trash-2" aria-hidden="true"></i>
+                <span>Delete</span>
+              </button>
+              <button type="button" class="folder-row__menuitem" role="menuitem">
+                <i data-lucide="folder-plus" aria-hidden="true"></i>
+                <span>New Subfolder</span>
+              </button>
+            </div>
+            <ul class="folder-row__group" role="group" hidden></ul>
+          </li>
+        </template>
+
+        <!--
+          GUI-S4 — Tasks browse + detail view.
+          TasksController manages this section: loads list_tasks (with filter pass-through),
+          renders task rows with status + priority badges, handles filter selects,
+          opens task detail on row click, and handles backlink navigation.
+
+          data-action "jin:open-detail->tasks#openDetail":
+            RouterController fires jin:open-detail (bubbles:false) directly on
+            this element when navigating here with a detail id.
+        -->
+        <section
+          class="jin-content-body jin-split-view hidden"
+          aria-label="Tasks"
+          data-controller="tasks"
+          data-router-target="section"
+          data-section-name="tasks"
+          data-action="jin:open-detail->tasks#openDetail jin:scope-changed->tasks#setScope"
+        >
+          <!-- ── Lists rail (P3, S5) ──────────────────────────────────────── -->
+          <!--
+            ListsController manages this rail: loads list_lists + list_tasks,
+            renders the Smart Views group (Inbox/Today/Upcoming/Completed) and
+            the Lists group (color swatch + icon + name + CLIENT-SIDE open-task
+            count — never list_lists' own task_count, which counts `done` too),
+            drives the active-selection indicator (aria-current), wires
+            drag-to-reorder (reorderList), and provides CRUD dialogs for lists.
+
+            Scope (S5 — Approach §4): a rail click dispatches
+            `jin:scope-changed`, consumed by TasksController#setScope above —
+            the ONE control for scope now (the old shared list-filter
+            <select>, AC-S5-07, is retired). `jin:tasks-changed@window` is TasksController's
+            existing mutation-chokepoint dispatch (Approach §8) — this rail
+            ADDS the listener so counts never go stale; it dispatches nothing.
+            `jin:scope-set@window` is a distinct, narrower event: a scope
+            switch TasksController makes on ITS OWN initiative (the S3 deep-link
+            case), so this rail can update only its own active-row indicator
+            without looping back into another reload.
+          -->
+          <div
+            class="tasks-lists-rail jin-context-rail jin-navigation-rail jin-chrome"
+            data-controller="lists"
+            aria-label="Task lists"
+            data-action="jin:tasks-changed@window->lists#handleTasksChanged jin:scope-set@window->lists#handleScopeSet"
+          >
+            <!-- ── Smart Views group (S5) — above the Lists group (AC-S5-01) ── -->
+            <div class="tasks-lists-rail__header jin-section-header">
+              <span class="tasks-lists-rail__title text-caption1">Smart Views</span>
+            </div>
+            <ul
+              class="tasks-lists-rail__smart-list jin-navigation-list jin-navigation-list--inset"
+              data-lists-target="smartViewsList"
+              role="list"
+              aria-label="Smart views"
+            ></ul>
+
+            <div class="tasks-lists-rail__header jin-section-header">
+              <span class="tasks-lists-rail__title text-caption1">Lists</span>
+              <button
+                type="button"
+                class="tasks-lists-rail__new-btn jin-control jin-control--icon tap-target"
+                data-action="click->lists#openCreate"
+                aria-label="New list"
+              >
+                <i data-lucide="plus" aria-hidden="true"></i>
+              </button>
+            </div>
+
+            <ul
+              class="tasks-lists-rail__list jin-navigation-list jin-navigation-list--inset"
+              data-lists-target="sidebarList"
+              role="list"
+              aria-label="Task lists"
+            ></ul>
+
+            <!-- ── Create list dialog ───────────────────────────────────── -->
+            <!-- S4: normalized to action-dialog__inner/__header/__body/__footer.
+                 JinModal.fromElement wires Cancel (.btn-secondary) → closeCreate,
+                 Create (.btn-primary) → saveCreate, and .modal-close-btn → close.
+                 Host is 'in-place' so Stimulus targets (createNameInput, etc.) remain
+                 accessible without scoping issues. -->
+            <dialog
+              class="action-dialog"
+              data-lists-target="createDialog"
+              aria-label="Create new list"
+              aria-modal="true"
+            >
+              <div class="action-dialog__inner">
+                <div class="action-dialog__header">
+                  <h2 class="action-dialog__title">New List</h2>
+                  <button
+                    type="button"
+                    class="modal-close-btn tap-target"
+                    aria-label="Close"
+                  >
+                    <i data-lucide="x" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <div class="action-dialog__body">
+                  <div class="form-group">
+                    <label class="form-label" for="lists-create-name">Name</label>
+                    <input
+                      id="lists-create-name"
+                      type="text"
+                      class="form-input"
+                      placeholder="List name"
+                      data-lists-target="createNameInput"
+                      required
+                      autocomplete="off"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <p class="form-label">Color</p>
+                    <div data-lists-target="createColorPicker"></div>
+                  </div>
+                  <p
+                    class="form-error hidden"
+                    data-lists-target="createError"
+                    role="alert"
+                    aria-live="polite"
+                  ></p>
+                </div>
+                <div class="action-dialog__footer">
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                  >Cancel</button>
+                  <button
+                    type="button"
+                    class="btn-primary"
+                  >Create</button>
+                </div>
+              </div>
+            </dialog>
+
+            <!-- ── Edit list dialog ─────────────────────────────────────── -->
+            <!-- S4: same normalization as create dialog. -->
+            <dialog
+              class="action-dialog"
+              data-lists-target="editDialog"
+              aria-label="Edit list"
+              aria-modal="true"
+            >
+              <div class="action-dialog__inner">
+                <div class="action-dialog__header">
+                  <h2 class="action-dialog__title">Edit List</h2>
+                  <button
+                    type="button"
+                    class="modal-close-btn tap-target"
+                    aria-label="Close"
+                  >
+                    <i data-lucide="x" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <div class="action-dialog__body">
+                  <div class="form-group">
+                    <label class="form-label" for="lists-edit-name">Name</label>
+                    <input
+                      id="lists-edit-name"
+                      type="text"
+                      class="form-input"
+                      placeholder="List name"
+                      data-lists-target="editNameInput"
+                      required
+                      autocomplete="off"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <p class="form-label">
+                      <i data-lucide="palette" aria-hidden="true"></i>
+                      Color
+                    </p>
+                    <div data-lists-target="editColorPicker"></div>
+                  </div>
+                  <p
+                    class="form-error hidden"
+                    data-lists-target="editError"
+                    role="alert"
+                    aria-live="polite"
+                  ></p>
+                </div>
+                <div class="action-dialog__footer">
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                  >Cancel</button>
+                  <button
+                    type="button"
+                    class="btn-primary"
+                  >Save</button>
+                </div>
+              </div>
+            </dialog>
+
+            <!-- ── Delete list dialog ───────────────────────────────────── -->
+            <!-- S4: normalized structure. .btn-danger is wired directly in
+                 connect() (before fromElement strips data-action); .btn-secondary
+                 is wired by fromElement as onSecondary → closeDelete.
+                 .modal-close-btn is auto-wired by fromElement → close. -->
+            <dialog
+              class="action-dialog"
+              data-lists-target="deleteDialog"
+              aria-label="Delete list"
+              aria-modal="true"
+            >
+              <div class="action-dialog__inner">
+                <div class="action-dialog__header">
+                  <h2 class="action-dialog__title">Delete List</h2>
+                  <button
+                    type="button"
+                    class="modal-close-btn tap-target"
+                    aria-label="Close"
+                  >
+                    <i data-lucide="x" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <div class="action-dialog__body">
+                  <p
+                    data-lists-target="deleteMessage"
+                    class="action-dialog__message"
+                  ></p>
+                </div>
+                <div class="action-dialog__footer">
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                  >Cancel</button>
+                  <button
+                    type="button"
+                    class="btn-danger"
+                    aria-label="Confirm delete list"
+                  >Delete</button>
+                </div>
+              </div>
+            </dialog>
+          </div>
+
+          <!--
+            ── tasks-main: two-column grid (S3) — the list stays visible and
+            clickable at ALL times (AC-S3-01); the second column is the ONE
+            detail pane, collapsed to 0 width until a task is selected.
+            TasksController toggles `.tasks-main--detail-open` here (never a
+            `.hidden` class on the list panel — that was the retired page-swap).
+          -->
+          <div class="tasks-main jin-workspace-pane" data-tasks-target="main">
+
+          <!-- ── List panel ─────────────────────────────────────────────────── -->
+          <div data-tasks-target="listPanel">
+            <!-- Filter bar — selects are passed through to invoke list_tasks -->
+            <div class="tasks-filter-bar jin-toolbar-strip jin-chrome" role="group" aria-label="Filter tasks">
+              <button
+                type="button"
+                class="tasks-filter-toggle jin-control jin-control--secondary"
+                data-tasks-target="filtersToggleBtn"
+                data-action="click->tasks#toggleFilters"
+                aria-controls="tasks-filter-controls"
+                aria-expanded="true"
+              >
+                <i data-lucide="list-filter" aria-hidden="true"></i>
+                <span>Filters</span>
+                <span class="tasks-filter-count" data-tasks-target="filterCount" aria-live="polite"></span>
+              </button>
+
+              <div id="tasks-filter-controls" class="tasks-filter-controls" data-tasks-target="filtersPanel">
+              <label class="visually-hidden" for="tasks-status-filter">Status</label>
+              <select
+                id="tasks-status-filter"
+                data-tasks-target="statusFilter"
+                data-action="change->tasks#applyFilter"
+                aria-label="Filter by status"
+              >
+                <option value="">All Statuses</option>
+                <option value="todo">To Do</option>
+                <option value="doing">In Progress</option>
+                <option value="done">Done</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+
+              <label class="visually-hidden" for="tasks-priority-filter">Priority</label>
+              <select
+                id="tasks-priority-filter"
+                data-tasks-target="priorityFilter"
+                data-action="change->tasks#applyFilter"
+                aria-label="Filter by priority"
+              >
+                <option value="">All Priorities</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+
+              <!-- S5: the list-filter select is RETIRED (AC-S5-07) — the
+                   sidebar rail is the only scope control now (Approach §4).
+                   ListsController dispatches jin:scope-changed on a rail
+                   click; TasksController#setScope consumes it. -->
+
+              <label class="visually-hidden" for="tasks-tag-filter">Tag</label>
+              <select
+                id="tasks-tag-filter"
+                data-tasks-target="tagFilter"
+                data-action="change->tasks#applyFilter"
+                aria-label="Filter by tag"
+              >
+                <option value="">All Tags</option>
+              </select>
+
+              <!-- ── P6: Sort mode (shown when a specific list is selected) ── -->
+              <label class="visually-hidden" for="tasks-sort-mode">Sort by</label>
+              <select
+                id="tasks-sort-mode"
+                data-tasks-target="sortModeSelect"
+                data-action="change->tasks#sortModeChange"
+                aria-label="Sort tasks by"
+              >
+                <option value="manual">Manual</option>
+                <option value="priority">Priority</option>
+                <option value="due">Due Date</option>
+                <option value="title">Title</option>
+                <option value="created">Created</option>
+              </select>
+              </div>
+
+              <div class="tasks-view-segment" role="group" aria-label="Task layout">
+                <button
+                  type="button"
+                  class="tasks-view-toggle"
+                  data-tasks-target="viewToggleBtn"
+                  data-action="click->tasks#setView"
+                  data-view="list"
+                  aria-pressed="true"
+                >List</button>
+                <button
+                  type="button"
+                  class="tasks-view-toggle"
+                  data-tasks-target="viewToggleBtn"
+                  data-action="click->tasks#setView"
+                  data-view="board"
+                  aria-pressed="false"
+                >Board</button>
+              </div>
+            </div>
+
+            <!-- ── S8: Add section dialog (JinModal-hosted; AC-S8-03) ──────
+                 Ported from a raw <dialog> + Stimulus dialog target (the
+                 DT-2 subtree-scoping foot-gun) — normalized to the same
+                 action-dialog__inner/__header/__body/__footer shape the list
+                 dialogs already use. Accessed by id (#tasks-add-section-
+                 dialog) in TasksController#connect(), not a Stimulus target;
+                 host:'in-place' keeps the inner form fields (addSectionName
+                 Input, addSectionError) reachable as Stimulus targets. -->
+            <dialog
+              id="tasks-add-section-dialog"
+              class="action-dialog"
+              aria-label="Add section"
+              aria-modal="true"
+            >
+              <div class="action-dialog__inner">
+                <div class="action-dialog__header">
+                  <h2 class="action-dialog__title">New Section</h2>
+                  <button
+                    type="button"
+                    class="modal-close-btn tap-target"
+                    aria-label="Close"
+                  >
+                    <i data-lucide="x" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <div class="action-dialog__body">
+                  <div class="form-group">
+                    <label class="form-label" for="tasks-add-section-name">Name</label>
+                    <input
+                      id="tasks-add-section-name"
+                      type="text"
+                      class="form-input"
+                      placeholder="Section name"
+                      data-tasks-target="addSectionNameInput"
+                      required
+                      autocomplete="off"
+                    />
+                  </div>
+                  <p
+                    class="form-error hidden"
+                    data-tasks-target="addSectionError"
+                    role="alert"
+                    aria-live="polite"
+                  ></p>
+                </div>
+                <div class="action-dialog__footer">
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                  >Cancel</button>
+                  <button
+                    type="button"
+                    class="btn-primary"
+                  >Create</button>
+                </div>
+              </div>
+            </dialog>
+
+            <!-- ── S8: Delete section confirm dialog (JinModal-hosted;
+                 AC-S8-03) ─── same port as above. -->
+            <dialog
+              id="tasks-delete-section-dialog"
+              class="action-dialog"
+              aria-label="Delete section"
+              aria-modal="true"
+            >
+              <div class="action-dialog__inner">
+                <div class="action-dialog__header">
+                  <h2 class="action-dialog__title">Delete Section</h2>
+                  <button
+                    type="button"
+                    class="modal-close-btn tap-target"
+                    aria-label="Close"
+                  >
+                    <i data-lucide="x" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <div class="action-dialog__body">
+                  <p data-tasks-target="deleteSectionMessage" class="action-dialog__message"></p>
+                </div>
+                <div class="action-dialog__footer">
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                  >Cancel</button>
+                  <button
+                    type="button"
+                    class="btn-danger"
+                    aria-label="Confirm delete section"
+                  >Delete</button>
+                </div>
+              </div>
+            </dialog>
+
+            <div
+              data-tasks-target="loadingState"
+              class="browse-loading"
+              role="status"
+              aria-live="polite"
+              aria-label="Loading tasks…"
+            >
+              <i data-lucide="refresh-cw" aria-hidden="true"></i>
+              <span>Loading…</span>
+            </div>
+
+            <div
+              data-tasks-target="emptyState"
+              class="browse-empty jin-empty-state hidden"
+              role="status"
+              aria-label="No tasks"
+            >
+              <svg class="jin-empty-state__ink" viewBox="0 0 64 44" aria-hidden="true" focusable="false">
+                <path d="M7 31C18 17 30 11 54 9M10 34C23 27 37 24 57 25M20 38C30 34 39 33 48 34" />
+              </svg>
+              <p>No tasks found.</p>
+            </div>
+
+            <ul
+              data-tasks-target="list"
+              class="browse-list jin-list hidden"
+              role="listbox"
+              aria-multiselectable="true"
+              aria-label="Tasks list"
+            ></ul>
+
+          </div>
+
+          <!--
+            ── Detail pane (S3) — the ONE task editor. Never `.hidden`ed;
+            visually collapsed to 0 width by `.tasks-main`'s grid track until
+            a task is selected. renderTaskPane() (lib/tasks/render.ts) builds
+            its own header (Close + Delete) inside detailContent below.
+          -->
+          <div data-tasks-target="detailPanel" class="tasks-detail-pane">
+            <div
+              data-tasks-target="detailLoadingState"
+              class="browse-loading hidden"
+              role="status"
+              aria-live="polite"
+              aria-label="Loading task…"
+            >
+              <i data-lucide="refresh-cw" aria-hidden="true"></i>
+              <span>Loading…</span>
+            </div>
+
+            <div
+              data-tasks-target="detailNotFoundState"
+              class="browse-empty hidden"
+              role="status"
+              aria-label="Task not found"
+            >
+              <i data-lucide="check-square" aria-hidden="true"></i>
+              <p>Task not found.</p>
+            </div>
+
+            <div data-tasks-target="detailContent"></div>
+          </div>
+
+          </div><!-- /.tasks-main -->
+        </section>
+
+        <!--
+          GUI-S4 — Events browse + detail view.
+          EventsController manages this section: loads list_events, sorts by start,
+          renders event rows with source badges, opens event detail on row click,
+          handles derived_from + prep-for backlinks navigation.
+
+          data-action "jin:open-detail->events#openDetail":
+            RouterController fires jin:open-detail (bubbles:false) directly on
+            this element when navigating here with a detail id.
+        -->
+        <!--
+          GUI-S5 — Calendar view (Month/Day/Week).
+          CalendarViewController manages this section: loads list_events, renders
+          as a month grid with day view detail. Users can create events and link them
+          to tasks and notes.
+        -->
+        <section
+          class="jin-content-body hidden"
+          aria-label="Calendar"
+          data-controller="calendar-view events"
+          data-action="jin:section-activated->calendar-view#activateSection jin:section-activated->events#activateSection jin:open-detail->events#openDetail jin:events-mutated@window->events#handleMutation jin:events-mutated@window->calendar-view#handleMutation jin:event-edited->calendar-view#handleEventEdited jin:event-context-attached@window->events#contextAttached jin:event-locale-changed@window->events#localeChanged jin:event-locale-changed@window->calendar-view#localeChanged jin:calendar-return->calendar-view#restoreActiveView"
+          data-router-target="section"
+          data-section-name="events"
+        >
+          <!-- Month view (primary view) -->
+          <div data-calendar-view-target="monthView" class="calendar-month-view">
+            <div data-calendar-view-target="monthViewContent"></div>
+          </div>
+
+          <!-- Day view (shown when date is selected) -->
+          <div data-calendar-view-target="dayView" class="calendar-day-view hidden">
+            <div class="calendar-day-panel">
+              <div data-calendar-view-target="dayViewContent"></div>
+            </div>
+          </div>
+
+          <!-- EventsController keeps the canonical event detail experience reachable
+               from every calendar card. Its old browse list is intentionally hidden:
+               the calendar is now the events browse surface. -->
+          <div data-events-target="listPanel" class="hidden" aria-hidden="true">
+            <div data-events-target="loadingState"></div>
+            <div data-events-target="emptyState"></div>
+            <ul data-events-target="list"></ul>
+          </div>
+          <div data-events-target="detailPanel" class="events-detail-pane hidden">
+            <button type="button" class="calendar-back-btn tap-target" data-action="click->events#showList">
+              <i data-lucide="arrow-left" aria-hidden="true"></i><span>Calendar</span>
+            </button>
+            <div data-events-target="detailLoadingState" class="browse-loading hidden" role="status">Loading event…</div>
+            <div data-events-target="detailNotFoundState" class="browse-empty hidden" role="status">Event not found.</div>
+            <div data-events-target="detailContent" class="hidden"></div>
+          </div>
+
+          <button
+            type="button"
+            class="btn-primary calendar-global-add"
+            aria-label="Add event"
+            data-calendar-view-target="createEventBtn"
+            data-action="click->calendar-view#openEventCreate"
+          >+ Add Event</button>
+
+          <!--
+            Event creation/editing modal.
+            Managed by CalendarViewController. Opened when user clicks "Add Event"
+            or clicks on an existing event to edit.
+          -->
+          <dialog
+            id="jin-event-dialog"
+            class="action-dialog"
+            aria-labelledby="event-dialog-title"
+            aria-modal="true"
+            data-calendar-view-target="eventModal"
+          >
+            <div class="action-dialog__inner">
+              <div class="action-dialog__header">
+                <h2 class="action-dialog__title" id="event-dialog-title">New Event</h2>
+                <button
+                  type="button"
+                  class="modal-close-btn tap-target"
+                  aria-label="Close"
+                  data-action="click->calendar-view#closeEventDialog"
+                >
+                  <i data-lucide="x" aria-hidden="true"></i>
+                </button>
+              </div>
+
+              <div class="action-dialog__form">
+                <div class="form-group">
+                  <label class="form-label" for="event-title">
+                    Title <span aria-hidden="true">*</span>
+                  </label>
+                  <input
+                    id="event-title"
+                    type="text"
+                    class="form-input"
+                    placeholder="Event title"
+                    aria-required="true"
+                    data-calendar-view-target="eventTitle"
+                  />
+                </div>
+
+                <fieldset class="event-when">
+                  <legend class="form-label" data-event-copy="when">When <span aria-hidden="true">*</span></legend>
+                  <label class="form-label" for="event-when-natural" data-event-copy="dateTime">Date and time</label>
+                  <div class="event-when__quick-row">
+                    <input
+                      id="event-when-natural"
+                      type="text"
+                      class="form-input event-when__natural"
+                      placeholder="Tomorrow at 2pm"
+                      autocomplete="off"
+                      aria-describedby="event-when-preview event-when-summary"
+                      data-calendar-view-target="eventWhenInput"
+                      data-action="input->calendar-view#previewWhen keydown.enter->calendar-view#applyWhen"
+                    />
+                    <button type="button" class="btn-secondary event-when__use" data-event-copy="use" data-action="click->calendar-view#applyWhen">Use</button>
+                  </div>
+                  <p id="event-when-preview" class="event-when__preview" aria-live="polite" data-calendar-view-target="eventWhenPreview"></p>
+                  <div
+                    class="event-when__calendar"
+                    data-controller="calendar"
+                    data-calendar-mode-value="range"
+                    data-calendar-view-target="eventCalendar"
+                    data-action="calendar:change->calendar-view#calendarSelectionChanged"
+                  ></div>
+                  <p id="event-when-summary" class="event-when__summary" aria-live="polite" data-calendar-view-target="eventWhenSummary"></p>
+                </fieldset>
+
+                <div class="form-group event-when__all-day">
+                  <label class="form-label">
+                    <input
+                      type="checkbox"
+                      id="event-all-day"
+                      class="form-checkbox"
+                      data-calendar-view-target="eventAllDay"
+                      data-action="change->calendar-view#toggleAllDay"
+                    />
+                    <span>All day</span>
+                  </label>
+                </div>
+
+                <div class="form-group event-repeat-row">
+                  <label class="form-label" for="event-repeat" data-recurrence-copy="repeat">Repeat</label>
+                  <select id="event-repeat" class="form-input event-repeat-row__select" data-calendar-view-target="eventRepeat" data-action="change->calendar-view#repeatChanged">
+                    <option value="none">Does not repeat</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="yearly">Yearly</option>
+                    <option value="custom">Custom…</option>
+                  </select>
+                  <div class="event-repeat-custom hidden" data-calendar-view-target="eventRepeatCustom">
+                    <div class="event-repeat-custom__every">
+                      <span data-recurrence-copy="every">Every</span>
+                      <input class="form-input event-repeat-custom__number" type="number" min="1" max="999" value="1" inputmode="numeric" aria-label="Repeat interval" data-calendar-view-target="eventRepeatInterval" data-action="input->calendar-view#repeatChanged">
+                      <select class="form-input" aria-label="Repeat unit" data-calendar-view-target="eventRepeatFrequency" data-action="change->calendar-view#repeatChanged">
+                        <option value="daily">day</option><option value="weekly" selected>week</option><option value="monthly">month</option><option value="yearly">year</option>
+                      </select>
+                    </div>
+                    <fieldset class="event-repeat-custom__section" data-calendar-view-target="eventRepeatWeekdays">
+                      <legend data-recurrence-copy="onDays">On days</legend>
+                      <div class="event-repeat-weekdays" role="group" aria-label="Repeat on weekdays">
+                        <label><input type="checkbox" value="mo" data-action="change->calendar-view#repeatChanged"><span>Mon</span></label>
+                        <label><input type="checkbox" value="tu" data-action="change->calendar-view#repeatChanged"><span>Tue</span></label>
+                        <label><input type="checkbox" value="we" data-action="change->calendar-view#repeatChanged"><span>Wed</span></label>
+                        <label><input type="checkbox" value="th" data-action="change->calendar-view#repeatChanged"><span>Thu</span></label>
+                        <label><input type="checkbox" value="fr" data-action="change->calendar-view#repeatChanged"><span>Fri</span></label>
+                        <label><input type="checkbox" value="sa" data-action="change->calendar-view#repeatChanged"><span>Sat</span></label>
+                        <label><input type="checkbox" value="su" data-action="change->calendar-view#repeatChanged"><span>Sun</span></label>
+                      </div>
+                    </fieldset>
+                    <fieldset class="event-repeat-custom__section" data-calendar-view-target="eventRepeatMonthlyMode">
+                      <legend data-recurrence-copy="monthlyOn">Monthly on</legend>
+                      <label class="event-repeat-choice"><input type="radio" name="event-repeat-monthly" value="day_of_month" checked data-action="change->calendar-view#repeatChanged"><span data-recurrence-copy="dayOfMonth">Day</span><input class="form-input event-repeat-custom__number" type="number" min="1" max="31" value="1" aria-label="Day of month" data-calendar-view-target="eventRepeatMonthDay" data-action="input->calendar-view#repeatChanged"></label>
+                      <label class="event-repeat-choice"><input type="radio" name="event-repeat-monthly" value="nth_weekday" data-action="change->calendar-view#repeatChanged"><select class="form-input" aria-label="Week of month" data-calendar-view-target="eventRepeatOrdinal" data-action="change->calendar-view#repeatChanged"><option value="1">First</option><option value="2">Second</option><option value="3">Third</option><option value="4">Fourth</option><option value="-1">Last</option></select><select class="form-input" aria-label="Weekday" data-calendar-view-target="eventRepeatOrdinalWeekday" data-action="change->calendar-view#repeatChanged"><option value="mo">Monday</option><option value="tu">Tuesday</option><option value="we">Wednesday</option><option value="th">Thursday</option><option value="fr">Friday</option><option value="sa">Saturday</option><option value="su">Sunday</option></select></label>
+                    </fieldset>
+                    <fieldset class="event-repeat-custom__section event-repeat-ends">
+                      <legend data-recurrence-copy="ends">Ends</legend>
+                      <label><input type="radio" name="event-repeat-end" value="never" checked data-calendar-view-target="eventRepeatEndKind" data-action="change->calendar-view#repeatChanged"><span data-recurrence-copy="never">Never</span></label>
+                      <label><input type="radio" name="event-repeat-end" value="until" data-calendar-view-target="eventRepeatEndKind" data-action="change->calendar-view#repeatChanged"><span data-recurrence-copy="onDate">On date</span><input class="form-input" type="date" data-calendar-view-target="eventRepeatUntil" data-action="change->calendar-view#repeatChanged"></label>
+                      <label><input type="radio" name="event-repeat-end" value="count" data-calendar-view-target="eventRepeatEndKind" data-action="change->calendar-view#repeatChanged"><span data-recurrence-copy="after">After</span><input class="form-input event-repeat-custom__number" type="number" min="1" max="999" value="10" inputmode="numeric" aria-label="Number of occurrences" data-calendar-view-target="eventRepeatCount" data-action="input->calendar-view#repeatChanged"><span data-recurrence-copy="occurrences">occurrences</span></label>
+                    </fieldset>
+                  </div>
+                  <p class="event-repeat-preview hidden" aria-live="polite" data-calendar-view-target="eventRepeatPreview"></p>
+                </div>
+
+                <div class="form-group" data-calendar-view-target="timeGroup">
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label class="form-label" for="event-start-time">Start time</label>
+                      <input
+                        id="event-start-time"
+                        type="text"
+                        inputmode="numeric"
+                        autocomplete="off"
+                        placeholder="09:00"
+                        class="form-input"
+                        data-calendar-view-target="eventStartTime"
+                        data-action="input->calendar-view#repeatChanged blur->calendar-view#normalizeEventTime"
+                      />
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label" for="event-end-time">End time</label>
+                      <input
+                        id="event-end-time"
+                        type="text"
+                        inputmode="numeric"
+                        autocomplete="off"
+                        placeholder="10:00"
+                        class="form-input"
+                        data-calendar-view-target="eventEndTime"
+                        data-action="input->calendar-view#repeatChanged blur->calendar-view#normalizeEventTime"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="calendar-event-destination">Calendar</label>
+                  <select
+                    id="calendar-event-destination"
+                    class="form-input"
+                    data-calendar-view-target="eventDestination"
+                    aria-describedby="calendar-event-destination-help"
+                  ></select>
+                  <p id="calendar-event-destination-help" class="text-footnote color-secondary">
+                    Choose Jin only or an exact Google account and calendar.
+                  </p>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="event-location">Location</label>
+                  <input
+                    id="event-location"
+                    type="text"
+                    class="form-input"
+                    placeholder="Location"
+                    data-calendar-view-target="eventLocation"
+                  />
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" for="event-description">Description</label>
+                  <textarea
+                    id="event-description"
+                    class="form-input"
+                    placeholder="Event description"
+                    rows="4"
+                    data-calendar-view-target="eventDescription"
+                  ></textarea>
+                </div>
+
+                <p
+                  class="form-error hidden"
+                  aria-live="polite"
+                  data-calendar-view-target="eventError"
+                ></p>
+
+                <div class="form-actions">
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                    aria-label="Cancel"
+                    data-action="click->calendar-view#closeEventDialog"
+                  >Cancel</button>
+                  <button
+                    type="button"
+                    class="btn-primary"
+                    aria-label="Create event"
+                    data-calendar-view-target="eventSubmit"
+                    data-action="click->calendar-view#submitEvent"
+                  >Create</button>
+                </div>
+              </div>
+            </div>
+          </dialog>
+        </section>
+
+        <!-- Durable invitations and task reminders. -->
+        <section
+          class="jin-content-body notifications-view hidden"
+          aria-label="Notification Center"
+          aria-busy="false"
+          data-controller="notifications"
+          data-action="jin:section-activated->notifications#activate click->notifications#handleClick"
+          data-router-target="section"
+          data-section-name="notifications"
+        >
+          <header class="notifications-header">
+            <div>
+              <p class="notifications-header__eyebrow">Jin’s notification center</p>
+              <h1 class="notifications-header__title">Notifications</h1>
+            </div>
+            <div class="notifications-filters" role="group" aria-label="Filter notifications">
+              <button type="button" class="notifications-filter notifications-filter--active tap-target" aria-pressed="true" data-notifications-target="filter" data-notification-filter="all" data-action="click->notifications#selectFilter">All</button>
+              <button type="button" class="notifications-filter tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="unread" data-action="click->notifications#selectFilter">Unread</button>
+              <button type="button" class="notifications-filter tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="invitations" data-action="click->notifications#selectFilter">Invitations</button>
+              <button type="button" class="notifications-filter tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="reminders" data-action="click->notifications#selectFilter">Reminders</button>
+              <button type="button" class="notifications-filter tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="deferred" data-action="click->notifications#selectFilter">Deferred</button>
+              <button type="button" class="notifications-filter tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="history" data-action="click->notifications#selectFilter">History</button>
+            </div>
+          </header>
+
+          <div class="notifications-loading" data-notifications-target="loading" role="status" aria-live="polite">
+            <i data-lucide="refresh-cw" aria-hidden="true"></i>
+            <span>Loading notifications…</span>
+          </div>
+          <p class="notifications-error hidden" data-notifications-target="error" role="alert"></p>
+          <div class="notifications-partial-error hidden" data-notifications-target="partialError" role="status" aria-live="polite" aria-atomic="true"></div>
+          <div class="notifications-workspace" data-notifications-target="workspace">
+            <div
+              class="notifications-list-pane"
+              data-notifications-target="list"
+              data-action="keydown->notifications#handleListKeydown"
+            ></div>
+            <div class="notifications-detail-pane" data-notifications-target="detail"></div>
+          </div>
+
+          <p
+            class="sr-only"
+            data-notifications-target="live"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          ></p>
+
+          <dialog
+            class="action-dialog notification-scope-dialog"
+            aria-labelledby="notification-scope-title"
+            aria-modal="true"
+            data-notifications-target="scopeDialog"
+            data-action="keydown->notifications#trapScopeDialog cancel->notifications#cancelScope"
+          >
+            <div class="action-dialog__inner">
+              <div class="action-dialog__header">
+                <h2 id="notification-scope-title" class="action-dialog__title" data-notifications-target="scopeTitle">Apply response to</h2>
+              </div>
+              <fieldset class="notification-scope-dialog__choices">
+                <legend class="sr-only">Recurring invitation scope</legend>
+                <label class="notification-scope-choice">
+                  <input type="radio" name="notification-recurrence-scope" value="this_occurrence" data-notifications-target="scopeThis" />
+                  <span>This occurrence</span>
+                </label>
+                <label class="notification-scope-choice">
+                  <input type="radio" name="notification-recurrence-scope" value="entire_series" data-notifications-target="scopeSeries" />
+                  <span>Entire series</span>
+                </label>
+              </fieldset>
+              <div class="action-dialog__footer">
+                <button type="button" class="btn-secondary tap-target" data-action="click->notifications#cancelScope">Cancel</button>
+                <button type="button" class="btn-primary tap-target" data-notifications-target="scopeConfirm" data-action="click->notifications#confirmScope">Confirm</button>
+              </div>
+            </div>
+          </dialog>
+        </section>
+
+        <!--
+          GUI-S7 — Sync & Settings view.
+          SettingsController manages this section: loads auth_status + app_config
+          on connect, handles connectGoogle / disconnectGoogle / runSync / submitExport.
+
+          Appearance controls dispatch directly to AppearanceController (on <body>)
+          via data-action wiring — no appearance logic is reimplemented here.
+        -->
+        <section
+          class="jin-content-body hidden"
+          aria-label="Settings"
+          data-controller="settings"
+          data-router-target="section"
+          data-section-name="settings"
+        >
+          <div class="settings-view jin-split-view">
+            <div class="settings-nav jin-context-rail jin-navigation-rail">
+              <h2 class="settings-view__heading">Settings</h2>
+              <nav class="settings-nav__items jin-navigation-list" aria-label="Settings categories">
+                <button
+                  type="button"
+                  class="settings-nav__item jin-nav-item jin-navigation-row tap-target"
+                  aria-controls="settings-pane-general"
+                  data-settings-target="settingsNavItem"
+                  data-settings-pane-key="general"
+                  data-action="click->settings#selectPane"
+                ><span class="jin-navigation-row__label">General</span></button>
+                <button
+                  type="button"
+                  class="settings-nav__item jin-nav-item jin-navigation-row tap-target"
+                  aria-controls="settings-pane-calendars"
+                  data-settings-target="settingsNavItem"
+                  data-settings-pane-key="calendars"
+                  data-action="click->settings#selectPane"
+                ><span class="jin-navigation-row__label">Calendars &amp; Sync</span></button>
+                <button
+                  type="button"
+                  class="settings-nav__item jin-nav-item jin-navigation-row tap-target"
+                  aria-controls="settings-pane-notifications"
+                  data-settings-target="settingsNavItem"
+                  data-settings-pane-key="notifications"
+                  data-action="click->settings#selectPane"
+                ><span class="jin-navigation-row__label">Notifications</span></button>
+                <button
+                  type="button"
+                  class="settings-nav__item jin-nav-item jin-navigation-row tap-target"
+                  aria-controls="settings-pane-data-storage"
+                  data-settings-target="settingsNavItem"
+                  data-settings-pane-key="data-storage"
+                  data-action="click->settings#selectPane"
+                ><span class="jin-navigation-row__label">Data &amp; Storage</span></button>
+              </nav>
+            </div>
+
+            <div class="settings-workspace jin-workspace-pane" data-settings-target="settingsWorkspace">
+              <section
+                id="settings-pane-calendars"
+                class="settings-pane"
+                aria-labelledby="settings-pane-calendars-title"
+                data-settings-target="settingsPane"
+                data-settings-pane-key="calendars"
+                hidden
+              >
+                <header class="settings-pane__header">
+                  <h2 id="settings-pane-calendars-title" class="settings-pane__title">Calendars &amp; Sync</h2>
+                  <p class="settings-pane__description">Connect calendars, review paused changes, and control synchronization.</p>
+                </header>
+
+            <section class="settings-section" aria-label="Google calendar accounts">
+              <h3 class="settings-section__heading">Calendar Accounts</h3>
+              <p class="text-callout color-secondary">
+                Add an account, then connect once to sign in and discover its calendars.
+                Give accounts stable Jin aliases such as Personal, Work, or Project OSS.
+              </p>
+              <details class="text-callout color-secondary">
+                <summary>Advanced: use your own Google OAuth client</summary>
+                <p>
+                  Source builds without distributor-provided credentials, or owners who prefer
+                  their own Google Cloud project, can set JIN_GOOGLE_CLIENT_ID and
+                  JIN_GOOGLE_CLIENT_SECRET or configure the per-vault [google] section.
+                  See the Google smoke-test runbook for setup and verification requirements.
+                </p>
+              </details>
+              <div class="settings-row settings-calendar-row">
+                <div>
+                  <p class="settings-row__label">Jin calendar</p>
+                  <p class="settings-row__description">Used for local events and time blocks.</p>
+                </div>
+                <div data-settings-target="jinCalendarColorPicker"></div>
+              </div>
+              <div class="settings-section__actions">
+                <input
+                  class="settings-input"
+                  data-settings-target="googleAccountAliasInput"
+                  aria-label="New Google account alias"
+                  placeholder="Work"
+                />
+                <button
+                  type="button"
+                  class="btn-primary tap-target"
+                  data-action="click->settings#addGoogleAccount"
+                >Add account</button>
+              </div>
+              <p
+                class="settings-error hidden"
+                role="alert"
+                aria-live="assertive"
+                data-settings-target="googleAccountsError"
+              ></p>
+              <div data-settings-target="googleAccountsList" class="google-account-list" aria-live="polite"></div>
+            </section>
+
+            <section class="settings-section settings-section--attention" aria-label="Quarantined calendar changes">
+              <h3 class="settings-section__heading">Changes awaiting review</h3>
+              <p class="text-callout color-secondary">
+                Jin never replays paused Google Calendar changes automatically. Review each change after reconnecting or restoring calendar access.
+              </p>
+              <p
+                class="settings-error hidden"
+                role="alert"
+                aria-live="assertive"
+                data-settings-target="quarantinedOperationsError"
+              ></p>
+              <div data-settings-target="quarantinedOperationsList" class="quarantined-operation-list" aria-live="polite"></div>
+            </section>
+
+            <!-- ── Sync ───────────────────────────────────────────────────── -->
+            <section class="settings-section" aria-label="Sync">
+              <h3 class="settings-section__heading">Sync</h3>
+
+              <p class="text-callout color-secondary">
+                Sync Jin with Google Calendar. Pulled, pushed, and conflict counts
+                are shown after each sync.
+              </p>
+
+              <!-- Sync action -->
+              <div class="settings-section__actions">
+                <button
+                  type="button"
+                  class="btn-primary tap-target"
+                  aria-label="Run sync now"
+                  data-settings-target="syncBtn"
+                  data-action="click->settings#runSync"
+                >
+                  <i data-lucide="refresh-cw" aria-hidden="true"></i>
+                  Sync Now
+                </button>
+              </div>
+
+              <!-- Sync loading -->
+              <div
+                data-settings-target="syncLoadingState"
+                class="settings-loading hidden"
+                role="status"
+                aria-live="polite"
+                aria-label="Sync in progress…"
+              >
+                <i data-lucide="refresh-cw" aria-hidden="true"></i>
+                <span>Syncing…</span>
+              </div>
+
+              <!-- Sync error (especially code:5 → "connect" message) -->
+              <p
+                data-settings-target="syncError"
+                class="settings-error hidden"
+                role="alert"
+                aria-live="assertive"
+              ></p>
+
+              <!-- Sync result summary -->
+              <div
+                data-settings-target="syncResultDisplay"
+                class="sync-summary hidden"
+                aria-label="Sync result summary"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                <p
+                  data-settings-target="syncStatus"
+                  class="sync-summary__status"
+                  aria-label="Sync status"
+                ></p>
+
+                <div class="sync-summary__grid" role="group" aria-label="Sync counts">
+                  <div class="sync-summary__cell">
+                    <span class="sync-summary__cell-label">Pulled</span>
+                    <span
+                      data-settings-target="syncPulled"
+                      class="sync-summary__cell-value"
+                      aria-label="Items pulled"
+                    >0</span>
+                  </div>
+                  <div class="sync-summary__cell">
+                    <span class="sync-summary__cell-label">Pushed</span>
+                    <span
+                      data-settings-target="syncPushed"
+                      class="sync-summary__cell-value"
+                      aria-label="Items pushed"
+                    >0</span>
+                  </div>
+                  <div class="sync-summary__cell">
+                    <span class="sync-summary__cell-label">Conflicts</span>
+                    <span
+                      data-settings-target="syncConflicts"
+                      class="sync-summary__cell-value"
+                      aria-label="Conflicts"
+                    >0</span>
+                  </div>
+                  <div class="sync-summary__cell">
+                    <span class="sync-summary__cell-label">Resolved</span>
+                    <span
+                      data-settings-target="syncResolved"
+                      class="sync-summary__cell-value"
+                      aria-label="Automatically resolved"
+                    >0</span>
+                  </div>
+                </div>
+
+                <!-- Conflict-resolved notice (shown when resolved > 0) -->
+                <p
+                  data-settings-target="syncResolvedNotice"
+                  class="sync-summary__resolved-notice hidden"
+                  aria-live="polite"
+                ></p>
+
+                <!-- Audit log link (shown when auditLogPath non-null) -->
+                <a
+                  data-settings-target="syncAuditLink"
+                  class="sync-summary__audit-link hidden"
+                  href="#"
+                  aria-label="View sync audit log"
+                >View audit log</a>
+              </div>
+            </section>
+
+              </section>
+
+              <!-- ── Notifications ──────────────────────────────────────────── -->
+              <section
+                id="settings-pane-notifications"
+                class="settings-pane"
+                aria-labelledby="settings-pane-notifications-title"
+                data-settings-target="settingsPane"
+                data-settings-pane-key="notifications"
+                hidden
+              >
+                <header class="settings-pane__header">
+                  <h2 id="settings-pane-notifications-title" class="settings-pane__title">Notifications</h2>
+                  <p class="settings-pane__description">Manage system permission and verify that reminders can reach you.</p>
+                </header>
+            <section class="settings-section notification-settings" aria-label="Notifications">
+              <div class="notification-settings__heading">
+                <h3 class="settings-section__heading">Notifications</h3>
+                <span
+                class="notification-status-pill jin-badge"
+                  data-settings-target="notificationStatus"
+                  aria-live="polite"
+                >Checking…</span>
+              </div>
+              <p class="text-callout color-secondary notification-reason" data-settings-target="notificationReason">
+                Checking your operating system notification settings…
+              </p>
+              <div class="notification-busy-row">
+                <div class="settings-loading" role="status" aria-live="polite" data-settings-target="notificationLoading">
+                  <i data-lucide="loader" aria-hidden="true"></i><span>Checking…</span>
+                </div>
+              </div>
+              <div class="settings-section__actions">
+                <button type="button" class="btn-primary tap-target" hidden data-settings-target="notificationAllowBtn" data-action="click->settings#allowNotifications">Allow Notifications</button>
+                <button type="button" class="btn-secondary tap-target" hidden data-settings-target="notificationSettingsBtn" data-action="click->settings#openNotificationSettings">Open Notification Settings</button>
+                <button type="button" class="btn-secondary tap-target" data-settings-target="notificationTestBtn" data-action="click->settings#sendTestNotification" disabled>Send Test</button>
+                <button type="button" class="btn-secondary tap-target" data-settings-target="notificationCheckBtn" data-action="click->settings#checkNotificationStatus">Check Again</button>
+              </div>
+              <p class="notification-result" role="status" aria-live="polite" aria-atomic="true" data-settings-target="notificationResult"></p>
+              <p class="settings-error hidden" role="alert" aria-live="assertive" data-settings-target="notificationError"></p>
+            </section>
+
+              </section>
+
+              <!-- ── Data & Storage ─────────────────────────────────────────── -->
+              <section
+                id="settings-pane-data-storage"
+                class="settings-pane"
+                aria-labelledby="settings-pane-data-storage-title"
+                data-settings-target="settingsPane"
+                data-settings-pane-key="data-storage"
+                hidden
+              >
+                <header class="settings-pane__header">
+                  <h2 id="settings-pane-data-storage-title" class="settings-pane__title">Data &amp; Storage</h2>
+                  <p class="settings-pane__description">Choose where Jin stores data, export a portable copy, and inspect diagnostics.</p>
+                </header>
+
+            <section class="settings-section" aria-label="Storage location">
+              <h3 class="settings-section__heading">Storage</h3>
+              <div class="settings-field">
+                <span class="settings-field__label">Root path</span>
+                <span
+                  data-settings-target="infoRootPath"
+                  class="settings-field__value"
+                  aria-label="Jin root directory"
+                >—</span>
+              </div>
+              <div class="settings-field settings-field--action">
+                <button
+                  class="btn btn--secondary tap-target"
+                  data-settings-target="changeStoreFolderBtn"
+                  data-action="click->settings#changeStoreFolder"
+                  aria-label="Choose a different folder for the Jin store"
+                >
+                  Change store folder
+                </button>
+                <span
+                  data-settings-target="changeStoreFolderStatus"
+                  class="settings-field__status"
+                  aria-live="polite"
+                ></span>
+              </div>
+            </section>
+
+            <section class="settings-section" aria-label="Export">
+              <h3 class="settings-section__heading">Export</h3>
+
+              <p class="text-callout color-secondary">
+                Export notes, tasks, and events to a destination directory.
+                Excludes index, sync state, and tokens.
+                An audit log is included in the export.
+              </p>
+
+              <!-- Dest path input + force toggle -->
+              <div class="form-group">
+                <label class="form-label" for="export-dest">Destination path</label>
+                <div class="export-dest-row">
+                  <input
+                    id="export-dest"
+                    type="text"
+                    class="form-input"
+                    placeholder="/home/user/jin-export"
+                    aria-required="true"
+                    aria-label="Export destination directory path"
+                    data-settings-target="exportDestInput"
+                  />
+                  <button
+                    type="button"
+                    class="btn-primary tap-target"
+                    aria-label="Export files to destination"
+                    data-settings-target="exportBtn"
+                    data-action="click->settings#submitExport"
+                  >
+                    <i data-lucide="download" aria-hidden="true"></i>
+                    Export
+                  </button>
+                </div>
+              </div>
+
+              <!-- Force overwrite row (hidden by default; shown on dest-collision) -->
+              <div class="form-group hidden" aria-label="Force overwrite option">
+                <label class="form-label jin-checkbox">
+                  <input
+                    type="checkbox"
+                    data-settings-target="exportForceToggle"
+                    aria-label="Force overwrite if destination exists"
+                  />
+                  <span class="jin-checkbox__mark" aria-hidden="true"></span>
+                  <span>Force overwrite (destination already exists)</span>
+                </label>
+              </div>
+
+              <!-- Export loading -->
+              <div
+                data-settings-target="exportLoadingState"
+                class="settings-loading hidden"
+                role="status"
+                aria-live="polite"
+                aria-label="Export in progress…"
+              >
+                <i data-lucide="loader" aria-hidden="true"></i>
+                <span>Exporting…</span>
+              </div>
+
+              <!-- Export error (includes dest-collision message) -->
+              <p
+                data-settings-target="exportError"
+                class="settings-error hidden"
+                role="alert"
+                aria-live="assertive"
+              ></p>
+
+              <!-- Export result summary -->
+              <div
+                data-settings-target="exportResultDisplay"
+                class="export-summary hidden"
+                aria-label="Export result"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                <div class="export-summary__row">
+                  <span class="export-summary__label">Files</span>
+                  <span
+                    data-settings-target="exportFileCount"
+                    class="export-summary__value"
+                    aria-label="Number of exported files"
+                  >0</span>
+                </div>
+                <div class="export-summary__row">
+                  <span class="export-summary__label">Destination</span>
+                  <span
+                    data-settings-target="exportDestDisplay"
+                    class="export-summary__value"
+                    aria-label="Export destination"
+                  ></span>
+                </div>
+                <div class="export-summary__row">
+                  <span class="export-summary__label">Audit</span>
+                  <span
+                    data-settings-target="exportAuditIncluded"
+                    class="export-summary__audit-badge jin-badge hidden"
+                    aria-label="Audit log included in export"
+                  >Audit log included</span>
+                </div>
+              </div>
+            </section>
+
+            <details class="settings-section settings-diagnostics">
+              <summary class="settings-diagnostics__summary">About &amp; diagnostics</summary>
+              <div class="settings-diagnostics__content">
+                <div class="settings-field">
+                  <span class="settings-field__label">Display timezone</span>
+                  <span
+                    data-settings-target="infoDisplayTz"
+                    class="settings-field__value"
+                    aria-label="Display timezone"
+                  >—</span>
+                </div>
+                <div class="settings-field">
+                  <span class="settings-field__label">Calendar ID</span>
+                  <span
+                    data-settings-target="infoCalendarId"
+                    class="settings-field__value"
+                    aria-label="Configured calendar ID"
+                  >—</span>
+                </div>
+                <div class="settings-field">
+                  <span class="settings-field__label">Schema version</span>
+                  <span
+                    data-settings-target="infoSchemaVersion"
+                    class="settings-field__value"
+                    aria-label="Database schema version"
+                  >—</span>
+                </div>
+              </div>
+            </details>
+              </section>
+
+            <!-- ── Appearance & Accessibility ─────────────────────────────── -->
+            <!--
+              Controls dispatch directly to AppearanceController (on <body>)
+              via data-action. SettingsController only initializes checkbox/slider
+              states from persisted prefs on connect — no logic duplication.
+            -->
+              <section
+                id="settings-pane-general"
+                class="settings-pane"
+                aria-labelledby="settings-pane-general-title"
+                data-settings-target="settingsPane"
+                data-settings-pane-key="general"
+              >
+                <header class="settings-pane__header">
+                  <h2 id="settings-pane-general-title" class="settings-pane__title">General</h2>
+                  <p class="settings-pane__description">Personalize Jin's appearance, language, motion, and readability.</p>
+                </header>
+            <section class="settings-section" aria-label="Appearance and accessibility">
+              <h3 class="settings-section__heading">Appearance &amp; Accessibility</h3>
+
+              <div class="settings-row">
+                <label class="settings-row__label" for="event-locale-select">Calendar &amp; Events language</label>
+                <select
+                  id="event-locale-select"
+                  class="form-select"
+                  data-settings-target="eventLocaleSelect"
+                  data-action="change->settings#changeEventLocale"
+                ></select>
+              </div>
+
+              <!-- Appearance mode: Light / Dark / Auto -->
+              <div class="settings-row">
+                <div>
+                  <p class="settings-row__label" id="appearance-mode-label">Appearance</p>
+                </div>
+                <div
+                  class="appearance-mode-group"
+                  role="group"
+                  aria-labelledby="appearance-mode-label"
+                >
+                  <button
+                    type="button"
+                    class="appearance-mode-btn tap-target"
+                    role="radio"
+                    aria-checked="false"
+                    aria-pressed="false"
+                    aria-label="Light mode"
+                    data-settings-target="appearanceLight"
+                    data-action="click->appearance#setLight"
+                  >
+                    <i data-lucide="sun" aria-hidden="true"></i>
+                    Light
+                  </button>
+                  <button
+                    type="button"
+                    class="appearance-mode-btn tap-target"
+                    role="radio"
+                    aria-checked="false"
+                    aria-pressed="false"
+                    aria-label="Dark mode"
+                    data-settings-target="appearanceDark"
+                    data-action="click->appearance#setDark"
+                  >
+                    <i data-lucide="moon" aria-hidden="true"></i>
+                    Dark
+                  </button>
+                  <button
+                    type="button"
+                    class="appearance-mode-btn tap-target"
+                    role="radio"
+                    aria-checked="true"
+                    aria-pressed="true"
+                    aria-label="Auto mode — follow system"
+                    data-settings-target="appearanceAuto"
+                    data-action="click->appearance#setAuto"
+                  >
+                    <i data-lucide="monitor" aria-hidden="true"></i>
+                    Auto
+                  </button>
+                </div>
+              </div>
+
+              <!-- Text size -->
+              <div class="settings-row">
+                <div>
+                  <p class="settings-row__label" id="text-size-label">Text Size</p>
+                  <p class="settings-row__description">Scales all text proportionally (Dynamic Type).</p>
+                </div>
+                <label class="jin-range" for="text-size-range">
+                  <span class="visually-hidden">Text size scale</span>
+                  <input
+                    id="text-size-range"
+                    type="range"
+                    min="0.82"
+                    max="3.1"
+                    step="0.01"
+                    aria-label="Text size scale"
+                    aria-labelledby="text-size-label"
+                    data-settings-target="textSizeRange"
+                    data-action="input->appearance#setTextSize"
+                  />
+                </label>
+              </div>
+
+              <!-- Reduce transparency -->
+              <div class="settings-row">
+                <div>
+                  <p class="settings-row__label" id="reduce-transparency-label">
+                    Reduce Transparency
+                  </p>
+                  <p class="settings-row__description">
+                    Replaces glass/blur effects with solid backgrounds.
+                  </p>
+                </div>
+                <label class="jin-switch" for="reduce-transparency-toggle">
+                  <input
+                    id="reduce-transparency-toggle"
+                    type="checkbox"
+                    role="switch"
+                    aria-label="Reduce transparency"
+                    aria-labelledby="reduce-transparency-label"
+                    data-settings-target="reduceTransparencyToggle"
+                    data-action="change->appearance#toggleReduceTransparency"
+                  />
+                  <span class="jin-switch__track" aria-hidden="true"></span>
+                </label>
+              </div>
+
+              <!-- Increase contrast -->
+              <div class="settings-row">
+                <div>
+                  <p class="settings-row__label" id="increase-contrast-label">
+                    Increase Contrast
+                  </p>
+                  <p class="settings-row__description">
+                    Makes separators and secondary labels more prominent.
+                  </p>
+                </div>
+                <label class="jin-switch" for="increase-contrast-toggle">
+                  <input
+                    id="increase-contrast-toggle"
+                    type="checkbox"
+                    role="switch"
+                    aria-label="Increase contrast"
+                    aria-labelledby="increase-contrast-label"
+                    data-settings-target="increaseContrastToggle"
+                    data-action="change->appearance#toggleIncreaseContrast"
+                  />
+                  <span class="jin-switch__track" aria-hidden="true"></span>
+                </label>
+              </div>
+
+              <!-- Reduce motion -->
+              <div class="settings-row">
+                <div>
+                  <p class="settings-row__label" id="reduce-motion-label">Reduce Motion</p>
+                  <p class="settings-row__description">
+                    Disables animations and transitions throughout the app.
+                  </p>
+                </div>
+                <label class="jin-switch" for="reduce-motion-toggle">
+                  <input
+                    id="reduce-motion-toggle"
+                    type="checkbox"
+                    role="switch"
+                    aria-label="Reduce motion"
+                    aria-labelledby="reduce-motion-label"
+                    data-settings-target="reduceMotionToggle"
+                    data-action="change->appearance#toggleReduceMotion"
+                  />
+                  <span class="jin-switch__track" aria-hidden="true"></span>
+                </label>
+              </div>
+            </section>
+
+              </section>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!--
+        ── <template> elements ────────────────────────────────────────────────────
+        These are NOT rendered; controllers clone them for dynamic content.
+        Must be outside the controller sections so they persist across
+        controller reconnects and are accessible via getElementById.
+      -->
+
+      <!--
+        tmpl-event-row — shell for a single agenda event row (GUI-S3 TodayController).
+        Cloned once per event; populated by render.ts buildEventRow().
+        Root element: <li class="today-event-row">.
+      -->
+      <template id="tmpl-event-row">
+        <li class="today-event-row">
+          <!-- Time column -->
+          <div class="today-event-row__time">
+            <span
+              class="today-event-row__display-start text-subheadline"
+              aria-label=""
+            ></span>
+          </div>
+
+          <!-- Body column -->
+          <div class="today-event-row__body">
+            <!-- Header: title + source badge + recurring flag -->
+            <div class="today-event-row__header">
+              <span class="today-event-row__title text-headline"></span>
+
+              <!--
+                Source badge: text label (primary) + icon (supplementary).
+                Color is applied via data-source="jin|google" — never the sole identifier.
+                aria-label is set dynamically: "Source: Jin" / "Source: Google".
+              -->
+              <span
+                class="today-event-row__source-badge jin-badge"
+                role="img"
+                aria-label=""
+              >
+                <i class="today-event-row__source-icon" aria-hidden="true"></i>
+                <span class="today-event-row__source-label"></span>
+              </span>
+
+              <!--
+                Recurring badge — hidden by default; shown for recurrence_unexpanded events.
+                Text label "Recurring" + icon ensures color-independence.
+              -->
+              <span
+                class="today-event-row__recurring-badge jin-badge hidden"
+                aria-label="Recurring event (not expanded)"
+              >
+                <i data-lucide="repeat" aria-hidden="true"></i>
+                <span>Recurring</span>
+              </span>
+            </div>
+
+            <!--
+              Originating task — hidden by default.
+              Shown (class "hidden" removed) when originating_task is non-null.
+              data-task-id and aria-label set dynamically.
+            -->
+            <div class="today-event-row__task hidden">
+              <i data-lucide="check-square" aria-hidden="true"></i>
+              <a
+                href="#tasks"
+                class="today-event-row__task-link tap-target"
+                data-task-id=""
+                aria-label=""
+              >
+                <span class="today-event-row__task-title text-callout"></span>
+                <span class="today-event-row__task-id text-caption1 color-secondary"></span>
+              </a>
+            </div>
+
+            <!--
+              Prep notes — hidden by default.
+              Shown (class "hidden" removed) when prep_notes is non-empty.
+              Note items are appended into notes-list via tmpl-prep-note.
+            -->
+            <div class="today-event-row__notes hidden">
+              <i data-lucide="file-text" aria-hidden="true"></i>
+              <span class="today-event-row__notes-label text-caption1 color-secondary">
+                Prep notes:
+              </span>
+              <ul
+                class="today-event-row__notes-list"
+                role="list"
+                aria-label="Prep notes for this event"
+              ></ul>
+            </div>
+          </div>
+        </li>
+      </template>
+
+      <!--
+        tmpl-prep-note — shell for a single prep-note link inside an event row.
+        Cloned once per prep_note; appended to .today-event-row__notes-list.
+        Root element: <li class="today-prep-note">.
+      -->
+      <template id="tmpl-prep-note">
+        <li class="today-prep-note">
+          <a
+            href="#notes"
+            class="today-prep-note__link tap-target"
+            data-note-id=""
+            aria-label=""
+          >
+            <span class="today-prep-note__title text-subheadline"></span>
+            <span class="today-prep-note__id text-caption2 color-secondary"></span>
+          </a>
+        </li>
+      </template>
+
+      <!--
+        tmpl-note-row — shell for a single note list row (GUI-S4 NotesController).
+        Cloned once per note; populated by notes/render.ts buildNoteRow().
+        Root element: <li class="browse-row">.
+
+        Fields populated dynamically:
+          .browse-row__inner     — data-note-id, aria-label, click handler
+          .browse-row__title     — note title (header line, bold)
+          .note-row__date        — formatted updated date (#2c: preview line, first)
+          .note-row__snippet     — excerpt text (#2c: preview line, after date)
+          .note-row__status      — aria-label; hidden for active notes (#3)
+          .note-row__status-icon — data-lucide="archive|file" (non-active only)
+          .note-row__status-label — text ("Archived" | ...) (non-active only)
+          .note-row__tags        — "#tag1 #tag2" or empty
+      -->
+      <template id="tmpl-note-row">
+        <li class="browse-row note-row">
+          <button type="button" class="browse-row__inner jin-list-row tap-target" aria-label="">
+            <div class="note-row__header">
+              <span class="browse-row__title text-headline"></span>
+            </div>
+            <div class="note-row__preview">
+              <span class="note-row__date text-caption1"></span>
+              <span class="note-row__snippet text-subheadline"></span>
+            </div>
+            <div class="browse-row__meta">
+              <span class="browse-status-badge note-row__status jin-badge" role="img" aria-label="">
+                <i class="note-row__status-icon" aria-hidden="true"></i>
+                <span class="note-row__status-label"></span>
+              </span>
+              <span class="note-row__tags text-caption1" aria-label=""></span>
+            </div>
+          </button>
+        </li>
+      </template>
+
+      <!--
+        tmpl-task-item — the ONE task-item shell, shared by List row AND Board
+        card (S2: TasksController, lib/tasks/item.ts buildTaskItem()).
+        Cloned once per task; the builder adds a `.task-item--row` or
+        `.task-item--card` modifier class to the root — CSS does the layout,
+        the DOM and the callback wiring are otherwise identical (AC-S2-02).
+        Root element: <li class="task-item">.
+
+        Structure (identical in both variants):
+          .task-item__drag-handle   — grip icon, DnD affordance
+          .task-item__status-btn   — standalone button; click to toggle status
+            .task-item__status-icon  — data-lucide glyph (circle / check-circle / etc.)
+          .task-item__status-badge — aria-label, data-task-status (color cue)
+            .task-item__status-label — "To Do" | "In Progress" | "Done" | "Cancelled"
+          .task-item__content      — layout region; never itself interactive
+            .task-item__body         — primary button; data-task-id, aria-label; click selects/navigates
+              .task-item__title        — task title
+              .task-item__subtask-progress — "N/M" progress slot (populated in S6)
+            .task-item__meta         — due chip group (inserted) + tags
+              .task-item__tags         — tag chips container
+          .task-item__priority     — aria-label, data-priority (CSS tinting for Flag glyph)
+            .task-item__priority-icon  — data-lucide="flag" or hidden for none
+            .task-item__priority-label — "High" | "Medium" | "Low" | "None"
+          .task-item__actions      — hover-revealed action cluster
+            .task-item__delete-btn   — trash; opens delete confirm dialog
+            (S3: the pencil/edit button is RETIRED — selecting the item, via
+            .task-item__body, opens the ONE detail pane instead — AC-S3-04.)
+          .task-item__reopen-btn   — S4: appended (not templated) ONLY for a
+            `done` board CARD — the FSM's one legal way back (done -> todo),
+            always visible (not hover-gated), never rendered for the row
+            variant or for any other status (AC-S4-06).
+
+        Status is shown by glyph AND text label (never color-only — WCAG 1.4.1).
+      -->
+      <template id="tmpl-task-item">
+        <li class="task-item">
+          <span class="task-item__drag-handle" aria-hidden="true">
+            <i data-lucide="grip-vertical" aria-hidden="true"></i>
+          </span>
+          <button
+            type="button"
+            class="task-item__status-btn task-item__checkbox jin-check tap-target"
+            role="checkbox"
+            aria-checked="false"
+            aria-label="Toggle task status"
+          >
+            <i class="task-item__status-icon" aria-hidden="true"></i>
+          </button>
+          <span class="browse-status-badge task-item__status-badge jin-badge" role="img" aria-label="">
+            <span class="task-item__status-label"></span>
+          </span>
+          <div class="task-item__content">
+            <button type="button" class="task-item__body tap-target" aria-label="">
+              <span class="task-item__title"></span>
+              <span class="task-item__subtask-progress" aria-hidden="true"></span>
+            </button>
+            <span class="task-item__meta">
+              <span class="task-item__tags"></span>
+            </span>
+          </div>
+          <span class="browse-status-badge task-item__priority jin-badge" role="img" aria-label="">
+            <i class="task-item__priority-icon" aria-hidden="true"></i>
+            <span class="task-item__priority-label"></span>
+          </span>
+          <div class="task-item__actions" aria-hidden="true">
+            <button type="button" class="task-item__delete-btn jin-control jin-control--icon tap-target" aria-label="Delete task">
+              <i data-lucide="trash-2" aria-hidden="true"></i>
+            </button>
+          </div>
+        </li>
+      </template>
+
+      <!--
+        tmpl-event-browse-row — shell for a single event browse row (GUI-S4 EventsController).
+        Cloned once per event; populated by events/render.ts buildEventBrowseRow().
+        Root element: <li class="browse-row">.
+
+        Fields populated dynamically:
+          .browse-row__inner                — data-event-id, aria-label, click handler
+          .event-browse-row__time           — "HH:MM – HH:MM" | "all-day"
+          .browse-row__title                — event title
+          .event-browse-row__source-badge   — aria-label, data-source (color cue)
+          .event-browse-row__source-icon    — data-lucide="database|cloud|circle"
+          .event-browse-row__source-label   — "Jin" | "Google" | ...
+
+        Source badge carries text label (never color-only — WCAG 1.4.1).
+      -->
+      <template id="tmpl-event-browse-row">
+        <li class="browse-row">
+          <button type="button" class="browse-row__inner tap-target" aria-label="">
+            <span class="event-browse-row__time text-subheadline" aria-label=""></span>
+            <span class="browse-row__title text-headline"></span>
+            <div class="browse-row__meta">
+              <span class="event-browse-row__source-badge jin-badge" role="img" aria-label="">
+                <i class="event-browse-row__source-icon" aria-hidden="true"></i>
+                <span class="event-browse-row__source-label"></span>
+              </span>
+            </div>
+          </button>
+        </li>
+      </template>
+
+      <!--
+        tmpl-backlink-row — shared shell for link / backlink items in detail panels.
+        Used by Notes, Tasks, and Events controllers for cross-object navigation.
+        Root element: <li class="browse-link-row">.
+
+        Fields populated dynamically:
+          .browse-link-row__btn   — data-link-id, data-link-kind, aria-label, click handler
+          .browse-link-row__label — display label (backlink.label || source_id)
+          .browse-link-row__id    — source_id (monospace caption)
+      -->
+      <template id="tmpl-backlink-row">
+        <li class="browse-link-row">
+          <button type="button" class="browse-link-row__btn tap-target" aria-label="">
+            <span class="browse-link-row__label text-callout"></span>
+            <span class="browse-link-row__id text-caption2 color-secondary"></span>
+          </button>
+        </li>
+      </template>
+
+      <!--
+        ── P7 — Calendar widget template ──────────────────────────────────────
+        Cloned by CalendarController on connect.
+        Structure: header (prev-year · prev-month · live region · next-month · next-year)
+                   weekday row (Su…Sa with full names in title attrs)
+                   role="grid" 6×7 of role="gridcell" day buttons
+                   footer (Today · Clear)
+        Must be outside controller sections so it persists across reconnects.
+      -->
+      <template id="tmpl-calendar">
+        <div class="calendar-widget">
+          <div class="calendar-widget__header">
+            <button
+              type="button"
+              class="calendar-widget__year-prev"
+              aria-label="Previous year"
+            >
+              <i data-lucide="chevron-left" aria-hidden="true"></i><i data-lucide="chevron-left" aria-hidden="true"></i>
+            </button>
+            <button
+              type="button"
+              class="calendar-widget__month-prev"
+              aria-label="Previous month"
+            >
+              <i data-lucide="chevron-left" aria-hidden="true"></i>
+            </button>
+            <span
+              class="calendar-widget__month-label"
+              aria-live="polite"
+              aria-atomic="true"
+            ></span>
+            <button
+              type="button"
+              class="calendar-widget__month-next"
+              aria-label="Next month"
+            >
+              <i data-lucide="chevron-right" aria-hidden="true"></i>
+            </button>
+            <button
+              type="button"
+              class="calendar-widget__year-next"
+              aria-label="Next year"
+            >
+              <i data-lucide="chevron-right" aria-hidden="true"></i><i data-lucide="chevron-right" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <div class="calendar-widget__weekdays" role="row" aria-hidden="true">
+            <abbr class="calendar-widget__weekday" title="Sunday">Su</abbr>
+            <abbr class="calendar-widget__weekday" title="Monday">Mo</abbr>
+            <abbr class="calendar-widget__weekday" title="Tuesday">Tu</abbr>
+            <abbr class="calendar-widget__weekday" title="Wednesday">We</abbr>
+            <abbr class="calendar-widget__weekday" title="Thursday">Th</abbr>
+            <abbr class="calendar-widget__weekday" title="Friday">Fr</abbr>
+            <abbr class="calendar-widget__weekday" title="Saturday">Sa</abbr>
+          </div>
+
+          <div
+            class="calendar-widget__grid"
+            role="grid"
+            aria-label="Choose a date"
+          ></div>
+
+          <div class="calendar-widget__footer">
+            <button type="button" class="calendar-widget__today-btn">Today</button>
+            <button type="button" class="calendar-widget__clear-btn">Clear</button>
+            <button type="button" class="calendar-widget__commit-btn" hidden>Use dates</button>
+          </div>
+        </div>
+      </template>
+
+      <!--
+        ── P8 — Due date picker dialog ────────────────────────────────────────
+        Shared temporal editor for every task due-date flow. CalendarController
+        remains the sole owner of the calendar grid; TemporalEditorController
+        owns the draft date/time lifecycle and explicit commit/cancel boundary.
+
+        Contains:
+          - CalendarController widget (renders the month grid)
+          - Optional time input (for date+time due → RFC-3339)
+          - Set Date / Cancel footer actions
+
+        calendar:selected updates the draft only. Set Date persists; Clear then
+        Set Date persists an explicit clear; Cancel, X, and Escape never mutate.
+      -->
+      <dialog
+        id="jin-due-date-dialog"
+        class="action-dialog calendar-dialog"
+        aria-label="Set due date"
+        aria-modal="true"
+        data-capture-target="dueDateDialog"
+        data-controller="temporal-editor"
+        data-action="calendar:selected->temporal-editor#select calendar:cancel->temporal-editor#cancelDraft cancel->temporal-editor#cancelDraft click->temporal-editor#backdrop"
+      >
+        <div class="action-dialog__inner">
+          <div class="action-dialog__header">
+            <h2 class="action-dialog__title" data-temporal-editor-target="title">Set Due Date</h2>
+            <button
+              type="button"
+              class="modal-close-btn tap-target"
+              aria-label="Close"
+              id="jin-due-date-close"
+              data-action="click->temporal-editor#cancelDraft"
+            >
+              <i data-lucide="x" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <div class="calendar-dialog__body">
+            <div class="form-group">
+              <label class="form-label" for="jin-due-natural" data-temporal-editor-target="naturalLabel">Date and time</label>
+              <div class="event-when__quick-row">
+                <input
+                  id="jin-due-natural"
+                  type="text"
+                  class="form-input event-when__natural"
+                  autocomplete="off"
+                  aria-describedby="jin-due-natural-preview jin-due-summary"
+                  data-temporal-editor-target="natural"
+                  data-action="input->temporal-editor#naturalChanged keydown.enter->temporal-editor#applyNatural"
+                />
+                <button
+                  type="button"
+                  class="btn-secondary event-when__use"
+                  data-temporal-editor-target="naturalUse"
+                  data-action="click->temporal-editor#applyNatural"
+                >Use</button>
+              </div>
+              <p
+                id="jin-due-natural-preview"
+                class="event-when__preview"
+                aria-live="polite"
+                data-temporal-editor-target="naturalPreview"
+              ></p>
+            </div>
+
+            <!-- CalendarController renders the month grid into this element -->
+            <div
+              id="jin-calendar-widget"
+              data-controller="calendar"
+              data-calendar-mode-value="single"
+              data-temporal-editor-target="calendar"
+            ></div>
+
+            <div class="calendar-dialog__time-row form-group">
+              <label class="form-label" for="jin-due-time">
+                <i data-lucide="clock" aria-hidden="true"></i>
+                <span data-temporal-editor-target="timeLabel">Time (optional)</span>
+              </label>
+              <input
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="09:00"
+                id="jin-due-time"
+                class="form-input"
+                aria-label="Due time (optional)"
+                aria-describedby="jin-due-summary jin-due-validation"
+                data-temporal-editor-target="time"
+                data-action="change->temporal-editor#timeChanged input->temporal-editor#timeChanged blur->temporal-editor#normalizeTime"
+              />
+            </div>
+            <p
+              id="jin-due-summary"
+              class="calendar-dialog__summary"
+              aria-live="polite"
+              data-temporal-editor-target="summary"
+            >No due date selected</p>
+            <p
+              id="jin-due-validation"
+              class="form-error hidden"
+              role="alert"
+              data-temporal-editor-target="error"
+            ></p>
+          </div>
+
+          <div class="action-dialog__footer">
+            <button
+              type="button"
+              class="btn-secondary"
+              id="jin-due-date-cancel"
+              data-action="click->temporal-editor#cancelDraft"
+            >Cancel</button>
+            <button
+              type="button"
+              class="btn-primary"
+              id="jin-due-date-confirm"
+              data-temporal-editor-target="confirm"
+              data-action="click->temporal-editor#confirm"
+            >Set Date</button>
+          </div>
+        </div>
+      </dialog>
+
+      <!--
+        ── GUI-S4 — Capture / Create modal dialog ─────────────────────────────
+        Managed by CaptureController (data-controller="capture" on .jin-shell).
+        Opened by the sidebar "+ Capture" button (data-action="click->capture#open").
+        Contains 4 tabbed forms: quick capture, create note, create task, create event.
+      -->
+      <dialog
+        id="jin-capture-modal"
+        class="capture-modal"
+        aria-label="Capture or create"
+        data-capture-target="modal"
+        aria-modal="true"
+      >
+        <div class="capture-modal__inner">
+          <!-- Header -->
+          <div class="capture-modal__header">
+            <div>
+              <h2 class="capture-modal__title" id="capture-modal-title" data-capture-target="modeTitle">Quick capture</h2>
+              <p class="capture-modal__subtitle" data-capture-target="modeSubtitle">Get the thought down now. You can shape it later.</p>
+            </div>
+            <button
+              type="button"
+              class="modal-close-btn tap-target"
+              aria-label="Close"
+              data-action="click->capture#close"
+            >
+              <i data-lucide="x" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <!-- Tab bar -->
+          <div
+            class="capture-modal__tabs"
+            role="tablist"
+            aria-label="Create type"
+          >
+            <button
+              type="button"
+              class="capture-modal__tab"
+              id="capture-tab-capture"
+              role="tab"
+              aria-selected="true"
+              aria-controls="capture-form-capture"
+              data-capture-target="tabCapture"
+              data-action="click->capture#selectCapture keydown->capture#tabKeydown"
+            ><i data-lucide="plus" aria-hidden="true"></i><span><strong>Quick</strong><small>Anything</small></span></button>
+            <button
+              type="button"
+              class="capture-modal__tab"
+              id="capture-tab-note"
+              role="tab"
+              aria-selected="false"
+              aria-controls="capture-form-note"
+              data-capture-target="tabNote"
+              tabindex="-1"
+              data-action="click->capture#selectNote keydown->capture#tabKeydown"
+            ><i data-lucide="square-pen" aria-hidden="true"></i><span><strong>Note</strong><small>Think</small></span></button>
+            <button
+              type="button"
+              class="capture-modal__tab"
+              id="capture-tab-task"
+              role="tab"
+              aria-selected="false"
+              aria-controls="capture-form-task"
+              data-capture-target="tabTask"
+              tabindex="-1"
+              data-action="click->capture#selectTask keydown->capture#tabKeydown"
+            ><i data-lucide="check-circle" aria-hidden="true"></i><span><strong>Task</strong><small>Act</small></span></button>
+            <button
+              type="button"
+              class="capture-modal__tab"
+              id="capture-tab-event"
+              role="tab"
+              aria-selected="false"
+              aria-controls="capture-form-event"
+              data-capture-target="tabEvent"
+              tabindex="-1"
+              data-action="click->capture#selectEvent keydown->capture#tabKeydown"
+            ><i data-lucide="calendar-days" aria-hidden="true"></i><span><strong>Event</strong><small>Schedule</small></span></button>
+          </div>
+
+          <!-- Quick capture form -->
+          <div
+            id="capture-form-capture"
+            class="capture-modal__form"
+            role="tabpanel"
+            aria-labelledby="capture-tab-capture"
+            data-capture-target="formCapture"
+          >
+            <div class="form-group capture-hero-field">
+              <label class="form-label" for="capture-text">What do you want to remember?</label>
+              <textarea
+                id="capture-text"
+                class="form-textarea"
+                rows="3"
+                placeholder="Type a note or task…"
+                aria-required="true"
+                data-capture-target="captureText"
+              ></textarea>
+            </div>
+
+            <div class="capture-meta-row">
+            <div class="form-group">
+              <label class="form-label jin-checkbox">
+                <input
+                  type="checkbox"
+                  data-capture-target="captureAsTask"
+                  aria-label="Create as task instead of note"
+                />
+                <span class="jin-checkbox__mark" aria-hidden="true"></span>
+                <span>Save as task</span>
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="capture-list">List</label>
+              <!-- S6: id-valued select (populated by CaptureController#populateCaptureListSelects).
+                   Static Inbox option is the safe fallback if the API call has not resolved yet. -->
+              <select
+                id="capture-list"
+                class="form-select"
+                data-capture-target="captureList"
+              >
+                <option value="inbox">Inbox</option>
+              </select>
+            </div>
+            </div>
+
+            <p
+              class="form-error hidden"
+              aria-live="polite"
+              data-form-error
+              data-capture-target="captureError"
+            ></p>
+
+            <div class="form-actions">
+              <button
+                type="button"
+                class="btn-secondary"
+                aria-label="Cancel"
+                data-action="click->capture#close"
+              >Cancel</button>
+              <button
+                type="button"
+                class="btn-primary"
+                aria-label="Capture"
+                data-capture-target="captureSubmit"
+                data-action="click->capture#submitCapture"
+              >Capture</button>
+            </div>
+          </div>
+
+          <!-- Note create form -->
+          <div
+            id="capture-form-note"
+            class="capture-modal__form hidden"
+            role="tabpanel"
+            aria-labelledby="capture-tab-note"
+            data-capture-target="formNote"
+          >
+            <div class="form-group">
+              <label class="form-label" id="capture-note-editor-label">Note</label>
+              <div class="capture-note-editor" role="group" aria-labelledby="capture-note-editor-label" data-capture-target="noteEditor"></div>
+              <p class="capture-field-hint">First line becomes the title · Markdown supported</p>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="note-tags">Tags</label>
+              <input
+                id="note-tags"
+                type="text"
+                class="form-input"
+                placeholder="Type a tag, then press Enter"
+                aria-label="Add tag"
+                data-capture-target="noteTags"
+              />
+            </div>
+
+            <p
+              class="form-error hidden"
+              aria-live="polite"
+              data-form-error
+              data-capture-target="noteError"
+            ></p>
+
+            <div class="form-actions">
+              <button
+                type="button"
+                class="btn-secondary"
+                aria-label="Cancel"
+                data-action="click->capture#close"
+              >Cancel</button>
+              <button
+                type="button"
+                class="btn-primary"
+                aria-label="Create note"
+                data-capture-target="noteSubmit"
+                data-action="click->capture#submitNote"
+              >Create Note</button>
+            </div>
+          </div>
+
+          <!-- Task create form -->
+          <div
+            id="capture-form-task"
+            class="capture-modal__form hidden"
+            role="tabpanel"
+            aria-labelledby="capture-tab-task"
+            data-capture-target="formTask"
+          >
+            <div class="capture-task-composer">
+              <span class="capture-task-composer__check" aria-hidden="true"></span>
+              <div class="form-group">
+                <label class="sr-only" for="task-title">Task title</label>
+                <input
+                  id="task-title"
+                  type="text"
+                  class="capture-task-composer__input"
+                  placeholder="What needs doing?"
+                  aria-required="true"
+                  data-capture-target="taskTitle"
+                  data-action="keydown.enter->capture#submitTask"
+                />
+              </div>
+            </div>
+
+            <div class="capture-task-options">
+            <div class="form-group capture-option-field">
+              <label class="form-label" for="task-priority">Priority</label>
+              <select
+                id="task-priority"
+                class="form-select"
+                data-capture-target="taskPriority"
+              >
+                <option value="">None</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+
+            <div class="form-group capture-option-field">
+              <label class="form-label">Due</label>
+              <!-- Hidden value holder — capture controller reads/writes this -->
+              <input
+                type="hidden"
+                data-capture-target="taskDue"
+                aria-hidden="true"
+              />
+              <!-- Calendar trigger button (P8 — replaces native input type="date") -->
+              <button
+                type="button"
+                class="due-picker-trigger"
+                aria-label="Pick due date"
+                data-capture-target="taskDueTrigger"
+                data-action="click->capture#openDuePicker"
+              >
+                <i data-lucide="calendar-days" aria-hidden="true"></i>
+                <span class="due-picker-trigger__label" data-capture-target="taskDueLabel">No due date</span>
+              </button>
+            </div>
+
+            <div class="form-group capture-option-field">
+              <label class="form-label" for="task-list">List</label>
+              <!-- S6: id-valued select (populated by CaptureController#populateCaptureListSelects). -->
+              <select
+                id="task-list"
+                class="form-select"
+                data-capture-target="taskList"
+              >
+                <option value="inbox">Inbox</option>
+              </select>
+            </div>
+            </div>
+
+            <p
+              class="form-error hidden"
+              aria-live="polite"
+              data-form-error
+              data-capture-target="taskError"
+            ></p>
+
+            <div class="form-actions">
+              <button
+                type="button"
+                class="btn-secondary"
+                aria-label="Cancel"
+                data-action="click->capture#close"
+              >Cancel</button>
+              <button
+                type="button"
+                class="btn-primary"
+                aria-label="Create task"
+                data-capture-target="taskSubmit"
+                data-action="click->capture#submitTask"
+              >Create Task</button>
+            </div>
+          </div>
+
+          <!-- Event create form -->
+          <div
+            id="capture-form-event"
+            class="capture-modal__form hidden"
+            role="tabpanel"
+            aria-labelledby="capture-tab-event"
+            data-capture-target="formEvent"
+          >
+            <div class="form-group capture-hero-field">
+              <label class="form-label" for="capture-event-title">
+                Title <span aria-hidden="true">*</span>
+              </label>
+              <input
+                id="capture-event-title"
+                type="text"
+                class="form-input"
+                placeholder="What’s happening?"
+                aria-required="true"
+                data-capture-target="eventTitle"
+              />
+            </div>
+
+            <div class="form-group capture-event-when-field">
+              <label class="form-label" id="capture-event-when-label">When <span aria-hidden="true">*</span></label>
+              <input id="capture-event-when" type="hidden" data-capture-target="eventWhen" />
+              <button
+                type="button"
+                class="due-picker-trigger capture-event-when-trigger"
+                aria-labelledby="capture-event-when-label capture-event-when-value"
+                aria-haspopup="dialog"
+                aria-controls="jin-due-date-dialog"
+                data-capture-target="eventWhenTrigger"
+                data-action="click->capture#openEventWhenPicker"
+              >
+                <i data-lucide="calendar-days" aria-hidden="true"></i>
+                <span id="capture-event-when-value" class="due-picker-trigger__label" data-capture-target="eventWhenLabel">Choose date and time</span>
+                <i data-lucide="chevron-right" aria-hidden="true"></i>
+              </button>
+            </div>
+
+            <div class="capture-event-meta">
+            <div class="form-group capture-event-meta__field">
+              <label class="form-label" for="capture-event-location">Location</label>
+              <div class="capture-icon-field">
+                <i data-lucide="map-pin" aria-hidden="true"></i>
+                <input id="capture-event-location" type="text" class="form-input" placeholder="Add location" data-capture-target="eventLocation" />
+              </div>
+            </div>
+
+            <div class="form-group capture-event-meta__field">
+              <label class="form-label" for="capture-event-destination">Calendar</label>
+              <select
+                id="capture-event-destination"
+                class="form-select"
+                data-capture-target="eventDestination"
+                aria-describedby="capture-event-destination-help"
+                aria-required="true"
+                required
+              ></select>
+              <p id="capture-event-destination-help" class="capture-field-hint">
+                Save in Jin or a connected calendar
+              </p>
+            </div>
+            </div>
+
+            <p
+              id="capture-event-error"
+              class="form-error hidden"
+              aria-live="polite"
+              data-form-error
+              data-capture-target="eventError"
+            ></p>
+
+            <div class="form-actions">
+              <button
+                type="button"
+                class="btn-secondary"
+                aria-label="Cancel"
+                data-action="click->capture#close"
+              >Cancel</button>
+              <button
+                type="button"
+                class="btn-primary"
+                aria-label="Create event"
+                data-capture-target="eventSubmit"
+                data-action="click->capture#submitEvent"
+              >Create Event</button>
+            </div>
+          </div>
+        </div>
+      </dialog>
+
+      <!--
+        S3: the row pencil / title+body+due edit modal is RETIRED (AC-S3-04).
+        Selecting a task item opens the ONE detail pane instead (Approach §2)
+        — see `.tasks-detail-pane` above and `lib/tasks/render.ts#renderTaskPane`.
+      -->
+
+      <!--
+        ── GUI-S4 — Promote task → event dialog ───────────────────────────────
+        Managed by ActionsController. Opened by jin:open-promote events from
+        TasksController when the user clicks "Promote to Event" in task detail.
+      -->
+      <dialog
+        id="jin-promote-dialog"
+        class="action-dialog"
+        aria-label="Promote task to event"
+        data-actions-target="promoteDialog"
+        aria-modal="true"
+      >
+        <div class="action-dialog__inner">
+          <div class="action-dialog__header">
+            <h2 class="action-dialog__title">Promote to Event</h2>
+            <button
+              type="button"
+              class="modal-close-btn tap-target"
+              aria-label="Close"
+              data-action="click->actions#closePromote"
+            >
+              <i data-lucide="x" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <div class="action-dialog__form">
+            <div class="form-group">
+              <label class="form-label" for="promote-when">
+                When <span aria-hidden="true">*</span>
+              </label>
+              <input
+                id="promote-when"
+                type="datetime-local"
+                class="form-input"
+                aria-required="true"
+                data-actions-target="promoteWhen"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="promote-tzid">Timezone (IANA, optional)</label>
+              <input
+                id="promote-tzid"
+                type="text"
+                class="form-input"
+                placeholder="e.g. America/New_York"
+                data-actions-target="promoteTzid"
+              />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="promote-destination">Calendar</label>
+              <select
+                id="promote-destination"
+                class="form-input"
+                data-actions-target="promoteDestination"
+                aria-describedby="promote-destination-help"
+              ></select>
+              <p id="promote-destination-help" class="text-footnote color-secondary">
+                Provider-backed promotion needs an exact account and calendar; Jin never guesses across accounts.
+              </p>
+            </div>
+
+            <p
+              class="form-error hidden"
+              aria-live="polite"
+              data-form-error
+              data-actions-target="promoteError"
+            ></p>
+
+            <div class="form-actions">
+              <button
+                type="button"
+                class="btn-secondary"
+                aria-label="Cancel"
+                data-action="click->actions#closePromote"
+              >Cancel</button>
+              <button
+                type="button"
+                class="btn-primary"
+                aria-label="Promote to event"
+                data-actions-target="promoteSubmit"
+                data-action="click->actions#submitPromote"
+              >Promote</button>
+            </div>
+          </div>
+        </div>
+      </dialog>
+
+      <!--
+        ── GUI-S4 — Attach note → target dialog ───────────────────────────────
+        Managed by ActionsController. Opened by jin:open-attach events from
+        Notes/EventsController when the user clicks "Attach" in note/event detail.
+        Default edge kind: prep-for for events (core default), user can override.
+      -->
+      <dialog
+        id="jin-attach-dialog"
+        class="action-dialog"
+        aria-label="Attach note to target"
+        data-actions-target="attachDialog"
+        aria-modal="true"
+      >
+        <div class="action-dialog__inner">
+          <div class="action-dialog__header">
+            <h2 class="action-dialog__title">Attach Note</h2>
+            <button
+              type="button"
+              class="modal-close-btn tap-target"
+              aria-label="Close"
+              data-action="click->actions#closeAttach"
+            >
+              <i data-lucide="x" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <div class="action-dialog__form">
+            <div class="form-group actions-context-search hidden" data-actions-target="attachContextGroup">
+              <label class="form-label" for="attach-context-title">Note title</label>
+              <input id="attach-context-title" type="search" class="form-input"
+                placeholder="Search by title" autocomplete="off" list="attach-context-options"
+                data-actions-target="attachContextSearch" />
+              <datalist id="attach-context-options" data-actions-target="attachContextOptions"></datalist>
+            </div>
+            <div class="form-group" data-actions-target="attachLegacyGroup">
+              <label class="form-label" for="attach-note-id">
+                Note ID <span aria-hidden="true">*</span>
+              </label>
+              <input
+                id="attach-note-id"
+                type="text"
+                class="form-input"
+                placeholder="note-…"
+                aria-required="true"
+                data-actions-target="attachNoteId"
+              />
+            </div>
+
+            <div class="form-group" data-actions-target="attachLegacyGroup">
+              <label class="form-label" for="attach-target-id">
+                Target ID (event or task) <span aria-hidden="true">*</span>
+              </label>
+              <input
+                id="attach-target-id"
+                type="text"
+                class="form-input"
+                placeholder="event-… or task-…"
+                aria-required="true"
+                data-actions-target="attachTargetId"
+              />
+            </div>
+
+            <div class="form-group" data-actions-target="attachLegacyGroup">
+              <label class="form-label" for="attach-kind">
+                Edge kind (optional — default: prep-for for events)
+              </label>
+              <select
+                id="attach-kind"
+                class="form-select"
+                data-actions-target="attachKind"
+              >
+                <option value="">Default (prep-for)</option>
+                <option value="prep-for">prep-for</option>
+                <option value="references">references</option>
+              </select>
+            </div>
+
+            <p
+              class="form-error hidden"
+              aria-live="polite"
+              data-form-error
+              data-actions-target="attachError"
+            ></p>
+
+            <div class="form-actions">
+              <button
+                type="button"
+                class="btn-secondary"
+                aria-label="Cancel"
+                data-action="click->actions#closeAttach"
+              >Cancel</button>
+              <button
+                type="button"
+                class="btn-primary"
+                aria-label="Attach note"
+                data-actions-target="attachSubmit"
+                data-action="click->actions#submitAttach"
+              >Attach</button>
+            </div>
+          </div>
+        </div>
+      </dialog>
+
+      <!--
+        ── GUI-S4 — Link (typed edge) dialog ─────────────────────────────────
+        Managed by ActionsController. Opened by jin:open-link events.
+        Edge type is constrained to the three-value vocabulary (derived-from,
+        prep-for, references); the select pre-filters; core enforces definitively.
+      -->
+      <dialog
+        id="jin-link-dialog"
+        class="action-dialog"
+        aria-label="Create typed link"
+        data-actions-target="linkDialog"
+        aria-modal="true"
+      >
+        <div class="action-dialog__inner">
+          <div class="action-dialog__header">
+            <h2 class="action-dialog__title">Create Link</h2>
+            <button
+              type="button"
+              class="modal-close-btn tap-target"
+              aria-label="Close"
+              data-action="click->actions#closeLink"
+            >
+              <i data-lucide="x" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <div class="action-dialog__form">
+            <div class="form-group actions-context-search hidden" data-actions-target="linkContextGroup">
+              <label class="form-label" for="link-context-title">Related item title</label>
+              <input id="link-context-title" type="search" class="form-input"
+                placeholder="Search by title" autocomplete="off" list="link-context-options"
+                data-actions-target="linkContextSearch" />
+              <datalist id="link-context-options" data-actions-target="linkContextOptions"></datalist>
+            </div>
+            <div class="form-group" data-actions-target="linkLegacyGroup">
+              <label class="form-label" for="link-source-id">
+                Source ID <span aria-hidden="true">*</span>
+              </label>
+              <input
+                id="link-source-id"
+                type="text"
+                class="form-input"
+                placeholder="note-… / task-… / event-…"
+                aria-required="true"
+                data-actions-target="linkSourceId"
+              />
+            </div>
+
+            <div class="form-group" data-actions-target="linkLegacyGroup">
+              <label class="form-label" for="link-target-id">
+                Target ID <span aria-hidden="true">*</span>
+              </label>
+              <input
+                id="link-target-id"
+                type="text"
+                class="form-input"
+                placeholder="note-… / task-… / event-…"
+                aria-required="true"
+                data-actions-target="linkTargetId"
+              />
+            </div>
+
+            <div class="form-group" data-actions-target="linkLegacyGroup">
+              <label class="form-label" for="link-edge-type">
+                Edge type <span aria-hidden="true">*</span>
+              </label>
+              <!--
+                Vocabulary-constrained select (spec GUI-S6 AC: "surface the edge-type choices").
+                Core validates definitively; the GUI pre-filters to the valid vocabulary.
+                Any edge outside this select would be rejected by core with JinErrorDto{code:2}.
+              -->
+              <select
+                id="link-edge-type"
+                class="form-select link-edge-select"
+                aria-required="true"
+                aria-describedby="link-edge-type-hint"
+                data-actions-target="linkEdgeType"
+              >
+                <option value="">Select edge type…</option>
+                <option value="derived-from">derived-from — task → event promotion</option>
+                <option value="prep-for">prep-for — note → event preparation</option>
+                <option value="references">references — general reference edge</option>
+              </select>
+              <span
+                id="link-edge-type-hint"
+                class="text-footnote color-secondary"
+                style="margin-top:var(--space-half)"
+              >
+                Only these three edge types are valid (vocabulary-constrained by core).
+              </span>
+            </div>
+
+            <p
+              class="form-error hidden"
+              aria-live="polite"
+              data-form-error
+              data-actions-target="linkError"
+            ></p>
+
+            <div class="form-actions">
+              <button
+                type="button"
+                class="btn-secondary"
+                aria-label="Cancel"
+                data-action="click->actions#closeLink"
+              >Cancel</button>
+              <button
+                type="button"
+                class="btn-primary"
+                aria-label="Create link"
+                data-actions-target="linkSubmit"
+                data-action="click->actions#submitLink"
+              >Link</button>
+            </div>
+          </div>
+        </div>
+      </dialog>
+    </div>
+
+    <script type="module" src="/tools/tauri-fixture-init.js"></script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

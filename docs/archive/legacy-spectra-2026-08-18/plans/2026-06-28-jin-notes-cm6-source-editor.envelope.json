@@ -1,0 +1,70 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "afe8312c-b2e4-44e3-bec3-2a61b595ad83",
+  "thread_id": "7bde7135-35f1-427d-8f1b-322db650dd00",
+  "parent_id": null,
+  "from": {
+    "eidolon": "spectra",
+    "version": "4.10.0"
+  },
+  "to": {
+    "eidolon": "apivr",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Propose the Jin Notes CM6 full-pane SOURCE EDITOR spec (Wave-2 Track B v2) — REPLACING the per-block inline-textarea editor (the killed anti-pattern from spec 9a893cc6/2026-06-28-track-b-editor) with ONE continuous CodeMirror 6 surface (one caret, one buffer). FRONTEND-ONLY (jin-gui); zero Rust/Tauri/schema. THIS pass = source editor: markdown + syntax highlighting (hand-rolled HighlightStyle), NOT full live-preview (compartment-ready fast-follow). Raw markdown stays on-disk source of truth (CM6 edits plain text). Reading-view toggle renders ONLY through the existing sanitize chokepoint renderMarkdownFragment (markdown.ts:60). Reuse editNote(id,{body}) save (invoke.ts:68-78, returns updated NoteDto). Add 7 CM6 runtime deps (state 6.7.0/view 6.43.4/commands 6.10.4/language 6.12.4/lang-markdown 6.5.0/autocomplete 6.20.3 + @lezer/highlight 1.2.3). New lib/notes/editor.ts mountEditor(parent,{doc,onSave})->{getDoc,setDoc,focus,flush,destroy,getView} isolating CM6 behind a thin imperative API; controller stays framework-light. TOP RISK: commitBody's full renderNoteDetail on save (notes_controller.ts:339-347) destroys caret -> the autosave MUST reconcile OUT OF BAND (no renderNoteDetail, no setDoc, no re-fetch; mount/destroy editor only on note switch). 6 ordered stories S0..S5. Anti-shallow gates that BITE: G-EDITOR-TAB/ENTER/BOLD, G-AUTOSAVE, G-SAVE-CARET-SAFE (node identity + caret survive save), G-READING-VIEW; immovable G-XSS (notes_controller.test.ts:497-514) + G-CHOKEPOINT (markdown.test.ts:366,390) stay green. Frontend tests need Node>=20 (nvm v24.18.0; system v16 crashes vitest).",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/2026-06-28-jin-notes-cm6-source-editor.md",
+    "sha256": "f3b8c65f913738862aa7774117948ab81d004c1b8d523a546999d65fb1a035ab",
+    "size_bytes": 37409
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 5200,
+    "input_handles": [
+      "jin-gui/src/lib/notes/markdown.ts",
+      "jin-gui/src/lib/notes/editor.ts",
+      "jin-gui/src/lib/notes/blocks.ts",
+      "jin-gui/src/lib/notes/render.ts",
+      "jin-gui/src/controllers/notes_controller.ts",
+      "jin-gui/src/invoke.ts",
+      "jin-gui/src/__tests__/notes_controller.test.ts",
+      "jin-gui/src/__tests__/editor.test.ts",
+      "jin-gui/src/__tests__/markdown.test.ts",
+      "jin-gui/src/__tests__/blocks.test.ts",
+      "jin-gui/src/styles/browse.css",
+      "jin-gui/src/styles/tokens.css",
+      "jin-gui/package.json",
+      "jin-gui/index.html"
+    ],
+    "summary": "Decision-ready dual-format spec replacing the per-block editor with a single full-pane CM6 source editor. All anchors verified FIRSTHAND this session (scout 26b57489 did NOT surface via recall — re-verified directly): chokepoint markdown.ts:60 renderMarkdownFragment; old renderNoteEditor editor.ts:44-211 (sole call site render.ts:207); caret-killing full renderNoteDetail on save at notes_controller.ts:339-347 (THE #1 risk); editNote invoke.ts:68-78 returns updated NoteDto; immovable G-XSS notes_controller.test.ts:497-514; blocks.ts imported only by old editor.ts + blocks.test.ts (substituteBlock already dead) -> deletable; sizing gaps .note-detail__body browse.css:338-343 (needs flex:1;min-height:0), pane :729-733, grid :658-669; tokens.css body 17px/1.29 (editor sets local 18px/1.6 per owner). Selected architecture H2: module owns the 600ms debounce + toolbar(reading toggle + status indicator) + CM6 placeholder; controller owns caret-safe persistence (onSave: dirty-check -> editNote -> lastSavedBody=SENT text + targeted-DOM timestamp + 'Saved'; NO renderNoteDetail/setDoc/re-fetch). H3 compartment-readiness merged for fast-follow live-preview (zero on-disk-format/save change). Test strategy (jsdom reality): (a) pure state-level command/transaction tests assert doc text+selection (Tab/Enter/Bold...), (b) controller jsdom + REAL CM6 mount + fake timers for autosave + caret-safe identity gate, (c) reading view via chokepoint spy, (d) immovable XSS/chokepoint. S1 ships a jsdom smoke test FIRST to de-risk CM6 text rendering under jsdom (open item A2). Build order S0 deps -> S1 module(+smoke) -> S2 reading view -> S3 controller rewire(caret-safe) -> S4 sizing/typography -> S5 cleanup; transitional-coexistence keeps each boundary green (old renderNoteEditor until S3, blocks.ts until S5).",
+    "wave_scope": "Wave 2 Track B v2 (source editor) — supersedes the per-block live-editor design. OUT (fast-follow): inline live-preview decorations, focus mode, typewriter scrolling, theme/font pickers, wikilink autocomplete, slash commands, image paste, task-list interactivity, full out-of-band links/backlinks refresh per autosave."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "expected_response": {
+    "performative": "ACKNOWLEDGE",
+    "shape_hint": "Land S0->S1 with the jsdom smoke test FIRST (de-risk CM6-in-jsdom) before the S3 rewire. #1 gate = G-SAVE-CARET-SAFE: the autosave path must NEVER call renderNoteDetail or setDoc on the focused editor — assert EditorView node identity + caret offset survive a save (this bites the caret-destroying re-render regression). Reading view MUST render through renderMarkdownFragment (no second CM6 state, no innerHTML of raw markdown). G-XSS (notes_controller.test.ts:497-514) + G-CHOKEPOINT (markdown.test.ts:366,390) are immovable. NO shallow tests (never just assert a div exists) — every behavior gate asserts doc text / call args / node identity / caret. Keep the controller framework-light (CM6 only behind lib/notes/editor.ts). Frontend tests need Node>=20 (nvm v24.18.0)."
+  },
+  "confidence": 0.88,
+  "assumptions": [
+    "editNote(id,{body}) takes the in-place body-overwrite branch (title+folder preserved) and returns the updated NoteDto with a fresh 'updated' timestamp (invoke.ts:68-78; backend DONE per crystal 9a893cc6).",
+    "CM6 EditorView constructs and renders document text into .cm-content text nodes under jsdom (no real layout) sufficiently for content/identity/selection assertions — S1 smoke test de-risks; mock-at-boundary fallback documented (caret/XSS gates keep a real mount).",
+    "CM6 renders document text exclusively as text nodes (no HTML-injection path) so the editor view is XSS-proof by construction; the reading view's HTML is guarded by the renderMarkdownFragment chokepoint.",
+    "blocks.ts is dead after the editor stops importing it (only editor.ts + blocks.test.ts import it; substituteBlock is test-only) — safe to delete in S5."
+  ],
+  "integrity": {
+    "method": "sha256",
+    "value": "f3b8c65f913738862aa7774117948ab81d004c1b8d523a546999d65fb1a035ab"
+  },
+  "trace": {
+    "ts": "2026-06-28T00:00:00Z",
+    "host": "claude-code",
+    "model": "claude-opus-4-8-1m",
+    "tier": "standard"
+  }
+}

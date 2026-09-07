@@ -1,0 +1,178 @@
+spec:
+  id: jin-notes-wave2-track-b-editor
+  title: "Jin Notes — Wave 2, Track B: Obsidian-style live note editor"
+  date: 2026-06-28
+  methodology: SPECTRA 4.10.0
+  tier: standard
+  intent_type: CHANGE
+  complexity: 8/12
+  confidence: 0.87
+  decision: AUTO_PROCEED
+  handoff: { from: spectra, to: apivr, executor: Vivi }
+  scope_note: >
+    Frontend-only. Backend save path is DONE (editNote -> edit_note -> ops::notes::edit_note,
+    then api::refresh; body-only = in-place overwrite). NO Rust, NO new Tauri commands, NO schema.
+  upstream_scout:
+    atlas_crystal: "0ca90347 (NOT surfaced by recall; only Wave-1 5216e65c returned)"
+    verification: "every ATLAS Track-B anchor re-read firsthand before speccing (see spec section 0)"
+
+constraints_locked_by_owner:
+  - "render+sanitize = markdown-it (html:false) + DOMPurify (latest stable), defense-in-depth"
+  - "interaction = per-block live preview: rendered HTML idle, raw textarea on focus, re-render on blur, reassemble+save on commit"
+  - "editor lives in the existing 3-pane Notes detail pane (replaces read-only .note-detail__body)"
+  - "backend DONE — reuse edit_note; do not spec Rust"
+  - "exactly 2 new runtime deps (markdown-it + dompurify)"
+
+decisions:
+  D-SANITIZE:
+    chokepoint: jin-gui/src/lib/notes/markdown.ts
+    export: "renderMarkdownFragment(src) -> DocumentFragment (RETURN_DOM_FRAGMENT)"
+    markdown_it: { html: false, linkify: true, breaks: false, typographer: false, validateLink: default-kept }
+    dompurify:
+      allowed_tags: [h1,h2,h3,h4,h5,h6,p,br,hr,blockquote,pre,code,span,div,em,strong,del,s,sub,sup,ul,ol,li,input,a,table,thead,tbody,tfoot,tr,th,td]
+      allowed_attr: [href,title,class,type,checked,disabled]
+      allowed_uri_regexp: "^(?:https?|mailto):"
+      forbid_tags: [script,style,iframe,object,embed,form,svg,math,link,meta,base]
+      forbid_attr: [style,srcset,formaction]
+    notes: "img NOT allowed (image support deferred); task-list checkbox in allow-list is forward-compat only (no plugin in v1); class allowed for code language- classes"
+  D-BLOCKING:
+    module: jin-gui/src/lib/notes/blocks.ts
+    model: "Segment[] = ordered partition of {kind:'block'|'gap', text}"
+    invariant: "serializeBlocks(parseBlocks(body)) === body for ANY body (partition-concatenation; independent of fence detection)"
+    tokenizer: "body.match(/[^\\n]*\\n|[^\\n]+$/g) — preserves terminators, CRLF, trailing-newline"
+    fence_aware: "blank lines inside ```/~~~ fences stay in the block (do not split)"
+    editable: "block segments only; gaps (incl leading/trailing) preserved as data, invisible"
+  D-FOCUS:
+    mechanism: "click rendered block -> textarea(raw source); blur -> re-render + commit if changed; one active block via closure activeIndex"
+    widget: textarea
+    rejected: contenteditable
+    deferred: [keyboard-block-nav, escape-to-cancel]
+  D-SAVE:
+    when: autosave-on-blur
+    body: "whole reassembled body via editNote(id, { body }) (body-only = in-place overwrite, title+folder preserved)"
+    dirty_check: "skip if reassembled === lastSavedBody"
+    after_save: "getNoteById(id) canonical re-fetch -> reconcile full renderNoteDetail"
+    on_error: "dispatch app:error (existing channel) + keep local edit + retry next blur"
+  D-EMPTY_NEW:
+    empty_body: "one .note-block--empty placeholder ('Start writing…'), click -> empty textarea"
+    new_note: "detail shows editor in rendered mode; auto-enter-edit on create DEFERRED"
+  D-SCOPE_deferred: [wikilink-autocomplete, slash-commands, toolbar, image-paste-render, table-editing, task-list-checkbox-render, keyboard-block-nav, escape-cancel, drag-reorder, syntax-highlight, find-replace, collaborative-edit]
+
+deps:
+  runtime: { markdown-it: "14.2.0", dompurify: "3.4.11" }
+  dev: { "@types/markdown-it": "14.1.2" }
+  note: "dompurify ships bundled TS types (no @types/dompurify). Pin resolved latest + commit lockfile."
+
+stories:
+  - id: B1
+    title: "Sanitize chokepoint lib/notes/markdown.ts + adversarial suite"
+    risk: P0
+    timebox: "<=1.5d"
+    depends_on: [K-B1]
+    blocks: [B3, B4, K-B3]
+    files: ["jin-gui/src/lib/notes/markdown.ts (new)", "jin-gui/package.json:17-23,24-32"]
+    acceptance:
+      - "AC-B1.1 positive controls (h1/strong/em/code/ul-li/blockquote/pre-code.language-js/table) render"
+      - "AC-B1.2 [ok](https://example.com) -> a[href=https://example.com]"
+      - "AC-B1.3 <script>window.__x=1</script> -> no script node, literal text, window.__x undefined"
+      - "AC-B1.4 <img src=x onerror=...> -> no img, no on* attr"
+      - "AC-B1.5 [click](javascript:alert(1)) -> no anchor with javascript: href"
+      - "AC-B1.6 <a href=javascript:...> raw -> no anchor (escaped)"
+      - "AC-B1.7 obfuscated set (nested script, svg onload, iframe js, mixed-case js href, ontoggle, entities) -> all inert"
+      - "AC-B1.8 returns a DocumentFragment (never a string to innerHTML)"
+    gates: [G-SANITIZE, G-XSS]
+  - id: B2
+    title: "Block transform lib/notes/blocks.ts + round-trip property tests"
+    risk: P0
+    timebox: "<=1.5d"
+    depends_on: []
+    blocks: [B3, B4]
+    files: ["jin-gui/src/lib/notes/blocks.ts (new)"]
+    acceptance:
+      - "AC-B2.1 serialize(parse(body)) === body over spread (empty, \\n, headings, tight+loose lists, fence-with-blank-lines, trailing-newline, no-trailing-newline, multi-blank, CRLF, unicode)"
+      - "AC-B2.2 fence with internal blank line -> ONE editable block"
+      - "AC-B2.3 'A\\n\\nB' -> two blocks + a gap '\\n\\n'"
+      - "AC-B2.4 substituteBlock first->FIRST in '# T\\n\\nfirst\\n\\nsecond\\n' -> '# T\\n\\nFIRST\\n\\nsecond\\n'"
+      - "AC-B2.5 '' -> parse=[], serialize([])='' , editableBlocks([])=[]"
+    gates: [G-ROUNDTRIP, G-BLOCKS]
+  - id: B3
+    title: "Per-block live-preview editor lib/notes/editor.ts + CSS + swap test"
+    risk: P1
+    timebox: "<=2d"
+    depends_on: [B1, B2, K-B2]
+    blocks: [B4]
+    files: ["jin-gui/src/lib/notes/editor.ts (new)", "jin-gui/src/lib/notes/markdown.ts", "jin-gui/src/lib/notes/blocks.ts", "jin-gui/src/styles/browse.css:336-348"]
+    acceptance:
+      - "AC-B3.1 idle: '# Hello\\n\\nWorld' -> .note-block with h1 Hello + .note-block with p World"
+      - "AC-B3.2 click first block -> textarea value === '# Hello'"
+      - "AC-B3.3 set '## Hi' + blur -> onCommit('## Hi\\n\\nWorld') AND block re-renders to h2 Hi"
+      - "AC-B3.4 unchanged blur -> onCommit NOT called"
+      - "AC-B3.5 empty body -> .note-block--empty placeholder; click -> empty textarea"
+      - "AC-B3.6 <script>window.__xss_block=1</script> -> literal text, flag undefined"
+    gates: [G-SWAP, G-XSS]
+  - id: B4
+    title: "Wire editor into renderNoteDetail + NotesController save + migrate tests"
+    risk: P1
+    timebox: "<=2d"
+    depends_on: [B1, B2, B3]
+    blocks: []
+    files:
+      - "jin-gui/src/lib/notes/render.ts:149-204 (esp 199-204) — add onBodyCommit param, mount renderNoteEditor"
+      - "jin-gui/src/controllers/notes_controller.ts:44,84-87,218-258,287-313 — import editNote, currentNoteId/lastSavedBody, commitBody"
+      - "jin-gui/src/invoke.ts:68-78 (editNote — reuse, no change)"
+      - "jin-gui/src/__tests__/notes_controller.test.ts:467-509,622-679 (migrate)"
+    acceptance:
+      - "AC-B4.1 controller-driven: open detail, click block, change to FIRST, blur -> editNote({body:'# T\\n\\nFIRST\\n\\nsecond\\n'})"
+      - "AC-B4.2 post-save getNoteById re-fetch -> editor re-renders from canonical body (re-fetch path proven)"
+      - "AC-B4.3 dirty-check: unchanged blur -> editNote NOT called"
+      - "AC-B4.4 editNote rejects -> app:error dispatched + local edit preserved"
+      - "AC-B4.5 XSS gate green via controller path (<script> literal, window.__xss_notes undefined)"
+    gates: [G-SAVE, G-SAVE-ERROR, G-XSS, G-DETAIL-MIGRATE]
+
+kupo:
+  - id: K-B1
+    title: "Add markdown-it + dompurify runtime deps + @types/markdown-it dev dep"
+    timebox: "<=0.25d"
+    blocks: [B1]
+    gate: G-BUILD
+  - id: K-B2
+    title: "Editor CSS / token hookup (.note-block, .note-block__editor, .note-block--empty; replace .note-detail__body)"
+    timebox: "<=0.5d"
+    supports: [B3]
+    gate: G-CSS
+  - id: K-B3
+    title: "Chokepoint-singleton guard test (no module but markdown.ts imports markdown-it/dompurify)"
+    timebox: "<=0.25d"
+    depends_on: [B1]
+    gate: G-CHOKEPOINT
+
+validation_gates:
+  - { id: G-XSS, story: [B1,B3,B4], type: frontend-hard, where: "notes_controller.test.ts:486-499 (kept) + markdown/editor tests", note: "MUST stay green by html:false construction" }
+  - { id: G-SANITIZE, story: B1, type: frontend-anti-shallow, where: "markdown.test.ts (new)" }
+  - { id: G-ROUNDTRIP, story: B2, type: frontend-property, where: "blocks.test.ts (new)" }
+  - { id: G-BLOCKS, story: B2, type: frontend-unit, where: "blocks.test.ts" }
+  - { id: G-SWAP, story: B3, type: frontend-anti-shallow, where: "editor.test.ts (new)" }
+  - { id: G-SAVE, story: B4, type: frontend-anti-shallow-controller-driven, where: "notes_controller.test.ts (new describe)" }
+  - { id: G-SAVE-ERROR, story: B4, type: frontend, where: "notes_controller.test.ts" }
+  - { id: G-DETAIL-MIGRATE, story: B4, type: frontend-migration, where: "notes_controller.test.ts:467-509,622-679" }
+  - { id: G-CHOKEPOINT, story: K-B3, type: frontend-anti-drift, where: "new guard test" }
+  - { id: G-BUILD, story: K-B1, type: build, where: "tsc --noEmit && vite build" }
+  - { id: G-CSS, story: K-B2, type: lint, where: "npm run lint:css" }
+  project_level:
+    - "npm test (Vitest, Node >=20)"
+    - "tsc --noEmit && vite build"
+    - "npm run lint:css"
+    - "no it.skip on the gates above; no Rust gates (frontend-only)"
+
+risks:
+  - { id: R-XSS, sev: P0, note: "first controlled HTML insertion; mitigated by single chokepoint + html:false + DOMPurify + G-SANITIZE + G-CHOKEPOINT + appendChild-only" }
+  - { id: R-ROUNDTRIP, sev: P0/P1, note: "lossless by partition-concatenation invariant; G-ROUNDTRIP property test; dirty-check" }
+  - { id: R-TEST-MIGRATION, sev: P1, note: "explicit migration table; G-XSS non-execution immovable; checker!=maker review" }
+  - { id: R-SAVE-THRASH, sev: P1, note: "dirty-check + blur granularity" }
+  - { id: R-SAVE-DATALOSS, sev: P1, note: "on error keep local edit + app:error + retry next blur" }
+  - { id: R-NODE, sev: P1, note: "Node >=20 via nvm v24.18.0 path" }
+  - { id: R-DEPS, sev: P2, note: "pin resolved latest + lockfile; mature audited libs" }
+  - { id: R-RENDER-FIDELITY, sev: P2, note: "per-block render splits loose lists; round-trip still lossless; accepted v1" }
+  - { id: R-EMPTY-WS, sev: P2, note: "whitespace-only body treated as empty on first edit; documented" }
+
+execution_order: [K-B1, B1, B2, B3, K-B2, B4, K-B3]

@@ -1,0 +1,38 @@
+from: ramza
+from_version: 1.1.0
+to: vivi
+performative: DELEGATE
+tier: standard
+objective: Implement the frozen Settings information-architecture overhaul while preserving all existing behavior and hooks.
+spec: .spectra/plans/settings-information-architecture-overhaul.md
+criteria: .spectra/plans/settings-information-architecture-overhaul.criteria.md
+scope:
+  - jin-gui/index.html
+  - jin-gui/src/styles/settings.css
+  - jin-gui/src/controllers/settings_controller.ts
+  - jin-gui/src/lib/settings/navigation.ts
+  - jin-gui/src/__tests__/settings_controller.test.ts
+  - jin-gui/src/__tests__/notes_visual_system.test.ts
+ordered_steps:
+  - Add and unit-test pure settings navigation state helpers.
+  - Recompose existing markup into four labelled panes without changing hooks.
+  - Wire plural Stimulus targets, selection, safe persistence, and default restoration.
+  - Implement the bounded desktop shell, full-height rail, workspace scrolling, grouped surfaces, compact navigation, and AX reflow.
+  - Reset workspace scrollTop on category changes while retaining category-button focus.
+  - Update controller and static visual-contract tests.
+  - Run focused tests, CSS lint, build, full tests, and deterministic visual QA.
+constraints:
+  - No backend, Tauri command, DTO, router, or render-helper behavior change.
+  - Use the settings workspace as the sole vertical scroller above 720px at standard text scale.
+  - Preserve route/document scrolling at 720px or narrower and whenever accessibility text scale is active.
+  - Use existing tokens and primitives with no new dependency or raw colors.
+  - Stop for a RAMZA amendment before modifying a product file outside scope.
+verification_commands:
+  - cd jin-gui && npm test -- src/__tests__/settings_controller.test.ts src/__tests__/notes_visual_system.test.ts
+  - cd jin-gui && npm run lint:css
+  - cd jin-gui && npm run build
+  - cd jin-gui && npm test
+visual_viewports:
+  - 1280x800
+  - 720x800
+  - 390x844

@@ -1,0 +1,81 @@
+{
+  "x_ramza_comment": "ECL v2.0 RAMZA TRANCE specification envelope.",
+  "envelope_version": "2.0",
+  "message_id": "af942499-244f-4726-b486-45fed524bcb4",
+  "thread_id": "9206d943-dde5-43c1-bb84-4a03691cb4a0",
+  "parent_id": null,
+  "from": {
+    "eidolon": "ramza",
+    "version": "0.1.0"
+  },
+  "to": {
+    "eidolon": "vivi",
+    "version": "1.4.0"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Propose account-isolated bidirectional Google Calendar synchronization with multi-account aliases, calendar discovery, routed Jin events, and unified agenda management.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": "google-calendar-multi-account-sync.md",
+    "sha256": "e7173c289f64713adbfebf09808f7043c29cbdba46db603acf1d540ae945ed60",
+    "size_bytes": 42489
+  },
+  "context_delta": {
+    "token_budget": 0,
+    "tokens_used": 0,
+    "input_handles": [
+      ".artifacts/atlas/20260826-google-calendar-integration/scout-report.md",
+      ".spectra/changes/archive/2026-08-26-calendar-pr47-rescue/",
+      ".spectra/plans/2026-08-25-calendar-event-detail-m1.md"
+    ],
+    "summary": "Full-tier TRANCE specification with 11 dependency-ordered stories and 54 frozen EARS checks, amended after FORGE deliberation. It binds Jin account IDs to stable Google subjects, makes singleton migration fail-closed and idempotent, enforces account-scoped credentials and refresh locks, keys provider recurrence state compositionally, quarantines revoked work for explicit review, preserves exact intent-time routes, and executes behind hard A-to-B-to-C-to-D barriers."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "ise": {
+    "assertion_grade": "self-attested",
+    "provenance": {
+      "methodology_version": "ramza-0.1.0",
+      "tool_surface": [
+        "Read",
+        "Grep",
+        "ApplyPatch",
+        "RAMZA",
+        "Tonberry"
+      ],
+      "lateral_consults": [
+        "g3-candidate-a",
+        "g3-candidate-b",
+        "g3-independent-evaluator"
+      ]
+    },
+    "receiver_authorization": {
+      "auto_route": true,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "confidence": 0.925,
+  "assumptions": [
+    "Owner-provisioned OAuth client credentials are shared while account authorization tokens remain isolated.",
+    "Provider accessRole is refreshed before paused writes resume.",
+    "Live Google validation is a separately labeled non-hermetic release attestation."
+  ],
+  "integrity": {
+    "method": "sha256",
+    "value": "e7173c289f64713adbfebf09808f7043c29cbdba46db603acf1d540ae945ed60"
+  },
+  "trace": {
+    "ts": "2026-08-26T23:22:45Z",
+    "host": "codex",
+    "model": "gpt-5",
+    "tier": "trance"
+  },
+  "x_ramza_acceptance_criteria": {
+    "path": ".spectra/plans/google-calendar-multi-account-sync.md",
+    "sha256": "e7173c289f64713adbfebf09808f7043c29cbdba46db603acf1d540ae945ed60"
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "235659e7-8add-4bd1-98ac-83adcdc811a8",
+  "thread_id": "272e70c9-9ccf-41e3-823f-bafa36acf2f5",
+  "parent_id": null,
+  "from": {
+    "eidolon": "spectra",
+    "version": "4.10.0"
+  },
+  "to": {
+    "eidolon": "apivr",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Propose the Jin Notes rebuild Wave 1 spec: (1) fix the title-only note bug by giving NoteDto a body_markdown field and having get_note read the body from disk; (2) redesign the note list into Apple-Notes-style rows (title + snippet + date) backed by a new index-side excerpt column. Folders + Obsidian editor are Wave 2 (seams only).",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/jin-notes-wave1.md",
+    "sha256": "ddf57393b90cfe83431792a8304dcaec65a221d217ca70d5451a1b3af55f728c",
+    "size_bytes": 25201
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 4200,
+    "input_handles": [
+      "jin-core/src/dto/note.rs",
+      "jin-core/src/ops/api.rs",
+      "jin-core/src/index/schema.rs",
+      "jin-core/src/index/rebuild.rs",
+      "jin-core/src/index/query.rs",
+      "jin-core/src/store/fs.rs",
+      "jin-gui/src/lib/notes/render.ts",
+      "jin-gui/src/types/dto.ts",
+      "jin-gui/index.html",
+      "jin-gui/src/styles/browse.css",
+      "jin-gui/src-tauri/tests/bridge.rs",
+      "jin-gui/src/__tests__/notes_controller.test.ts"
+    ],
+    "summary": "Decision-ready dual-format Wave-1 spec. 3 INVEST stories + 3 Kupo micro-tasks. S1 (P0 bug fix): add body_markdown to NoteDto (note.rs:7-18) and make api::get_note (api.rs:25-33) read the body fresh from NoteRow.file_path via fs::read_note; from_model=Some(body), from_row=None. S2 (P1, P0 if migration skipped): add an index-side excerpt column to the notes table; CRITICAL migration finding — schema::apply uses only CREATE TABLE IF NOT EXISTS (schema.rs:114-116) so a guarded idempotent ALTER TABLE ADD COLUMN is mandatory or existing index.sqlite crashes with no-such-column. Populate excerpt at rebuild via a pure derive_excerpt (whitespace-collapse + char-safe 200-char truncate); thread it through NoteRow + list/get SELECTs + NoteDto. S3 (P1): Apple-Notes flat rows (title + 2-line snippet + date) replacing the bubble card; scope new flat CSS under .note-row to leave Tasks/Events unchanged; pure formatNoteDate helper. Kupo: K1 version-gated one-time rebuild (no startup refresh exists in lib.rs:21-66 / ops::init early-returns) to populate pre-existing notes; K2 template/fixture parity guard (the test fixture template is a SEPARATE string from production #tmpl-note-row — known green-but-shallow trap); K3 dto comment + drift test. Mandatory anti-shallow gates: VG1.1 (Rust get_note body round-trip), VG1.4 (frontend invoke-mocked detail render), VG2.2 (Rust list excerpt round-trip), VG2.4 (frontend list row title+snippet+date). XSS textContent guard preserved. Wave-2 seams: get_note reads stored file_path (folder-safe); list DTO/query/fs are additive-friendly for a future folder_path/recursive param.",
+    "wave_scope": "Wave 1 of N (folders + Obsidian editor deferred to Wave 2)"
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "expected_response": {
+    "performative": "ACKNOWLEDGE",
+    "shape_hint": "Build S1 first (P0, fully headless-verifiable via VG1.1). Then S2 with the MANDATORY guarded ALTER (R1/VG2.3). Then K1 || S3. Do NOT accept body coverage that only feeds the DTO into render by hand — VG1.1/VG1.4/VG2.2/VG2.4 are load-bearing anti-shallow gates."
+  },
+  "confidence": 0.86,
+  "assumptions": [
+    "The SQLite index is a fully derived, disposable artifact rebuilt from canonical markdown files (rebuild.rs:22-30).",
+    "NoteRow.file_path (query.rs:18) is a readable path written by rebuild (rebuild.rs:50) and remains valid for fs::read_note.",
+    "One NoteDto serves both list and detail projections (api.rs:13-33).",
+    "Visual correctness of the Apple-Notes redesign is owner-verified via cargo tauri dev (browse.css header convention)."
+  ],
+  "integrity": {
+    "method": "sha256",
+    "value": "ddf57393b90cfe83431792a8304dcaec65a221d217ca70d5451a1b3af55f728c"
+  },
+  "trace": {
+    "ts": "2026-06-27T00:00:00Z",
+    "host": "claude-code",
+    "model": "claude-opus-4-8-1m",
+    "tier": "standard"
+  }
+}

@@ -1,0 +1,79 @@
+/**
+ * materials.css — Liquid Glass material approximation.
+ *
+ * Three material tiers (thin / regular / thick) + a .glass convenience alias.
+ * All values reference tokens from tokens.css — NO raw hex here.
+ *
+ * Technical note (ADR-0003 RISK / design.md §5.3):
+ *   backdrop-filter blur quality and GPU cost differ between WKWebView (macOS)
+ *   and WebKitGTK (Linux). Both -webkit- and unprefixed are required.
+ *   The reduced-transparency fallback in a11y.css is the safety net if Linux
+ *   blur is poor — the owner verifies and may default glass→solid on Linux.
+ *
+ * Vibrancy for text/icons: use --label / --label-secondary opacity tiers
+ * (NOT mix-blend-mode, which is unreliable on WebKitGTK).
+ */
+
+/* ── Shared material foundation ──────────────────────────────────────────── */
+.material-thin,
+.material-regular,
+.material-thick,
+.glass {
+  background-color: var(--glass-tint);
+  /* Hairline border edge (0.5px simulates the specular edge in Liquid Glass) */
+  border: 0.5px solid var(--separator);
+  /* Specular highlight along the top edge + elevation depth shadow */
+  box-shadow:
+    inset 0 1px 0 0 var(--specular-highlight),
+    var(--elevation-shadow);
+  /* Ensure hardware-composited layer for performance */
+  will-change: transform;
+}
+
+/* ── Thin material (toolbar, tooltip, transient overlays) ───────────────── */
+.material-thin {
+  -webkit-backdrop-filter: blur(var(--glass-blur-thin)) saturate(var(--glass-saturate));
+          backdrop-filter: blur(var(--glass-blur-thin)) saturate(var(--glass-saturate));
+}
+
+/* ── Regular material (sidebar, floating panels) — default .glass ────────── */
+.material-regular,
+.glass {
+  -webkit-backdrop-filter: blur(var(--glass-blur-regular)) saturate(var(--glass-saturate));
+          backdrop-filter: blur(var(--glass-blur-regular)) saturate(var(--glass-saturate));
+}
+
+/* ── Thick material (modal sheets, popovers) ────────────────────────────── */
+.material-thick {
+  -webkit-backdrop-filter: blur(var(--glass-blur-thick)) saturate(var(--glass-saturate));
+          backdrop-filter: blur(var(--glass-blur-thick)) saturate(var(--glass-saturate));
+}
+
+/* ── Surface fills for content areas that sit behind glass ──────────────── */
+.surface-primary {
+  background-color: var(--bg-base);
+}
+
+.surface-secondary {
+  background-color: var(--bg-secondary);
+}
+
+.surface-elevated {
+  background-color: var(--bg-elevated);
+}
+
+/* ── Card — a common elevated surface with a rounded border ─────────────── */
+.card {
+  background-color: var(--bg-elevated);
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--separator);
+  box-shadow: var(--elevation-shadow);
+}
+
+/* ── Divider ─────────────────────────────────────────────────────────────── */
+.divider {
+  height: 1px;
+  background-color: var(--separator);
+  border: none;
+  margin: 0;
+}

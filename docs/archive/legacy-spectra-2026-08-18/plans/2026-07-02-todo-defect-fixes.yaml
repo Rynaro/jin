@@ -1,0 +1,203 @@
+spec:
+  id: todo-defect-fixes
+  title: "Jin GUI Tasks/ToDo — 4 defect fixes + JinModal + JinSelect"
+  methodology: SPECTRA
+  methodology_version: "4.10.0"
+  date: "2026-07-02"
+  producer: spectra
+  consumer: vivi
+  repo: jin-gui
+  status: AUTO_PROCEED
+  confidence: 0.88
+  complexity: "9/12"
+  intent: [BUG_SPEC, REQUEST]
+
+constraints:
+  no_native_prompts: true            # window.prompt/alert/confirm are webview no-ops; native <dialog> only
+  icon_registry: src/lib/icons/index.ts  # every data-lucide glyph must be import+export+map-registered
+  icons_available: [chevron-down, x, plus, pencil, trash-2, layout-grid, list, inbox, palette]
+  icons_missing_if_needed: [check]   # register Check only if a selected-option tick glyph is used
+  verify_gate: "make verify-gui"     # fmt --check + clippy -p jin-gui + cargo test -p jin-gui + tsc --noEmit + vitest + lint:css + vite build
+  test_runner: vitest                # NOT jest; jsdom is opt-in per file: `// @vitest-environment jsdom`
+  jsdom_dialog: "stub HTMLDialogElement.prototype.showModal/close (see notes_controller.test.ts:1459-1477)"
+  node: "nvm use --lts (v24.18.0) before any build/test/lint"
+  css: "tokens only; no raw hex (stylelint) and no undefined tokens (css_tokens.test.ts)"
+  architecture: "transform.ts (pure) -> render.ts (DOM+callbacks) -> thin Stimulus controller"
+  do_not_regress:
+    - "filterTasksList (src/lib/tasks/transform.ts:42) compares task.list===filter.list = id===id. CORRECT. Do NOT rewrite to compare names."
+
+root_causes:
+  DT-1: { desc: "New List modal opens but is unstyled: .action-dialog__footer/__message/__body have no CSS rule", anchors: ["index.html:760,784,855", "src/styles/forms.css:278-307"], story: [S1, S4] }
+  DT-2: { desc: "editTaskDialog/deleteTaskDialog/dueDateDialog live OUTSIDE section data-controller=tasks (index.html:719-1088) -> Stimulus targets unresolved -> handlers early-return", anchors: ["index.html:2087,2564,2611", "src/controllers/tasks_controller.ts:921,976,436"], story: [S1, S2, S3] }
+  DT-3a: { desc: "filter select appearance:none with no chevron", anchors: ["src/styles/browse.css:1573-1586"], story: [S5] }
+  DT-3b: { desc: "task.list written as name by buggy writers + displayed as raw id; filter itself is correct", anchors: ["src/lib/tasks/render.ts:796,804,989", "src/controllers/tasks_controller.ts:1010,1048", "src/controllers/capture_controller.ts:202,271"], story: [S6] }
+  DT-4: { desc: "board render gated on currentSections.length>0; sectionless lists fall through to flat renderTasksList", anchors: ["src/controllers/tasks_controller.ts:838-859"], story: [S7] }
+
+components:
+  JinModal:
+    file: src/lib/ui/modal.ts   # NEW
+    kind: OOP base class (composition; controller holds direct ref; NOT a Stimulus target)
+    host: "ensureModalRoot() -> #jin-modal-root appended to document.body once"
+    button_wiring: "JS callbacks (primaryAction/secondaryAction), NOT data-action -> severs Stimulus subtree scoping (DT-2 root)"
+    modes:
+      - "new JinModal(opts): builds fresh dialog skeleton via createElement, appends to modal root"
+      - "JinModal.fromElement(el, opts): adopts existing <dialog>, re-wires buttons to callbacks; default relocates to modal root; host:'in-place' keeps it (dueDateDialog only)"
+    lifecycle: [beforeOpen, open->showModal->focus-first, onOpen, close->onClose->close->restore-focus]
+    close_on: [backdrop(e.target===dialog), escape(cancel event)]  # each suppressible via closeOnBackdrop/closeOnEscape
+    solid: { SRP: "shell+lifecycle+a11y only", OCP: "override buildBody/buildFooter/onConfirm", LSP: "uniform open/close/destroy", ISP: "narrow surface", DIP: "consumers depend on JinModal abstraction" }
+    css: "S1 adds .action-dialog__body/__footer/__message (forms.css after :307), reconcile .form-actions -> canonical __footer"
+  JinSelect:
+    file: src/lib/ui/select.ts  # NEW
+    kind: "OOP wrapper over native <select> (progressive enhancement); values stay l.id; native change event preserved"
+    visual: ".jin-select shell + .jin-select__chevron (data-lucide=chevron-down) + seal focus ring"
+    api: [getValue, setValue, onChange]
+    rejected: "fully-custom role=listbox popup (a11y liability; over-engineering for a cosmetic defect)"
+
+stories:
+  - id: S1
+    title: "JinModal base + complete .action-dialog__* CSS"
+    priority: P0
+    timebox: "<=3d"
+    role: foundational
+    depends_on: []
+    parallel_group: A
+    agent_class: reasoner
+    action_plan: [Create src/lib/ui/modal.ts, Create .action-dialog__body/__footer/__message CSS in forms.css, Reconcile .form-actions, Test ui_modal.test.ts]
+    files: ["src/lib/ui/modal.ts (NEW)", "src/styles/forms.css:278-307", "src/lib/icons/index.ts"]
+    given_when_then:
+      - "GIVEN new JinModal({title,ariaLabel}) WHEN .open() THEN one <dialog.action-dialog> under #jin-modal-root, dialog.open===true (jsdom stub), focus on first focusable"
+      - "GIVEN open modal WHEN backdrop-click or Escape THEN .close() and dialog.open===false unless closeOnBackdrop/closeOnEscape=false"
+      - "GIVEN subclass overriding buildFooter() WHEN open THEN base shell unchanged, only footer differs (OCP)"
+      - "GIVEN rendered dialog WHEN styled THEN __body/__footer/__message resolve to token-based CSS rules (no raw hex)"
+    validation_gate: "ui_modal.test.ts green (stub showModal/close); lint:css + css_tokens.test.ts pass; tsc clean; OWNER visual sign-off (VG-GUI-8)"
+    risk_tag: P0
+  - id: S2
+    title: "ConfirmDialog subclass + adopt for task delete (fixes DT-2 delete)"
+    priority: P0
+    timebox: "<=2d"
+    depends_on: [S1]
+    parallel_group: B
+    agent_class: builder
+    action_plan: [Create src/lib/ui/confirm_dialog.ts, Instantiate ConfirmDialog in tasks connect(), Open from openDeleteDialog (remove hasDeleteTaskDialogTarget guard), Retire index.html:2560-2600, Test]
+    files: ["src/lib/ui/confirm_dialog.ts (NEW)", "src/controllers/tasks_controller.ts:975-1004,129-130,164-166,232", "index.html:2560-2600 (retire)"]
+    given_when_then:
+      - "GIVEN tasks section WHEN trash button clicked THEN ConfirmDialog opens (dialog.open===true) with 'Delete \"<title>\"? This cannot be undone.'"
+      - "GIVEN confirm open WHEN Confirm THEN deleteTask(id) once + list reloads; WHEN Cancel/backdrop/Escape THEN closes, deleteTask NOT called"
+      - "GIVEN flow runs WHEN executed THEN no window.confirm/prompt invoked"
+    validation_gate: "ui_confirm_dialog.test.ts + real-index wiring test (RISK-1) prove trash opens dialog when mounted from actual index.html; make verify-gui green"
+    risk_tag: P0
+  - id: S3
+    title: "Adopt JinModal for edit-task + due-date (fixes DT-2 edit + shared dialog nuance)"
+    priority: P0
+    timebox: "<=3d"
+    depends_on: [S1]
+    parallel_group: B
+    agent_class: debugger
+    action_plan:
+      - "Wrap editTaskDialog via JinModal.fromElement (relocate + callback-wire Save/Cancel), remove hasEditTaskDialogTarget guard"
+      - "Wrap shared dueDateDialog via JinModal.fromElement(el,{host:'in-place'}) accessed by id document.getElementById('jin-due-date'); openCalendarDialog no longer depends on hasDueDateDialogTarget"
+      - "Keep #jin-due-date markup in place (nested calendar + capture use); relocate/retire only edit dialog markup"
+    files: ["src/controllers/tasks_controller.ts:920-971,422-517,145,186", "index.html:2607-2692 (relocate)", "index.html:2087-2145 (keep in place)", "index.html:2107 (nested calendar)"]
+    given_when_then:
+      - "GIVEN tasks section WHEN pencil clicked THEN edit modal opens prefilled (title/body/due); WHEN Save THEN editTask(id,{title,body,due}) + list reloads"
+      - "GIVEN edit modal WHEN 'Pick due date' THEN shared due-date dialog opens with working calendar; WHEN date chosen THEN applies to edit form"
+      - "GIVEN capture form WHEN it opens same #jin-due-date THEN still works (explicit no-regression assertion)"
+    validation_gate: "edit opens+saves and due-date opens in real-index-mounted tests; capture-regression test confirms #jin-due-date opens from capture; make verify-gui green"
+    risk_tag: P0
+    notes: "RISK-5 shared dialog"
+  - id: S4
+    title: "Adopt JinModal for New List (+) with complete styling (fixes DT-1)"
+    priority: P1
+    timebox: "<=2d"
+    depends_on: [S1]
+    parallel_group: B
+    agent_class: builder
+    action_plan: [Open lists create/edit/delete dialogs via JinModal, Normalize lists dialog markup to .action-dialog__inner/__body/__footer]
+    files: ["src/controllers/lists_controller.ts:140-150,~185,~230", "index.html:755-797,800-845,848-870"]
+    given_when_then:
+      - "GIVEN lists rail WHEN + clicked THEN fully-styled modal opens (header/body/footer styled; no unstyled slab)"
+      - "GIVEN modal WHEN name+color entered + Create THEN create_list runs + rail refreshes; WHEN Cancel/backdrop/Escape THEN closes with no write"
+      - "GIVEN edit/delete list WHEN opened THEN share styled shell (__footer/__message resolve)"
+    validation_gate: "lists dialogs render with resolved __footer/__message; lists_controller.test.ts green; OWNER visual sign-off; make verify-gui green"
+    risk_tag: P1
+  - id: S5
+    title: "JinSelect component; replace filter-bar natives (fixes DT-3a)"
+    priority: P1
+    timebox: "<=2d"
+    depends_on: []
+    parallel_group: A
+    agent_class: builder
+    action_plan: [Create src/lib/ui/select.ts, Replace bare appearance:none with chevron affordance CSS, Enhance 4 filter selects + sort-mode; keep l.id values + change->tasks#applyFilter]
+    files: ["src/lib/ui/select.ts (NEW)", "src/styles/browse.css:1573-1586", "src/styles/forms.css:139-169", "index.html:879-953", "src/lib/icons/index.ts (chevron-down registered)"]
+    given_when_then:
+      - "GIVEN filter bar WHEN rendered THEN each select shows visible chevron + ink-and-seal styling"
+      - "GIVEN JinSelect WHEN value changed THEN native change still fires + applyFilter re-filters; emitted value = option value (list id for list filter)"
+      - "GIVEN keyboard user WHEN operating select THEN native keyboard + ARIA preserved (no custom listbox)"
+    validation_gate: "ui_select.test.ts proves change fires + value pass-through; lint:css + css_tokens.test.ts pass; OWNER visual sign-off; make verify-gui green"
+    risk_tag: P1
+  - id: S6
+    title: "List id/name canonicalization + writers persist id + id!=name test (fixes DT-3b)"
+    priority: P0
+    timebox: "<=3d"
+    depends_on: []
+    parallel_group: A
+    agent_class: reasoner
+    action_plan:
+      readers:
+        - "render.ts:989 pre-select l.name===task.list -> l.id===task.list"
+        - "render.ts:796/804 label -> listNameById(availableLists, task.list) (new pure helper in lib/lists/transform.ts; id->name, fallback to id)"
+        - "tasks_controller.ts:1048 lists.find(l=>l.name===task.list) -> l.id===task.list (pass availableLists to detail renderer)"
+      writers:
+        - "tasks_controller.ts:1010 handleCreateTask -> createTask({title,due,list:this.currentListId ?? undefined}) (never empty string)"
+        - "capture_controller.ts:202,271 -> persist id: convert free-text list <input> to id-valued <select> (populateListFilter) OR resolve name->id; never a name/empty string"
+        - "tasks_controller.ts:1085 onSaveList already persists id -> keep"
+    files: ["src/lib/tasks/render.ts:796,804,987-989", "src/lib/lists/transform.ts (NEW listNameById)", "src/controllers/tasks_controller.ts:1010,1042-1048,1085", "src/controllers/capture_controller.ts:202,271"]
+    jin_core_context_readonly: ["jin-core/src/ops/tasks.rs:76", "jin-core/src/index/rebuild.rs:143", "jin-core/src/ops/lists.rs:19-20,300"]
+    given_when_then:
+      - "GIVEN list {id:proj-1,name:'Project One'} + Inbox {id:inbox,name:Inbox} (id!=name), task list=proj-1 WHEN List filter=proj-1 THEN task appears (filter unchanged)"
+      - "GIVEN that task detail WHEN rendered THEN list <select> pre-selects 'Project One' (l.id===task.list) AND read-only label shows 'Project One' not proj-1"
+      - "GIVEN List filter=proj-1 WHEN in-list add-row creates a task THEN it persists list=proj-1 (not inbox, not '')"
+      - "GIVEN capture with chosen list WHEN submitted THEN frontmatter.list is the list id (never a name/empty)"
+    validation_gate: "NEW describe('id!=name canonicalization') in tasks_controller.test.ts using {proj-1/Project One}+{inbox/Inbox} fixtures; MUST break existing id==name fixtures (:62,206-234); make verify-gui green"
+    risk_tag: P0
+    notes: "soft link to S5 (capture select may adopt JinSelect later, visual-only)"
+  - id: S7
+    title: "Board view for sectionless lists (fixes DT-4)"
+    priority: P1
+    timebox: "<=1d"
+    depends_on: []
+    parallel_group: A
+    agent_class: builder
+    action_plan: ["tasks_controller.ts:838 render board when currentView==='board' even if currentSections.length===0 (single 'No Section' column)", "render.ts:265 renderBoardView tolerates empty sections"]
+    files: ["src/controllers/tasks_controller.ts:838-859,293-304", "src/lib/tasks/render.ts:265"]
+    given_when_then:
+      - "GIVEN sectionless list (Inbox) view=board WHEN loadList THEN renderBoardView renders a single 'No Section' column (not flat list)"
+      - "GIVEN toggle button WHEN clicked list->board on sectionless list THEN view visibly changes to board + persists via editList(id,{view})"
+      - "GIVEN list with >=1 section WHEN board selected THEN existing multi-section board unchanged (no regression)"
+    validation_gate: "unit test: currentView=board + currentSections=[] -> board renderer called with single default column; regression test for >=1-section path; make verify-gui green"
+    risk_tag: P1
+
+build_order:
+  wave_A_parallel: [S1, S5, S6, S7]
+  wave_B_after_S1: [S2, S3, S4]
+  independent: [S1, S5, S6, S7]
+  dependent_on_S1: [S2, S3, S4]
+  dispatch_recommendation: "dispatch S1+S5+S6+S7 in parallel; on S1 merge, dispatch S2+S3+S4 in parallel; give S3 the diagnostic-class agent + capture-regression gate"
+
+risk_register:
+  - { id: RISK-1, tier: H, desc: "green-but-shallow tests (inline parseHTML fragments + id==name fixtures) masked DT-2/DT-3b", mitigation: "real-index wiring test: readFileSync(index.html) -> mount tasks section + #jin-modal-root -> start Stimulus App -> register tasks/lists/capture -> stub showModal/close -> assert buttons open modal (dialog.open===true); S6 id!=name fixture" }
+  - { id: RISK-2, tier: M, desc: "on-disk tasks may already hold a NAME in frontmatter.list (buggy capture path); forward-only fix leaves them orphaned; delete_list reassigns only by id-match", mitigation: "no silent auto-migrate; flag owner; optional one-time reconciliation as a separate owner-approved task; document in PR" }
+  - { id: RISK-3, tier: M, desc: "visual-only verification gap (VG-GUI-8 logic verified, visuals NOT)", mitigation: "S1/S4/S5 require owner screenshot sign-off per docs/gui-testing.md §5; tokens-only CSS guarded by css_tokens.test.ts + stylelint" }
+  - { id: RISK-4, tier: M, desc: "jsdom lacks showModal/close", mitigation: "stub HTMLDialogElement.prototype.showModal/close per notes_controller.test.ts:1459-1477 in every modal test" }
+  - { id: RISK-5, tier: M, desc: "shared dueDateDialog used by capture + nests calendar controller", mitigation: "S3 keeps it in-place (host:'in-place') + id-based access + explicit capture-regression assertion" }
+  - { id: RISK-6, tier: L, desc: "unregistered Lucide glyph renders nothing", mitigation: "chevron-down already registered; register Check only if a tick glyph is used; prefer CSS chevron" }
+  - { id: RISK-7, tier: L, desc: "new CSS raw hex / undefined token", mitigation: "npm run lint:css + css_tokens.test.ts in every visual story gate" }
+
+confidence_report:
+  decision: AUTO_PROCEED
+  overall: 0.88
+  factors:
+    pattern_match: 0.80
+    requirement_clarity: 0.96
+    decomposition_stability: 0.90
+    constraint_compliance: 0.90

@@ -1,0 +1,19 @@
+[package]
+name = "jin"
+version = "0.14.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[[bin]]
+name = "jin"
+path = "src/main.rs"
+
+[dependencies]
+jin-core = { path = "../jin-core" }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

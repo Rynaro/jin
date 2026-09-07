@@ -1,0 +1,743 @@
+/**
+ * layout.css — GUI-S1 app shell layout skeleton.
+ *
+ * HIG desktop structure (NavigationSplitView analog):
+ *   Sidebar (glass, inset) + Content area + optional Detail column.
+ *   Today is the launch destination (pinned at sidebar top).
+ *   Three-column on wide windows → collapses 3→2→1 via container/viewport.
+ *
+ * All values reference tokens from tokens.css — NO raw hex here.
+ * Visual correctness (glass rendering, reflow at AX sizes) is owner-verified.
+ */
+
+/* ── HTML/body reset ─────────────────────────────────────────────────────── */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* The shell manages overflow internally */
+}
+
+/* ── Root shell — sidebar + content (+ detail) ───────────────────────────── */
+.jin-shell {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  width: 100%;
+  background-color: var(--bg-base);
+  overflow: hidden;
+}
+
+/* ── Sidebar — nanquim washi-paper panel ─────────────────────────────────────
+ * A warm, intentional material that reads correctly on WebKitGTK. The previous
+ * Liquid-Glass treatment relied on backdrop-filter, but nothing sits behind the
+ * sidebar to blur, so it rendered as flat white. The washi gradient + warm edge
+ * give the panel real depth and carry the logo's ink-on-paper identity.
+ */
+.jin-sidebar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: var(--space-2) 0;
+  /* Inset sidebar — content scrolls to window edge beside it (HIG §3.1) */
+  position: relative;
+  isolation: isolate;   /* own stacking context for the enso watermark */
+  z-index: 10;
+  /* overflow stays visible so collapsed-rail tooltips can escape to the right.
+   * The enso watermark is self-contained (its right edge stops well inside the
+   * expanded panel; off-panel bleed falls off-viewport) and is hidden when
+   * collapsed, so no clipping is required here. */
+}
+
+/* Width animates only after the first paint (SidebarController adds
+ * .sidebar-animated) so a persisted-collapsed sidebar does not animate
+ * open→closed on launch; user-initiated toggles still animate. */
+.jin-sidebar.sidebar-animated {
+  transition:
+    width var(--duration-base) var(--ease-standard),
+    transform var(--duration-base) var(--ease-standard);
+}
+
+/* Enso watermark — a faint sumi-brush ring echoing the logo's circle.
+ * Purely decorative; sits behind the nav at very low opacity. The conic mask
+ * cuts the brush "gap" so it reads as an ensō, not a clean ring. */
+.jin-sidebar::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 34%;
+  inset-inline-start: -30%;
+  width: 210px;
+  height: 210px;
+  border-radius: 50%;
+  border: 11px solid var(--seal);
+  opacity: 0.06;
+  -webkit-mask-image: conic-gradient(from 205deg, transparent 0 40deg, rgba(0, 0, 0, 1) 62deg 360deg);
+          mask-image: conic-gradient(from 205deg, transparent 0 40deg, rgba(0, 0, 0, 1) 62deg 360deg);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Sidebar header — wordmark + seal chop. The wordmark is deliberately isolated:
+ * neither the collapse toggle, the capture action, nor settings restyle it. */
+.jin-sidebar-header {
+  padding: var(--space-1) var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Wordmark — set in the display (mincho) stack so "Jin" reads as the logo's
+ * brush-ink identity rather than the UI sans. Kept independent of every toggle. */
+.jin-app-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  font-family: var(--font-display);
+  font-size: var(--text-title2-size);
+  font-weight: 600;
+  line-height: var(--text-title2-line);
+  color: var(--ink-primary);
+  letter-spacing: 0.04em;
+}
+
+/* Seal "chop" — a small cinnabar stamp echoing the logo's red hanko. */
+.jin-app-name::after {
+  content: "";
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border-radius: var(--radius-xs);
+  background-color: var(--seal);
+  box-shadow: inset 0 0 0 1.5px var(--seal-on);
+}
+
+/* Collapse / expand toggle — quiet ink button pushed to the header's end. */
+.jin-sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-inline-start: auto;
+  width: 28px;
+  height: 28px;
+  min-block-size: 0;     /* relax .tap-target 44px — quiet affordance */
+  min-inline-size: 0;
+  border-radius: var(--radius-sm);
+  color: var(--label-secondary);
+  background-color: transparent;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.jin-sidebar-toggle:hover {
+  background-color: var(--workspace-row-hover);
+  color: var(--label);
+}
+
+.jin-sidebar-toggle svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.75;
+}
+
+/* Two glyphs, one shown at a time: close when expanded, open when collapsed. */
+.jin-sidebar-toggle__icon--open {
+  display: none;
+}
+
+/* ── Primary navigation list ────────────────────────────────────────────── */
+.jin-nav {
+  flex: 1 1 0%;
+  overflow-y: auto;
+  padding: 0 var(--space-1);
+}
+
+.jin-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+}
+
+/* Navigation section separator */
+.jin-nav-section-break {
+  height: 1px;
+  background-color: var(--separator);
+  margin: var(--space-1) var(--space-2);
+}
+
+/* ── Top actions — cozy quick capture ────────────────────────────────────────
+ * Capture is the primary action, pinned at the top just under the wordmark. */
+.jin-sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-half) var(--space-2) var(--space-2);
+}
+
+/* Capture affordance — a cozy cinnabar "seal" button: warm vertical gradient,
+ * generous rounding, soft press shadow, and a gentle lift on hover. */
+.jin-capture-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  min-block-size: var(--space-5); /* 40px — roomy/cozy (relaxes tap-target 44px) */
+  background-image: linear-gradient(180deg, var(--seal), var(--seal-strong));
+  color: var(--seal-on);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-subheadline-size);
+  font-weight: 600;
+  line-height: var(--text-subheadline-line);
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  box-shadow: var(--seal-shadow);
+  transition:
+    transform var(--duration-fast) var(--ease-standard),
+    filter var(--duration-fast) var(--ease-standard);
+}
+
+.jin-capture-btn:hover {
+  transform: translateY(-1px);
+  filter: saturate(1.08) brightness(1.03);
+}
+
+.jin-capture-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.jin-capture-btn svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* ── Sidebar foot — Settings uses the same row grammar as navigation ─────────
+ * The label remains visible when expanded; the tooltip becomes supplementary
+ * only after the rail collapses. */
+.jin-sidebar-foot {
+  /* Comfortably tight for a single icon — the sidebar's own 16px bottom padding
+   * provides the breathing room below. */
+  padding: var(--space-half) var(--space-2);
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  align-items: center;
+  border-top: 1px solid var(--separator);
+}
+
+/* ── Collapsed icon-rail ─────────────────────────────────────────────────────
+ * SidebarController toggles .is-collapsed on the <aside>. The wordmark and all
+ * labels are hidden, icons center, and each item gets a hover/focus tooltip.
+ */
+.jin-sidebar.is-collapsed {
+  width: var(--space-8); /* 64px icon rail */
+}
+
+/* The enso watermark is wider than the rail — hide it to avoid bleed. */
+.jin-sidebar.is-collapsed::before {
+  display: none;
+}
+
+/* Header: stack a cozy small "Jin" inscription above the (now centered) toggle. */
+.jin-sidebar.is-collapsed .jin-sidebar-header {
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-half);
+  padding-inline: 0;
+}
+
+/* Keep the wordmark visible, shrunk to a small mincho inscription. */
+.jin-sidebar.is-collapsed .jin-app-name {
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+  letter-spacing: 0.08em;
+  gap: 0;
+}
+
+/* The seal chop is too much for the narrow rail — drop it; just "Jin". */
+.jin-sidebar.is-collapsed .jin-app-name::after {
+  display: none;
+}
+
+.jin-sidebar.is-collapsed .jin-sidebar-toggle {
+  margin-inline-start: 0;
+}
+
+/* Toggle glyph swap (close ⇄ open). */
+.jin-sidebar.is-collapsed .jin-sidebar-toggle__icon--close {
+  display: none;
+}
+
+.jin-sidebar.is-collapsed .jin-sidebar-toggle__icon--open {
+  display: inline-flex;
+}
+
+/* Nav: center icons, hide labels. */
+.jin-sidebar.is-collapsed .jin-nav-item {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.jin-sidebar.is-collapsed .jin-nav-item > span {
+  display: none;
+}
+
+/* Drop the nav's vertical scroll when collapsed: overflow-y:auto forces
+ * overflow-x to compute to auto (per spec), which would clip the tooltips that
+ * escape to the right. Five icons never need to scroll. */
+.jin-sidebar.is-collapsed .jin-nav {
+  overflow: visible;
+}
+
+/* Capture (top) becomes a centered circular seal dot. */
+.jin-sidebar.is-collapsed .jin-sidebar-actions {
+  align-items: center;
+  padding-inline: 0;
+}
+
+.jin-sidebar.is-collapsed .jin-capture-btn {
+  width: var(--space-5);            /* 40px → square = circle */
+  padding: 0;
+  border-radius: var(--radius-capsule);
+}
+
+.jin-sidebar.is-collapsed .jin-capture-btn > span {
+  display: none;
+}
+
+/* Settings gear (foot) centers in the rail. */
+.jin-sidebar.is-collapsed .jin-sidebar-foot {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+/* ── Icon-only tooltips ──────────────────────────────────────────────────────
+ * Pure-CSS balloon to the right of an icon, shown on hover/focus. Applies to:
+ *   - every collapsed-rail item (labels carry the meaning when expanded), and
+ *   - Settings only while the rail is collapsed.
+ * The host's aria-label is the accessible name; the tooltip is supplementary.
+ * The sidebar has overflow:visible + its own stacking context, so the balloon
+ * escapes the rail and floats over the content.
+ */
+.jin-sidebar.is-collapsed [data-tooltip],
+.jin-settings-btn[data-tooltip] {
+  position: relative;
+}
+
+.jin-sidebar.is-collapsed [data-tooltip]::after,
+.jin-settings-btn[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  inset-inline-start: calc(100% + var(--space-1));
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  background-color: var(--bg-elevated-2);
+  color: var(--label);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+  font-weight: 500;
+  padding: var(--space-half) var(--space-1);
+  border-radius: var(--radius-sm);
+  border: 0.5px solid var(--separator);
+  box-shadow: var(--elevation-shadow);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+  z-index: 200;
+}
+
+.jin-sidebar.is-collapsed [data-tooltip]:hover::after,
+.jin-sidebar.is-collapsed [data-tooltip]:focus-visible::after,
+.jin-settings-btn[data-tooltip]:hover::after,
+.jin-settings-btn[data-tooltip]:focus-visible::after {
+  opacity: 1;
+}
+
+/* ── Content column ──────────────────────────────────────────────────────── */
+.jin-content {
+  flex: 1 1 0%;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0; /* Prevents flex blowout */
+  overflow: hidden;
+  background-color: var(--bg-secondary);
+  position: relative;
+}
+
+/* Floating toolbar — sits above content (glass, "functional layer" per HIG) */
+.jin-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  min-block-size: var(--hit-target);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  /* Glass toolbar floats above scrolling content */
+}
+
+.jin-toolbar-title {
+  font-family: var(--font-display);
+  font-size: var(--text-title2-size);
+  font-weight: 600;
+  line-height: var(--text-title2-line);
+  color: var(--label);
+  flex: 1 1 0%;
+}
+
+/* Content scroll area */
+.jin-content-body {
+  flex: 1 1 0%;
+  overflow-y: auto;
+  padding: var(--space-3);
+  min-height: 0;
+}
+
+/* ── Detail column (optional, right panel) ───────────────────────────────── */
+.jin-detail {
+  flex-shrink: 0;
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-inline-start: 0.5px solid var(--separator);
+  background-color: var(--bg-base);
+  overflow: hidden;
+}
+
+/* ── Responsive collapse: 3→2→1 columns ─────────────────────────────────── */
+
+/* 2-column: hide detail pane below 1080px */
+@media (max-width: 1079px) {
+  .jin-detail {
+    display: none;
+  }
+}
+
+/* 1-column: hide sidebar below 640px (sidebar becomes an overlay) */
+@media (max-width: 639px) {
+  .jin-sidebar {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-start: 0;
+    transform: translateX(-100%);
+    transition: transform var(--duration-base) var(--ease-standard);
+    z-index: 100;
+    width: 256px;
+  }
+
+  .jin-sidebar--open {
+    transform: translateX(0);
+  }
+
+  .jin-shell {
+    flex-direction: column;
+  }
+}
+
+/* ── Error banner ────────────────────────────────────────────────────────── */
+.jin-error-container {
+  margin: var(--space-2) var(--space-3) 0;
+  padding: var(--space-1) var(--space-2);
+  background-color: var(--fill-primary);
+  border: 1px solid var(--system-red);
+  border-radius: var(--radius-sm);
+  color: var(--system-red);
+  font-size: var(--text-footnote-size);
+  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.jin-error-code {
+  font-weight: 700;
+  background-color: var(--system-red);
+  color: var(--bg-base);
+  padding: 0 var(--space-half);
+  border-radius: var(--radius-xs);
+  flex-shrink: 0;
+}
+
+.jin-error-message {
+  flex: 1 1 0%;
+  color: var(--label);
+}
+
+.jin-error-dismiss {
+  flex-shrink: 0;
+  min-block-size: unset;
+  min-inline-size: unset;
+  padding: var(--space-half);
+  opacity: 0.6;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+}
+
+.jin-error-dismiss:hover {
+  opacity: 1;
+  background-color: var(--fill-tertiary);
+}
+
+/* ── Proof-of-wiring JSON output (GUI-S0 remnant, replaced in GUI-S3) ────── */
+.jin-json-output {
+  background-color: var(--bg-elevated);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption1-size);
+  line-height: var(--text-body-line);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 60vh;
+  overflow-y: auto;
+  color: var(--label);
+}
+
+/* ── Hint / placeholder text ─────────────────────────────────────────────── */
+.jin-hint {
+  color: var(--label-secondary);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-body-line);
+  font-style: italic;
+}
+
+/* ── Continuous Ink Workspace shell ───────────────────────────────────── */
+
+.jin-shell {
+  background: var(--workspace-canvas);
+}
+
+.jin-sidebar {
+  padding: var(--space-1) 0;
+  isolation: auto;
+  color: var(--label);
+  background-image: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+          backdrop-filter: none;
+}
+
+.jin-sidebar::before {
+  content: none;
+  display: none;
+}
+
+.jin-sidebar-header {
+  min-height: var(--toolbar-height);
+  padding: 0 10px;
+}
+
+.jin-app-name {
+  color: var(--ink-primary);
+  font-size: var(--text-subheadline-size);
+  line-height: var(--text-subheadline-line);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.jin-app-name::after {
+  content: none;
+}
+
+.jin-brand-mark {
+  width: 22px;
+  height: 16px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.jin-app-name__seal {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--seal);
+  transform: rotate(-3deg);
+}
+
+.jin-sidebar-toggle {
+  width: var(--control-height);
+  height: var(--control-height);
+  min-width: var(--desktop-hit-target);
+  min-height: var(--desktop-hit-target);
+  border-radius: var(--radius-sm);
+  color: var(--label-secondary);
+}
+
+.jin-sidebar-toggle:hover {
+  color: var(--label);
+  background: var(--workspace-row-hover);
+}
+
+.jin-nav {
+  padding-inline: var(--space-1);
+}
+
+.jin-nav-list {
+  gap: 0;
+}
+
+.jin-capture-btn svg {
+  width: var(--icon-size-standard);
+  height: var(--icon-size-standard);
+  stroke-width: 1.75;
+}
+
+.jin-sidebar-actions {
+  padding: var(--space-half) var(--space-1) var(--space-2);
+}
+
+.jin-capture-btn {
+  min-height: var(--rail-row-height);
+  padding: 0 10px;
+  justify-content: flex-start;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--label-secondary);
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+}
+
+.jin-capture-btn:hover,
+.jin-capture-btn:active {
+  color: var(--label);
+  background: var(--workspace-row-hover);
+  transform: none;
+  filter: none;
+}
+
+.jin-sidebar-foot {
+  padding: var(--space-1);
+  justify-content: flex-start;
+  border-top-color: var(--separator);
+}
+
+.jin-sidebar.is-collapsed {
+  width: var(--app-rail-collapsed-width);
+}
+
+.jin-sidebar.is-collapsed .jin-sidebar-header {
+  min-height: var(--toolbar-height);
+  padding: 0 var(--space-1);
+  flex-direction: row;
+  justify-content: center;
+}
+
+.jin-sidebar.is-collapsed .jin-app-name {
+  display: none;
+}
+
+.jin-sidebar.is-collapsed .jin-sidebar-toggle {
+  margin-inline-start: 0;
+}
+
+.jin-sidebar.is-collapsed .jin-nav,
+.jin-sidebar.is-collapsed .jin-sidebar-actions,
+.jin-sidebar.is-collapsed .jin-sidebar-foot {
+  padding-inline: var(--space-1);
+}
+
+.jin-sidebar.is-collapsed .jin-nav-item,
+.jin-sidebar.is-collapsed .jin-capture-btn,
+.jin-sidebar.is-collapsed .jin-settings-btn {
+  width: 100%;
+  min-height: var(--rail-row-height);
+  height: var(--rail-row-height);
+  padding: 0;
+  justify-content: center;
+}
+
+.jin-sidebar.is-collapsed .jin-capture-btn {
+  border-radius: var(--radius-sm);
+}
+
+.jin-sidebar.is-collapsed .jin-settings-btn > span {
+  display: none;
+}
+
+.jin-sidebar:not(.is-collapsed) .jin-settings-btn[data-tooltip]::after {
+  content: none;
+}
+
+.jin-content {
+  background: var(--workspace-canvas);
+}
+
+.jin-toolbar {
+  min-block-size: var(--toolbar-height);
+  padding: 0 var(--space-3);
+}
+
+@media (pointer: coarse) {
+  .jin-sidebar-toggle,
+  .jin-settings-btn {
+    min-width: var(--coarse-hit-target);
+    min-height: var(--coarse-hit-target);
+  }
+}
+
+/* The app rail is functional glass: a cool, restrained material against the
+ * warmer workspace canvas. Its edge shadow is deliberately shallow so the
+ * rail belongs to the window rather than floating as a card. */
+.jin-sidebar.jin-chrome {
+  background-color: var(--workspace-chrome);
+  border: 0;
+  border-inline-end: 0.5px solid var(--separator);
+  box-shadow:
+    inset 0 0.5px 0 var(--specular-highlight),
+    4px 0 14px var(--workspace-edge-shadow);
+  -webkit-backdrop-filter: blur(var(--glass-blur-thin)) saturate(var(--glass-saturate));
+          backdrop-filter: blur(var(--glass-blur-thin)) saturate(var(--glass-saturate));
+}
+
+.jin-sidebar-header {
+  position: relative;
+}
+
+/* One dry-brush gesture for the whole application rail, kept away from text. */
+.jin-sidebar-header::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: 10px;
+  inset-block-end: 1px;
+  width: 34px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--ink-dry), var(--ink-bleed), transparent);
+  clip-path: polygon(0 18%, 77% 0, 100% 45%, 69% 70%, 0 100%);
+  transform: rotate(-1deg);
+  pointer-events: none;
+}
+
+.jin-brand-mark {
+  width: 20px;
+  stroke-width: 1.45;
+}
+
+.jin-app-name {
+  gap: 6px;
+}
+
+.jin-app-name__label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}

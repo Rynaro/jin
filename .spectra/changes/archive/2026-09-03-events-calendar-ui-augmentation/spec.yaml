@@ -1,0 +1,166 @@
+# Machine-readable full-tier mirror of the frozen retrospective spec.md and change.json.
+eidolon: idg
+kind: retrospective-spec
+version: 1.0.0
+created_at: 2026-09-03
+change_id: events-calendar-ui-augmentation
+esl_version: "1.1"
+esl_tier: full
+status: frozen
+retrospective: true
+maker: vivi
+checker: vigil
+spec_ref: .spectra/changes/events-calendar-ui-augmentation/spec.md
+change_ref: .spectra/changes/events-calendar-ui-augmentation/change.json
+deliberation_ref: .spectra/changes/events-calendar-ui-augmentation/deliberation.md
+intent_class: CHANGE
+
+intent: >-
+  Modernize Jin's Month, Week, and Day calendar surfaces; differentiate exact
+  calendars with frontend-local user-controlled colors; provide one reusable
+  Jin color picker with a custom chroma path; and normalize passive badges
+  without changing calendar authority or interaction semantics.
+
+constraints:
+  - Calendar colors remain frontend-local and do not enter core Event/calendar schemas or provider sync.
+  - Values are one of eight Jin palette tokens or canonical uppercase six-digit HEX.
+  - Arbitrary CSS values are rejected; invalid reads fall back safely to accent.
+  - A valid '#RGB' is a draft that previews and canonicalizes only on blur, change, or Apply.
+  - The SV map is supplemental; separate native Saturation and Brightness ranges are the canonical accessible controls.
+  - Apply is the only commit action; Cancel, close, and Escape are non-mutating.
+  - Badge normalization applies to passive metadata only, not interactive chips or controls.
+  - Responsive grids and forms use zero-minimum tracks, minmax clamping, bounded widths, and narrow-screen stacking.
+  - Verification preserves maker/checker separation and requires native owner visual sign-off.
+
+decisions:
+  - id: D-01
+    decision: Persist exact-calendar colors locally, keyed by jin or encoded Google account-id/calendar-id tuple, and rerender mounted calendars on change.
+  - id: D-02
+    decision: Share one eight-token-plus-chroma picker across Calendar, List, and Tag consumers.
+  - id: D-03
+    decision: Use a Jin-owned HSV modal with stable HEX/RGB drafts, transactional Apply, and explicit accessible H/S/B ranges.
+  - id: D-04
+    decision: Normalize List and Tag colors at core write boundaries while keeping calendar color preference frontend-local.
+  - id: D-05
+    decision: Compose a shared capsule primitive only into passive badges on touched surfaces.
+
+scope:
+  in:
+    - equal-width Month geometry with long-title containment
+    - Jin-token Week and Day modernization without circular G or J glyphs
+    - exact-calendar local colors and immediate render reactivity
+    - shared palette and chroma picker for calendars, Lists, and Tags
+    - modal lifecycle, stable HEX/RGB drafts, IME, preview, and validation
+    - chromatic Hue plus accessible native Saturation and Brightness ranges
+    - supplemental pointer/keyboard SV map
+    - safe token-or-canonical-HEX CSS application
+    - List and Tag core normalization
+    - passive badge normalization
+    - responsive, forced-colors, automated, browser, CI, and native-owner verification
+  out:
+    - core calendar color schema or Google color synchronization
+    - cross-device calendar color preference synchronization
+    - arbitrary CSS colors, alpha, or persisted gradients
+    - native input type color
+    - universal badge conversion
+    - calendar chronology, recurrence, mutation, sync, or detail redesign
+    - reproduction of another product's branding
+
+acceptance_criteria:
+  - id: AC-ECUA-01
+    form: event-driven
+    given: a Month containing an event title wider than its day
+    when: the calendar renders
+    then: every week SHALL retain seven equal-width columns, the title SHALL ellipsize inside its cell, and the event control SHALL retain the complete accessible title
+    verify_method: calendar controller tests, CSS assertions, and visual QA
+  - id: AC-ECUA-02
+    form: event-driven
+    given: Jin and Google timed and all-day events
+    when: Week or Day renders
+    then: the shared surface SHALL use color-led styling without visible G or J glyphs while preserving source meaning and time-grid behavior
+    verify_method: calendar controller and time-grid tests plus visual QA
+  - id: AC-ECUA-03
+    form: state-driven
+    given: two Google calendars with the same display name but different account and calendar IDs
+    when: preferences are stored and events render
+    then: each exact route SHALL retain an independent color across Month, Week, Day, and all-day presentation
+    verify_method: calendar color and controller tests
+  - id: AC-ECUA-04
+    form: event-driven
+    given: an open calendar and Calendar Accounts settings
+    when: a valid color is selected
+    then: local storage SHALL contain the normalized preference and the open calendar SHALL rerender without refetching events
+    verify_method: calendar preference and listener tests
+  - id: AC-ECUA-05
+    form: ubiquitous
+    given: calendar, list, and tag color controls
+    when: their choices render
+    then: all SHALL use the shared picker with eight presets followed by one chroma control
+    verify_method: picker DOM tests and source inspection
+  - id: AC-ECUA-06
+    form: event-driven
+    given: a shared color picker
+    when: the chroma control is reopened and the picker is destroyed
+    then: at most one lazy Jin modal SHALL be owned, focus SHALL restore, and modal resources SHALL be removed
+    verify_method: picker lifecycle tests
+  - id: AC-ECUA-07
+    form: event-driven
+    given: the custom color dialog
+    when: HEX or RGB drafts are edited, committed, or invalid
+    then: valid input SHALL synchronize without disrupting caret or composition, '#RGB' SHALL preview and canonicalize only on blur, change, or Apply, and invalid input SHALL not reach styling or persistence
+    verify_method: picker draft, IME, validation, and Apply tests
+  - id: AC-ECUA-08
+    form: event-driven
+    given: the custom color dialog
+    when: Hue, Saturation, or Brightness changes through map, keyboard, or native ranges
+    then: spectrum, preview, outputs, ARIA values, and marker SHALL synchronize, values SHALL clamp to bounds, and native Saturation and Brightness ranges SHALL remain the canonical accessible controls while the SV map remains supplemental
+    verify_method: picker interaction tests, accessibility assertions, and visual QA
+  - id: AC-ECUA-09
+    form: event-driven
+    given: an existing committed color and a changed custom draft
+    when: the dialog is dismissed or Apply is activated
+    then: dismissal SHALL emit no mutation and Apply SHALL emit exactly one canonical color
+    verify_method: picker callbacks and consumer tests
+  - id: AC-ECUA-10
+    form: unwanted-behavior
+    given: palette, custom, invalid, and unknown legacy values
+    when: GUI color application runs
+    then: only semantic palette state or validated canonical HEX SHALL enter the designated CSS property and invalid values SHALL fall back safely
+    verify_method: safe color application tests
+  - id: AC-ECUA-11
+    form: event-driven
+    given: list create or edit color input
+    when: core receives a palette token, valid HEX, or invalid color
+    then: core SHALL persist normalized valid colors and reject invalid colors before mutation
+    verify_method: jin-core list color tests
+  - id: AC-ECUA-12
+    form: event-driven
+    given: an existing tag
+    when: core recolor receives a valid or invalid color
+    then: valid values SHALL persist canonically and invalid values SHALL preserve prior color
+    verify_method: jin-core tag color tests and GUI callbacks
+  - id: AC-ECUA-13
+    form: state-driven
+    given: representative passive metadata badges
+    when: affected surfaces render
+    then: badges SHALL derive structure from jin-badge while preserving semantic cues and excluding interactive chips
+    verify_method: DOM and source assertions plus visual QA
+  - id: AC-ECUA-14
+    form: state-driven
+    given: supported themes, accessibility modes, and viewport widths
+    when: affected calendar and color surfaces are exercised
+    then: controls SHALL remain legible, contained, focus-visible, operable, repository release gates SHALL pass, and native Tauri appearance SHALL receive owner visual sign-off
+    verify_method: make verify-all, focused GUI checks, CI, browser evidence, and native owner review
+
+verification_commands:
+  - npm --prefix jin-gui test -- --run src/__tests__/calendar_colors.test.ts
+  - npm --prefix jin-gui test -- --run src/__tests__/calendar_view_controller.test.ts src/__tests__/calendar_time_grid.test.ts
+  - npm --prefix jin-gui test -- --run
+  - cargo test -p jin-core
+  - npm --prefix jin-gui run build
+  - npm --prefix jin-gui run lint:css
+  - git diff --check
+
+release_boundary: >-
+  This frozen retrospective machine spec records accepted behavior only. Any
+  expansion requires a new change or explicit lifecycle amendment.

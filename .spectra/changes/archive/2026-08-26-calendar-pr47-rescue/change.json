@@ -1,0 +1,47 @@
+{
+  "esl_version": "1.1",
+  "change_id": "calendar-pr47-rescue",
+  "status": "archived",
+  "tier": "full",
+  "maker": "Vivi",
+  "checker": "VIGIL",
+  "acceptance_checks": [
+    {
+      "id": "AC-CAL-01",
+      "given": "a Jin-owned non-recurring event",
+      "when": "the user edits or deletes it",
+      "then": "the canonical event SHALL be changed atomically in place while identity and linkage metadata remain unchanged",
+      "verify_method": "test: cargo test -p jin-core ops::events::tests"
+    },
+    {
+      "id": "AC-CAL-02",
+      "given": "an external, cancelled, recurring, master, or instance event",
+      "when": "a mutation is requested",
+      "then": "the core SHALL reject the mutation and the GUI SHALL expose no mutation controls",
+      "verify_method": "test: cargo test -p jin-core ops::events::tests"
+    },
+    {
+      "id": "AC-CAL-03",
+      "given": "the Events destination at 1280 by 800",
+      "when": "the user switches Month, Week, or Day and activates an event card",
+      "then": "each view SHALL remain reachable and the card SHALL open the canonical event detail surface",
+      "verify_method": "Playwright evidence: .artifacts/playwright-mcp/calendar-rescue artifacts"
+    },
+    {
+      "id": "AC-CAL-04",
+      "given": "an all-day or multi-day event",
+      "when": "the agenda projects display days",
+      "then": "the event SHALL intersect every applicable half-open day bucket and exclude its exclusive end day",
+      "verify_method": "test: cargo test -p jin-core; visual evidence in Month and Week views"
+    }
+  ],
+  "spec_ref": ".spectra/changes/calendar-pr47-rescue/spec.md",
+  "created_at": "2026-08-24",
+  "drift_checked": true,
+  "archive_path": "archive/2026-08-26-calendar-pr47-rescue",
+  "has_code": true,
+  "memory_preflight": {
+    "ran": false,
+    "records": 0
+  }
+}

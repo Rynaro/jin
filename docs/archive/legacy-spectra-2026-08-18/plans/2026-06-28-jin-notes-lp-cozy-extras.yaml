@@ -1,0 +1,448 @@
+methodology: SPECTRA
+methodology_version: 4.10.0
+spec_id: 2026-06-28-jin-notes-lp-cozy-extras
+title: "Live-preview increment #4 (FINAL) — cozy extras: focus mode (dim non-active lines) + typewriter scrolling (center the active line) in the Jin CM6 note editor"
+intent_type: CHANGE
+tier: standard
+date: 2026-06-28
+repo: jin-gui
+scope: frontend-only
+from: spectra
+to: vivi
+performative: PROPOSE
+confidence: 0.90
+roadmap_note: >
+  LAST roadmap increment of the Jin Notes live-preview series (after #1 lists, #2 links, #3 blockquote).
+  Crystalium recall on the jin scope did NOT surface the roadmap crystal 2fb5bb35 or the LP-increment
+  crystals (only Wave-1 5216e65c + Wave-2B 9a893cc6 returned) — consistent with the RECURRING JIN FACT
+  logged by the Wave-2B planner that ATLAS/roadmap crystals do not surface on the jin scope. All anchors
+  below were therefore verified FIRSTHAND from the working tree (editor.ts / livePreview.ts / the test
+  files / browse.css / icons/index.ts), not from memory.
+branch_base: >
+  main. The two features are LOGICALLY INDEPENDENT (a decoration layer vs a scroll behavior) and touch
+  DIFFERENT new modules, but BOTH add a small block to editor.ts (toolbar buttons + compartments). If
+  shipped as two PRs, land FOCUS first then rebase TYPEWRITER onto it (mirrors how #3 blockquote rebased
+  onto #2 links). No hard code dependency between them — order is a merge-hygiene choice, not a correctness one.
+
+# ─────────────────────────────────────────────────────────────────────────────
+objective: >
+  Add two OPT-IN "cozy writing" modes to the CM6 note editor, each a toolbar icon-toggle (default OFF),
+  each driven by its OWN CM6 Compartment so toggling is a view.dispatch(compartment.reconfigure(...))
+  with NO remount and NO caret move. (1) FOCUS MODE: when ON, every line the caret/selection does NOT
+  touch gets a Decoration.line({class:'cm-dim'}) so it visually recedes; the active line(s) stay full
+  opacity. Pure builder buildFocusDecorations(state, ranges?) recomputed on selection/doc change, mirroring
+  buildLivePreviewDecorations. (2) TYPEWRITER SCROLLING: when ON, a transaction extender appends an
+  EditorView.scrollIntoView(head, {y:'center'}) effect to every transaction that changes a COLLAPSED
+  cursor (selectionSet or docChanged) so the active line stays vertically centered; a RANGE selection is
+  NOT re-centered (iA-Writer jumpiness caveat). Both modules are chokepoint-clean (only @codemirror/* —
+  no markdown-it / dompurify / innerHTML). Neither feature mutates the doc buffer.
+
+# ─────────────────────────────────────────────────────────────────────────────
+foundation:
+  editor: "jin-gui/src/lib/notes/editor.ts — mountEditor(parent, opts) → EditorHandle"
+  live_preview: "jin-gui/src/lib/notes/livePreview.ts — buildLivePreviewDecorations(state, ranges?) (pure) + jinLivePreview() ViewPlugin"
+  established_patterns:
+    - "Compartment block (editor.ts:526-530) — languageCompartment / highlightCompartment / keymapCompartment / themeCompartment / livePreviewCompartment; ADD focusCompartment + typewriterCompartment as siblings"
+    - "Compartment.of(...) in the EditorState extensions array (editor.ts:560-607) — livePreviewCompartment.of(jinLivePreview()) at :569 is the EXACT precedent for focusCompartment.of([]) / typewriterCompartment.of([])"
+    - "mkBtn(iconName, label) ghost toolbar button helper (editor.ts:374-384) — creates .cm-toolbar__btn with <i data-lucide=...>; REUSE for the two new toggles"
+    - "Toolbar assembly (editor.ts:432-448) — buttons appended then toolbarSpacer (editor.ts:421-423, flex:1) then toggleBtn (Read). Insert the two mode-toggles AFTER the spacer, BEFORE toggleBtn (right cluster)"
+    - "Reading toggle button + click handler (editor.ts:426-431, :640-663) — text toggle precedent for an opt-in mode control with an active label/aria"
+    - "Toolbar button click wiring block (editor.ts:612-623) — add focusToggle / typewriterToggle click handlers in the SAME block"
+    - "updateListener (editor.ts:592-599) — observes docChanged; precedent for an update-driven behavior (typewriter uses a transaction extender instead — see D-TYPEWRITER-MECHANISM)"
+    - "activeLines computation (livePreview.ts:124-132) — union over state.selection.ranges → line numbers; DUPLICATE this ~6 lines in focusMode.ts (do NOT cross-import, mirrors the SAFE_LINK_SCHEME duplication at livePreview.ts:48 that avoids importing from markdown.ts)"
+    - "jinEditorTheme (editor.ts:117-192) — ALL editor decoration CSS lives here via token vars (e.g. .cm-bullet-glyph :161, .cm-blockquote-line :188); ADD .cm-dim + .cm-content.cm-typewriter here"
+    - "jinLivePreview() ViewPlugin (livePreview.ts:324-352) — rebuild decorations on docChanged|viewportChanged|selectionSet over visibleRanges; EXACT skeleton for jinFocusMode()"
+    - "atomicDecorationsOf (livePreview.ts:298-310) — a Decoration.line has spec.class truthy + no spec.widget → it is DROPPED from atomicRanges. cm-dim line decos are line decos → never atomic by the same rule (no atomic change needed; focus mode has its OWN plugin with NO atomicRanges provide at all)"
+    - "icons/index.ts (lib/icons/index.ts:19-192) — import + re-export + add to initIcons({icons}) map; toolbar uses <i data-lucide=...> via mkBtn. ADD Focus (focus mode) + AlignCenterVertical (typewriter)"
+  toolbar_css: "jin-gui/src/styles/browse.css:369-436 — .cm-toolbar__btn ghost buttons (no active state today) + .cm-toolbar__toggle. ADD a .cm-toolbar__btn[aria-pressed=\"true\"] active rule here"
+  test_files:
+    builder: "jin-gui/src/__tests__/livePreview.test.ts — pure-builder gates (forceParse=ensureSyntaxTree :45, makeState :54, makeStateWithSelection :66, collectRanges :79). Focus-builder gates can live in a sibling __tests__/focusMode.test.ts mirroring these helpers"
+    editor: "jin-gui/src/__tests__/editor.test.ts — real-mount gates: G-TOOLBAR-STRUCTURE asserts every button by aria-label (:899-934), G-TOOLBAR-* click gates (:803-897), G-FOOTER-STATS (:944-1002), G-READING-VIEW (:643-716), G-KEYMAP (:392-533). New toggle/wiring/caret-safe gates go HERE"
+  node_requirement: ">=20 (nvm use 24.18.0; system node v16.20.2 crashes vitest — RECURRING JIN FACT)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FIRSTHAND CM6 facts (verified from the installed @codemirror/* + the working tree)
+cm6_facts:
+  multiple_decoration_providers: >
+    Focus mode is a SEPARATE ViewPlugin from livePreview with its OWN decorations facet. CM6 merges
+    DecorationSets from all extensions; a single line can carry BOTH cm-blockquote-line (livePreview) AND
+    cm-dim (focusMode) — the classes compose. There is NO shared RangeSetBuilder between the two plugins,
+    so the #3 blockquote ordering hazard does NOT recur across modules.
+  line_decoration_from_plugin: >
+    Plugin-provided (function-form) decoration sets MAY contain LINE decorations (verified for #3:
+    @codemirror/view index.js:2737-2739 + :8834-8838 forbid only BLOCK widgets and replacing decorations
+    that cross a line break). cm-dim is a zero-width Decoration.line at line.from → always legal.
+  rangesetbuilder_line_order: >
+    A RangeSetBuilder requires strictly non-decreasing (from, startSide). Iterating lines in ascending
+    number and adding Decoration.line at each line.from yields ascending from with equal startSide (-2e8)
+    → monotonic, no throw. (focus mode adds ONLY line decos, all at line.from, so ordering is trivially safe.)
+  scrollintoview_is_a_state_effect: >
+    EditorView.scrollIntoView(pos, opts) returns a StateEffect (created from a StateEffectType). It MAY be
+    added to a transaction's effects at STATE level (e.g. from a transactionExtender) — the view reads it
+    afterwards to scroll. This is why the transactionExtender mechanism (D-TYPEWRITER-MECHANISM) needs no
+    second dispatch and is caret-safe (it is an effect, not a doc/selection change).
+  transaction_extender_inputs: >
+    In EditorState.transactionExtender.of(tr => ...): tr.docChanged (bool), tr.selection (the explicitly
+    set selection or undefined — typing maps the cursor automatically so tr.selection can be undefined on a
+    doc change), tr.newSelection.main.empty (collapsed?), tr.newSelection.main.head (post-tr caret). The
+    reconfigure transaction that toggles a compartment has docChanged=false AND selection=undefined → the
+    extender returns null → NO scroll on toggle (verified shape).
+  compartment_reconfigure_caret_safe: >
+    view.dispatch({effects: cmp.reconfigure(ext)}) carries NO doc change and NO selection → the EditorView
+    instance is the SAME node and state.selection.main.head is unchanged. This is the basis for G-TOGGLE-CARET-SAFE.
+  lucide_icons_present: "Verified in installed lucide@0.523.0: Focus, Crosshair, AlignCenterVertical, TextCursor, TextCursorInput, AlignVerticalSpaceAround all export. Chosen: Focus (focus mode), AlignCenterVertical (typewriter)."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Canonical builder ranges (offsets computed firsthand for the focus-mode gates)
+focus_builder_facts:
+  doc_three_lines: "doc 'line1\\nline2\\nline3' => line1[0,5) '\\n'@5 ; line2[6,11) '\\n'@11 ; line3[12,17). line1.from=0, line2.from=6, line3.from=12"
+  cursor_line2: "cursor@8 (inside line2) => activeLines={2}; buildFocusDecorations returns EXACTLY [ line@(0,0) cm-dim, line@(12,12) cm-dim ] — NO deco at from=6 (active line2)"
+  selection_lines_1_2: "selection anchor=0 head=8 (spans line1..line2) => activeLines={1,2}; returns EXACTLY [ line@(12,12) cm-dim ] (only line3 dimmed)"
+  single_line_doc: "doc 'solo' cursor@0 => activeLines={1}; line count 1 => returns EMPTY set (the only line is active → nothing to dim)"
+  off_state: "focus OFF => focusCompartment.of([]) → no ViewPlugin → ZERO cm-dim decorations in the DOM (asserted at the toggle/integration level, not in the pure builder)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+decisions:
+  D-MODULE:
+    pick: "TWO new sibling modules: jin-gui/src/lib/notes/focusMode.ts (focus) + jin-gui/src/lib/notes/typewriter.ts (typewriter). NOT livePreview.ts; NOT inlined into editor.ts."
+    rationale: >
+      (1) editor.ts is already ~723 lines and cohesive (surface + toolbar + debounce + reading view); adding
+      two more behaviors inline would bloat it. (2) livePreview.ts is the marker-hide chokepoint layer; focus
+      dimming is a different concern (whole-line opacity, not marker hiding) and typewriter is not a decoration
+      at all. (3) Two small one-purpose modules mirror the existing one-concept-per-file style (markdown.ts,
+      blocks.ts, transform.ts, livePreview.ts) and let the two stories ship as INDEPENDENT units with no shared
+      new file. Each module imports ONLY @codemirror/* → chokepoint-clean by construction (G-CHOKEPOINT-COZY).
+    out: "A single combined 'cozyExtras.ts' (rejected — bundles two unrelated concerns and forces both stories to share a file)."
+  D-GRANULARITY:
+    pick: "ACTIVE-LINE granularity for focus mode v1 (dim every line NOT in the activeLines set). Paragraph granularity DEFERRED."
+    rationale: >
+      (1) Reuses the EXACT activeLines computation already proven in livePreview.ts:124-132 — zero new traversal
+      logic, one pass O(visible lines). (2) Visual COHERENCE with live preview: the line you are editing is both
+      marker-REVEALED (livePreview) AND un-dimmed (focus) because both layers key off the SAME active-line set;
+      paragraph granularity would desync the two (a dimmed-but-revealed line, or an undimmed-but-hidden line).
+      (3) Paragraph focus needs blank-line boundary scanning + special-casing fenced code blocks / list items
+      that span a 'paragraph', which conflicts with the per-LINE reveal and adds edge cases. Line is the
+      pragmatic, cheaper, coherent v1. TRADE-OFF: prose writers may prefer paragraph/sentence focus (iA Writer);
+      that is a documented follow-up increment, not v1.
+  D-FOCUS-BUILDER:
+    pick: "buildFocusDecorations(state, ranges = [{from:0,to:state.doc.length}]): DecorationSet — PURE, returns Decoration.line({class:'cm-dim'}) at line.from for every line in `ranges` whose number is NOT in activeLines."
+    rationale: >
+      Mirrors buildLivePreviewDecorations(state, ranges?) so gates assert exact dim-line ranges HEADLESSLY (no
+      layout needed — line numbers + offsets only, NO syntaxTree). The ViewPlugin jinFocusMode() calls it over
+      view.visibleRanges (perf) and rebuilds on docChanged|selectionSet|viewportChanged — the EXACT
+      jinLivePreview() skeleton. Adds line decos in ascending line order → RangeSetBuilder-safe (cm6_facts).
+  D-TOGGLE:
+    pick: "Two .cm-toolbar__btn icon-toggles, RIGHT-aligned (inserted AFTER toolbarSpacer, BEFORE the Read toggle), DEFAULT OFF, each with aria-pressed reflecting state. Icons: Focus (focus mode), AlignCenterVertical (typewriter)."
+    placement_rationale: >
+      The Read toggle already lives in the right cluster after the spacer (editor.ts:447-448) — focus + typewriter
+      are MODE toggles of the same family (change how the surface behaves, not the text), so grouping them with
+      Read on the right is the most discoverable + consistent spot. Insert order: [...format buttons...] [spacer]
+      [Focus] [Typewriter] [Read]. ADD a mkSep() before the group if visual separation is wanted. We ADD, never
+      rename → G-TOOLBAR-STRUCTURE (asserts the existing 12 buttons + .cm-toolbar__toggle by aria-label/class)
+      stays green; the spacer still pushes the whole right cluster right.
+    default_rationale: >
+      DEFAULT OFF because always-on dimming/centering surprises a first-time writer (every comparable app — iA
+      Writer, Typora, Obsidian — ships both as opt-in toggles, default off). Default-off ALSO guarantees zero
+      behavior change to the existing default editor + every existing gate.
+    aria: "aria-pressed='false' initially → 'true' when active (single source of truth, styled via [aria-pressed='true']); aria-label 'Focus mode' / 'Typewriter scrolling'. Use mkBtn then add aria-pressed in the toggle handler."
+  D-COMPARTMENT:
+    pick: "TWO new Compartments — focusCompartment + typewriterCompartment — added beside the existing five (editor.ts:526-530), each .of([]) initially (OFF). Toggle = view.dispatch({effects: cmp.reconfigure(ON ? <ext> : [])})."
+    contents:
+      focus_on: "focusCompartment.reconfigure(jinFocusMode())  // ON"
+      focus_off: "focusCompartment.reconfigure([])             // OFF"
+      typewriter_on: "typewriterCompartment.reconfigure([ typewriterExtender(), EditorView.contentAttributes.of({ class: 'cm-typewriter' }) ])  // ON: behavior + bottom-padding class"
+      typewriter_off: "typewriterCompartment.reconfigure([])   // OFF"
+    composition: >
+      Each compartment is independent. focusCompartment's ViewPlugin and livePreviewCompartment's ViewPlugin BOTH
+      provide decorations; CM6 merges them (cm6_facts.multiple_decoration_providers) — no ordering coupling, no
+      shared builder. typewriterCompartment holds a transactionExtender (state facet) + a contentAttributes class
+      — orthogonal to all decoration compartments. Confirmed composes with highlight/language/keymap/theme/livePreview.
+    rationale: "Reconfigure = no remount, caret-safe (cm6_facts.compartment_reconfigure_caret_safe). Exact precedent: livePreviewCompartment (editor.ts:530, :569)."
+  D-TYPEWRITER-MECHANISM:
+    pick: "EditorState.transactionExtender (PRIMARY) that appends EditorView.scrollIntoView(head,{y:'center'}) to any transaction with a COLLAPSED post-selection that changed (docChanged || tr.selection). RANGE selection → no effect."
+    rationale: >
+      The brief sketched an updateListener that calls view.dispatch(...). CM6 DISALLOWS dispatching a new
+      transaction from inside an updateListener (it warns / can loop). The transactionExtender appends the scroll
+      effect to the SAME transaction → CM6 scrolls during normal processing → NO second dispatch, NO flicker,
+      caret-safe (effect only). It is fully WIRING-testable: spy EditorView.scrollIntoView and assert it is
+      called with (head,{y:'center'}) for a collapsed change, NOT called for a range selection, NOT called when
+      OFF. The collapsed/range/no-change decision is also factored into a PURE helper typewriterTarget(...) for
+      a layout-free unit gate.
+    fallback: >
+      If the extender proves awkward to compartmentalize, the documented alternative is an updateListener that
+      computes the same typewriterTarget and DEFERS the scroll via queueMicrotask(() => view.dispatch({effects:
+      EditorView.scrollIntoView(pos,{y:'center'})})) — deferral satisfies the no-dispatch-in-listener rule and
+      keeps the same scrollIntoView spy gate. (Effect is BUILT synchronously so the spy still fires for the test.)
+    pure_helper: "typewriterTarget({selectionChanged:boolean, collapsed:boolean, head:number}): number|null  — returns head iff (collapsed && selectionChanged) else null. Layout-free, trivially unit-testable."
+    enable_polish: >
+      OPTIONAL (P2): in the toggle handler, AFTER the ON reconfigure, if the current selection is collapsed,
+      dispatch ONE scrollIntoView(head,{y:'center'}) so enabling immediately centers the caret (iA-Writer feel).
+      This is a click-handler dispatch (allowed) — not inside a listener. Off-path; owner-verified.
+  D-TYPEWRITER-PADDING:
+    pick: "Bottom scroll room so the LAST lines can reach center: a jinEditorTheme rule keyed '.cm-content.cm-typewriter' { paddingBottom: '50vh' }, activated ONLY when ON via EditorView.contentAttributes.of({class:'cm-typewriter'}) in the typewriter compartment."
+    rationale: >
+      Centering the last line needs empty space below it (matches iA Writer/Typora ~50vh). Keying the rule on
+      '.cm-content.cm-typewriter' (specificity 0,3,0 once CM6 scopes it) beats the base '.cm-content' padding
+      (0,2,0), so it reliably ADDS bottom padding without fighting the existing inset; when OFF the class is
+      absent → no extra whitespace (no permanent dead space). Keeps ALL editor CSS in jinEditorTheme (project
+      convention; token-free 50vh is a viewport unit, acceptable like the existing 100vh minHeight at :137).
+    out: "A permanent large padding-bottom (rejected — adds dead space when typewriter is off)."
+  D-PERSIST:
+    pick: "v1 = per-MOUNT in-memory, DEFAULT OFF on every mountEditor. NOT persisted to settings; NOT a localStorage round-trip. State held as two `let focusOn=false; let typewriterOn=false;` closures inside mountEditor."
+    rationale: >
+      Tightest scope — frontend-only, no settings schema / invoke / backend change, and TEST-ISOLATED (no
+      module-level mutable state leaking between vitest cases). Persistence forks a real decision (global vs
+      per-note scope; settings store vs localStorage) that is a clean follow-up, not part of the last roadmap
+      increment. TRADE-OFF: toggles reset to OFF when you switch notes (the controller remounts the editor per
+      note). Acceptable for cozy extras. DEFERRED options, one-line each: (a) per-session across notes → hoist
+      the two flags to module-level singletons in editor.ts; (b) persisted across restarts → settings/localStorage.
+    assumption: "mountEditor is called fresh per note open (controller remount). If instead the editor persists across note switches, per-mount state already 'persists per session' for free — either way default OFF, no gate impact."
+  D-FOCUS-CSS:
+    pick: ".cm-dim in jinEditorTheme: { opacity: '0.4', transition: 'opacity 120ms var(--ease-standard)' }  (token-driven dim; tune opacity 0.3-0.45 owner-verified)."
+    rationale: >
+      Per the #3 D-QUOTE-STYLE precedent, editor decoration CSS lives in jinEditorTheme (editor.ts), not
+      browse.css. opacity is the simplest dim that keeps text legible-but-recessive; the transition softens the
+      shift as the caret moves between lines. Active line has NO class → full opacity. (Alternative 'color:
+      var(--label-tertiary)' rejected — opacity dims the WHOLE line incl. glyphs/links uniformly; color-only
+      would not dim the cm-link-label accent or bullet glyphs.)
+  D-TEST-STRATEGY:
+    pick: "Focus = pure-builder gate (exact dim ranges, headless) + toggle gate (real button click reconfigures the compartment → cm-dim appears/disappears) + caret-safe gate. Typewriter = pure typewriterTarget gate + WIRING gate (spy EditorView.scrollIntoView on real-mount: collapsed→called, range→not, off→not) + caret-safe gate. The actual scroll POSITION is NOT asserted (no layout in jsdom) — owner-verifies the visual feel via cargo tauri dev."
+    rationale: "Mirrors the LP D-TEST split (pure builder asserted headlessly; one real-mount smoke for wiring). The jsdom-untestable part (pixel centering, dim opacity feel) is explicitly owner-verified — see risks R1."
+
+# ─────────────────────────────────────────────────────────────────────────────
+stories:
+  - id: COZY-1
+    title: "Focus mode — dim non-active lines (new focusMode.ts pure builder + jinFocusMode() ViewPlugin; wire focusCompartment + a toolbar toggle in editor.ts; .cm-dim CSS; register the Focus icon)"
+    user_story: "As a Jin note writer, I want to toggle a focus mode that dims every line except the one I'm editing, so I can concentrate on the current text — and toggle it back off without losing my place."
+    timebox: "1.5d"
+    files:
+      - "jin-gui/src/lib/notes/focusMode.ts (NEW — buildFocusDecorations(state, ranges?) pure + jinFocusMode() ViewPlugin; imports ONLY @codemirror/state + @codemirror/view)"
+      - "jin-gui/src/lib/notes/editor.ts (EDIT — add focusCompartment (beside :530); focusCompartment.of([]) in the extensions array (beside :569); a Focus mkBtn toggle in the right cluster (after toolbarSpacer, before toggleBtn ~:447); its click handler in the wiring block (~:612-623); a .cm-dim rule in jinEditorTheme (after .cm-blockquote-line ~:191))"
+      - "jin-gui/src/lib/icons/index.ts (EDIT — import + re-export + initIcons-map Focus)"
+      - "jin-gui/src/styles/browse.css (EDIT — add .cm-toolbar__btn[aria-pressed=\"true\"] active styling near :390)"
+      - "jin-gui/src/__tests__/focusMode.test.ts (NEW — G-FOCUS-DIM pure-builder gates; mirror livePreview.test.ts helpers forceParse/makeState/makeStateWithSelection/collectRanges)"
+      - "jin-gui/src/__tests__/editor.test.ts (EDIT — NEW describe blocks ONLY for G-FOCUS-TOGGLE + G-TOGGLE-CARET-SAFE(focus); do NOT touch existing describes)"
+    action_plan:
+      - "focusMode.ts: copy the activeLines computation (livePreview.ts:124-132) — DUPLICATE, do not import"
+      - "focusMode.ts: export function buildFocusDecorations(state, ranges = [{from:0,to:state.doc.length}]): for each range, for line numbers lineAt(range.from).number..lineAt(range.to).number, if !activeLines.has(n) builder.add(line.from, line.from, Decoration.line({class:'cm-dim'})); return builder.finish() (ascending line order ⇒ RangeSetBuilder-safe)"
+      - "focusMode.ts: export function jinFocusMode() — ViewPlugin.fromClass mirroring jinLivePreview() (livePreview.ts:324-352): decorations rebuilt on docChanged|viewportChanged|selectionSet over view.visibleRanges; provide decorations:(v)=>v.decorations. NO atomicRanges provide (line decos are never atomic)."
+      - "editor.ts: const focusCompartment = new Compartment() (beside :530)"
+      - "editor.ts: add focusCompartment.of([]) to the extensions array (default OFF; beside livePreviewCompartment.of(...) :569)"
+      - "editor.ts: const focusBtn = mkBtn('focus', 'Focus mode'); focusBtn.setAttribute('aria-pressed','false'); insert after toolbarSpacer, before toggleBtn (~:447)"
+      - "editor.ts: let focusOn = false; focusBtn click handler → focusOn = !focusOn; view.dispatch({effects: focusCompartment.reconfigure(focusOn ? jinFocusMode() : [])}); focusBtn.setAttribute('aria-pressed', String(focusOn)); view.focus()"
+      - "editor.ts jinEditorTheme: add '.cm-dim': { opacity: '0.4', transition: 'opacity 120ms var(--ease-standard)' } after the .cm-blockquote-line rule (~:191)"
+      - "icons/index.ts: add Focus to the import list, the re-export, AND the initIcons({icons}) map (all three places)"
+      - "browse.css: add .cm-toolbar__btn[aria-pressed=\"true\"] { background-color: var(--fill-secondary); color: var(--accent); } near :390 (active affordance for both toggles)"
+    acceptance_criteria:
+      - id: AC-COZY1.1
+        given: "doc 'line1\\nline2\\nline3' with the caret on line 2 (offset 8)"
+        when: "buildFocusDecorations(state) runs (forceParse first)"
+        then: "the set contains EXACTLY a cm-dim line decoration at (0,0) AND (12,12) and NO decoration at from=6 (active line 2); the doc text is unchanged"
+      - id: AC-COZY1.2
+        given: "doc 'line1\\nline2\\nline3' with a selection anchor=0 head=8 (spans lines 1-2)"
+        when: "the builder runs"
+        then: "the set contains EXACTLY one cm-dim line decoration at (12,12) (only line 3 dimmed; both selected lines are active)"
+      - id: AC-COZY1.3
+        given: "a single-line doc 'solo' caret@0"
+        when: "the builder runs"
+        then: "the set is EMPTY (the only line is active → nothing to dim); no throw"
+      - id: AC-COZY1.4
+        given: "a mounted editor with a multi-line doc and the caret NOT on the last line"
+        when: "the Focus button (aria-label 'Focus mode') is clicked once via a real DOM click"
+        then: "the compartment reconfigures so >=1 .cm-line.cm-dim appears in .cm-content AND the button's aria-pressed becomes 'true'; clicking again removes all .cm-dim and sets aria-pressed 'false'"
+      - id: AC-COZY1.5
+        given: "a mounted editor, caret at a known offset, view = handle.getView()"
+        when: "the Focus button is clicked (toggle on, then off)"
+        then: "handle.getView() is the SAME EditorView instance throughout AND view.state.selection.main.head is unchanged (no remount, no caret move)"
+      - id: AC-COZY1.6
+        given: "the focusMode.ts source"
+        when: "scanned"
+        then: "it imports neither markdown-it nor dompurify, assigns no innerHTML, and imports only @codemirror/* (G-CHOKEPOINT-COZY)"
+    gates: [G-FOCUS-DIM, G-FOCUS-TOGGLE, G-TOGGLE-CARET-SAFE, G-CHOKEPOINT-COZY, G-FOCUS-CSS]
+    immovable_gates: [G-TOOLBAR-STRUCTURE, G-TOOLBAR-BOLD, G-TOOLBAR-H2, G-TOOLBAR-LIST, G-FOOTER-STATS, G-READING-VIEW, G-READING-FLUSH, G-XSS-READING, G-KEYMAP, G-SAVE-CARET-SAFE, all-LP-gates-1-2-3, HIDE_MARK_NODES-size-4, G-CHOKEPOINT-livePreview]
+    agent_hints:
+      agent_class: "Builder (Vivi/apivr) — speed-class; ViewPlugin + compartment + toolbar-button patterns are all established; algorithm fully specified + ranges verified firsthand"
+      context_files:
+        - "jin-gui/src/lib/notes/livePreview.ts:124-132 (activeLines — DUPLICATE), :324-352 (jinLivePreview ViewPlugin skeleton), :298-310 (atomicDecorationsOf — explains why line decos are never atomic; focus mode adds NO atomicRanges)"
+        - "jin-gui/src/lib/notes/editor.ts:526-530 (Compartment block), :555-609 (extensions array — add focusCompartment.of([])), :374-384 (mkBtn), :432-448 (toolbar assembly), :612-623 (click-handler wiring), :117-192 (jinEditorTheme — add .cm-dim after :191)"
+        - "jin-gui/src/lib/icons/index.ts:19-192 (icon import/export/initIcons — add Focus in all three)"
+        - "jin-gui/src/styles/browse.css:369-436 (.cm-toolbar__btn / __toggle — add aria-pressed active rule)"
+        - "jin-gui/src/__tests__/livePreview.test.ts:39-93 (test helpers to mirror), :110-160 (G-LP-HIDE exact-range assertion style)"
+        - "jin-gui/src/__tests__/editor.test.ts:803-934 (G-TOOLBAR real-click + structure gates to mirror + keep green)"
+      risk_tags: [P1]
+
+  - id: COZY-2
+    title: "Typewriter scrolling — keep the active line centered (new typewriter.ts: typewriterTarget pure + typewriterExtender; wire typewriterCompartment + a toolbar toggle + bottom-padding theme rule in editor.ts; register the AlignCenterVertical icon)"
+    user_story: "As a Jin note writer, I want to toggle a typewriter mode that keeps the line I'm typing vertically centered, so my eyes stay in one place as I write — but not yank the view around while I'm selecting text."
+    timebox: "1.5d"
+    files:
+      - "jin-gui/src/lib/notes/typewriter.ts (NEW — typewriterTarget(args) pure + typewriterExtender() returning EditorState.transactionExtender; imports ONLY @codemirror/state + @codemirror/view)"
+      - "jin-gui/src/lib/notes/editor.ts (EDIT — add typewriterCompartment (beside :530); typewriterCompartment.of([]) in the extensions array; a Typewriter mkBtn toggle in the right cluster (beside the Focus toggle); its click handler (with the optional center-on-enable polish); a '.cm-content.cm-typewriter' { paddingBottom:'50vh' } rule in jinEditorTheme)"
+      - "jin-gui/src/lib/icons/index.ts (EDIT — import + re-export + initIcons-map AlignCenterVertical)"
+      - "jin-gui/src/__tests__/typewriter.test.ts (NEW — G-TYPEWRITER-TARGET pure gates: collapsed+changed→head, range→null, no-change→null)"
+      - "jin-gui/src/__tests__/editor.test.ts (EDIT — NEW describe blocks ONLY for G-TYPEWRITER-WIRING + G-TOGGLE-CARET-SAFE(typewriter))"
+    action_plan:
+      - "typewriter.ts: export function typewriterTarget({selectionChanged, collapsed, head}): number|null => (collapsed && selectionChanged) ? head : null"
+      - "typewriter.ts: export function typewriterExtender() => EditorState.transactionExtender.of(tr => { const pos = typewriterTarget({ selectionChanged: tr.docChanged || tr.selection != null, collapsed: tr.newSelection.main.empty, head: tr.newSelection.main.head }); return pos == null ? null : { effects: EditorView.scrollIntoView(pos, { y: 'center' }) }; })"
+      - "editor.ts: const typewriterCompartment = new Compartment() (beside :530)"
+      - "editor.ts: add typewriterCompartment.of([]) to the extensions array (default OFF)"
+      - "editor.ts: const typewriterBtn = mkBtn('align-center-vertical', 'Typewriter scrolling'); typewriterBtn.setAttribute('aria-pressed','false'); insert in the right cluster beside the Focus toggle"
+      - "editor.ts: let typewriterOn = false; click handler → typewriterOn = !typewriterOn; view.dispatch({effects: typewriterCompartment.reconfigure(typewriterOn ? [ typewriterExtender(), EditorView.contentAttributes.of({class:'cm-typewriter'}) ] : [])}); typewriterBtn.setAttribute('aria-pressed', String(typewriterOn)); view.focus()"
+      - "editor.ts (OPTIONAL D-TYPEWRITER-MECHANISM.enable_polish): if (typewriterOn && view.state.selection.main.empty) view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head, { y:'center' }) }) AFTER the reconfigure"
+      - "editor.ts jinEditorTheme: add '.cm-content.cm-typewriter': { paddingBottom: '50vh' } (after the .cm-dim rule)"
+      - "icons/index.ts: add AlignCenterVertical to import + re-export + initIcons({icons}) map (all three)"
+    acceptance_criteria:
+      - id: AC-COZY2.1
+        given: "typewriterTarget called with { selectionChanged:true, collapsed:true, head:42 }"
+        when: "it runs"
+        then: "it returns 42"
+      - id: AC-COZY2.2
+        given: "typewriterTarget called with { selectionChanged:true, collapsed:false, head:42 } (a RANGE selection)"
+        when: "it runs"
+        then: "it returns null (range selections are NOT re-centered — iA-Writer caveat)"
+      - id: AC-COZY2.3
+        given: "typewriterTarget called with { selectionChanged:false, collapsed:true, head:42 } (nothing changed)"
+        when: "it runs"
+        then: "it returns null"
+      - id: AC-COZY2.4
+        given: "a mounted editor with typewriter ON (toggle clicked) and a spy on EditorView.scrollIntoView"
+        when: "a COLLAPSED selection change is dispatched (view.dispatch({selection:{anchor:N}}))"
+        then: "EditorView.scrollIntoView was called with (N, { y:'center' })"
+      - id: AC-COZY2.5
+        given: "a mounted editor with typewriter ON and the scrollIntoView spy"
+        when: "a RANGE selection is dispatched (anchor!=head)"
+        then: "EditorView.scrollIntoView was NOT called for that transaction"
+      - id: AC-COZY2.6
+        given: "a mounted editor with typewriter OFF (default) and the scrollIntoView spy"
+        when: "a collapsed selection change is dispatched"
+        then: "EditorView.scrollIntoView was NOT called (the extender is absent when OFF)"
+      - id: AC-COZY2.7
+        given: "a mounted editor, view = handle.getView(), caret at a known offset"
+        when: "the Typewriter button is toggled on then off"
+        then: "handle.getView() is the SAME instance AND the caret offset is unchanged (no remount); aria-pressed flips true→false"
+      - id: AC-COZY2.8
+        given: "the typewriter.ts source"
+        when: "scanned"
+        then: "it imports neither markdown-it nor dompurify, assigns no innerHTML, imports only @codemirror/* (G-CHOKEPOINT-COZY)"
+    gates: [G-TYPEWRITER-TARGET, G-TYPEWRITER-WIRING, G-TOGGLE-CARET-SAFE, G-CHOKEPOINT-COZY, G-TYPEWRITER-PADDING]
+    immovable_gates: [G-TOOLBAR-STRUCTURE, G-FOOTER-STATS, G-READING-VIEW, G-KEYMAP, G-SAVE-CARET-SAFE, all-LP-gates-1-2-3, G-FOCUS-DIM, G-FOCUS-TOGGLE]
+    depends_on: []
+    merge_note: "If shipped after COZY-1, rebase onto it (both add to editor.ts toolbar/compartments/jinEditorTheme — additive, different lines)."
+    agent_hints:
+      agent_class: "Builder (Vivi/apivr) — speed-class; transactionExtender + scrollIntoView pattern specified; pure helper isolates the logic for headless testing"
+      context_files:
+        - "jin-gui/src/lib/notes/editor.ts:526-530 (Compartment block), :555-609 (extensions array), :592-599 (updateListener — context for why we use an extender NOT a listener), :432-448 + :612-663 (toolbar + toggle-handler precedent), :117-192 (jinEditorTheme — add the typewriter padding rule)"
+        - "jin-gui/src/lib/icons/index.ts:19-192 (add AlignCenterVertical in all three places)"
+        - "jin-gui/src/__tests__/editor.test.ts:643-716 (G-READING-VIEW real-mount click + async settle pattern), :392-407 (fireKey / real-event pattern), :1016-1050 (vi.fn / fake-timer patterns)"
+        - "node_modules/@codemirror/view (EditorView.scrollIntoView signature) + @codemirror/state (EditorState.transactionExtender)"
+      risk_tags: [P1]
+
+# ─────────────────────────────────────────────────────────────────────────────
+gates:
+  - id: G-FOCUS-DIM
+    bites: "buildFocusDecorations on 'line1\\nline2\\nline3' caret@8 (line 2) => EXACTLY cm-dim line decos at (0,0) AND (12,12), NONE at 6; selection lines 1-2 => EXACTLY (12,12); single-line doc => EMPTY. Doc text never mutated. Mutation-relevant: flipping the !activeLines guard, an off-by-one in line iteration, or emitting on the active line all FAIL."
+    location: "jin-gui/src/__tests__/focusMode.test.ts"
+  - id: G-FOCUS-TOGGLE
+    bites: "REAL DOM click on the Focus button (aria-label 'Focus mode') reconfigures focusCompartment so >=1 .cm-line.cm-dim appears in .cm-content and aria-pressed='true'; a second click removes ALL .cm-dim and aria-pressed='false'. NOT a direct buildFocusDecorations() call — drives the actual button. Mutation-relevant: an un-wired button or a missing reconfigure FAILS."
+    location: "jin-gui/src/__tests__/editor.test.ts (new describe)"
+  - id: G-TYPEWRITER-TARGET
+    bites: "typewriterTarget: {changed:true,collapsed:true,head:42}=>42 ; {changed:true,collapsed:false}=>null (range) ; {changed:false,collapsed:true}=>null (no change). Mutation-relevant: dropping the collapsed guard or the changed guard FAILS a case."
+    location: "jin-gui/src/__tests__/typewriter.test.ts"
+  - id: G-TYPEWRITER-WIRING
+    bites: "typewriter ON + spy EditorView.scrollIntoView: a COLLAPSED selection change => scrollIntoView called with (head,{y:'center'}); a RANGE selection => NOT called; typewriter OFF => NOT called. Spy/effect assertion (no layout). Mutation-relevant: removing the range guard makes the RANGE case call it (FAIL); removing the extender from the ON compartment makes the collapsed case not call it (FAIL)."
+    location: "jin-gui/src/__tests__/editor.test.ts (new describe)"
+  - id: G-TOGGLE-CARET-SAFE
+    bites: "Toggling EITHER mode on→off keeps handle.getView() the SAME EditorView instance AND view.state.selection.main.head unchanged (no remount, no caret move). Mutation-relevant: any path that re-mounts or dispatches a selection on toggle FAILS."
+    location: "jin-gui/src/__tests__/editor.test.ts (new describe; one case per mode)"
+  - id: G-CHOKEPOINT-COZY
+    bites: "Source scan: focusMode.ts AND typewriter.ts import neither markdown-it nor dompurify, contain no 'innerHTML', and import only from @codemirror/* (mirror the livePreview source-scan gate)."
+    location: "jin-gui/src/__tests__/focusMode.test.ts + typewriter.test.ts"
+  - id: G-FOCUS-CSS
+    bites: ".cm-dim is defined in jinEditorTheme (dims via opacity) — assert a focused-mode mount yields a .cm-line.cm-dim element on an inactive line (DOM smoke). Owner verifies the opacity FEEL via cargo tauri dev."
+    location: "jin-gui/src/__tests__/editor.test.ts (new describe) — folded into G-FOCUS-TOGGLE"
+  - id: G-TYPEWRITER-PADDING
+    bites: "When typewriter is ON, .cm-content carries the class 'cm-typewriter' (via contentAttributes) so the 50vh bottom-padding rule applies; OFF removes the class. DOM smoke assertion (the visual centering of the last line is owner-verified)."
+    location: "jin-gui/src/__tests__/editor.test.ts (new describe) — folded into G-TYPEWRITER-WIRING/caret-safe"
+  immovable:
+    - "G-TOOLBAR-STRUCTURE @ editor.test.ts:899-934 — all 12 format buttons + .cm-toolbar__toggle still present by aria-label/class (we ADD two toggles, rename nothing)"
+    - "G-TOOLBAR-BOLD/H2/LIST @ editor.test.ts:803-897 — existing button clicks unchanged"
+    - "G-FOOTER-STATS @ editor.test.ts:944-1002"
+    - "G-READING-VIEW / G-READING-FLUSH / G-XSS-READING @ editor.test.ts:643-789"
+    - "G-KEYMAP @ editor.test.ts:392-533"
+    - "G-SAVE-CARET-SAFE @ livePreview.test.ts:451-472 (selection-only transaction does NOT call onSave) — neither new feature changes the doc"
+    - "ALL LP #1/#2/#3 gates @ livePreview.test.ts:97-1104 (hide markers, bullets/checkboxes, links, blockquote, atomic, robust)"
+    - "HIDE_MARK_NODES size===4 @ livePreview.test.ts:97-105 (untouched — focus mode is not a marker-hide)"
+    - "G-CHOKEPOINT @ markdown.test.ts:8 + livePreview source scan @ livePreview.test.ts (untouched)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+risks:
+  - id: R1
+    p: P1
+    risk: "Typewriter centering + focus-dim OPACITY FEEL are not assertable in jsdom (no layout / no real scroll)."
+    mitigation: "Test WIRING not pixels: G-TYPEWRITER-WIRING spies EditorView.scrollIntoView (called/​not-called per collapsed/range/off); G-TYPEWRITER-TARGET unit-tests the pure decision; G-FOCUS-DIM asserts exact decoration ranges; G-FOCUS-TOGGLE asserts .cm-dim presence. The visual centering + dim opacity are EXPLICITLY owner-verified via `cargo tauri dev` (call-out in execution_plan)."
+  - id: R2
+    p: P1
+    risk: "Dispatching scrollIntoView from inside a CM6 updateListener is disallowed (warns / can loop)."
+    mitigation: "D-TYPEWRITER-MECHANISM uses an EditorState.transactionExtender that APPENDS the scroll effect to the same transaction — no second dispatch. Documented fallback: a listener that DEFERS via queueMicrotask. Either way the scrollIntoView spy gate (G-TYPEWRITER-WIRING) holds."
+  - id: R3
+    p: P1
+    risk: "Re-centering during an active multi-char SELECTION causes view jumpiness (iA-Writer note)."
+    mitigation: "typewriterTarget returns null when !collapsed → no effect for range selections. Gated by AC-COZY2.2 + AC-COZY2.5 (range case must NOT call scrollIntoView)."
+  - id: R4
+    p: P2
+    risk: "New toolbar toggles disturb the existing toolbar layout / break G-TOOLBAR-STRUCTURE."
+    mitigation: "We ADD two .cm-toolbar__btn toggles in the right cluster (after the spacer, before Read) and RENAME nothing; G-TOOLBAR-STRUCTURE asserts the existing set by aria-label/class and stays green. The spacer (flex:1) still pushes the whole right cluster right."
+  - id: R5
+    p: P2
+    risk: "cm-dim opacity also dims the active line, or stays after toggling off (stuck dim)."
+    mitigation: "Builder NEVER emits on an active line (AC-COZY1.1); toggling OFF reconfigures to [] → plugin gone → all decorations dropped (AC-COZY1.4 second click)."
+  - id: R6
+    p: P2
+    risk: "Bottom 50vh padding leaves permanent dead space, or the rule loses the specificity fight with the base .cm-content padding."
+    mitigation: "D-TYPEWRITER-PADDING keys on '.cm-content.cm-typewriter' (specificity beats base .cm-content) and the class is present ONLY when ON (contentAttributes in the ON compartment) → no dead space off, padding reliably applied on. Gated by G-TYPEWRITER-PADDING (class-present DOM smoke)."
+  - id: R7
+    p: P2
+    risk: "Toggle state confusion across note switches (resets to OFF on remount)."
+    mitigation: "D-PERSIST documents v1 = per-mount default OFF; this is intended scope. Cross-note/persisted is a one-line documented follow-up (module singletons / settings)."
+  - id: R8
+    p: P3
+    risk: "Spying on the static EditorView.scrollIntoView and then applying the real effect could be flaky in jsdom."
+    mitigation: "Prefer vi.spyOn(EditorView,'scrollIntoView') KEEPING the original (records args + returns the real effect). If applying the real scroll effect throws in jsdom, stub it to return a harmless no-op StateEffect (StateEffect.define). Either path satisfies G-TYPEWRITER-WIRING (assert call args)."
+
+# ─────────────────────────────────────────────────────────────────────────────
+kupo_micro_tasks:
+  - "K1 (CSS .cm-dim): editor.ts jinEditorTheme — add '.cm-dim': { opacity: '0.4', transition: 'opacity 120ms var(--ease-standard)' } AFTER the .cm-blockquote-line rule (~:191). Owner-tune opacity 0.3-0.45."
+  - "K2 (CSS typewriter padding): editor.ts jinEditorTheme — add '.cm-content.cm-typewriter': { paddingBottom: '50vh' } (after .cm-dim)."
+  - "K3 (CSS toggle active): browse.css — add .cm-toolbar__btn[aria-pressed=\"true\"] { background-color: var(--fill-secondary); color: var(--accent); } near :390 (shared active affordance for both toggles)."
+  - "K4 (Lucide icons): icons/index.ts — add Focus (COZY-1) and AlignCenterVertical (COZY-2) to the import block, the re-export block, AND the initIcons({icons}) map (THREE places each). Verified both export in lucide@0.523.0."
+  - "K5 (Compartments): editor.ts:526-530 — add const focusCompartment = new Compartment() and const typewriterCompartment = new Compartment()."
+  - "K6 (extensions): editor.ts extensions array — add focusCompartment.of([]) and typewriterCompartment.of([]) (both default OFF) beside livePreviewCompartment.of(...) (:569)."
+  - "K7 (toolbar): editor.ts — focusBtn = mkBtn('focus','Focus mode'); typewriterBtn = mkBtn('align-center-vertical','Typewriter scrolling'); each .setAttribute('aria-pressed','false'); append after toolbarSpacer, before toggleBtn (~:447) — optionally a mkSep() before the group."
+  - "K8 (handlers): editor.ts wiring block (~:612-623) — focusBtn/typewriterBtn click handlers that flip the local on-flag, dispatch the compartment.reconfigure, set aria-pressed, and view.focus(); typewriter handler optionally adds the center-on-enable polish."
+  - "K9 (Node>=20): run `nvm use 24.18.0 && npm test` in jin-gui — assert the new G-FOCUS-* / G-TYPEWRITER-* gates bite AND every immovable gate stays green."
+
+# ─────────────────────────────────────────────────────────────────────────────
+execution_plan:
+  order: [COZY-1, COZY-2]
+  rationale: "Focus first — it is a direct ADAPT of the proven livePreview ViewPlugin+compartment pattern (lower risk). Typewriter second — it carries the CM6 dispatch-timing nuance (R2). They are logically independent; order is a risk/merge choice."
+  verification: >
+    npm test in jin-gui under nvm v24.18.0. New gates: G-FOCUS-DIM, G-FOCUS-TOGGLE, G-TYPEWRITER-TARGET,
+    G-TYPEWRITER-WIRING, G-TOGGLE-CARET-SAFE, G-CHOKEPOINT-COZY (+ DOM-smoke G-FOCUS-CSS / G-TYPEWRITER-PADDING).
+    Immovable: ALL toolbar/footer/reading/keymap/save-caret-safe/LP-1-2-3/chokepoint gates green.
+    OWNER-VERIFY visually via `cargo tauri dev`: (a) focus dim feel + active-line full opacity + smooth toggle;
+    (b) typewriter centers the caret line as you type/move, does NOT yank during a drag-selection, and the last
+    line can reach center (bottom padding).
+  out_of_scope:
+    - "Paragraph/sentence focus granularity (v1 = line; D-GRANULARITY)"
+    - "Persisting toggle state across notes / app restarts (D-PERSIST — v1 per-mount default OFF)"
+    - "Disabling the mode toggles while in reading view (harmless no-op; optional P2 polish)"
+    - "Any src-tauri / settings / invoke change — this increment is frontend-only"
+    - "Theming/animation of the dim beyond a simple opacity + transition"
+
+confidence_report:
+  pattern_match: "0.93 — focus mode is a direct ADAPT of jinLivePreview() (ViewPlugin + pure builder + compartment + jinEditorTheme CSS); toolbar toggle reuses mkBtn + the Read-toggle handler shape"
+  requirement_clarity: "0.90 — brief is detailed; the one genuine ambiguity (typewriter mechanism vs CM6's no-dispatch-in-listener rule) is resolved by the transactionExtender recommendation + a documented fallback"
+  decomposition_stability: "0.90 — two tightly-scoped, logically-independent stories; gates map 1:1 to verified behaviors; three converging decompositions (by-feature / by-layer / by-file) all yield the same two-story split"
+  constraint_compliance: "0.90 — chokepoint (new modules @codemirror/* only), caret-safe (compartment reconfigure + effect-only scroll, no doc mutation), and gate preservation (ADD-not-rename) all addressed; the jsdom-untestable visuals are mitigated by wiring-level tests + explicit owner verification"
+  overall: 0.90
+  decision: AUTO_PROCEED

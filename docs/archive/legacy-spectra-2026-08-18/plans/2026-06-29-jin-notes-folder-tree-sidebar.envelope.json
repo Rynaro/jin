@@ -1,0 +1,81 @@
+{
+  "envelope_version": "2.0",
+  "ecl_version": "1.0",
+  "message_id": "79aa4855-bc46-4e45-8aad-db66257efcb4",
+  "thread_id": "2f77217d-aff3-444d-a6a6-000f8aeb7308",
+  "from": "spectra",
+  "to": "vivi",
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Notes QoL — Apple-Notes folder tree-view sidebar for the Jin GUI (frontend-only, jin-gui). Replace the FLAT folder rail (render.ts renderFolderRail :70-101) with a nested WAI-ARIA tree: pure tree builder (new lib/notes/folderTree.ts buildFolderTree+flattenVisible+resolveTreeKey — split FolderDto.path on '/', synthesize missing ancestors, root '' as a top-level peer at depth 0), recursive ARIA render (role=tree/treeitem/group, aria-level, aria-expanded on parents only, aria-selected on the treeitem, disclosure chevron + 14px/level indent + leaf spacer + direct counts), expand/collapse via TARGETED DOM (no full re-render; full re-render only on data refresh with focus restoration by data-folder-path), roving tabindex + full keyboard nav (Up/Down/Right/Left/Home/End/Enter/Space per WAI-ARIA APG), a collapsible sidebar pane (.notes-paned .rail-collapsed grid track->0 + outside-track reveal control, reachable in list AND detail), and localStorage persistence (new lib/notes/folderTreePrefs.ts mirroring lib/appearance/state.ts, key 'jin_notes_folder_tree'). NO backend change (list_folders already returns every ancestor). NO rename/delete/drag this round (owner-locked; needs backend). KEEP VG-FE + VG-FE-FOLDER-OPEN green by retaining the .folder-row__btn[data-folder-path] clickable hook.",
+  "artifact": {
+    "kind": "spec",
+    "payload_ref": "2026-06-29-jin-notes-folder-tree-sidebar.yaml",
+    "human_payload": "delivered inline in the SPECTRA assistant message (no .md report file written per harness directive; matches the code-highlighting / LP-increment convention)"
+  },
+  "integrity": {
+    "method": "sha256",
+    "value": "ea49c61fd24c0264fa5967b9c06ef2720cdd604d5abf58f419076ebecae89cee",
+    "over": "2026-06-29-jin-notes-folder-tree-sidebar.yaml"
+  },
+  "context_delta": {
+    "repo": "jin-gui",
+    "base_version": "main = v0.3.0",
+    "branch": "feat/notes-folder-tree-sidebar off main (cut AFTER the code-highlighting PR lands)",
+    "new_deps": [],
+    "new_modules": [
+      "jin-gui/src/lib/notes/folderTree.ts — PURE: buildFolderTree(folders)->TreeNode[] (split path, synthesize ancestors, depth, sorted siblings, '' pinned top peer); flattenVisible(tree, expandedSet); resolveTreeKey(key, ctx) PURE WAI-ARIA nav resolver",
+      "jin-gui/src/lib/notes/folderTreePrefs.ts — localStorage (key 'jin_notes_folder_tree' = {expanded:string[], paneCollapsed:boolean}); load try/catch->DEFAULTS, save try/catch silent; MIRRORS lib/appearance/state.ts"
+    ],
+    "edits": [
+      "jin-gui/src/lib/notes/render.ts (renderFolderRail :70-101 -> renderFolderTree: recursive <li role=treeitem> + nested <ul role=group hidden>; aria-level/expanded/selected; kept .folder-row__btn[data-folder-path]; helpers setTreeItemExpanded/focusTreeItem)",
+      "jin-gui/src/controllers/notes_controller.ts (state expandedFolders:Set + paneCollapsed + focusedFolderPath; loadFolders buildFolderTree->renderFolderTree+focus restore; new actions toggleFolder/onTreeKeydown/togglePane; KEEP selectFolder flush+showList fix)",
+      "jin-gui/index.html (#tmpl-folder-row :456-468 -> treeitem+group+chevron template; rail :300-316 role=tree + .notes-folder-rail__header collapse toggle + .notes-rail-reveal; keydown->notes#onTreeKeydown)",
+      "jin-gui/src/styles/browse.css (rail 160->200px :727,743; --tree-depth indent 14px/level; chevron rotate on [aria-expanded=true] + leaf spacer; full-row selection highlight; :focus-visible ring; [hidden] group; .rail-collapsed grid track 0 + transition; .notes-rail-reveal; var(--*) only)",
+      "jin-gui/src/__tests__/notes_controller.test.ts (EVOLVE flat renderFolderRail suite :906-984 -> G-TREE-* tree-shape; update makeNotesTemplates folder tmpl :193-203 + VG-FE-TMPL :1039+; ADD folderTree + folderTreePrefs pure suites; KEEP VG-FE/VG-FE-FOLDER-OPEN/G-XSS/VG-ROUTER-UNTOUCHED/VG-DTO-DRIFT verbatim)"
+    ],
+    "stories": ["T1", "T2", "T3", "T4", "T5", "T6"],
+    "decisions": {
+      "D-PERSIST": "localStorage key 'jin_notes_folder_tree' {expanded[],paneCollapsed} mirroring lib/appearance/state.ts (load->DEFAULTS on miss/parse-error; save silent); rejected session/in-memory",
+      "D-COUNTS": "DIRECT counts (FolderDto.note_count) v1; aggregate descendant roll-up deferred (pure client sum)",
+      "D-RAIL-WIDTH": "fixed 160->200px + 14px/level indent + ellipsis on __name; NOT resizable (drag handle = scope creep)",
+      "D-RERENDER": "TARGETED DOM for expand/collapse + keyboard (no full re-render); full re-render ONLY on data refresh with focus restore by [data-folder-path] + roving tabindex + visibility from the Set",
+      "D-PANE-TOGGLE": ".rail-collapsed on .notes-paned -> grid track 0 + transition; in-rail collapse control (panel-left-close) + OUTSIDE-track reveal control (panel-left-open) reachable in list AND detail",
+      "D-SELECT-SEMANTICS": "row body click + Enter/Space SELECT (loads folder); chevron click toggles expand ONLY (stopPropagation)",
+      "D-ROOT-NODE": "'' ('Notes') is a TOP-LEVEL PEER node depth 0 (NOT parent of user folders) so Work/Projects sits at depth 1 per G-TREE-BUILD; siblings sorted lexicographically, '' pinned first; synthesize missing ancestors defensively",
+      "D-SELECTOR-STABILITY": "keep .folder-row__btn (demoted to non-focusable div) + data-folder-path + click-to-select so VG-FE + VG-FE-FOLDER-OPEN pass UNEDITED; <li> is the role=treeitem roving-tabindex owner"
+    },
+    "new_gates": ["G-TREE-BUILD", "G-TREE-RENDER", "G-TREE-EXPAND-COLLAPSE", "G-TREE-KEYBOARD", "G-TREE-SELECT", "G-TREE-COLLAPSE-PANE", "G-TREE-PERSIST"],
+    "evolving_gates": ["renderFolderRail flat suite test:906-984 -> G-TREE-RENDER", "makeNotesTemplates folder tmpl test:193-203 + VG-FE-TMPL test:1039+ -> tree template"],
+    "immovable_gates": [
+      "VG-FE folder click -> listNotes{folder} @ test:990-1033",
+      "VG-FE-FOLDER-OPEN (3 tests) @ test:1631-1742",
+      "G-XSS script-as-text @ test:504-538",
+      "VG-ROUTER-UNTOUCHED ViewKind=5 @ test:1070+",
+      "VG-DTO-DRIFT FolderDto/NoteDto.folder_path @ test:1095+",
+      "filterNotesList folder filter @ test:845+",
+      "ALL editor/livePreview/markdown chokepoint/G-SAVE caret-safe gates (rail-only change)"
+    ],
+    "verified_firsthand": [
+      "FolderDto={path,name,note_count} @ dto.ts:63-71; NoteDto.folder_path @ :58; list_folders/createFolder pure FE invoke @ invoke.ts:86-92",
+      "renderFolderRail FLAT loop @ render.ts:70-101 (innerHTML='' + clone #tmpl-folder-row; role=list/listitem; no tree/expand/indent)",
+      "controller @ src/controllers/notes_controller.ts (NOT lib/notes): loadFolders :128-146; selectFolder :157-175 (flush+destroy editor->showList->loadFolders+loadList{folder}); currentFolder :95",
+      "VG-FE-FOLDER-OPEN fix LIVE (commit 60c182e via PR#13 @ HEAD 97b28d4) @ test:1631-1742",
+      "#tmpl-folder-row @ index.html:456-468; rail markup :300-316; 3-pane grid 160px 1fr @ browse.css:725-744 (rail visible in list AND detail); folder styles :824-880",
+      "localStorage WORKS in Tauri webview (lib/appearance/state.ts pattern survives restart); tokens --space-1:8px/--space-2:16px/--hit-target:44px/--radius-sm:8px",
+      "code-highlighting overlap = browse.css ONLY, DISJOINT (:545-560 vs :715-880); render.ts/controller/index.html untouched by highlighting"
+    ],
+    "risk_flags": [
+      "R1 P0 focus+expanded-state across re-render (TOP) -> targeted DOM + restore by data-folder-path",
+      "R2 P1 rail width/deep nesting -> 200px + 14px indent + ellipsis, 2-3 level guidance",
+      "R3 P1 WAI-ARIA tree correctness -> APG exact + pure resolver + real-keydown tests",
+      "R4 P1 3-pane interaction (rail in both modes; preserve VG-FE-FOLDER-OPEN)",
+      "R5 P1 immovable-test selector regression -> keep .folder-row__btn[data-folder-path]",
+      "R6 P2 rebase vs code-highlighting (browse.css disjoint hunk only)",
+      "R7 P2 vitest needs Node>=20 (system v16 crashes; nvm v24.18.0)"
+    ],
+    "node_requirement": ">=20 (nvm v24.18.0; system node v16.20.2 crashes vitest)",
+    "owner_verify": "cargo tauri dev (Node>=20) — chevron expand/collapse; indent clean at 2-3 levels; keyboard nav (arrows/Home/End/Enter); selection highlight; pane collapse+reveal in list AND detail; reload restores expanded+pane state; rail 200px fits"
+  },
+  "trust_level": "standard"
+}

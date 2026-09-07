@@ -1,0 +1,83 @@
+plan_id: google-calendar-invites-notification-center
+tier: trance
+status: ready-for-vivi
+thread_id: 01a0645f-c5bd-7669-8785-b68f1b6c9071
+spec: .spectra/changes/google-calendar-invites-notification-center/spec.md
+criteria: .spectra/changes/google-calendar-invites-notification-center/criteria.md
+machine_spec: .spectra/changes/google-calendar-invites-notification-center/spec.yaml
+lifecycle_change: .spectra/changes/google-calendar-invites-notification-center/change.json
+spec_author: ramza
+spec_checker: ramza-critic
+maker: vivi
+checker: vigil
+acceptance: AC-NC-001..AC-NC-067
+criteria_sha256: 24c75b11ce293e5f60c3efe969c393321a96ba49c9d477c57e6cd8749d6ad767
+confidence: 0.9425
+
+objective: >-
+  Implement the MVP Notification Center, invitation reconciliation, task
+  reminder ingestion, and recoverable self-RSVP saga without broadening
+  external event editing.
+
+non_negotiable:
+  - Canonical events and tasks remain authoritative.
+  - Pending RSVP is an overlay; canonical response changes only after provider confirmation.
+  - Every cross-store step joins by operation_id and recovers after restart.
+  - RSVP authority binds exact account calendar event recurrence subject and generations.
+  - Google PATCH contains only self email responseStatus and attendeesOmitted=true.
+  - If-Match is never dropped and 412 retries at most once after refetch.
+  - MVP uses sendUpdates=none pending provider conformance evidence.
+  - Generic external event editing remains unchanged.
+  - Native delivery never gates durable center insertion or reminder delivery truth.
+  - Suggested times native actions and ThisAndFollowing remain deferred.
+
+stages:
+  - id: A-contracts
+    story: S0
+    output: Closed enums schemas transition matrices operation identity migrations DTO fixtures.
+    gate: VIGIL reviews identity and migration before behavior code.
+  - id: B-ledger
+    story: S1
+    output: Notification ledger lifecycle tombstones FKs retention pagination corruption handling.
+    gate: AC-NC-001..AC-NC-009 and AC-NC-059..AC-NC-066 relevant checks green.
+  - id: C-rsvp-saga
+    story: S2
+    output: Dedicated service outbox operation pending overlay generation guards provider mapper and 412 outcomes.
+    gate: AC-NC-025..AC-NC-043 and AC-NC-051..AC-NC-057 green.
+  - id: D-invitations
+    story: S3
+    output: Canonical invitation projection multi-account recurrence dedup partial scan lifecycle.
+    gate: AC-NC-016..AC-NC-024 and AC-NC-058 green.
+  - id: E-reminders
+    story: S4
+    output: Durable-center-first scheduler flow and native best-effort state.
+    gate: AC-NC-010..AC-NC-015 green.
+  - id: F-bridge
+    story: S5
+    output: Guarded Tauri commands typed DTO errors cursors and parity fixtures.
+    gate: Bridge registration guard stale version and AC-NC-050 green.
+  - id: G-ui
+    story: S6
+    output: Route bell badge desktop mobile actions states focus and announcements.
+    gate: AC-NC-044..AC-NC-049 and AC-NC-062..AC-NC-064 green.
+  - id: H-verification
+    story: S7
+    output: Full EARS evidence provider conformance record and native owner-signoff label.
+    gate: VIGIL identity-distinct verification before Tonberry verified transition.
+
+merge_order: [A-contracts, B-ledger, C-rsvp-saga, D-invitations, E-reminders, F-bridge, G-ui, H-verification]
+parallelism: >-
+  Vivi is the sole production writer. Parallel work is limited to read-only
+  analysis isolated test-fixture preparation with nonoverlapping files and
+  checker activity after each stage barrier.
+
+stop_conditions:
+  - Any need to send guest update mail without explicit user intent requires spec amendment.
+  - Any inability to preserve provider-confirmed canonical state during pending RSVP requires spec amendment.
+  - Any need for generic attendee editing or ThisAndFollowing is out of scope.
+  - Provider conformance failure for sendUpdates=none blocks release and returns to RAMZA.
+
+final_verification:
+  automated: [jin-core, tauri, typescript, deterministic-playwright]
+  external: disposable-google-attendee-organizer-smoke
+  native: owner-visual-signoff-only

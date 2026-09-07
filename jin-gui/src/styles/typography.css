@@ -1,0 +1,159 @@
+/**
+ * typography.css — HIG text style utility classes.
+ *
+ * All sizes and weights reference tokens from tokens.css.
+ * NO raw hex or raw px sizes here — only var(--...) and rem via tokens.
+ *
+ * Inter is loaded by main.ts via @fontsource/inter (OFL 1.1 license).
+ * On macOS WebView, -apple-system picks up real SF Pro from the OS.
+ * SF Pro itself is NOT bundled — that violates Apple's font license.
+ */
+
+/* ── Base typography reset ──────────────────────────────────────────────────
+ * Apply the font stack and the Dynamic Type root multiplier.
+ * Layouts must REFLOW at AX sizes, not clip — use flex/grid with wrapping.
+ */
+:root {
+  font-size: calc(16px * var(--dynamic-type-scale, 1));
+}
+
+body {
+  font-family: var(--font-text);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  font-weight: var(--text-body-weight);
+  color: var(--label);
+  background-color: var(--bg-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── 11 HIG text style utility classes ─────────────────────────────────────
+ * Usage: <h1 class="text-large-title">, <p class="text-body">, etc.
+ * No full justification (HIG mandate). Avoid Ultralight/Thin/Light for UI.
+ * Hierarchy must survive text-size changes (rem-based, not px).
+ */
+
+.text-large-title {
+  font-size: var(--text-large-title-size);
+  line-height: var(--text-large-title-line);
+  font-weight: var(--text-large-title-weight);
+  letter-spacing: -0.01em;
+}
+
+.text-title1 {
+  font-size: var(--text-title1-size);
+  line-height: var(--text-title1-line);
+  font-weight: var(--text-title1-weight);
+  letter-spacing: -0.005em;
+}
+
+.text-title2 {
+  font-size: var(--text-title2-size);
+  line-height: var(--text-title2-line);
+  font-weight: var(--text-title2-weight);
+}
+
+.text-title3 {
+  font-size: var(--text-title3-size);
+  line-height: var(--text-title3-line);
+  font-weight: var(--text-title3-weight);
+}
+
+.text-headline {
+  font-size: var(--text-headline-size);
+  line-height: var(--text-headline-line);
+  font-weight: var(--text-headline-weight);
+}
+
+.text-body {
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  font-weight: var(--text-body-weight);
+}
+
+.text-callout {
+  font-size: var(--text-callout-size);
+  line-height: var(--text-callout-line);
+  font-weight: var(--text-callout-weight);
+}
+
+.text-subheadline {
+  font-size: var(--text-subheadline-size);
+  line-height: var(--text-subheadline-line);
+  font-weight: var(--text-subheadline-weight);
+}
+
+.text-footnote {
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+  font-weight: var(--text-footnote-weight);
+}
+
+.text-caption1 {
+  font-size: var(--text-caption1-size);
+  line-height: var(--text-caption1-line);
+  font-weight: var(--text-caption1-weight);
+}
+
+.text-caption2 {
+  font-size: var(--text-caption2-size);
+  line-height: var(--text-caption2-line);
+  font-weight: var(--text-caption2-weight);
+}
+
+/* A restrained mincho display voice for the application name and prominent
+ * view/document titles. Never apply this utility to dense UI or body copy. */
+.text-display-title {
+  color: var(--ink-primary);
+  font-family: var(--font-display);
+  font-size: var(--display-title-size);
+  line-height: var(--display-title-line);
+  font-weight: var(--display-title-weight);
+  letter-spacing: var(--display-title-tracking);
+}
+
+/* ── Semantic label colors (composable with text styles) ────────────────────
+ * Usage: <p class="text-body color-secondary">
+ * Color independence: never use color alone to convey meaning.
+ */
+
+.color-primary   { color: var(--label); }
+.color-secondary { color: var(--label-secondary); }
+.color-tertiary  { color: var(--label-tertiary); }
+.color-accent    { color: var(--accent); }
+.color-red       { color: var(--system-red); }
+.color-green     { color: var(--system-green); }
+.color-orange    { color: var(--system-orange); }
+
+/* ── Monospace ──────────────────────────────────────────────────────────────
+ * For code snippets, raw DTO output (S0 proof-of-wiring), etc.
+ */
+.text-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-body-line);
+}
+
+/* ── Truncation helper ──────────────────────────────────────────────────────
+ * Only use with an accessible tooltip/title when truncating meaningful text.
+ */
+.text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Focus ring — visible for keyboard navigation ───────────────────────────
+ * Uses outline (not box-shadow) so it renders outside the element and is
+ * not clipped. color-independent: uses accent color AND a white offset ring.
+ */
+:where(a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"]), [contenteditable="true"]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+:where(a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"]), [contenteditable="true"]):focus:not(:focus-visible) {
+  outline: none;
+}

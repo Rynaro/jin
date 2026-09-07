@@ -1,0 +1,37 @@
+[plasticity]
+eta = 0.08
+w_max = 1.0
+tau_spacing_hours = 6.0
+lambda_r_per_day = 0.1
+lambda_s_per_day = 0.01
+theta_consolidate_status = 0.6
+theta_dw_commit = 0.01
+theta_prune = 0.10
+
+[routing]
+ppr_restart = 0.85
+declared_edge_strength = 1.0
+plan_max_depth = 5
+plan_max_size = 8
+ablation_no_communities = false
+
+[signals]
+per_skill_session_cap = 3
+tau_credit_seconds = 1800.0
+eta_r = 0.15
+eta_r_refractory_s = 30.0
+retroactive_credit_max = 10
+session_end_tag_grace_s = 60.0
+
+[dream]
+dream_on_session_end = true
+dream_min_interval_s = 300.0
+retention_days = 30
+
+[embeddings]
+embedding_provider = "fastembed"
+embedding_offline = true
+
+[governance]
+autonomous = false
+commit_db = false

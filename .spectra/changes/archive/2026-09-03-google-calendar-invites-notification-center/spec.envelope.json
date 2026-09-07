@@ -1,0 +1,96 @@
+{
+  "x_ramza_comment": "ECL v2.0 RAMZA TRANCE specification envelope.",
+  "envelope_version": "2.0",
+  "message_id": "01a0645f-c5bd-7665-9988-00d03c9a3b76",
+  "thread_id": "01a0645f-c5bd-7669-8785-b68f1b6c9071",
+  "parent_id": null,
+  "from": {
+    "eidolon": "ramza",
+    "version": "0.1.0"
+  },
+  "to": {
+    "eidolon": "vivi",
+    "version": "1.4.0"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Propose the durable Jin Notification Center and recoverable Google self-RSVP saga for invitations and task reminders.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": "spec.md",
+    "sha256": "5f381395c52b9a201b92e3fb94ea0e435fabfdaf133c1ef0705c25219a443a0f",
+    "size_bytes": 46864
+  },
+  "context_delta": {
+    "token_budget": 0,
+    "tokens_used": 0,
+    "input_handles": [
+      "ATLAS Track A RSVP safety findings",
+      "ATLAS Track B storage and scheduler findings",
+      "ATLAS Track C frontend findings",
+      ".spectra/changes/archive/2026-09-01-google-calendar-multi-account-sync/spec.md"
+    ],
+    "summary": "Full-tier TRANCE specification with eight serialized implementation stories and 67 frozen EARS checks. It defines a versioned device-local Notification Center, durable task-reminder ingestion, canonical invitation reconciliation, a pending-overlay RSVP saga joined by operation ID, exact immutable route and generation guards, one bounded 412 retry, precise recurrence identities, accessible desktop/mobile UI, and deferred native actions and proposed-time support."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "ise": {
+    "assertion_grade": "self-attested",
+    "provenance": {
+      "methodology_version": "ramza-0.1.0",
+      "tool_surface": [
+        "Read",
+        "Grep",
+        "ApplyPatch",
+        "RAMZA",
+        "Tonberry",
+        "CRYSTALIUM"
+      ],
+      "lateral_consults": [
+        {
+          "eidolon": "atlas",
+          "performative": "INFORM"
+        },
+        {
+          "eidolon": "atlas",
+          "performative": "INFORM"
+        },
+        {
+          "eidolon": "atlas",
+          "performative": "INFORM"
+        },
+        {
+          "eidolon": "ramza-critic",
+          "performative": "CRITIQUE"
+        }
+      ]
+    },
+    "receiver_authorization": {
+      "auto_route": true,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "confidence": 0.9425,
+  "assumptions": [
+    "The provider propagates attendee responseStatus to the organizer copy when sendUpdates=none; a disposable provider smoke is a release gate.",
+    "The existing recoverable operation and outbox boundary can add a dedicated RSVP operation without optimistic canonical response mutation.",
+    "Native notification submission remains a best-effort title/body signal and never the durable source of truth."
+  ],
+  "integrity": {
+    "method": "sha256",
+    "value": "5f381395c52b9a201b92e3fb94ea0e435fabfdaf133c1ef0705c25219a443a0f"
+  },
+  "trace": {
+    "ts": "2026-09-02T23:24:47Z",
+    "host": "codex",
+    "model": "gpt-5",
+    "tier": "trance"
+  },
+  "x_ramza_acceptance_criteria": {
+    "path": ".spectra/changes/google-calendar-invites-notification-center/criteria.md",
+    "sha256": "24c75b11ce293e5f60c3efe969c393321a96ba49c9d477c57e6cd8749d6ad767"
+  }
+}

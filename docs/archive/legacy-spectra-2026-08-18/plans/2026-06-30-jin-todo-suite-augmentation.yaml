@@ -1,0 +1,323 @@
+spec:
+  id: jin-todo-suite-augmentation
+  version: 1
+  delivery: single-PR
+  confidence: 0.88
+  governing_constraints:
+    - files_first_source_of_truth
+    - sqlite_is_derived_rebuildable_index
+    - no_migration_files
+    - native_action_dialog_no_window_prompt
+    - lucide_icons_registered_3_places
+    - behavior_meaningful_tests
+    - node_v24.18.0_for_gui
+  schema_version:
+    from: wave2-v1
+    to: wave3-tasks-v1
+    file: jin-core/src/index/schema.rs:9
+  critical_rebuild_rule: >
+    SCHEMA_VERSION bump forces rebuild(), but rebuild does DELETE FROM tasks (not DROP) and
+    CREATE TABLE IF NOT EXISTS will NOT add columns to an existing tasks table. Each new tasks
+    column MUST also get a guarded ALTER TABLE in schema.rs::apply() (mirror excerpt/folder_path
+    at schema.rs:129-135). New tables use CREATE TABLE IF NOT EXISTS only.
+
+build_order:
+  - phase: P0
+    epic: priority_vocab_reconciliation
+    schema_change: false
+    depends_on: []
+  - phase: P1
+    epic: interactive_core_wiring
+    schema_change: false
+    depends_on: [P0]
+    note: reuses existing commands; fixes edit_task body:None bug
+  - phase: P2
+    epic: data_model_foundation
+    schema_change: true
+    depends_on: [P1]
+  - phase: P3
+    epic: first_class_lists
+    schema_change: true
+    depends_on: [P2]
+  - phase: P4
+    epic: tags
+    schema_change: true
+    depends_on: [P2]
+  - phase: P5
+    epic: sections_kanban_columns
+    schema_change: true
+    depends_on: [P3]
+  - phase: P6
+    epic: views_list_board
+    schema_change: false
+    depends_on: [P5]
+  - phase: P7
+    epic: calendar_component
+    schema_change: false
+    depends_on: []
+  - phase: P8
+    epic: due_date_time
+    schema_change: false
+    depends_on: [P7]
+    note: reuses existing DueDate::DateTime; no new field
+  - phase: P9
+    epic: drag_reorder
+    schema_change: true
+    depends_on: [P2, P5, P6]
+  - phase: P10
+    epic: multiple_reminders
+    schema_change: true
+    depends_on: [P2, P7, P8]
+  deviation_from_brief: >
+    interactive_core (P1) placed before data_model_foundation (P2) because P1 has zero schema
+    dependency, delivers the headline value, and de-risks the dialog/optimistic/mutation-test
+    patterns reused by P3-P10; the P2 rebuild is idempotent so running after P1 is free.
+
+data_model_delta:
+  priority_vocab:
+    canonical: [none, low, medium, high]
+    sort_weight: {high: 3, medium: 2, low: 1, none: 0}
+    files:
+      - jin-gui/src/lib/tasks/transform.ts:45,105-133
+      - jin-gui/index.html:749-753
+      - jin-gui/index.html:1950-1953
+      - jin-gui/src/lib/capture/transform.ts:136
+    glyph_decision: Flag tinted by Jin tokens (high=danger, medium=warning, low=muted, none=none); alt=ArrowUp/Minus/ArrowDown
+
+  task_frontmatter_additions:
+    file: jin-core/src/model/task.rs:90-111
+    fields:
+      - {name: section_id, type: "Option<String>", serde: default, note: nullable -> No Section}
+      - {name: tags, type: "Vec<String>", serde: default, note: mirrors NoteFrontmatter.tags note.rs:37}
+      - {name: position, type: "String", serde: default, note: fractional rank, assigned-on-create=append}
+      - {name: reminders, type: "Vec<Reminder>", serde: default, note: inline collection like links:Vec<LinkEntry>}
+    due_time: { change: none, reason: "existing DueDate::DateTime already carries time (task.rs:77-82)" }
+
+  new_models:
+    list:
+      file: jin-core/src/model/list.rs
+      frontmatter: {id: String, kind: "list", name: String, color: String, icon: String, position: String, parent_id: "Option<String>", view: "list|board", sort_mode: "manual|due|priority|title|created", sections: "Vec<SectionEntry>", archived_at: "Option<DateTime>", created: DateTime, updated: DateTime}
+      default_seed: {id: inbox, name: Inbox, not_deletable: true, renamable: true, on_disk: "<root>/lists/inbox.md"}
+      on_disk: "one file per list: <root>/lists/<id>.md"
+    section_entry:
+      embedded_in: list.sections[]
+      fields: {id: "String(ULID)", name: String, position: "String(fractional rank)"}
+    tag:
+      file: jin-core/src/model/tag.rs
+      on_disk: "one file per tag: <root>/tags/<slug>.md"
+      frontmatter: {slug: String, name: String, color: String, created: DateTime}
+      membership_source_of_truth: task.frontmatter.tags (Vec<String>)
+    reminder:
+      embedded_in: task.reminders[]
+      fields: {kind: "relative|absolute", value: "String"}
+      value_relative: "-1d|-1h|-30m (resolved vs due, deferred)"
+      value_absolute: "RFC-3339 timestamp"
+
+  position_scheme:
+    choice: fractional_index
+    rejected: gapped_integers
+    justification: >
+      Each task is its own file; cost that matters is file-writes-per-drag. Fractional rank lets a
+      drop rewrite exactly ONE task file (compute key between two neighbors), never touching
+      neighbors, no periodic rebalance that would rewrite many files. Gapped ints eventually force
+      a many-file rebalance.
+    key_contract:
+      pure_fn_rust: jin-core/src/order.rs
+      pure_fn_js: jin-gui/src/lib/tasks/rank.ts
+      alphabet: "base62 ASCII-ordered 0-9A-Za-z; lexicographic compare == rank order"
+      between: "between(a: Option, b: Option) -> String strictly between a and b; None = open bound"
+      invariants: ["a < between(a,b) < b", "between(None,b) < b", "a < between(a,None)", "deterministic"]
+
+  index_schema:
+    file: jin-core/src/index/schema.rs
+    tasks_new_columns:  # require ALTER guards in apply()
+      - {name: section_id, sql: "TEXT"}
+      - {name: position, sql: "TEXT"}
+      - {name: tags, sql: "TEXT NOT NULL DEFAULT '[]'"}
+      - {name: reminders, sql: "TEXT NOT NULL DEFAULT '[]'"}
+    new_tables:
+      lists: "CREATE TABLE IF NOT EXISTS lists (id PK, name, color, icon, position, parent_id, view DEFAULT 'list', sort_mode DEFAULT 'manual', archived_at, created, updated, file_path)"
+      sections: "CREATE TABLE IF NOT EXISTS sections (id PK, list_id, name, position); idx_sections_list"
+      tags: "CREATE TABLE IF NOT EXISTS tags (slug PK, name, color, file_path)"
+      task_tags: "CREATE TABLE IF NOT EXISTS task_tags (task_id, tag_slug, UNIQUE(task_id,tag_slug)); idx_task_tags_tag"
+    rebuild_file: jin-core/src/index/rebuild.rs:22-90
+    rebuild_changes:
+      - "add DELETE FROM lists; DELETE FROM sections; DELETE FROM tags; DELETE FROM task_tags; to clear batch"
+      - "walk lists/ -> INSERT lists + fan out SectionEntry -> sections"
+      - "walk tags/ -> INSERT tags"
+      - "per task: write section_id/position/tags(JSON)/reminders(JSON) columns + fan out task_tags rows"
+
+  dtos:
+    task_dto:
+      file: jin-core/src/dto/task.rs:8-20
+      add: [{section_id: "Option<String>"}, {tags: "Vec<String>"}, {position: String}, {reminders: "Vec<ReminderDto>"}, {body: String}]
+      body_population: "get_task reads file for body; list_tasks leaves body empty"
+    list_dto: {id, name, color, icon, position, parent_id, view, sort_mode, is_default, task_count, sections: "Vec<SectionDto>"}
+    section_dto: {id, list_id, name, position, task_count}
+    tag_dto: {slug, name, color, task_count}
+    reminder_dto: {kind, value}
+
+  tauri_commands:
+    tasks_extended:
+      file: jin-gui/src-tauri/src/commands/tasks.rs
+      edit_task_input_add: [{title_body_fix: "add body: Option<String>, fix hardcoded body:None at :156"}, {section_id: "Option<String>"}, {clear_section: bool}, {tags: "Option<Vec<String>>"}, {reminders: "Option<Vec<ReminderInput>>"}]
+      create_task_input_add: [section_id, tags, reminders]
+      move_task: {params: "id, list_id: Option<String>, section_id: Option<Option<String>>, position: String", returns: TaskDto, note: "atomic single-write drag/drop; within/cross-section/cross-list"}
+      reseed_positions: {params: "list_id, section_id: Option<String>, ordered_ids: Vec<String>", returns: "()", note: "one-shot on auto->manual flip"}
+    lists:
+      file: jin-gui/src-tauri/src/commands/lists.rs
+      list_lists: {params: "-", returns: "Vec<ListDto>"}
+      create_list: {params: "input{name,color,icon,parent_id?}", returns: ListDto}
+      edit_list: {params: "id, input{name?,color?,icon?,view?,sort_mode?,parent_id?}", returns: ListDto}
+      reorder_list: {params: "id, position", returns: ListDto}
+      delete_list: {params: "id", returns: "()", note: "refuse inbox; reassign tasks to default"}
+      create_section: {params: "list_id, name", returns: SectionDto}
+      rename_section: {params: "list_id, section_id, name", returns: SectionDto}
+      reorder_section: {params: "list_id, section_id, position", returns: SectionDto}
+      delete_section: {params: "list_id, section_id", returns: "()", note: "clear section_id on affected tasks"}
+    tags:
+      file: jin-gui/src-tauri/src/commands/tags.rs
+      list_tags: {params: "-", returns: "Vec<TagDto>"}
+      set_tag_color: {params: "slug, color", returns: TagDto}
+
+  invoke_wrappers:
+    file: jin-gui/src/invoke.ts
+    add:
+      - listLists()
+      - createList(input)
+      - editList(id, input)
+      - reorderList(id, position)
+      - deleteList(id)
+      - createSection(list_id, name)
+      - renameSection(list_id, section_id, name)
+      - reorderSection(list_id, section_id, position)
+      - deleteSection(list_id, section_id)
+      - listTags()
+      - setTagColor(slug, color)
+      - moveTask(id, {list_id?, section_id?, position})
+      - reseedPositions(list_id, section_id, orderedIds)
+      - "editTask: extend input with body?, section_id?, clear_section?, tags?, reminders?"
+      - "createTask: extend input with section_id?, tags?, reminders?"
+
+  config_fs:
+    config_additions: [Config::lists_dir() = root/lists, Config::tags_dir() = root/tags]
+    fs_additions: [write_list, read_list, list_list_paths, find_list_path, write_tag, read_tag, list_tag_paths]
+    ops_additions: [ops/lists.rs (ensure_default_list, crud, sections), ops/tags.rs (ensure_tag, set_color)]
+
+  icons_to_register:
+    file: jin-gui/src/lib/icons/index.ts
+    places: [import_block, export_block, createIcons_registry]
+    add: [Flag, Inbox, List, LayoutGrid, GripVertical, Bell, BellPlus, ChevronDown, Pencil, Trash2, Palette, Folder]
+    already_registered: [Tag, Clock, Plus, Circle, CheckCircle, CircleDot, XCircle, Calendar, CalendarDays, CalendarPlus, CalendarOff, ArrowUp, ArrowDown, Minus, ChevronRight, ChevronLeft, X, CheckSquare]
+
+calendar_component:
+  files: [jin-gui/src/lib/calendar/transform.ts, jin-gui/src/lib/calendar/render.ts, jin-gui/src/controllers/calendar_controller.ts, jin-gui/index.html#tmpl-calendar, jin-gui/src/main.ts]
+  structure: "dialog -> header(prev/next month+year, live label) -> weekday row -> role=grid 6x7 gridcell day buttons -> footer(Today/Clear)"
+  aria: {grid_role: grid, cell_role: gridcell, label_live_region: "aria-live=polite", roving_tabindex: "exactly one gridcell tabindex=0"}
+  cell_states: [default, today, selected, focus, outside-month, disabled]
+  keyboard:
+    left_right: "+-1 day"
+    up_down: "+-1 week"
+    home_end: "first/last day of week"
+    pageup_pagedown: "+-1 month"
+    shift_pageup_pagedown: "+-1 year"
+    enter_space: "select & close"
+    esc: "cancel -> calendar:cancel"
+  focus: "open: focus selected or today; close: return to trigger, set accessible name to chosen date"
+  event_contract: {name: "date:selected", detail: {iso: "YYYY-MM-DD", year: int, month: "1-12", day: int}, cancel: "calendar:cancel"}
+  config_values: {selected: ISO, min: ISO, max: ISO, mode: "single (default); range/multi reserved"}
+  transform_contract:
+    buildMonthGrid: "buildMonthGrid(year, month, {selected,today,min,max}) -> Cell[42]"
+    cell: {iso, day, inMonth, isToday, isSelected, isDisabled}
+    helpers: [addDays, addWeeks, addMonths, addYears, startOfWeek, clampToBounds]
+    render: "clone tmpl-calendar, textContent day numbers, data-state attrs, roving tabindex; NO innerHTML"
+
+epics:
+  - id: P0
+    stories: [S0.1 medium renders/filters, S0.2 medium round-trips no error, S0.3 sort high>medium>low>none]
+    files: [lib/tasks/transform.ts:45,105-133, index.html:749-753,1950-1953, lib/capture/transform.ts:136]
+    vg: VG-P0
+  - id: P1
+    stories: [S1.1 complete sets status+completed_at, S1.2 inline edit title+body, S1.3 delete soft, S1.4 create-in-place, S1.5 legal transitions only]
+    files: [controllers/tasks_controller.ts, lib/tasks/render.ts, lib/tasks/transform.ts, index.html:716-830, commands/tasks.rs:137-162(body fix), icons/index.ts]
+    vg: VG-P1
+  - id: P2
+    stories: [S2.1 optional fields parse w/o migration, S2.2 rebuild round-trips new fields/tables, S2.3 ALTER guard adds columns idempotently]
+    files: [model/task.rs:90-111, model/list.rs, index/schema.rs:9,33-45,126-136, index/rebuild.rs:22-90, index/query.rs:178-248, dto/task.rs, dto/list.rs, store/fs.rs, config.rs]
+    vg: VG-P2
+  - id: P3
+    stories: [S3.1 seed default inbox + delete refused, S3.2 CRUD persists+rebuild, S3.3 filter populated+counts, S3.4 delete reassign to default]
+    files: [model/list.rs, ops/lists.rs, commands/lists.rs, dto/list.rs, invoke.ts, controllers/lists_controller.ts, lib/lists/{transform,render}.ts, main.ts, index.html, browse.css, icons/index.ts]
+    vg: VG-P3
+  - id: P4
+    stories: [S4.1 #tag auto-create+attach, S4.2 color-tint chips, S4.3 tag filter via join, S4.4 recolor persists]
+    files: [model/task.rs(tags), model/tag.rs, ops/tags.rs, commands/tags.rs, dto/tag.rs, rebuild.rs, query.rs, commands/tasks.rs(edit_task.tags), invoke.ts, lib/tasks/{render,transform}.ts, icons/index.ts]
+    vg: VG-P4
+  - id: P5
+    stories: [S5.1 section CRUD persists+rebuild, S5.2 assign section_id persists+rebuild, S5.3 delete->No Section]
+    files: [model/list.rs(SectionEntry), model/task.rs(section_id), ops/lists.rs, ops/tasks.rs, commands/lists.rs, commands/tasks.rs(edit_task.section_id), rebuild.rs, dto, invoke.ts, lib/tasks/*, icons/index.ts]
+    vg: VG-P5
+  - id: P6
+    stories: [S6.1 toggle persists view, S6.2 list collapsible group headers, S6.3 board column-per-section cards]
+    files: [lib/tasks/{transform,render}.ts, controllers/tasks_controller.ts, commands/lists.rs(edit_list.view), index.html, browse.css, icons/index.ts]
+    vg: VG-P6
+  - id: P7
+    stories: [S7.1 date:selected emits iso, S7.2 APG keyboard map + roving tabindex + live region]
+    files: [lib/calendar/transform.ts, lib/calendar/render.ts, controllers/calendar_controller.ts, main.ts, index.html#tmpl-calendar, styles, icons/index.ts]
+    vg: VG-P7
+  - id: P8
+    stories: [S8.1 calendar+time -> date or RFC3339, S8.2 overdue danger chip + quick reschedule]
+    files: [lib/tasks/{transform,render}.ts, controllers/tasks_controller.ts, lib/capture/transform.ts, index.html:1961, browse.css, icons/index.ts]
+    vg: VG-P8
+  - id: P9
+    stories: [S9.1 within-section reorder persists new position+order flips, S9.2 cross-column section_id+position one write, S9.3 auto->manual flip+reseed]
+    files: [order.rs, lib/tasks/rank.ts, commands/tasks.rs(move_task,reseed_positions), invoke.ts, controllers/tasks_controller.ts(DnD application/x-jin-task-id), lib/tasks/{transform,render}.ts, browse.css, icons/index.ts]
+    vg: VG-P9
+  - id: P10
+    stories: [S10.1 add relative+absolute reminders persist+rebuild, S10.2 remove persists]
+    files: [model/task.rs(reminders/Reminder), commands/tasks.rs(edit_task/create_task reminders), rebuild.rs(JSON col), dto/task.rs, invoke.ts, lib/tasks/{transform,render}.ts, controllers/tasks_controller.ts, icons/index.ts]
+    vg: VG-P10
+
+validation_gates:
+  global:
+    G-PROMPT: "no window.prompt/alert/confirm; all flows use .action-dialog (forms.css:278); test asserts dialog opens"
+    G-ICONS: "every new data-lucide registered in 3 places; render test asserts icon node replaced (non-blank)"
+    G-REBUILD: "every new field/table: write file -> rebuild -> query == original"
+    G-ALTER: "old-schema index.sqlite gains each new tasks column via guarded ALTER, idempotent (mirror schema.rs:188-316)"
+    G-NODE: "GUI build/test/lint under nvm use v24.18.0"
+  per_epic:
+    VG-P0: "assert sort high>medium>low>none on 4-priority fixture; no GUI option emits normal; medium round-trips no error code 2"
+    VG-P1: "complete: status==done AND completed_at set, reopen clears; edit: title AND body persisted (via get_task); delete: status==deleted+deleted_at; create-in-place: new task with typed title exists"
+    VG-P2: "round-trip each new field; G-ALTER; task file missing all new fields parses"
+    VG-P3: "default seeded id=inbox + delete refused; CRUD persists+survives rebuild; existing list:inbox task resolves to default with file byte-unchanged"
+    VG-P4: "add tag: slug in frontmatter AND tags/<slug>.md exists AND task_tags row after rebuild; filter returns only tagged; recolor persists"
+    VG-P5: "section move: section_id persisted AND preserved across rebuild; reorder position persisted; delete->affected tasks resolve to No Section"
+    VG-P6: "view persisted on list and restored; list groups by section; board one column per section incl No Section"
+    VG-P7: "each APG key moves focus to expected ISO; date:selected fires correct iso; exactly one tabindex=0 gridcell; buildMonthGrid unit (leap year, month length, outside-month, today/selected/disabled)"
+    VG-P8: "overdue: danger class on past-due chip, none on future; date+time composes valid RFC-3339 core accepts"
+    VG-P9: "reorder: persisted position CHANGED AND sorted order flipped (not just move_task called); cross-column: section_id AND position changed in one write; between invariants exhaustive (order.rs + rank.ts); auto->manual flips sort_mode + seeds positions"
+    VG-P10: "add reminder: relative+absolute persisted AND survives rebuild via JSON col; remove persists shortened list; negative check: no scheduler/firing code"
+
+look_and_feel:
+  reuse_css: [browse.css .task-*, "forms.css:278 .action-dialog > __inner > {__header/__title,__form/__body,__actions}", "index.html:1726 capture modal precedent"]
+  checkbox: "circular, fills with list accent on complete; strike+fade; Undo"
+  priority: "Flag glyph, Jin tokens high=danger/medium=warning/low=muted/none=none"
+  tags: "small rounded chips, color as tint not full saturation, Jin palette"
+  lists: "left sidebar color+icon+count, draggable order, default Inbox always present"
+  views: "per-list List/Board; List=collapsible section headers; Board=section columns of cards"
+  density: "hover-revealed quiet action cluster + GripVertical handle; drop indicator thin accent line/placeholder gap"
+  do_not_copy: ["Todoist red #DE483A", "Apple SF Symbols", "SF Pro font", "Apple blur materials", "Todoist wordmark/check glyph"]
+  identity: "Lucide icons + Jin tokens/typography only"
+
+out_of_scope: [os_notification_firing, background_scheduler, nl_date_parsing, recurrence_rrule, location_reminders, subtasks, google_tasks_sync, smart_saved_views]
+
+open_questions:
+  - {id: OQ1, tag: DISPUTED, topic: priority_glyph, recommend: "Flag tinted by Jin tokens", alt: "ArrowUp/Minus/ArrowDown + none=no glyph (zero new icon)"}
+  - {id: OQ2, tag: GAP, topic: tag_color_persistence, recommend: "per-tag files tags/<slug>.md (recolorable)", alt: "deterministic hash->palette, no registry/no set_tag_color"}
+  - {id: OQ3, tag: GAP, topic: delete_list_disposition, recommend: "non-destructive reassign to default (folder-delete precedent)", alt: "delete tasks too (Todoist/Apple)"}
+  - {id: OQ4, tag: GAP, topic: delete_section_cost, recommend: "active clear section_id (truthful disk, N writes rare op)", alt: "lazy render-time bucketing (zero writes)"}
+  - {id: OQ5, tag: GAP, topic: reminders_index_shape, note: "v1 JSON column; deferred firing fast-follow likely needs reminders(id,task_id,kind,value,fire_at) table"}
+  - {id: OQ6, tag: GAP, topic: list_grouping_parent_id, note: "field reserved; v1 ships flat sidebar; nesting near-free follow-up"}
+  - {id: OQ7, tag: GAP, topic: body_in_list_tasks, recommend: "row body empty; populate body only in get_task"}
+  - {id: OQ8, tag: GAP, topic: list_tasks_sql_interpolation, note: "string-interpolated (query.rs:190-196); parameterize opportunistically in P4/P5"}
+  - {id: OQ9, tag: GAP, topic: subtasks, recommend: "OUT of v1 (not near-free: parent edge + nesting UI + completion roll-up)"}

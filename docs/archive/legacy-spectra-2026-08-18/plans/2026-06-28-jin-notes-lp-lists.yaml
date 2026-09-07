@@ -1,0 +1,339 @@
+# SPECTRA agent handoff — Jin Notes live-preview increment #1: list bullets + task checkboxes as glyphs
+# spectra -> apivr (Vivi). Frontend-only (jin-gui). Branch off main (dev already on feat/notes-lp-lists).
+# Human-readable plan delivered INLINE in the SPECTRA assistant message (no .md report per harness directive).
+meta:
+  artifact_id: 2026-06-28-jin-notes-lp-lists
+  title: "Live-preview increment #1 — render unordered list bullets + GFM task checkboxes as glyphs"
+  methodology: SPECTRA
+  methodology_version: 4.10.0
+  from: spectra
+  to: vivi
+  performative: PROPOSE
+  date: 2026-06-28
+  repo: jin-gui
+  scope: frontend-only
+  branch: feat/notes-lp-lists   # off main; v0.2.0 (live-preview + apple-notes chrome) is on main
+  tier_estimate: lite
+  complexity: 5/12               # standard tier, single-pass S->P->E->C->T->R->A (no TRANCE)
+  confidence: 0.90              # AUTO_PROCEED
+  roadmap_ref: "crystal 2fb5bb35 (live-preview roadmap); extends crystal 13e05148 (inline live preview), v0.2.0 release 237d7e37"
+
+# ── What ships ────────────────────────────────────────────────────────────────
+summary: >
+  Extend the SAME pure CM6 decoration builder that already hides inline markers
+  (jin-gui/src/lib/notes/livePreview.ts) so it ALSO emits Decoration.replace({widget})
+  glyphs: an unordered bullet-list marker (-, *, +) renders as "•" and a GFM task
+  marker ([ ]/[x]) renders as ☐/☑ — but ONLY on lines the cursor is not on (the
+  existing per-line reveal rule). Ordered-list numbers (1.) are left untouched.
+  A task item renders exactly ONE checkbox glyph (never "• ☐"). Single-source
+  atomicRanges already covers the new widget ranges because jinLivePreview() provides
+  atomicRanges from the SAME DecorationSet. CM6/lezer ONLY — no markdown-it/dompurify,
+  no innerHTML.
+
+# ── Firsthand verification done by SPECTRA (do not re-derive; confirm if changed) ─
+verified_facts:
+  parser_config: "editor.ts:529 and the test helper both use markdown({ base: markdownLanguage }); GFM Task/TaskMarker nodes ARE produced by this config (dumped live). No parser/extension change needed."
+  lezer_tree:
+    unordered: "BulletList > ListItem > ListMark ; ListMark = EXACTLY the marker char (1 char, e.g. [0,1)). NO trailing space in ListMark (space lives at from+1)."
+    ordered:   "OrderedList > ListItem > ListMark ; ListMark = '1.' (2 chars). Discriminator: ListItem.parent.name === 'OrderedList' -> OUT OF SCOPE, skip."
+    task:      "BulletList > ListItem > [ ListMark '-' (1 char), Task > TaskMarker ]. TaskMarker = '[ ]'/'[x]'/'[X]' (3 chars). A task item has BOTH a ListMark and a Task child -> this is the double-bullet hazard."
+    checked:   "TaskMarker text matches /^\\[[xX]\\]$/ -> checked (☑); '[ ]' -> unchecked (☐). Uppercase [X] is valid checked."
+    partial:   "Half-typed '- [ ' parses as ListMark + Paragraph '[ ' (NO Task node) -> treated as a plain bullet, no checkbox, no throw."
+    nested:    "'- outer\\n  - inner' -> nested BulletList; inner ListMark at its own offset; each gets its own glyph; monotonic order preserved."
+  widget_api: >
+    Empirically: Decoration.replace({widget}) exposes the widget via cursor.value.spec.widget
+    (custom props like .checked are readable there); plain Decoration.replace({}) has
+    spec.widget===undefined and top-level .widget===null. Gates assert via .spec.widget +
+    instanceof the exported widget classes. Builder ordering is SAFE: the combined checkbox
+    widget's `from` === current ListMark.from, so builder.add is monotonic during in-order iterate().
+
+# ── DECISIONS (resolved) ────────────────────────────────────────────────────────
+decisions:
+  D-INTERACTIVE:
+    decision: "DISPLAY-ONLY for this increment. Checkbox glyphs are NOT clickable yet."
+    rationale: >
+      (1) The increment's goal is glyph RENDERING; interactivity is a separable UX capability.
+      (2) Display-only is a pure additive decoration on the proven foundation: zero new
+      doc-mutation paths, zero event plumbing, no posAtDOM edge cases, no risk to
+      atomicRanges/caret. (3) No capability is lost — clicking a glyph positions the caret
+      on that line, which makes the line active and REVEALS the raw '- [ ]' for editing
+      (same reveal-to-edit model already shipped). (4) Keeps buildLivePreviewDecorations PURE
+      (no EditorView dependency baked into decoration data), preserving exact-range,
+      state-level, mutation-resistant testability that the anti-shallow mandate requires;
+      an interactive widget needs a view ref + real DOM-event test modality.
+    tradeoff: "To toggle, the user clicks the line and edits [ ]->[x] by hand (one extra step vs a direct click). Accepted for this increment."
+    follow_up: "increment #1.5 — see follow_up_spec.D-INTERACTIVE-NEXT below (fully shaped, decision-ready, OUT of committed scope here)."
+  D-WIDGET-ATOMIC:
+    decision: "Widget replace ranges go into the SAME DecorationSet returned by buildLivePreviewDecorations, so jinLivePreview()'s existing `provide: EditorView.atomicRanges.of(...v.decorations...)` (livePreview.ts:122-123) covers them automatically. Single source of truth unchanged."
+    eq: "BulletWidget.eq(o) => o instanceof BulletWidget (all bullets equal). CheckboxWidget.eq(o) => o instanceof CheckboxWidget && o.checked===this.checked (MUST compare checked so [ ]<->[x] rebuilds the glyph)."
+    ignoreEvent: "Both widgets: ignoreEvent() => false (editor handles the event -> click positions caret -> line becomes active -> reveal). Forward-compatible with the interactive follow-up, which pairs ignoreEvent=false with a domEventHandler+posAtDOM. Click-to-reveal FEEL is owner-verified via cargo tauri dev."
+  D-REVEAL:
+    decision: "Unchanged per-line reveal rule. On the active line (any selection range touching the marker's line) emit NO glyph; show raw marker so editing works. Reuses the existing activeLines set (livePreview.ts:55-62)."
+  D-BUILDER-SHAPE:
+    decision: >
+      Extend buildLivePreviewDecorations' iterate() enter() (livePreview.ts:71-83) with a single
+      new branch keyed on node.name === 'ListMark' that handles EVERYTHING at ListMark time
+      (no separate TaskMarker iteration, no out-of-order add): resolve ordered-vs-bullet via
+      grandparent, resolve task-vs-plain via ListItem.getChild('Task'), emit bullet OR combined
+      checkbox widget. Keep HIDE_MARK_NODES at exactly 4 entries (its size===4 test at
+      livePreview.test.ts:94-103 must stay green) — ListMark is NOT added to that Set; it is
+      WIDGET-replaced in its own branch.
+
+# ── Builder algorithm (decision-ready pseudocode for Vivi) ───────────────────────
+builder_algorithm:
+  location: "jin-gui/src/lib/notes/livePreview.ts — inside iterate().enter(), add a branch BEFORE/after the HIDE_MARK_NODES check"
+  steps:
+    - "if (node.name !== 'ListMark') -> fall through to existing HIDE_MARK_NODES handling."
+    - "lineNo = state.doc.lineAt(node.from).number; if activeLines.has(lineNo) -> return (D-REVEAL: show raw marker)."
+    - "n = node.node (materialize SyntaxNode); listItem = n.parent; list = listItem?.parent."
+    - "if (list?.name === 'OrderedList') -> return  // ordered numbers untouched (out of scope)."
+    - "if (list?.name !== 'BulletList') -> return    // defensive: only bullet lists."
+    - "task = listItem.getChild('Task');"
+    - "if (task) { taskMarker = task.getChild('TaskMarker'); if (!taskMarker) return; checked = /^\\[[xX]\\]$/.test(state.doc.sliceString(taskMarker.from, taskMarker.to)); builder.add(node.from, taskMarker.to, Decoration.replace({ widget: new CheckboxWidget(checked) })); return; }"
+    - "// plain bullet: builder.add(node.from, node.to, Decoration.replace({ widget: new BulletWidget() }));"
+  notes:
+    - "Combined checkbox covers [ListMark.from, TaskMarker.to) i.e. the whole '- [ ]' -> renders ONE ☐/☑ glyph; the natural space after ']' and the task text remain -> '☐ todo'. This is G-LP-NO-DOUBLE-BULLET by construction (no bullet emitted for task items)."
+    - "Plain bullet covers ONLY [ListMark.from, ListMark.to) (the marker char) -> the space after stays -> '• item'."
+    - "Reuse the existing replaceDecoration const for empty replaces; create per-widget Decoration.replace({widget}) inline (or memoize a BulletWidget singleton; CheckboxWidget needs 2 instances by checked-state)."
+    - "Performance: ListMarks are sparse; n.node + getChild are cheap. Iteration stays over view.visibleRanges (unchanged)."
+
+# ── Widget classes (DOM via createElement/textContent ONLY) ──────────────────────
+widgets:
+  file: "jin-gui/src/lib/notes/livePreview.ts (export both classes so tests assert via instanceof)"
+  BulletWidget:
+    glyph: "•  (U+2022)"
+    dom: "span.className='cm-bullet-glyph'; span.textContent='•'; span.setAttribute('aria-hidden','true')  // decorative; raw text is source of truth"
+    eq: "o instanceof BulletWidget"
+    ignoreEvent: "() => false"
+  CheckboxWidget:
+    fields: "readonly checked: boolean"
+    glyph: "☑ (U+2611) when checked, ☐ (U+2610) when unchecked"
+    dom: "span.className = 'cm-task-glyph' + (checked ? ' cm-task-glyph--checked' : ''); span.textContent = checked ? '☑' : '☐'; span.setAttribute('aria-hidden','true')"
+    eq: "o instanceof CheckboxWidget && o.checked === this.checked"
+    ignoreEvent: "() => false"
+  hard_rule: "toDOM uses document.createElement + textContent + setAttribute ONLY. NEVER assign .innerHTML. No markdown-it/dompurify import (G-CHOKEPOINT). G-LP-NO-INNERHTML extended."
+
+# ── Stories ──────────────────────────────────────────────────────────────────────
+stories:
+  - id: LPL-1
+    title: "Unordered bullet-list marker -> '•' glyph widget (off-line; ordered & task items excluded)"
+    user_story: "As a Jin note writer, I want '-'/'*'/'+' list markers to render as a tidy bullet on lines I'm not editing, so my lists read like Apple Notes/Obsidian while the raw marker is still there to edit."
+    timebox: "<=1d"
+    depends_on: []
+    action_plan:
+      - "Create exported BulletWidget (WidgetType) in livePreview.ts per widgets.BulletWidget."
+      - "Add the 'ListMark' branch to iterate().enter() per builder_algorithm; for PLAIN bullet items emit Decoration.replace({widget:BulletWidget}) over [ListMark.from, ListMark.to)."
+      - "Skip when list grandparent is OrderedList (ordered untouched). Skip (no bullet) when ListItem.getChild('Task') is non-null (forward guard so task items never show '• [ ]' even before LPL-2)."
+      - "Skip when the marker's line is active (D-REVEAL)."
+      - "Keep HIDE_MARK_NODES at size 4 (do NOT add ListMark to it)."
+    acceptance_criteria:
+      - id: AC-LPL1-1
+        given: "doc 'plain text\\n- apple' with the cursor on line 1 (offset 0)"
+        when: "buildLivePreviewDecorations(forceParse(state)) is collected"
+        then: "there is a decoration at EXACTLY [11,12) (the '-' ListMark on line 2) whose .spec.widget instanceof BulletWidget"
+      - id: AC-LPL1-2
+        given: "the same doc with the cursor on line 2 (offset 11, the bullet line)"
+        when: "decorations are built"
+        then: "there is NO decoration at [11,12) (G-LP-BULLET-REVEAL — raw '-' shown for editing)"
+      - id: AC-LPL1-3
+        given: "doc 'plain\\n1. first' with cursor on line 1"
+        when: "decorations are built"
+        then: "there is NO decoration over the '1.' ListMark at [6,8) (G-LP-ORDERED-UNTOUCHED — ordered numbers never glyphed)"
+      - id: AC-LPL1-4
+        given: "doc 'plain\\n- [ ] todo' with cursor on line 1 (LPL-1 only, before LPL-2)"
+        when: "decorations are built"
+        then: "NO BulletWidget is produced for the task item's '-' (the task item is excluded from bullet rendering)"
+      - id: AC-LPL1-5
+        given: "doc 'a\\n- one\\n- two' (multi bullet, cursor line 1)"
+        when: "decorations are built"
+        then: "each off-line ListMark gets its own BulletWidget at its exact 1-char range; ranges are monotonic (no throw)"
+    gates: [G-LP-BULLET-HIDE, G-LP-BULLET-REVEAL, G-LP-ORDERED-UNTOUCHED, "G-LP-ATOMIC(ext)", "G-LP-NO-INNERHTML(ext)", G-LP-HIDE_MARK_NODES-SIZE-4]
+    technical_context:
+      files: ["jin-gui/src/lib/notes/livePreview.ts", "jin-gui/src/__tests__/livePreview.test.ts"]
+      anchors:
+        - "livePreview.ts:71-83 iterate().enter() — add ListMark branch here"
+        - "livePreview.ts:55-62 activeLines set — reuse for the reveal check"
+        - "livePreview.ts:122-123 atomicRanges provide — UNCHANGED (single source already covers widgets)"
+        - "livePreview.test.ts:51-84 helpers makeState/makeStateWithSelection/collectRanges; forceParse:42-45"
+        - "livePreview.test.ts:94-103 HIDE_MARK_NODES size===4 test MUST stay green"
+      pattern: "ADAPT — extend the just-shipped pure builder; same RangeSetBuilder + Decoration.replace pattern."
+    agent_hint:
+      class: "Builder (speed-class) with adversarial self-review"
+      context_files: ["jin-gui/src/lib/notes/livePreview.ts", "jin-gui/src/__tests__/livePreview.test.ts", "jin-gui/src/lib/notes/editor.ts"]
+    risk_tags: [P1]
+
+  - id: LPL-2
+    title: "GFM task marker -> ☐/☑ glyph widget over the whole '- [ ]' (no double bullet; checked detection; reveal)"
+    user_story: "As a Jin note writer, I want '- [ ]'/'- [x]' to render as ☐/☑ on lines I'm not editing, so checklists look native — without an awkward extra bullet."
+    timebox: "<=1d"
+    depends_on: [LPL-1]
+    action_plan:
+      - "Create exported CheckboxWidget(checked) (WidgetType) per widgets.CheckboxWidget."
+      - "In the ListMark branch (task path): resolve task=ListItem.getChild('Task'), taskMarker=task.getChild('TaskMarker'); checked via /^\\[[xX]\\]$/ over the TaskMarker slice."
+      - "Emit ONE Decoration.replace({widget:CheckboxWidget(checked)}) over [ListMark.from, TaskMarker.to) (covers '- [ ]') -> single glyph, no bullet."
+      - "Reveal on active line (no glyph; raw '- [ ]' shown)."
+      - "Robust: half-typed '- [ ' has no Task node -> falls to the plain-bullet path (LPL-1) -> bullet glyph, no checkbox, no throw."
+    acceptance_criteria:
+      - id: AC-LPL2-1
+        given: "doc 'plain\\n- [ ] todo' with cursor on line 1"
+        when: "decorations are built"
+        then: "there is a decoration over EXACTLY [6,11) (the '- [ ]') whose .spec.widget instanceof CheckboxWidget with .checked === false (G-LP-CHECKBOX unchecked)"
+      - id: AC-LPL2-2
+        given: "doc 'plain\\n- [x] done' with cursor on line 1"
+        when: "decorations are built"
+        then: "a CheckboxWidget over [6,11) with .checked === true; doc 'plain\\n- [X] DONE' ALSO yields .checked === true (uppercase X)"
+      - id: AC-LPL2-3
+        given: "doc 'plain\\n- [ ] todo' with cursor on line 2 (the task line)"
+        when: "decorations are built"
+        then: "there is NO decoration over [6,11) (G-LP-CHECKBOX reveal — raw '- [ ]' shown)"
+      - id: AC-LPL2-4
+        given: "doc 'plain\\n- [ ] todo' with cursor on line 1"
+        when: "the produced widgets are tallied by type"
+        then: "exactly ONE CheckboxWidget and ZERO BulletWidget cover line 2 (G-LP-NO-DOUBLE-BULLET — never '• ☐')"
+      - id: AC-LPL2-5
+        given: "doc 'x\\n- [ ' (half-typed task, cursor line 1)"
+        when: "buildLivePreviewDecorations runs"
+        then: "it does NOT throw; line 2's '-' gets a BulletWidget; no CheckboxWidget is produced (G-LP-ROBUST ext)"
+      - id: AC-LPL2-6
+        given: "doc 'a\\n- plain\\n- [ ] task\\n- [x] done\\n1. num' (mixed; cursor line 1)"
+        when: "decorations are built"
+        then: "plain bullet -> BulletWidget; '- [ ] task' -> unchecked CheckboxWidget; '- [x] done' -> checked CheckboxWidget; '1. num' -> NO widget; all ranges monotonic, no throw"
+    gates: [G-LP-CHECKBOX, G-LP-CHECKBOX-REVEAL, G-LP-NO-DOUBLE-BULLET, "G-LP-ROBUST(ext)", "G-LP-ATOMIC(ext)", "G-LP-NO-INNERHTML(ext)"]
+    technical_context:
+      files: ["jin-gui/src/lib/notes/livePreview.ts", "jin-gui/src/__tests__/livePreview.test.ts"]
+      anchors:
+        - "livePreview.ts ListMark branch (added in LPL-1) — add the task path"
+        - "Offsets for 'plain\\n- [ ] todo': line2@6; ListMark[6,7); space@7; TaskMarker[8,11); space@11; 'todo'@12-15"
+      pattern: "ADAPT — same branch as LPL-1."
+    agent_hint:
+      class: "Builder (speed-class) with adversarial self-review"
+      context_files: ["jin-gui/src/lib/notes/livePreview.ts", "jin-gui/src/__tests__/livePreview.test.ts"]
+    risk_tags: [P1]
+
+  - id: LPL-3
+    title: "Glyph visual theming + full regression + smoke"
+    user_story: "As the Jin owner, I want the glyphs to look calm and on-brand and I want proof that nothing in the editor/controller regressed."
+    timebox: "<=1d"
+    depends_on: [LPL-1, LPL-2]
+    action_plan:
+      - "K-LPL-A (Kupo): add token-based rules for .cm-bullet-glyph / .cm-task-glyph / .cm-task-glyph--checked to jinEditorTheme (editor.ts:117-159) — e.g. bullet color var(--label-tertiary), checked color var(--accent); align glyph size/baseline so '• ' and '☐ ' sit flush with text. Cosmetic only; not a hard gate."
+      - "K-LPL-B (Kupo): run the FULL frontend suite under Node>=20 (nvm use 24.18.0; npm test) — assert zero regressions across all preserved gates."
+      - "G-LP-SMOKE (ext): mountEditor with a doc containing a bullet + a task; assert no throw, .cm-content exists, handle.getDoc() === initial doc (buffer never mutated), and at least one .cm-bullet-glyph / .cm-task-glyph node exists in the live DOM on an off-cursor line."
+    acceptance_criteria:
+      - id: AC-LPL3-1
+        given: "the full vitest suite run with node v24.18.0"
+        when: "npm test completes"
+        then: "ALL preserved gates pass (see preserved_gates) AND the new LPL-1/LPL-2 gates pass — zero regressions"
+      - id: AC-LPL3-2
+        given: "mountEditor(container,{doc:'- a\\n- [ ] b', onSave}) then move caret off both lines"
+        when: "the live DOM is queried"
+        then: "no throw; .cm-content present; getDoc() unchanged; a .cm-bullet-glyph and a .cm-task-glyph element are present in .cm-content (G-LP-SMOKE ext)"
+      - id: AC-LPL3-3
+        given: "the rendered editor in cargo tauri dev (owner-verified)"
+        when: "the owner views and clicks a bullet/checkbox line"
+        then: "glyphs render tastefully; clicking a glyph reveals the raw marker on that line (caret lands, line activates)"
+    gates: ["G-LP-SMOKE(ext)", G-REGRESSION-ALL]
+    technical_context:
+      files: ["jin-gui/src/lib/notes/editor.ts", "jin-gui/src/__tests__/livePreview.test.ts"]
+      anchors:
+        - "editor.ts:117-159 jinEditorTheme (add glyph CSS here; co-located, token-based, no raw hex)"
+        - "editor.ts:536 livePreviewCompartment.of(jinLivePreview()) — UNCHANGED"
+      pattern: "USE_TEMPLATE — mirror existing G-LP-SMOKE at livePreview.test.ts:420-444."
+    agent_hint:
+      class: "Builder + Kupo micro-tasks"
+      context_files: ["jin-gui/src/lib/notes/editor.ts", "jin-gui/src/__tests__/livePreview.test.ts"]
+    risk_tags: [P2]
+
+# ── Gates ─────────────────────────────────────────────────────────────────────
+gates_new:
+  - id: G-LP-BULLET-HIDE
+    assert: "off-line bullet ListMark range gets a Decoration.replace({widget}) whose spec.widget instanceof BulletWidget (exact 1-char range)."
+    how: "pure builder + forceParse; collectRanges + read cursor.value.spec.widget"
+  - id: G-LP-BULLET-REVEAL
+    assert: "on the active bullet line, NO decoration over the ListMark range."
+  - id: G-LP-ORDERED-UNTOUCHED
+    assert: "OrderedList ListMark ('1.') produces NO widget/replace at any cursor position."
+  - id: G-LP-CHECKBOX
+    assert: "off-line '- [ ]'/'- [x]'/'- [X]' produce a CheckboxWidget over [ListMark.from, TaskMarker.to); checked flag matches ([x]/[X]=true, [ ]=false)."
+  - id: G-LP-CHECKBOX-REVEAL
+    assert: "on the active task line, NO decoration over the combined range (raw '- [ ]' shown)."
+  - id: G-LP-NO-DOUBLE-BULLET
+    assert: "a task item yields exactly ONE CheckboxWidget and ZERO BulletWidget (never '• ☐')."
+  - id: "G-LP-ATOMIC(ext)"
+    assert: "the widget ranges are members of the DecorationSet that jinLivePreview() feeds to EditorView.atomicRanges (single source; assert the builder set CONTAINS the widget range — that set IS the atomic set)."
+  - id: "G-LP-NO-INNERHTML(ext)"
+    assert: "(a) source scan: livePreview.ts has no /\\.innerHTML\\s*=/ and imports only @codemirror/* + @lezer/* (mirror existing scan at livePreview.test.ts:394-417). (b) BulletWidget/CheckboxWidget .toDOM() returns an element with textContent === glyph and children.length === 0 (built without innerHTML)."
+  - id: "G-LP-ROBUST(ext)"
+    assert: "half-typed '- [ ', lone markers, empty doc, nested lists -> no throw; partial task degrades to a plain bullet."
+  - id: "G-LP-SMOKE(ext)"
+    assert: "mountEditor with bullet+task -> no throw; .cm-bullet-glyph + .cm-task-glyph appear in live .cm-content; getDoc() unchanged."
+
+preserved_gates:
+  must_stay_green:
+    - "G-LP-HIDE / G-LP-REVEAL / G-LP-SELECTION / G-LP-CARET-MOVE / G-LP-REBUILD / G-LP-ROBUST / G-LP-SMOKE  (livePreview.test.ts)"
+    - "G-LP-ATOMIC base (livePreview.test.ts:473-505)"
+    - "HIDE_MARK_NODES size===4 (livePreview.test.ts:94-103) — do NOT add ListMark/TaskMarker to HIDE_MARK_NODES"
+    - "G-LP-NO-INNERHTML base 'every produced decoration is a replace' (livePreview.test.ts:375-392) — KEEP its list-FREE doc; do NOT add a list to that doc or it will see widgets and fail. Add widget assertions in a NEW describe block."
+    - "G-SAVE-CARET-SAFE (livePreview.test.ts:446-469)"
+    - "G-XSS (notes_controller.test.ts ~486-505, immovable) ; G-CHOKEPOINT (markdown.test.ts:8, K-B3)"
+    - "G-KEYMAP / G-TOOLBAR-* / G-FOOTER-STATS / G-READING-VIEW (editor.test.ts, notes_controller.test.ts) — unaffected; only optional theme CSS touches editor.ts"
+
+# ── Kupo micro-tasks ──────────────────────────────────────────────────────────
+kupo_micro_tasks:
+  - id: K-LPL-A
+    task: "Add .cm-bullet-glyph / .cm-task-glyph / .cm-task-glyph--checked rules to jinEditorTheme (editor.ts:117-159); token colors only; align glyph baseline/size. Cosmetic."
+  - id: K-LPL-B
+    task: "nvm use 24.18.0 && (cd jin-gui && npm test) — full suite, zero regressions. System node v16 crashes vitest; Node>=20 required."
+  - id: K-LPL-C
+    task: "Do NOT modify the existing list-free G-LP-NO-INNERHTML 'no widget' test; add all widget assertions in a new describe block."
+
+# ── Risks ─────────────────────────────────────────────────────────────────────
+risks:
+  - id: R1
+    risk: "lezer task-list node detection drift (Task/TaskMarker)."
+    severity: P1
+    mitigation: "VERIFIED firsthand against the installed markdown({base:markdownLanguage}) — Task/TaskMarker exist, exact ranges captured (verified_facts). If a lang-markdown upgrade changes names, AC-LPL2-* fail loudly (exact-range gates)."
+  - id: R2
+    risk: "RangeSetBuilder out-of-order add when emitting the combined checkbox at ListMark time."
+    severity: P1
+    mitigation: "Resolved by D-BUILDER-SHAPE: handle the task at ListMark time so the decoration's `from` === current node.from (monotonic). Verified reasoning + AC-LPL2-6 covers mixed/multiline order."
+  - id: R3
+    risk: "Regressing the existing list-free G-LP-NO-INNERHTML / HIDE_MARK_NODES-size tests."
+    severity: P1
+    mitigation: "K-LPL-C + preserved_gates note: keep HIDE_MARK_NODES==4, keep the no-widget test's list-free doc; new assertions in a new block."
+  - id: R4
+    risk: "Widget caret/atomic edge cases (caret trapping on/around glyphs)."
+    severity: P2
+    mitigation: "Single-source atomicRanges already covers widget ranges (D-WIDGET-ATOMIC); reveal-on-active-line means the glyph never blocks editing. Feel owner-verified via cargo tauri dev."
+  - id: R5
+    risk: "'*' ambiguity (list marker vs emphasis)."
+    severity: P2
+    mitigation: "Parser disambiguates ('* item'->ListMark; '*italic*'->EmphasisMark; verified). Builder keys strictly off node.name."
+
+# ── Follow-up (NOT in committed scope; shaped for the next pickup) ───────────────
+follow_up_spec:
+  D-INTERACTIVE-NEXT:
+    title: "increment #1.5 — click-to-toggle checkboxes"
+    shape: >
+      CheckboxWidget keeps ignoreEvent()=>false. Add an EditorView.domEventHandlers (mousedown)
+      OR a toDOM(view) click listener that calls view.posAtDOM(el) to locate the marker, reads
+      the char inside '[ ]'/'[x]' and dispatches view.dispatch(view.state.update({changes:{from,to,insert}}))
+      flipping ' '<->'x'. A normal doc change -> triggers the EXISTING debounced autosave
+      (editor.ts:559-566 updateListener) like any edit (caret-safe; no re-mount).
+    new_gate: "G-LP-CHECKBOX-TOGGLE — mount editor, find the .cm-task-glyph DOM, dispatch a REAL MouseEvent click, assert handle.getDoc() toggled '[ ]'->'[x]' and back (drive the real widget DOM event, not a direct function call)."
+    risks: "posAtDOM accuracy near atomic ranges; ensuring the toggle range maps to the exact TaskMarker char; autosave debounce timing in tests."
+
+# ── Verification (SPECTRA Test phase summary) ───────────────────────────────────
+verification:
+  structural: "PASS — Project>Feature>Stories>Tasks; 3 INVEST stories, no orphans; LPL-2 depends on LPL-1; LPL-3 on both."
+  dependency: "PASS — all file:line anchors validated against the live tree; parser/widget API verified firsthand."
+  constraint: "PASS — frontend-only; CM6/lezer only; no innerHTML; Node>=20; ordered lists untouched."
+  adversarial: "PASS — covered double-bullet, ordered exclusion, uppercase [X], half-typed task, nested lists, builder ordering, and the two fragile existing tests (size==4, list-free no-widget)."
+  self_consistency: "PASS — 3 decompositions (by-node-type / by-construct / by-file) converge on the same 2 core changes + theming."
+confidence_breakdown:
+  pattern_match: 0.95
+  requirement_clarity: 0.95
+  decomposition_stability: 0.90
+  constraint_compliance: 0.90
+  overall: 0.90
+  decision: AUTO_PROCEED

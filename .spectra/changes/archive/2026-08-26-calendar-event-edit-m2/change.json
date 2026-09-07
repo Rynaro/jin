@@ -1,0 +1,145 @@
+{
+  "esl_version": "1.1",
+  "change_id": "calendar-event-edit-m2",
+  "status": "archived",
+  "tier": "full",
+  "maker": "Vivi",
+  "checker": "VIGIL",
+  "acceptance_checks": [
+    {
+      "id": "AC-001",
+      "given": "an active Jin-owned non-recurring plain Event",
+      "when": "detail capabilities are projected",
+      "then": "core SHALL report it editable and the detail SHALL expose Edit",
+      "verify_method": "test: cargo test -p jin-core event_detail_capabilities plus GUI detail test"
+    },
+    {
+      "id": "AC-002",
+      "given": "an active Jin-owned non-recurring Time block",
+      "when": "detail capabilities are projected",
+      "then": "core SHALL report it editable without granting any originating-Task mutation",
+      "verify_method": "test: core capability matrix and Time block edit preservation"
+    },
+    {
+      "id": "AC-003",
+      "given": "a Google-authoritative, recurring, or cancelled Event",
+      "when": "detail capabilities are projected",
+      "then": "Edit SHALL be absent and no edit command SHALL be accepted",
+      "verify_method": "test: core policy matrix plus GUI action absence"
+    },
+    {
+      "id": "AC-004",
+      "given": "a detail enters edit state",
+      "when": "the form renders",
+      "then": "the same route, source label, Time block label when applicable, date context, and bounded reading width SHALL remain stable",
+      "verify_method": "Playwright MCP: detail-to-edit context identity"
+    },
+    {
+      "id": "AC-005",
+      "given": "edit state",
+      "when": "Cancel or Escape is activated",
+      "then": "canonical data SHALL remain unchanged and focus SHALL return to Edit in reading state",
+      "verify_method": "test: GUI keyboard and cancel contract"
+    },
+    {
+      "id": "AC-006",
+      "given": "edit state contains no changed editable field",
+      "when": "Save is activated",
+      "then": "no canonical write, sequence increment, index refresh, or sync enqueue SHALL occur",
+      "verify_method": "test: core/bridge no-op edit side effects"
+    },
+    {
+      "id": "AC-007",
+      "given": "a valid changed draft",
+      "when": "Save is activated by click or Mod+Enter",
+      "then": "exactly one edit operation SHALL begin and repeated activation while pending SHALL be ignored",
+      "verify_method": "test: GUI input parity and pending guard"
+    },
+    {
+      "id": "AC-008",
+      "given": "Description has focus",
+      "when": "Enter is pressed",
+      "then": "a newline SHALL be inserted and Save SHALL not run",
+      "verify_method": "test: GUI textarea keyboard behavior"
+    },
+    {
+      "id": "AC-009",
+      "given": "a detail edit token and unchanged canonical Event",
+      "when": "core commits the edit",
+      "then": "only allowed fields plus updated and sequence SHALL change",
+      "verify_method": "test: cargo test -p jin-core event_edit::preserves_immutable_fields"
+    },
+    {
+      "id": "AC-010",
+      "given": "a Time block edit",
+      "when": "core commits it",
+      "then": "derived_from and every originating Task field SHALL remain unchanged",
+      "verify_method": "test: cargo test -p jin-core event_edit::time_block_preserves_task"
+    },
+    {
+      "id": "AC-011",
+      "given": "canonical Event bytes changed after detail load",
+      "when": "stale Save reaches core",
+      "then": "core SHALL return a typed conflict without write, refresh, sync enqueue, or success notification",
+      "verify_method": "test: cargo test -p jin-core event_edit::stale_token_conflict"
+    },
+    {
+      "id": "AC-012",
+      "given": "a typed stale conflict",
+      "when": "GUI handles it",
+      "then": "the draft SHALL remain intact, latest canonical detail SHALL be refetched for comparison, and neither conflict choice SHALL write",
+      "verify_method": "test: GUI stale conflict draft preservation"
+    },
+    {
+      "id": "AC-013",
+      "given": "a completed edit operation ID",
+      "when": "the same request is retried",
+      "then": "core SHALL return the original semantic result without a second mutation",
+      "verify_method": "test: cargo test -p jin-core event_edit::operation_id_idempotent"
+    },
+    {
+      "id": "AC-014",
+      "given": "an incomplete edit operation with a divergent canonical hash",
+      "when": "recovery runs",
+      "then": "recovery SHALL block without overwrite, index refresh, or sync enqueue",
+      "verify_method": "test: cargo test -p jin-core event_edit::divergent_hash_blocks"
+    },
+    {
+      "id": "AC-015",
+      "given": "a successful edit",
+      "when": "the command resolves",
+      "then": "GUI SHALL refetch canonical detail before success feedback, remain on detail, and restore focus to Edit",
+      "verify_method": "test: GUI canonical refetch ordering and focus"
+    },
+    {
+      "id": "AC-016",
+      "given": "validation, conflict, blocked, or retriable failure",
+      "when": "it is rendered",
+      "then": "the draft SHALL remain intact and localized accessible feedback SHALL identify the next safe action",
+      "verify_method": "test: GUI typed failure matrix in en and pt-BR"
+    },
+    {
+      "id": "AC-017",
+      "given": "any recurring master or occurrence including one with original_start",
+      "when": "M2 capability projection or edit authorization runs",
+      "then": "it SHALL remain view-only and edit SHALL be rejected without mutation or derived side effects",
+      "verify_method": "test: core/bridge/GUI recurring edit rejection matrix"
+    },
+    {
+      "id": "AC-018",
+      "given": "browser and native verification at supported widths, themes, scaling, languages, input modes, and reduced motion",
+      "when": "edit interactions are exercised",
+      "then": "primary actions SHALL remain reachable with no clipped content, unintended horizontal scrolling, console error, or keyboard trap",
+      "verify_method": "evidence: Playwright MCP plus native Tauri owner sign-off"
+    }
+  ],
+  "spec_ref": ".spectra/changes/calendar-event-edit-m2/spec.md",
+  "created_at": "2026-08-26",
+  "drift_checked": true,
+  "archive_path": "archive/2026-08-26-calendar-event-edit-m2",
+  "has_code": true,
+  "memory_preflight": {
+    "ran": true,
+    "records": 0
+  }
+}

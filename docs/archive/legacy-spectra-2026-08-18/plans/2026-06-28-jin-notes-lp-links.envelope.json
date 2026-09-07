@@ -1,0 +1,65 @@
+{
+  "envelope_version": "2.0",
+  "ecl_version": "1.0",
+  "message_id": "ef9de10b-c8ec-4e82-942e-87b3f89be912",
+  "thread_id": "02a16764-82a5-4153-a9f5-ca98ffeecd22",
+  "from": "spectra",
+  "to": "vivi",
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Live-preview increment #2 \u2014 collapse explicit markdown links [label](url) to just the label (accent+underline) on inactive lines, with per-line reveal of raw for editing, in the Jin CM6 note editor. Frontend-only (jin-gui).",
+  "artifact": {
+    "kind": "spec",
+    "payload_ref": "2026-06-28-jin-notes-lp-links.yaml",
+    "human_payload": "delivered inline in the SPECTRA assistant message (no .md report file written per harness directive)"
+  },
+  "integrity": {
+    "method": "sha256",
+    "value": "97118c4a608779ba10f93b526aed23fd90d111531530154e14b9723b273569ac",
+    "over": "2026-06-28-jin-notes-lp-links.yaml"
+  },
+  "context_delta": {
+    "repo": "jin-gui",
+    "extends_module": "jin-gui/src/lib/notes/livePreview.ts (add a 'Link' branch in buildLivePreviewDecorations + SAFE_LINK_SCHEME const + atomicDecorationsOf projection used by provide)",
+    "edits": "jin-gui/src/lib/notes/editor.ts (add '.cm-link-label' rule to jinEditorTheme only \u2014 no logic change)",
+    "stories": [
+      "LPK-1",
+      "LPK-2"
+    ],
+    "decisions": {
+      "D-CLICKABLE": "Option A (display-only collapse + style; click-to-reveal). Option B (clickable-open) DEFERRED to increment #2.5 \u2014 no Tauri opener/shell plugin exists; B needs src-tauri changes => breaks frontend-only",
+      "D-NESTED": "skip collapse for labels with nested markdown (RangeSetBuilder ordering throw \u2014 verified)",
+      "D-SCHEME": "SAFE_LINK_SCHEME=/^(?:https?|mailto):/i local const mirroring markdown.ts:42 (no markdown.ts import)",
+      "D-ATOMIC": "exclude label mark from atomicRanges via atomicDecorationsOf; hidden-syntax replaces stay atomic"
+    },
+    "immovable_gates": [
+      "G-XSS@notes_controller.test.ts:~486-505",
+      "G-CHOKEPOINT@markdown.test.ts:8 + livePreview source scan:406-419",
+      "HIDE_MARK_NODES-size-4@livePreview.test.ts:96-104",
+      "G-LP-NO-INNERHTML-base-link-free@livePreview.test.ts:377-394",
+      "G-READING-VIEW",
+      "G-SAVE-CARET-SAFE@livePreview.test.ts:450-471"
+    ],
+    "new_gates": [
+      "G-LP-LINK-COLLAPSE",
+      "G-LP-LINK-REVEAL",
+      "G-LP-LINK-SCHEME",
+      "G-LP-LINK-NESTED-SKIP",
+      "G-LP-LINK-ROBUST",
+      "G-LP-LINK-ATOMIC",
+      "G-LP-LINK-NO-BUFFER-MUTATION",
+      "G-LP-LINK-STYLE",
+      "G-LP-LINK-SMOKE"
+    ],
+    "verified_firsthand": [
+      "Link children + label-is-not-a-node",
+      "canonical ranges replace[2,3)/mark[3,8)/replace[8,30)",
+      "nested-markup label THROWS without skip",
+      "javascript:=>raw via scheme guard",
+      "no Tauri opener plugin (lib.rs:23) + no anchor-open bridge"
+    ],
+    "branch_base": "main AFTER increment #1 PR #9 lands (commit d2d0e16)",
+    "node_requirement": ">=20 (nvm v24.18.0)"
+  },
+  "trust_level": "standard"
+}
