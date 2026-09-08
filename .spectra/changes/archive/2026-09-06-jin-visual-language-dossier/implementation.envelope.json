@@ -1,0 +1,11 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "ramza"
+  },
+  "to": {
+    "eidolon": "idg"
+  },
+  "performative": "DELEGATE",
+  "objective": "Document accepted Jin visual language and author repo-local implementation and drift-review guidance"
+}

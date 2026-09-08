@@ -861,3 +861,36 @@
   flex: 0 1 auto;
   justify-content: flex-end;
 }
+
+/* Settings is an open reference document; status objects remain compact. */
+.settings-view { border: 0; border-radius: 0; background: var(--workspace-canvas); }
+.settings-nav { border-radius: 0; background: transparent; border-inline-end: 1px solid var(--separator); }
+.settings-workspace { padding: var(--space-5); border-radius: 0; }
+.settings-pane__header { padding-block-end: var(--space-3); border-block-end: 1px solid var(--separator); }
+.settings-section { padding: var(--space-3) 0; border: 0; border-block-end: 1px solid var(--separator); border-radius: 0; background: transparent; }
+.settings-section:first-of-type { padding-block-start: 0; }
+.settings-section__heading { color: var(--ink-primary); }
+.settings-row { padding-block: var(--space-2); }
+.auth-account { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 700px) { .settings-workspace { padding: var(--space-3) var(--space-2); } .settings-nav { border-inline-end: 0; border-block-end: 1px solid var(--separator); } }
+
+@media (max-width: 700px) {
+  .settings-view { display: block; overflow: visible; }
+  .settings-nav { inline-size: 100%; block-size: auto; padding: var(--space-1); }
+  .settings-nav__items { display: flex; flex-wrap: wrap; overflow: visible; }
+  .settings-nav__item { flex: 1 1 auto; min-inline-size: 0; white-space: normal; }
+  .settings-workspace { block-size: auto; max-block-size: none; overflow: visible; }
+  .settings-row > * { min-inline-size: 0; max-inline-size: 100%; overflow-wrap: anywhere; }
+}
+
+.settings-view__heading,
+.settings-pane__title,
+.settings-pane__description,
+.settings-section__heading,
+.settings-row__label,
+.settings-row__description,
+.settings-field__value {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}

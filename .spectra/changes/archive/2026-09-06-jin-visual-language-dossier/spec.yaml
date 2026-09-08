@@ -1,0 +1,90 @@
+change_id: jin-visual-language-dossier
+tier: lite
+intent: documentation
+objective: >-
+  Preserve Jin's accepted visual language in one canonical, code-grounded dossier
+  and one implementation/review skill, while extending existing visual QA to catch drift.
+maker: idg
+checker: atlas
+architecture:
+  dossier: docs/visual-language/README.md
+  implementation_skill: .agents/skills/jin-visual-language/SKILL.md
+  qa_extension: .agents/skills/jin-gui-visual-qa/SKILL.md
+  separate_drift_skill: rejected because its evidence loop and triggers duplicate visual QA
+scope:
+  files:
+    - docs/visual-language/README.md
+    - README.md
+    - docs/gui-testing.md
+    - .agents/skills/jin-visual-language/SKILL.md
+    - .agents/skills/jin-gui-visual-qa/SKILL.md
+  exclude:
+    - product source, CSS, HTML, TypeScript, Rust, tests, and fixtures
+    - design.md and design assets
+    - agent configuration, plugin metadata, scripts, assets, and openai.yaml for the new skill
+    - product redesign, new doctrine, invented brand meaning, or external memory transfer
+source_authority:
+  identity:
+    - docs/assets/jin.png
+    - jin-gui/src/styles/tokens.css
+  cascade: jin-gui/src/styles/index.css
+  accessibility: jin-gui/src/styles/a11y.css
+  testing: docs/gui-testing.md
+  historical_evidence: .spectra/changes/archive/2026-09-04-* through 2026-09-06-*
+dossier_sections:
+  - authority and grounded Jin identity
+  - typography, color, spacing, shape, material, and motion foundations
+  - interaction controls and truthful system states
+  - responsive and accessibility contract
+  - screen recipes for every route and shared surface
+  - stylesheet, renderer, and controller ownership
+  - demonstrated anti-patterns and drift traps
+  - implementation, verification, and maintenance workflow
+acceptance_checks:
+  - id: AC1
+    given: the canonical dossier
+    when: a contributor reads it
+    then: it comprehensively documents current identity, foundations, interaction, accessibility, responsive behavior, screens, ownership, drift traps, evidence, and maintenance without invented meaning
+    verify_method: independent source-to-dossier review
+  - id: AC2
+    given: brand, capture, today, danger, typography, material, and color guidance
+    when: roles are compared with tokens.css and current screens
+    then: seal, vermilion intent, semantic danger, display type, glass, raw colors, and adaptive roles remain precisely distinguished
+    verify_method: token and screen ownership comparison
+  - id: AC3
+    given: every current GUI surface
+    when: screen recipes are inspected
+    then: shell, Today, Capture, Tasks, Notes, Events, Notifications, Settings, dialogs, and system states have correct ownership and preserved behavior invariants
+    verify_method: route, stylesheet, renderer, and controller inventory review
+  - id: AC4
+    given: the jin-visual-language skill
+    when: an agent designs, implements, or reviews Jin UI work
+    then: it routes to the dossier, closest owner, real state preservation, proportional checks, and visual evidence without expanding into product or backend authority
+    verify_method: skill review and quick_validate.py
+  - id: AC5
+    given: the updated jin-gui-visual-qa skill
+    when: it is used for a design-system or drift review
+    then: it checks dossier fidelity, neighboring surfaces, responsive and accessibility intent, console and overflow, and browser versus native evidence proportionally
+    verify_method: skill review and quick_validate.py
+  - id: AC6
+    given: README.md and docs/gui-testing.md
+    when: a contributor looks for current visual guidance
+    then: the canonical dossier is directly linked and design.md is not framed as normative current doctrine
+    verify_method: link and prose inspection
+  - id: AC7
+    given: the final skill package
+    when: its structure is inspected
+    then: one new skill and one existing QA extension exist without a duplicate drift skill or unused supporting resources
+    verify_method: filesystem and content inspection
+  - id: AC8
+    given: completed documentation and skills
+    when: validation runs
+    then: both skills validate, new links resolve, diff-check passes, and independent review finds no invented doctrine or stale ownership
+    verify_method: quick_validate.py, link resolution, git diff --check, and ATLAS verdict
+verification:
+  skill_validator: /Users/henrique/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 /Users/henrique/.codex/skills/.system/skill-creator/scripts/quick_validate.py
+  static:
+    - resolve new Markdown links
+    - git diff --check
+    - compare dossier claims with tokens.css, index.css, a11y.css, and screen owners
+  independent_checker: atlas

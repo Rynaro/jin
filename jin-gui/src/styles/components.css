@@ -16,6 +16,11 @@
   background: var(--workspace-canvas);
 }
 
+.jin-badge { border-color: var(--separator); background: transparent; }
+.btn-secondary { border-color: var(--separator); background: transparent; }
+.btn-secondary:hover { background: var(--operational-wash); color: var(--accent); }
+.btn-danger { background: var(--seal); color: var(--seal-on); }
+
 .jin-context-rail {
   min-width: 0;
   min-height: 0;

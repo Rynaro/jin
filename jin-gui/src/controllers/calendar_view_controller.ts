@@ -784,13 +784,22 @@ export default class CalendarViewController extends Controller {
     const header = this.createMonthHeader();
     this.monthViewContentTarget.appendChild(header);
 
+    // One presentational region keeps large-text calendar columns readable
+    // without putting navigation controls inside the horizontal scroll surface.
+    const gridScroller = document.createElement('div');
+    gridScroller.className = 'calendar-month-grid-scroller';
+    gridScroller.tabIndex = 0;
+    gridScroller.setAttribute('role', 'region');
+    gridScroller.setAttribute('aria-label', eventMessage('calendar'));
+
     // Render weekday labels
     const weekdayRow = this.createWeekdayRow();
-    this.monthViewContentTarget.appendChild(weekdayRow);
+    gridScroller.appendChild(weekdayRow);
 
     // Render day cells
     const grid = this.createDayGrid(monthGrid);
-    this.monthViewContentTarget.appendChild(grid);
+    gridScroller.appendChild(grid);
+    this.monthViewContentTarget.appendChild(gridScroller);
   }
 
   private renderCurrentView(): void {
@@ -894,7 +903,7 @@ export default class CalendarViewController extends Controller {
 
     // Render date heading
     const dateHeading = document.createElement('h2');
-    dateHeading.className = 'calendar-day-heading';
+    dateHeading.className = 'calendar-day-heading calendar-day-heading--editorial';
     const dateObj = new Date(dateStr + 'T00:00:00');
     dateHeading.textContent = dateObj.toLocaleDateString(resolveEventLocale(), {
       weekday: 'long',
@@ -1147,10 +1156,16 @@ export default class CalendarViewController extends Controller {
     const header = document.createElement('div');
     header.className = 'calendar-month-header';
 
+    const identity = document.createElement('div');
+    identity.className = 'calendar-month-identity';
+    const eyebrow = document.createElement('p');
+    eyebrow.className = 'calendar-month-eyebrow';
+    eyebrow.textContent = eventMessage('calendar');
     const monthYearLabel = document.createElement('h2');
     monthYearLabel.className = 'calendar-month-label';
     monthYearLabel.textContent = new Date(this.currentYear, this.currentMonth - 1, 1)
       .toLocaleDateString(resolveEventLocale(), { month: 'long', year: 'numeric' });
+    identity.append(eyebrow, monthYearLabel);
 
     const navContainer = document.createElement('div');
     navContainer.className = 'calendar-month-nav';
@@ -1178,12 +1193,13 @@ export default class CalendarViewController extends Controller {
     nextBtn.innerHTML = '<i data-lucide="chevron-right" aria-hidden="true"></i>';
 
     navContainer.appendChild(prevBtn);
-    navContainer.appendChild(monthYearLabel);
     navContainer.appendChild(nextBtn);
     navContainer.appendChild(todayBtn);
 
-    header.appendChild(navContainer);
-    header.appendChild(this.createViewSwitch());
+    const controls = document.createElement('div');
+    controls.className = 'calendar-month-controls';
+    controls.append(navContainer, this.createViewSwitch());
+    header.append(identity, controls);
     return header;
   }
 

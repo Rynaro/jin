@@ -2515,8 +2515,13 @@ function fireScopeChanged(scope: { kind: 'list'; id: string } | { kind: 'smart';
 function buildStimulusTasksHTML(): string {
   return `
     <section data-controller="tasks" data-action="jin:open-detail->tasks#openDetail jin:scope-changed->tasks#setScope">
+      <button data-tasks-target="railToggleBtn" data-action="click->tasks#toggleRail" aria-expanded="false">Task lists</button>
+      <aside>
+        <button data-tasks-target="railCloseBtn" data-action="click->tasks#toggleRail">Close task lists</button>
+      </aside>
       <div class="tasks-main" data-tasks-target="main">
       <div data-tasks-target="listPanel">
+        <h1 data-tasks-target="workspaceTitle">Inbox</h1>
         <div data-tasks-target="loadingState" class="hidden" role="status"></div>
         <div data-tasks-target="emptyState" class="hidden"></div>
         <ul data-tasks-target="list" class="hidden browse-list" role="list"></ul>
@@ -2654,6 +2659,29 @@ describe('S1 — view persists globally + toggle honesty (real TasksController)'
     expect(localStorage.getItem('jin.tasks.view')).toBe('board');
   });
 
+  it('projects the active smart view and exact list name into the single workspace heading', async () => {
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([
+      makeDefaultListDto({ id: 'inbox', name: 'Personal', is_default: true }),
+      makeDefaultListDto({ id: 'work', name: 'Studio work', is_default: false }),
+    ]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([]);
+
+    startStimulusApp();
+    await flushStimulusAsync();
+
+    const title = document.querySelector('[data-tasks-target="workspaceTitle"]') as HTMLElement;
+    expect(title.textContent).toBe('Personal');
+
+    fireScopeChanged({ kind: 'smart', id: 'upcoming' });
+    await flushStimulusAsync();
+    expect(title.textContent).toBe('Upcoming');
+
+    fireScopeChanged({ kind: 'list', id: 'work' });
+    await flushStimulusAsync();
+    expect(title.textContent).toBe('Studio work');
+    expect(document.querySelectorAll('h1[data-tasks-target="workspaceTitle"]')).toHaveLength(1);
+  });
+
   it('view toggle re-enables once a specific list becomes the active scope', async () => {
     vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([
       makeDefaultListDto({ id: 'inbox', is_default: true }),
@@ -2667,6 +2695,28 @@ describe('S1 — view persists globally + toggle honesty (real TasksController)'
     // Inbox is the default list — auto-selected on connect, so the toggle is enabled.
     expect(toggleBtn.disabled).toBe(false);
     expect(toggleBtn.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  it('opens the task-list overlay with a focus handoff and restores the toggle on close', async () => {
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([]);
+
+    startStimulusApp();
+    await flushStimulusAsync();
+
+    const section = document.querySelector('[data-controller~="tasks"]') as HTMLElement;
+    const toggle = document.querySelector('[data-tasks-target="railToggleBtn"]') as HTMLButtonElement;
+    const close = document.querySelector('[data-tasks-target="railCloseBtn"]') as HTMLButtonElement;
+
+    toggle.click();
+    expect(section.classList.contains('tasks-rail-open')).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(close);
+
+    close.click();
+    expect(section.classList.contains('tasks-rail-open')).toBe(false);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(toggle);
   });
 });
 

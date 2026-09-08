@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en" data-theme="light" data-contrast="standard" data-size="100" data-motion="standard">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jin — Busy-day agenda</title>
+  <style>
+    :root {
+      --body-size: 15px; --brand-size: 32px; --heading-size: 52px;
+      --paper: #f7f3ea; --raised: #fffdf8; --ink: #201e1b; --muted: #625e57;
+      --line: #cec6b8; --indigo: #355078; --wash: #e7eafb;
+      --vermilion: #a43727; --danger: #ad2434; --capture-ink: #fffdf8;
+      --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      --serif: Georgia, "Iowan Old Style", serif; --shadow: 0 11px 29px #3e2e1a14;
+    }
+    [data-size="200"] { --body-size: 30px; --brand-size: 64px; --heading-size: 104px; }
+    [data-size="310"] { --body-size: 46.5px; --brand-size: 99.2px; --heading-size: 161.2px; }
+    [data-theme="dark"] {
+      --paper: #131415; --raised: #1b1d1f; --ink: #f3eee4; --muted: #b7b0a5;
+      --line: #3b3e3f; --indigo: #a9c4f4; --wash: #29304a;
+      --vermilion: #f08069; --danger: #ff97a3; --capture-ink: #131415; --shadow: 0 11px 29px #0008;
+    }
+    [data-contrast="high"] {
+      --paper: #fff; --raised: #fff; --ink: #000; --muted: #292929; --line: #000;
+      --indigo: #002bb8; --wash: #e4eaff; --vermilion: #a31500; --danger: #9b0015; --shadow: none;
+    }
+    [data-theme="dark"][data-contrast="high"] {
+      --paper: #000; --raised: #000; --ink: #fff; --muted: #e5e5e5;
+      --line: #fff; --indigo: #c0cbff; --wash: #141b45; --vermilion: #ff9d8b; --danger: #ffb0b8; --capture-ink: #131415;
+    }
+    * { box-sizing: border-box; min-width: 0; }
+    html, body { margin: 0; background: var(--paper); color: var(--ink); }
+    body { font: var(--body-size)/1.5 var(--sans); overflow-wrap: anywhere; }
+    button, input { max-width: 100%; font: inherit; }
+    button { cursor: pointer; overflow-wrap: anywhere; }
+    button:focus-visible, input:focus-visible, [tabindex="-1"]:focus-visible {
+      outline: 3px solid var(--indigo); outline-offset: 3px;
+    }
+    [hidden] { display: none !important; }
+    h1, h2, h3, p { margin-top: 0; }
+    .skip { position: absolute; z-index: 20; top: -100px; left: 12px; padding: 9px 12px; background: var(--ink); color: var(--paper); }
+    .skip:focus { top: 12px; }
+    .shell { min-height: 100vh; display: grid; grid-template-columns: clamp(180px,15vw,220px) minmax(0,1fr) clamp(240px,20vw,300px); }
+    .nav { display: flex; flex-direction: column; gap: 24px; padding: 28px 18px; border-right: 1px solid var(--line); background: color-mix(in srgb,var(--raised) 84%,var(--paper)); }
+    .brand { font: 700 var(--brand-size)/1 var(--serif); }
+    .brand i { color: var(--vermilion); font-style: normal; }
+    .eyebrow { margin: 0; color: var(--muted); font-size: .73em; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .concept-label { margin-top: 8px; }
+    .nav-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+    .nav-item, .control { width: 100%; border: 1px solid transparent; border-radius: 9px; padding: 9px 10px; background: transparent; color: var(--ink); text-align: left; }
+    .nav-item.active, .nav-item:hover, .control:hover { background: var(--wash); color: var(--indigo); }
+    .nav-item.active { font-weight: 750; }
+    .nav-actions { display: grid; gap: 8px; margin-top: auto; }
+    .control { border-color: var(--line); font-size: .86em; }
+    .control[aria-pressed="true"], .mode.selected { border-color: var(--indigo); background: var(--wash); color: var(--indigo); font-weight: 700; }
+    main { width: min(100%,944px); margin: 0 auto; padding: 40px 44px 64px; }
+    .top { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+    h1 { margin: 4px 0 7px; font: 400 var(--heading-size)/.98 var(--serif); letter-spacing: -2px; }
+    .subhead { color: var(--muted); }
+    .top-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: 8px; }
+    .capture { border: 0; border-radius: 9px; padding: 11px 14px; background: var(--vermilion); color: var(--capture-ink); font-weight: 800; box-shadow: 0 3px 0 color-mix(in srgb,var(--vermilion) 65%,black); }
+    .needs { margin: 26px 0 22px; padding: 16px 0; border-block: 1px solid var(--line); }
+    .needs h2, .anytime h2, .rail h2 { margin: 3px 0 11px; font: 400 1.65em/1.15 var(--serif); }
+    .needs-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+    .need { display: grid; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--raised); }
+    .need.is-moved { border-color: var(--indigo); background: var(--wash); }
+    .need.is-moved > h3, .need.is-moved > p { display: none; }
+    .need h3 { margin: 2px 0; font-size: 1em; }
+    .need p { margin: 2px 0 9px; color: var(--muted); font-size: .84em; }
+    .inline-actions, .context-actions { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 10px; }
+    .action { border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; background: var(--paper); color: var(--ink); font-size: .83em; }
+    .move-status { margin-top: 8px; color: var(--indigo); font-size: .84em; }
+    .move-status button, .link-button { border: 0; border-bottom: 1px solid currentColor; padding: 0; background: transparent; color: var(--indigo); font-weight: 750; }
+    .now { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 24px; padding: 14px 16px; border-left: 4px solid var(--indigo); border-radius: 0 10px 10px 0; background: var(--wash); }
+    .now strong { color: var(--indigo); }
+    .now-time { margin: 0; font-size: .84em; }
+    .pill { flex: 0 1 auto; border: 1px solid var(--indigo); border-radius: 999px; padding: 3px 8px; background: transparent; color: var(--ink); font-size: .8em; font-weight: 800; }
+    .agenda { position: relative; }
+    .agenda::before { content: ""; position: absolute; z-index: 0; top: 16px; bottom: 24px; left: 90px; width: 2px; background: var(--line); }
+    .block { position: relative; z-index: 1; display: grid; grid-template-columns: 74px minmax(0,1fr); gap: 17px; padding-bottom: 14px; }
+    .time { padding-top: 14px; color: var(--muted); font-size: .8em; font-variant-numeric: tabular-nums; text-align: right; }
+    .time small { display: block; font-size: .9em; }
+    .entry-card { position: relative; }
+    .entry-toggle { display: block; width: 100%; border: 1px solid transparent; border-radius: 10px; padding: 11px 14px; background: transparent; color: var(--ink); text-align: left; }
+    .entry-toggle:hover, .entry-toggle[aria-expanded="true"] { border-color: var(--line); background: var(--raised); box-shadow: var(--shadow); }
+    .kind { color: var(--indigo); font-size: .7em; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .entry-toggle h3 { margin: 1px 0; font-size: 1.07em; line-height: 1.25; }
+    .entry-toggle p { margin: 0; color: var(--muted); font-size: .84em; }
+    .range { color: var(--indigo); font-weight: 750; }
+    .detail { margin-top: -2px; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 10px 10px; padding: 12px 16px 16px; background: var(--raised); }
+    .detail > p { margin: 5px 0; color: var(--muted); font-size: .87em; }
+    .source-panel { margin-top: 11px; border-left: 3px solid var(--indigo); padding: 9px 11px; background: var(--wash); font-size: .86em; }
+    .source-panel p { margin: 4px 0 8px; }
+    .conflict-group { position: relative; margin: 4px 0 14px; border-left: 4px solid var(--indigo); padding: 28px 0 0 12px; }
+    .conflict-group::before, .conflict-group::after { content: ""; position: absolute; left: 0; width: 12px; border-top: 4px solid var(--indigo); }
+    .conflict-group::before { top: 0; } .conflict-group::after { bottom: 0; }
+    .conflict-label { position: absolute; top: 0; left: 16px; margin: 0; color: var(--indigo); font-size: .74em; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+    .anytime { margin-top: 25px; padding: 18px 0; border-top: 1px solid var(--line); }
+    .anytime-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .anytime-list li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--raised); }
+    .anytime-list span { display: block; color: var(--muted); font-size: .82em; }
+    .rail { padding: 32px 20px; border-left: 1px solid var(--line); background: var(--raised); }
+    .rail-card { padding: 16px 0; border-top: 1px solid var(--line); }
+    .rail-card p { margin: 4px 0; color: var(--muted); font-size: .87em; }
+    .empty, .loading { margin-top: 32px; padding: 40px 20px; border: 1px dashed var(--line); border-radius: 11px; color: var(--muted); text-align: center; }
+    .empty h2, .loading h2 { margin: 0 0 6px; color: var(--ink); font: 400 1.8em var(--serif); }
+    .spinner { display: inline-block; width: 1em; height: 1em; margin-right: 6px; border: .17em solid var(--line); border-top-color: var(--indigo); border-radius: 50%; vertical-align: -.1em; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .dialog { position: fixed; z-index: 10; inset: 0; display: grid; place-items: center; padding: 12px; background: #0008; }
+    .modal { width: min(100%,496px); max-height: calc(100dvh - 24px); overflow-y: auto; padding: 22px; border-radius: 13px; background: var(--raised); color: var(--ink); box-shadow: var(--shadow); }
+    .modal-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+    .modal h2 { margin: 3px 0 6px; font: 400 2em/1.08 var(--serif); }
+    .modal p { color: var(--muted); }
+    .close { flex: 0 0 auto; border: 0; padding: 4px 8px; background: transparent; color: var(--ink); font-size: 1.5em; }
+    .modes { display: flex; flex-wrap: wrap; gap: 7px; margin: 16px 0; }
+    .mode { border: 1px solid var(--line); border-radius: 999px; padding: 6px 9px; background: transparent; color: var(--ink); font-size: .83em; }
+    .capture-input { width: 100%; padding: 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); color: var(--ink); }
+    .commit { margin-top: 12px; } .feedback { min-height: 1.5em; margin: 11px 0 0; color: var(--indigo); font-size: .86em; }
+    [data-motion="reduce"] *, [data-motion="reduce"] *::before, [data-motion="reduce"] *::after { animation: none !important; scroll-behavior: auto !important; }
+    @media (max-width: 80rem) { .shell { grid-template-columns: clamp(180px,22vw,220px) minmax(0,1fr); } .rail { display: none; } }
+    @media (max-width: 47.5rem) {
+      .shell { display: block; } .nav { display: grid; gap: 12px; padding: 16px 12px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .nav-list { grid-template-columns: repeat(2,minmax(0,1fr)); } .nav-actions { grid-template-columns: 1fr; margin: 0; }
+      [data-size="200"] .nav-list, [data-size="310"] .nav-list { grid-template-columns: 1fr; }
+      main { padding: 24px 12px 48px; } .top { display: block; } .top-actions { display: grid; justify-content: stretch; margin-top: 14px; }
+      .needs-list { grid-template-columns: 1fr; } .now { align-items: start; flex-direction: column; }
+      .agenda::before { left: 6px; } .block { display: block; padding-left: 18px; } .time { padding: 3px 12px 4px; text-align: left; }
+      .time small { display: inline; } .time small::before { content: "–"; }
+      .conflict-group { margin-left: 4px; padding-left: 12px; } .conflict-group .block { padding-left: 14px; }
+      .modes { display: grid; grid-template-columns: 1fr; } .mode, .capture, .action { width: 100%; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; } }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#agenda">Skip to today’s agenda</a>
+  <div class="shell" id="appShell">
+    <nav class="nav" aria-label="Primary navigation">
+      <div><div class="brand">jin<i>.</i></div><p class="eyebrow concept-label">Busy-day concept · Sample data</p></div>
+      <ul class="nav-list">
+        <li><button class="nav-item active" aria-current="page">◐ Today</button></li><li><button class="nav-item">□ Tasks</button></li>
+        <li><button class="nav-item">◫ Notes</button></li><li><button class="nav-item">◷ Calendar</button></li>
+      </ul>
+      <div class="nav-actions">
+        <button class="control" id="theme">Appearance: light</button><button class="control" id="contrast" aria-pressed="false">High contrast</button>
+        <button class="control" id="size">Text size: 100%</button><button class="control" id="motion" aria-pressed="false">Reduce motion: off</button>
+      </div>
+    </nav>
+    <main>
+      <header class="top">
+        <div><p class="eyebrow">Friday · 4 September 2026</p><h1>Today</h1><p class="subhead">A busy day, held in one connected view.</p></div>
+        <div class="top-actions"><button class="control" id="state">State: busy day</button><button class="capture" id="openCapture">+ Capture</button></div>
+      </header>
+      <div id="busyContent">
+        <section class="needs" aria-labelledby="needs-title">
+          <p class="eyebrow">Due yesterday</p><h2 id="needs-title">Needs attention</h2>
+          <div class="needs-list">
+            <article class="need" data-task="Send revised investor memo"><h3>Send revised investor memo</h3><p>Due yesterday · The retention figure still needs correction.</p><div class="inline-actions"><button class="action plan-action" data-dest="today">Plan today</button><button class="action plan-action" data-dest="tomorrow">Tomorrow</button><button class="action plan-action" data-dest="done">Done</button></div><div class="move-status" hidden aria-live="polite"></div></article>
+            <article class="need" data-task="Confirm accessibility interview"><h3>Confirm accessibility interview</h3><p>Due yesterday · The participant is holding Tuesday morning.</p><div class="inline-actions"><button class="action plan-action" data-dest="today">Plan today</button><button class="action plan-action" data-dest="tomorrow">Tomorrow</button><button class="action plan-action" data-dest="done">Done</button></div><div class="move-status" hidden aria-live="polite"></div></article>
+          </div>
+        </section>
+        <section class="now" aria-label="Current focus"><div><p class="eyebrow">Now</p><strong>Launch brief — final pass</strong><p class="subhead now-time">09:00–10:30 · Focus block</p></div><span class="pill">48 min left</span></section>
+        <section id="agenda" class="agenda" aria-label="Friday’s busy agenda">
+          <article class="block task" id="item-support"><div class="time">08:10<small>08:40</small></div><div class="entry-card"><button class="entry-toggle" aria-expanded="false" aria-controls="detail-support"><span class="kind">Task</span><h3>Triage overnight support threads</h3><p><span class="range">08:10–08:40</span> · Inbox · 30 min</p></button><div class="detail" id="detail-support" hidden><p>Three customer replies need an owner before stand-up.</p></div></div></article>
+          <section class="conflict-group" aria-labelledby="conflict-one">
+            <h2 class="conflict-label" id="conflict-one">Conflict · 15 min overlap</h2>
+            <article class="block task" id="item-launch"><div class="time">09:00<small>10:30</small></div><div class="entry-card"><button class="entry-toggle" aria-expanded="false" aria-controls="detail-launch"><span class="kind">Focus task</span><h3>Launch brief — final pass</h3><p><span class="range">09:00–10:30</span> · Marketing · 90 min</p></button><div class="detail" id="detail-launch" hidden><p>Keep the story clear: customer evidence, approved dates, and the decision needed.</p><div class="context-actions"><button class="link-button note-link" data-note="note-quotes">Prep note: Customer quotes</button></div><div class="source-panel" id="note-quotes" hidden tabindex="-1"><strong>Customer quotes</strong><p>“This solved the handoff.” — Northstar team, approved for launch.</p><button class="link-button back-link">Back to event</button></div></div></div></article>
+            <article class="block" id="item-crit"><div class="time">10:15<small>10:45</small></div><div class="entry-card"><button class="entry-toggle" aria-expanded="false" aria-controls="detail-crit"><span class="kind">Event</span><h3>Design crit drop-in</h3><p><span class="range">10:15–10:45</span> · Studio room · 30 min</p></button><div class="detail" id="detail-crit" hidden><p>Optional attendance. The replay and decision note will be linked after the meeting.</p><div class="context-actions"><button class="link-button note-link" data-note="note-visual">Prep note: Visual direction</button></div><div class="source-panel" id="note-visual" hidden tabindex="-1"><strong>Visual direction</strong><p>Compare the agenda spine with the dense calendar lane.</p><button class="link-button back-link">Back to event</button></div></div></div></article>
+          </section>
+          <article class="block" id="item-product-review"><div class="time">10:45<small>11:30</small></div><div class="entry-card"><button class="entry-toggle" aria-expanded="false" aria-controls="detail-product-review"><span class="kind">Event</span><h3>Product review: agree the launch promise, ownership, evidence, and customer communication before the public release</h3><p><span class="range">10:45–11:30</span> · Studio room / video · 45 min</p></button><div class="context-actions"><button class="link-button task-link" data-target="item-launch">From task: Launch brief</button><button class="link-button note-link" data-note="note-review-quotes">Prep note: Customer quotes</button><button class="link-button note-link" data-note="note-dates">Prep note: Approved launch dates</button><button class="link-button note-link" data-note="note-decision">Prep note: Decision request</button></div><div class="detail" id="detail-product-review" hidden><p>Decision: approve scope for the public launch.</p><div class="source-panel" id="note-review-quotes" hidden tabindex="-1"><strong>Customer quotes</strong><p>Three approved excerpts that describe a faster handoff.</p><button class="link-button back-link">Back to event</button></div><div class="source-panel" id="note-dates" hidden tabindex="-1"><strong>Approved launch dates</strong><p>Preview on 8 September; public release on 15 September.</p><button class="link-button back-link">Back to event</button></div><div class="source-panel" id="note-decision" hidden tabindex="-1"><strong>Decision request</strong><p>Confirm the promise, owner, evidence threshold, and customer message.</p><button class="link-button back-link">Back to event</button></div></div></div></article>
+          <article class="block task" id="item-decisions"><div class="time">11:45<small>12:15</small></div><div class="entry-card"><button class="entry-toggle" aria-expanded="false" aria-controls="detail-decisions"><span class="kind">Task</span><h3>Capture product review decisions</h3><p><span class="range">11:45–12:15</span> · Follow-up · 30 min</p></button><div class="detail" id="detail-decisions" hidden><p>Record the decision, owner, and next review date while it is fresh.</p><div class="context-actions"><button class="link-button task-link" data-target="item-product-review">From event: Product review</button></div></div></div></article>
+          <article class="block" id="item-lunch"><div class="time">12:15<small>13:00</small></div><div class="entry-card"><button class="entry-toggle" aria-expanded="false" aria-controls="detail-lunch"><span class="kind">Event</span><h3>Lunch with Ana — partnership check-in</h3><p><span class="range">12:15–13:00</span> · Café Morro · 45 min</p></button><div class="detail" id="detail-lunch" hidden><p>Bring the partner roadmap, but leave the laptop closed for the first ten minutes.</p></div></div></article>
+          <section class="conflict-group" aria-labelledby="conflict-two">
+            <h2 class="conflict-label" id="conflict-two">Conflict · 30 min overlap</h2>
+            <article class="block task" id="item-northstar"><div class="time">13:15<small>14:00</small></div><div class="entry-card"><button class="entry-toggle" aria-expanded="false" aria-controls="detail-northstar"><span class="kind">Task</span><h3>Review customer notes: Northstar migration</h3><p><span class="range">13:15–14:00</span> · Research · 45 min</p></button><div class="detail" id="detail-northstar" hidden><p>Turn the unresolved questions into a short decision list.</p><div class="context-actions"><button class="link-button note-link" data-note="note-migration">Prep note: Migration questions</button></div><div class="source-panel" id="note-migration" hidden tabindex="-1"><strong>Migration questions</strong><p>Who owns the rollback plan? Is the import complete by Tuesday?</p><button class="link-button back-link">Back to event</button></div></div></div></article>
+            <article class="block" id="item-office-hours"><div class="time">13:30<small>14:00</small></div><div class="entry-card"><button class="entry-toggle" aria-expanded="false" aria-controls="detail-office-hours"><span class="kind">Event</span><h3>Engineering office hours</h3><p><span class="range">13:30–14:00</span> · Video · 30 min</p></button><div class="detail" id="detail-office-hours" hidden><p>Join only if the migration blocker remains open after note review.</p><div class="context-actions"><button class="link-button task-link" data-target="item-northstar">From task: Northstar migration review</button></div></div></div></article>
+          </section>
+          <article class="block" id="item-agenda-review"><div class="time">14:30<small>15:15</small></div><div class="entry-card"><button class="entry-toggle" aria-expanded="false" aria-controls="detail-agenda-review"><span class="kind">Event</span><h3>Design review: agenda under pressure</h3><p><span class="range">14:30–15:15</span> · Project room · 45 min</p></button><div class="detail" id="detail-agenda-review" hidden><p>Choose one way to surface collisions without turning Today into a calendar grid.</p><div class="context-actions"><button class="link-button note-link" data-note="note-open-questions">Prep note: Open questions</button></div><div class="source-panel" id="note-open-questions" hidden tabindex="-1"><strong>Open questions</strong><p>How does the agenda tell a person what can safely move?</p><button class="link-button back-link">Back to event</button></div></div></div></article>
+          <article class="block task" id="item-record"><div class="time">15:30<small>16:15</small></div><div class="entry-card"><button class="entry-toggle" aria-expanded="false" aria-controls="detail-record"><span class="kind">Task</span><h3>Write migration decision record</h3><p><span class="range">15:30–16:15</span> · Documentation · 45 min</p></button><div class="detail" id="detail-record" hidden><p>State the choice, why it was made, and the rollback threshold.</p><div class="context-actions"><button class="link-button task-link" data-target="item-northstar">From task: Northstar migration review</button></div></div></div></article>
+          <article class="block task" id="item-summary"><div class="time">16:30<small>17:00</small></div><div class="entry-card"><button class="entry-toggle" aria-expanded="false" aria-controls="detail-summary"><span class="kind">Task</span><h3>Send review summary and owners</h3><p><span class="range">16:30–17:00</span> · Communication · 30 min</p></button><div class="detail" id="detail-summary" hidden><p>Send the outcome, named owner, and when the group will look again.</p><div class="context-actions"><button class="link-button task-link" data-target="item-agenda-review">From event: Agenda review</button></div></div></div></article>
+        </section>
+        <section class="anytime" aria-labelledby="anytime-title"><p class="eyebrow">Anytime</p><h2 id="anytime-title">Ready when there is room</h2><ul class="anytime-list"><li><strong>Refine Q4 research questions</strong><span>Task · No date</span></li><li><strong>Collect launch retrospective prompts</strong><span>Note · No date</span></li></ul></section>
+      </div>
+      <section class="empty" id="empty" hidden><h2>A little room is useful.</h2><p>There’s nothing scheduled. Capture a thought when one arrives.</p></section>
+      <section class="loading" id="loading" hidden role="status" aria-live="polite"><h2><span class="spinner"></span>Opening your day</h2><p>Sample state for a short, honest wait.</p></section>
+    </main>
+    <aside class="rail" aria-label="Day context"><p class="eyebrow">Connected work</p><h2>What this day needs</h2><div class="rail-card"><strong>Keep the brief moving</strong><p>Product review at 10:45 comes from the launch brief and three named prep notes.</p></div><div class="rail-card"><strong>Resolve the migration</strong><p>Customer notes, office hours, and the decision record form one thread.</p></div><div class="rail-card"><strong>Protect the afternoon</strong><p>Both conflicts keep the two commitments and the exact overlap visible.</p></div></aside>
+  </div>
+  <div class="dialog" id="captureDialog" hidden role="dialog" aria-modal="true" aria-labelledby="captureTitle">
+    <div class="modal"><div class="modal-head"><div><p class="eyebrow">A moment for later</p><h2 id="captureTitle">Get the thought down now.</h2></div><button class="close" id="closeCapture" aria-label="Close capture">×</button></div><p>You can shape it later.</p><div class="modes" role="group" aria-label="Capture type"><button class="mode selected" aria-pressed="true">Quick · Anything</button><button class="mode" aria-pressed="false">Note · Think</button><button class="mode" aria-pressed="false">Task · Act</button><button class="mode" aria-pressed="false">Event · Schedule</button></div><label class="eyebrow" for="thought">Your thought</label><input id="thought" class="capture-input" placeholder="A line is enough…"><button class="capture commit" id="commit">Capture thought</button><div class="feedback" id="feedback" aria-live="polite"></div></div>
+  </div>
+  <script>
+    const root = document.documentElement;
+    const shell = document.querySelector('#appShell');
+    const dialog = document.querySelector('#captureDialog');
+    const thought = document.querySelector('#thought');
+    const feedback = document.querySelector('#feedback');
+    const sizeValues = ['100', '200', '310'];
+    const stateValues = ['busy day', 'empty', 'loading'];
+    let sizeIndex = 0, stateIndex = 0, dialogOpener = null;
+    const dialogFocusables = () => [...dialog.querySelectorAll('button:not([disabled]), input:not([disabled])')];
+    function openCapture() { dialogOpener = document.activeElement; dialog.hidden = false; shell.inert = true; shell.setAttribute('aria-hidden','true'); thought.focus(); }
+    function closeCapture() { dialog.hidden = true; shell.inert = false; shell.removeAttribute('aria-hidden'); dialogOpener?.focus(); }
+    function closeNote(panel) { panel.hidden = true; panel.closest('.entry-card')?.querySelector('.entry-toggle')?.focus(); }
+    document.querySelector('#theme').addEventListener('click', e => { const dark = root.dataset.theme === 'dark'; root.dataset.theme = dark ? 'light' : 'dark'; e.currentTarget.textContent = `Appearance: ${dark ? 'light' : 'dark'}`; });
+    document.querySelector('#contrast').addEventListener('click', e => { const high = root.dataset.contrast === 'high'; root.dataset.contrast = high ? 'standard' : 'high'; e.currentTarget.setAttribute('aria-pressed', String(!high)); });
+    document.querySelector('#motion').addEventListener('click', e => { const reduced = root.dataset.motion === 'reduce'; root.dataset.motion = reduced ? 'standard' : 'reduce'; e.currentTarget.textContent = `Reduce motion: ${reduced ? 'off' : 'on'}`; e.currentTarget.setAttribute('aria-pressed', String(!reduced)); });
+    document.querySelector('#size').addEventListener('click', e => { sizeIndex = (sizeIndex + 1) % sizeValues.length; root.dataset.size = sizeValues[sizeIndex]; e.currentTarget.textContent = `Text size: ${sizeValues[sizeIndex]}%`; });
+    document.querySelector('#state').addEventListener('click', e => { stateIndex = (stateIndex + 1) % stateValues.length; const busy = stateIndex === 0; document.querySelector('#busyContent').hidden = !busy; document.querySelector('.rail').hidden = !busy; document.querySelector('#empty').hidden = stateIndex !== 1; document.querySelector('#loading').hidden = stateIndex !== 2; e.currentTarget.textContent = `State: ${stateValues[stateIndex]}`; });
+    document.querySelectorAll('.entry-toggle').forEach(button => button.addEventListener('click', () => { const detail = document.querySelector(`#${button.getAttribute('aria-controls')}`); const opening = button.getAttribute('aria-expanded') !== 'true'; button.setAttribute('aria-expanded', String(opening)); detail.hidden = !opening; }));
+    document.querySelectorAll('.task-link').forEach(button => button.addEventListener('click', () => { const target = document.querySelector(`#${button.dataset.target}`), trigger = target?.querySelector('.entry-toggle'), detail = trigger && document.querySelector(`#${trigger.getAttribute('aria-controls')}`); if (trigger && detail) { trigger.setAttribute('aria-expanded','true'); detail.hidden = false; target.scrollIntoView({block:'center'}); trigger.focus(); } }));
+    document.querySelectorAll('.note-link').forEach(button => button.addEventListener('click', () => { const card = button.closest('.entry-card'), detail = card.querySelector('.detail'), panel = document.querySelector(`#${button.dataset.note}`); detail.hidden = false; card.querySelector('.entry-toggle').setAttribute('aria-expanded','true'); detail.querySelectorAll('.source-panel').forEach(other => { if (other !== panel) other.hidden = true; }); panel.hidden = false; panel.focus(); }));
+    document.querySelectorAll('.back-link').forEach(button => button.addEventListener('click', () => closeNote(button.closest('.source-panel'))));
+    document.querySelectorAll('.plan-action').forEach(button => button.addEventListener('click', () => {
+      const card = button.closest('.need'), actions = card.querySelector('.inline-actions'), status = card.querySelector('.move-status');
+      const destination = {today:'today',tomorrow:'tomorrow',done:'done'}[button.dataset.dest];
+      let movedItem = null;
+      card.classList.add('is-moved'); actions.hidden = true; status.hidden = false;
+      status.innerHTML = `${card.dataset.task} moved to ${destination} for this session. <button type="button">Undo</button>`;
+      if (destination === 'today') {
+        movedItem = document.createElement('li');
+        movedItem.className = 'moved-anytime';
+        movedItem.innerHTML = `<strong>${card.dataset.task}</strong><span>Today · Anytime</span>`;
+        document.querySelector('.anytime-list').append(movedItem);
+      }
+      status.querySelector('button').addEventListener('click', () => {
+        movedItem?.remove(); card.classList.remove('is-moved'); status.hidden = true; status.textContent = ''; actions.hidden = false; button.focus();
+      }, {once:true});
+    }));
+    document.querySelector('#openCapture').addEventListener('click', openCapture);
+    document.querySelector('#closeCapture').addEventListener('click', closeCapture);
+    dialog.addEventListener('click', e => { if (e.target === dialog) closeCapture(); });
+    document.querySelectorAll('.mode').forEach(button => button.addEventListener('click', () => { document.querySelectorAll('.mode').forEach(mode => { mode.classList.remove('selected'); mode.setAttribute('aria-pressed','false'); }); button.classList.add('selected'); button.setAttribute('aria-pressed','true'); }));
+    document.querySelector('#commit').addEventListener('click', () => { const value = thought.value.trim(); feedback.textContent = value ? 'Captured in this concept only — it won’t be saved.' : 'Write a thought first. This concept does not save it.'; if (value) thought.value = ''; });
+    document.addEventListener('keydown', event => {
+      if (!dialog.hidden) {
+        if (event.key === 'Escape') { event.preventDefault(); closeCapture(); return; }
+        if (event.key === 'Tab') { const items = dialogFocusables(), first = items[0], last = items[items.length - 1]; if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); } }
+        return;
+      }
+      if (event.key !== 'Escape') return;
+      const panel = document.activeElement?.closest?.('.source-panel:not([hidden])');
+      if (panel) { event.preventDefault(); closeNote(panel); return; }
+      const expandedTrigger = document.activeElement?.matches?.('.entry-toggle[aria-expanded="true"]') ? document.activeElement : null;
+      if (expandedTrigger) { event.preventDefault(); document.querySelector(`#${expandedTrigger.getAttribute('aria-controls')}`).hidden = true; expandedTrigger.setAttribute('aria-expanded','false'); expandedTrigger.focus(); return; }
+      const detail = document.activeElement?.closest?.('.detail:not([hidden])');
+      if (detail) { event.preventDefault(); detail.hidden = true; const trigger = document.querySelector(`[aria-controls="${detail.id}"]`); trigger?.setAttribute('aria-expanded','false'); trigger?.focus(); }
+    });
+  </script>
+</body>
+</html>

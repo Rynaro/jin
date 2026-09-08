@@ -94,6 +94,17 @@ function requestedActionLabel(action: NotificationAction | null): string {
   }
 }
 
+function providerResponseLabel(response: string | null): string | null {
+  if (!response) return null;
+  switch (response) {
+    case 'needsAction': return 'Awaiting your response';
+    case 'accepted': return 'Accepted';
+    case 'tentative': return 'Maybe';
+    case 'declined': return 'Declined';
+    default: return response;
+  }
+}
+
 /** Text-first state cues; every visual state remains understandable without color. */
 export function notificationStateLabels(item: NotificationItemDto, selected = false): string[] {
   const labels: string[] = [];
@@ -176,7 +187,7 @@ function renderInvitationMetadata(item: CalendarInvitationNotificationDto): HTML
     `${formatInstant(item.start, item.all_day)} – ${formatInstant(item.end, item.all_day)}`,
   );
   appendDefinition(metadata, 'Location', item.location);
-  appendDefinition(metadata, 'Current response', item.provider_response_status);
+  appendDefinition(metadata, 'Current response', providerResponseLabel(item.provider_response_status));
   return metadata;
 }
 
@@ -208,7 +219,7 @@ function renderInvitationActions(
     section.append(element(
       'p',
       'notifications-pending-copy',
-      `Pending sync: ${requestedActionLabel(item.requested_action)}. Google’s confirmed response remains ${item.provider_response_status}.`,
+      `Pending sync: ${requestedActionLabel(item.requested_action)}. Google’s confirmed response remains ${providerResponseLabel(item.provider_response_status) ?? 'unknown'}.`,
     ));
   }
   if (item.capabilities.disabled_reason) {

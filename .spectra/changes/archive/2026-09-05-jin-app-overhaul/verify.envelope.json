@@ -1,0 +1,19 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "atlas"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "INFORM",
+  "objective": "Distinct checker accepts all twelve app-overhaul criteria with automated and browser evidence; native build succeeded, owner visual sign-off remains pending.",
+  "context_delta": {
+    "browser": "Events, all Settings panes, Notifications, Capture and existing routes validated at narrow/desktop and AX5 sizes",
+    "checker": "atlas",
+    "maker": "vivi",
+    "native": "Jin.app built successfully; Mac locked prevented native window inspection",
+    "tests": "1892 frontend tests; Rust checks, focused regression suites, lint/build and production smoke passed",
+    "verdict": "accept"
+  }
+}

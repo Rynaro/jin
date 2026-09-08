@@ -12,7 +12,7 @@
  */
 
 import type { AgendaEventDto } from '../../types/dto';
-import type { GroupedAgenda } from './transform';
+import type { AgendaRowPresentation, GroupedAgenda } from './transform';
 import { sourceBadgeLabel, sourceBadgeIcon, isRecurring } from './transform';
 
 // ── Interface types ───────────────────────────────────────────────────────────
@@ -111,7 +111,9 @@ export function renderTodayView(
   // ── Timed schedule ──────────────────────────────────────────────────────────
   if (grouped.timed.length > 0) {
     for (const event of grouped.timed) {
-      el.timedList.appendChild(buildEventRow(templates, event, onNavigate));
+      el.timedList.appendChild(
+        buildEventRow(templates, event, onNavigate, grouped.presentationById?.get(event.id)),
+      );
     }
     el.timedSection.classList.remove('hidden');
   } else {
@@ -140,7 +142,8 @@ export function renderTodayView(
 function buildEventRow(
   templates: TodayTemplates,
   event: AgendaEventDto,
-  onNavigate: NavigateCallback
+  onNavigate: NavigateCallback,
+  presentation?: AgendaRowPresentation,
 ): HTMLElement {
   const frag = templates.eventRow.content.cloneNode(true) as DocumentFragment;
   // Template has a single root <li class="today-event-row">
@@ -149,11 +152,21 @@ function buildEventRow(
   row.dataset.eventId = event.id;
   row.setAttribute('aria-label', event.title);
 
-  // ── Time / display_start ──────────────────────────────────────────────────
+  // ── Time range ────────────────────────────────────────────────────────────
   const timeEl = row.querySelector('.today-event-row__display-start');
   if (timeEl) {
-    timeEl.textContent = event.display_start;
-    timeEl.setAttribute('aria-label', `Time: ${event.display_start}`);
+    const timeRange = presentation?.timeRange ?? event.display_start;
+    timeEl.textContent = timeRange;
+    timeEl.setAttribute('aria-label', `Time: ${timeRange}`);
+  }
+
+  if (presentation?.overlaps) {
+    row.classList.add('today-event-row--overlap');
+    const overlapEl = row.querySelector('.today-event-row__overlap') as HTMLElement | null;
+    if (overlapEl) {
+      overlapEl.classList.remove('hidden');
+      overlapEl.setAttribute('aria-label', 'Overlaps another scheduled event');
+    }
   }
 
   // ── Title ─────────────────────────────────────────────────────────────────

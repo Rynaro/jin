@@ -446,6 +446,7 @@ export function renderNoteDetail(
   titleEl.className = 'browse-detail__title browse-detail__title--input jin-title-field text-title2';
   titleEl.value = note.title;
   titleEl.placeholder = 'Untitled';
+  titleEl.setAttribute('aria-label', 'Note title');
   titleRowEl.appendChild(titleEl);
 
   // ── Status badge (title row, right-aligned via flex) ─────────────────────

@@ -1,0 +1,88 @@
+change_id: jin-notes-editor
+tier: lite
+intent: change
+objective: >-
+  Make the existing Notes editor a modern, cozy Jin writing surface using continuous
+  warm paper, expressive ink typography, indigo interaction cues, calm grouped tools,
+  and truthful save feedback without changing editing behavior.
+maker: vivi
+checker: atlas
+scope:
+  files:
+    - jin-gui/src/styles/tokens.css
+    - jin-gui/src/styles/browse.css
+    - jin-gui/src/styles/a11y.css
+    - jin-gui/src/lib/notes/editor.ts
+    - jin-gui/src/lib/notes/render.ts
+    - jin-gui/src/__tests__/editor.test.ts
+    - jin-gui/src/__tests__/notes_visual_system.test.ts
+    - jin-gui/src/__tests__/token_discipline.test.ts
+  preserve:
+    - one existing CodeMirror editor and live-preview sanitizer chokepoints
+    - title save and Escape revert
+    - 600 ms caret-safe autosave plus blur, mode-toggle, note-switch, and destroy flush
+    - formatting commands, shortcuts, Focus, Typewriter, Read mode, native undo and selection
+    - attachments, event attachment, typed links, History, links, backlinks, conflicts, and routes
+    - appearance and accessibility preference contracts
+  exclude:
+    - Rust, core, DTO, bridge, persistence, or Markdown format changes
+    - another Notes list or folder redesign
+    - editor replacement, AI, slash commands, collaboration, or fake save state
+    - changes to Today, Tasks, Events, Settings, or Capture
+visual_contract:
+  surface: one continuous adaptive paper field with no editor card boundary
+  prose: approximately 66ch at 1.125rem and about 1.7 line height
+  hierarchy: expressive ink title and selective display-face Markdown headings
+  interaction: indigo caret, links, focus, selection, and active modes
+  toolbar: labelled structure, inline, list, block, and mode groups using existing controls
+  footer: real counts, reading time, and textual save lifecycle
+acceptance_checks:
+  - id: AC1
+    given: a real note in Write or Read mode
+    when: the editor renders
+    then: title, toolbar, body, and footer form one adaptive paper surface without a nested white rectangle, rounded document border, or card shadow
+    verify_method: Playwright screenshots plus CSS assertions
+  - id: AC2
+    given: a 760 to 1440 CSS px viewport
+    when: note prose renders
+    then: prose is approximately 66ch at 1.125rem with about 1.7 leading and Write/Read measures match
+    verify_method: computed-style and screenshot evidence
+  - id: AC3
+    given: the formatting toolbar
+    when: users operate it by pointer or keyboard
+    then: every existing command remains reachable in labelled groups with accurate focus and pressed states
+    verify_method: editor Vitest plus Playwright interaction
+  - id: AC4
+    given: a focused editor with a caret and undo history
+    when: debounce or flush autosave completes
+    then: the same EditorView and DOM node remain mounted and caret, selection, and undo remain intact
+    verify_method: editor and controller Vitest identity assertions
+  - id: AC5
+    given: saving, saved, failed, or conflict-paused lifecycle state
+    when: the state changes
+    then: matching real text and data-save-state are exposed and errors do not rely on color alone
+    verify_method: editor Vitest and accessibility snapshot
+  - id: AC6
+    given: any existing title, mode, formatting, attachment, link, History, or conflict action
+    when: the user invokes it
+    then: existing callbacks, payloads, sanitization, flush, focus, and routes remain unchanged
+    verify_method: existing editor, Notes controller, and render suites
+  - id: AC7
+    given: 320, 390, 760, or 1440 CSS px or AX5/310% text
+    when: a long real note is edited and read
+    then: title, toolbar, body, metadata, links, and footer remain reachable without page horizontal scrolling or clipped meaning
+    verify_method: deterministic Playwright overflow and screenshot matrix
+  - id: AC8
+    given: light, dark, automatic, increased contrast, or forced colors
+    when: the editor renders
+    then: paper, ink, selection, code, quote, links, focus, toolbar, and statuses remain perceivable and explicit appearance wins
+    verify_method: token tests, forced-color source assertions, and Playwright appearance evidence
+verification:
+  focused:
+    - editor.test.ts
+    - notes_controller.test.ts
+    - notes_visual_system.test.ts
+    - token_discipline.test.ts
+  full: make verify-gui
+  visual: deterministic Playwright MCP on http://127.0.0.1:1420
+  native_signoff: required after browser logic and visual evidence

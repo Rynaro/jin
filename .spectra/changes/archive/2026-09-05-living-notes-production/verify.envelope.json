@@ -1,0 +1,17 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "atlas"
+  },
+  "to": {
+    "eidolon": "idg"
+  },
+  "performative": "INFORM",
+  "objective": "Distinct review and browser checks verified Notes scope identity, editor continuity, responsive search/rail, AX5 content flow and forced-colors readability.",
+  "context_delta": {
+    "evidence": "verification.md",
+    "native": "Owner Notes signoff remains separate",
+    "tests": "1887 frontend tests; Rust bridge gates; tsc/lint/build; production smoke",
+    "verify_pass": true
+  }
+}

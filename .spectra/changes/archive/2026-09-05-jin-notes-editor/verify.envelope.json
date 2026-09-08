@@ -1,0 +1,17 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "atlas"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "INFORM",
+  "objective": "Distinct checker accepts cozy Notes editor; automated and browser evidence passed with native owner sign-off pending.",
+  "context_delta": {
+    "checker_verdict": "pass",
+    "maker": "vivi",
+    "native": "not rebuilt or owner-validated",
+    "tests": "1892 frontend tests; focused 148 after final CSS repair; Rust checks and production smoke pass"
+  }
+}

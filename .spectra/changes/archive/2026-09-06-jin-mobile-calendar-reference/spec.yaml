@@ -1,0 +1,85 @@
+change_id: jin-mobile-calendar-reference
+tier: lite
+intent: change
+objective: >-
+  Adapt the attached mobile calendar reference into a compact Jin Month view at
+  700 CSS px and below while preserving desktop layout, real controls, event truth,
+  date navigation, Day-view access, and accessibility.
+maker: vivi
+checker: atlas
+scope:
+  files:
+    - jin-gui/src/styles/calendar.css
+    - jin-gui/src/__tests__/calendar_view_controller.test.ts
+    - jin-gui/src/__tests__/calendar_time_grid.test.ts
+    - jin-gui/src/__tests__/token_discipline.test.ts
+  preserve:
+    - localized month and year plus previous, next, Today, Month, Week, Day, and Add Event controls
+    - seven-column six-week month structure and current date selection behavior
+    - tapping a date opens the existing Day view and events open existing detail
+    - source and calendar colors, first-three event limit, and +N overflow truth
+    - keyboard focus, accessible names, pressed states, and AX calendar scroller
+    - accepted desktop Month, Week, Day, event detail, and Add Event presentation
+  exclude:
+    - reusable calendar widget changes
+    - Rust, core, DTO, bridge, persistence, timezone, recurrence, locale, router, or storage changes
+    - infinite calendar loading, search, new gestures, new controls, new icons, or fabricated data
+visual_contract:
+  breakpoint: max-width 700px for Month view only
+  header: compact localized month/year with existing navigation and view controls
+  grid: seven equal columns, six compact rows, horizontal week rules only
+  today: circular Jin vermilion/seal marker
+  interaction: visible indigo focus/active cue; no fabricated persistent Month selection
+  dates: readable muted outside-month and optional quieter weekend ink
+  events: compact real source/calendar-colored dots or bars with accessible activation
+  ax: full readable scaling with keyboard-reachable calendar-only scrolling when necessary
+acceptance_checks:
+  - id: AC1
+    given: Events Month at 320 or 390 CSS px at standard text scale
+    when: the calendar renders
+    then: localized month/year, seven equal columns, six compact weeks, and horizontal week rules appear without vertical cell boxes or tall desktop geometry
+    verify_method: Playwright screenshot and computed grid/rule geometry
+  - id: AC2
+    given: today, keyboard focus, outside-month, and weekend states
+    when: applicable dates render
+    then: today is circular vermilion, focus uses a visible indigo cue, muted dates remain readable, and no persistent Month selection is fabricated
+    verify_method: source assertions, forced-colors check, and screenshot states
+  - id: AC3
+    given: dates with zero, one, three, or more than three events
+    when: Month renders on mobile
+    then: existing real event buttons become compact source-colored indicators while accessible names, focus, IDs, detail activation, and +N truth remain intact
+    verify_method: controller Vitest and Playwright keyboard/pointer interaction
+  - id: AC4
+    given: the existing Events controls and a date
+    when: a user navigates, switches view, adds an event, or activates the date
+    then: all current actions remain reachable and date activation opens the existing Day view and detail path
+    verify_method: calendar view controller suite and Playwright interaction
+  - id: AC5
+    given: a viewport wider than 700 CSS px
+    when: Month, Week, Day, detail, or Add Event renders
+    then: accepted desktop presentation and behavior remain unchanged
+    verify_method: 760 and 1440 screenshot regression plus existing suites
+  - id: AC6
+    given: 320 or 390 CSS px with standard or AX5 text in light, dark, or forced colors
+    when: Month and its controls are exercised
+    then: labels, dates, indicators, and focus remain readable and reachable without document overflow, with keyboard-reachable calendar-only scrolling if needed
+    verify_method: Playwright accessibility and overflow matrix
+verification:
+  focused:
+    - calendar_view_controller.test.ts
+    - calendar_time_grid.test.ts
+    - token_discipline.test.ts
+  full: make verify-gui
+  visual: deterministic Playwright MCP on http://127.0.0.1:1420
+  mobile_viewports:
+    - 320
+    - 390
+  desktop_regression:
+    - 760
+    - 1440
+  preferences:
+    - standard text
+    - AX5/310%
+    - light
+    - dark
+    - forced colors

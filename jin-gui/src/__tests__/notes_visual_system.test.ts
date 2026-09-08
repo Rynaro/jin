@@ -162,25 +162,25 @@ describe('Continuous Ink Workspace', () => {
     expect(taskRenderer).toContain("item.classList.add('jin-list-row')");
   });
 
-  it('keeps ledger anatomy stable and title/reading dimensions bounded', () => {
+  it('keeps ledger anatomy stable while allowing Tasks rows to grow with meaning', () => {
     expect(navigation).toContain('grid-template-columns: 14px var(--icon-size-standard) minmax(0, 1fr) auto var(--control-height)');
-    expect(browse).toContain('grid-template-columns: 20px 28px minmax(160px, 1fr) auto 28px');
-    expect(browse).toContain('grid-template-columns: 20px 28px minmax(96px, 1fr) auto 28px');
+    expect(browse).toContain('grid-template-columns: 20px 40px minmax(0, 1fr) auto 40px');
+    expect(browse).toContain('height: auto;');
+    expect(browse).toContain('max-height: none;');
     expect(browse).toContain('min-block-size: var(--note-row-height)');
-    expect(browse).toContain('max-block-size: var(--note-row-height)');
+    expect(browse).toContain('max-block-size: none;');
     expect(browse).toContain('width: min(100%, var(--reading-width))');
     expect(browse).toContain('font-size: var(--document-title-size)');
     expect(browse).toContain('visibility: hidden');
     expect(browse).toContain('opacity: 0');
   });
 
-  it('protects task title width and contains row metadata in both split states', () => {
-    expect(browse).toContain('grid-template-columns: 20px 28px minmax(160px, 1fr) auto 28px');
-    expect(browse).toContain('grid-template-columns: 20px 28px minmax(96px, 1fr) auto 28px');
-    expect(browse).toMatch(/\.task-item--row \.task-item__content \{[\s\S]*?flex-direction: row;/);
+  it('preserves a usable title track and wraps task metadata beneath it in split states', () => {
+    expect(browse).toContain('grid-template-columns: 20px 40px minmax(0, 1fr) auto 40px');
+    expect(browse).toMatch(/\.task-item--row \.task-item__content \{[\s\S]*?flex-direction: column;/);
     expect(browse).toMatch(/\.task-item--row \.task-item__title \{[\s\S]*?width: 100%;/);
-    expect(browse).toMatch(/\.task-item--row \.task-item__meta \{[\s\S]*?max-width: 48%;[\s\S]*?flex-wrap: nowrap;[\s\S]*?overflow: visible;/);
-    expect(browse).toMatch(/\.task-item--row \.task-item__body,[\s\S]*?\.task-item--row \.task-item__tags \{[\s\S]*?overflow: hidden;/);
+    expect(browse).toMatch(/\.task-item--row \.task-item__title \{[\s\S]*?white-space: normal;[\s\S]*?overflow-wrap: anywhere;/);
+    expect(browse).toMatch(/\.task-item--row \.task-item__meta \{[\s\S]*?max-width: none;[\s\S]*?flex-wrap: wrap;[\s\S]*?overflow: visible;/);
   });
 
   it('keeps quick-reschedule controls pointer-aware after calendar composition', () => {
@@ -349,10 +349,10 @@ describe('Continuous Ink Workspace', () => {
     expect(browse).toMatch(/@media \(pointer: coarse\) \{[\s\S]*?\.task-detail__subtask-status\.jin-check,[\s\S]*?min-width: var\(--coarse-hit-target\);[\s\S]*?min-height: var\(--coarse-hit-target\);/);
   });
 
-  it('lets rescheduling escape the clipped metadata line without changing row geometry', () => {
+  it('keeps rescheduling reachable without clipping task metadata', () => {
     expect(browse).toMatch(/\.task-item--row \.task-item__content,[\s\S]*?\.task-item--row \.due-chip-group \{[\s\S]*?overflow: visible;/);
     expect(browse).toMatch(/\.task-item--row \.task-item__meta \{[\s\S]*?overflow: visible;/);
-    expect(browse).toMatch(/\.task-item--row \.task-item__tags \{[\s\S]*?overflow: hidden;/);
+    expect(browse).toMatch(/\.task-item--row \.task-item__tags \{[\s\S]*?overflow: visible;/);
     expect(calendar).toMatch(/\.due-reschedule \{[\s\S]*?position: absolute;[\s\S]*?visibility: hidden;/);
     expect(calendar).toContain('.due-chip-group[data-open="true"] .due-reschedule');
     expect(calendar).toMatch(/@media \(hover: hover\) and \(pointer: fine\)/);
@@ -362,5 +362,41 @@ describe('Continuous Ink Workspace', () => {
   it('contains the folder glyph whether Lucide hydrates the root or a descendant', () => {
     expect(markup).toContain('folder-row__icon jin-navigation-row__icon');
     expect(navigation).toMatch(/\.jin-navigation-row__icon \{[\s\S]*?inline-size: var\(--icon-size-standard\);/);
+  });
+
+  it('keeps Notes scope identity, adaptive ink roles, and content-sized rows in the real surface', () => {
+    expect(markup).toContain('class="notes-workspace-title" data-notes-target="scopeTitle">All Notes</h1>');
+    expect(markup.match(/<h1\b/g)?.length).toBeGreaterThanOrEqual(1);
+    expect(notesController).toContain('private updateScopeTitle(): void');
+    expect(notesController).toContain("this.scopeTitleTarget.textContent = this.currentFolder || 'All Notes';");
+    expect(notesController).toContain('collection?.name ?? \'All Notes\'');
+    for (const token of ['--notes-selected-wash', '--notes-selected-edge', '--notes-editor-paper', '--notes-meta']) {
+      expect(tokens).toContain(token);
+    }
+    expect(browse).toMatch(/\.note-row \.browse-row__inner\.jin-list-row \{[\s\S]*?max-block-size: none;[\s\S]*?overflow: visible;/);
+    expect(a11y).toContain(':root[data-text-scale="accessibility"] .note-row .browse-row__inner.jin-list-row');
+    expect(a11y).toContain('.notes-paned:not(.rail-collapsed) .notes-folder-rail');
+    expect(a11y).toMatch(/@media \(min-width: 641px\) \{[\s\S]*?\.notes-paned\.rail-collapsed \.notes-folder-rail \{[\s\S]*?display: none;[\s\S]*?\.notes-paned\.rail-collapsed :is\(\.notes-list-pane, \.notes-detail-pane\) \{[\s\S]*?grid-column: 2;/);
+  });
+
+  it('makes the editor one adaptive writing surface with editorial measure and AX reflow', () => {
+    for (const token of [
+      '--notes-writing-paper:', '--notes-writing-ink:', '--notes-toolbar-wash:',
+      '--notes-selection-tint:', '--notes-quote-rule:', '--notes-code-wash:',
+      '--notes-prose-measure: 66ch', '--notes-prose-size: 1.125rem', '--notes-prose-line: 1.7',
+    ]) expect(tokens).toContain(token);
+
+    expect(browse).toMatch(/\.notes-detail-pane,\n\.notes-detail-pane \.note-detail__body,[\s\S]*?background: var\(--notes-writing-paper\);/);
+    expect(browse).toMatch(/\.notes-detail-pane \.cm-content \{[\s\S]*?font-size: var\(--notes-prose-size\);[\s\S]*?line-height: var\(--notes-prose-line\);/);
+    expect(browse).toMatch(/\.notes-detail-pane \.cm-reading-wrapper \{[\s\S]*?font-size: var\(--notes-prose-size\);[\s\S]*?line-height: var\(--notes-prose-line\);/);
+    expect(browse).toMatch(/\.notes-detail-pane \.browse-detail__title--input\.jin-title-field:focus-visible \{[\s\S]*?border-bottom-color: var\(--notes-focus-tint\);/);
+    expect(browse).toContain('.cm-toolbar__group');
+    expect(browse).not.toMatch(/\.notes-detail-pane \.cm-editor-wrapper \{[^}]*border-radius:/);
+    expect(a11y).toContain('.notes-detail-pane .cm-toolbar__group');
+    expect(a11y).toContain('.notes-detail-pane .cm-toolbar__status[data-save-state="failed"]');
+    expect(browse).toContain(':root[data-text-scale="accessibility"] .notes-detail-pane .cm-toolbar');
+    expect(a11y).toMatch(/:root\[data-text-scale="accessibility"\] \.notes-detail-pane \{[\s\S]*?overflow-y: auto;/);
+    expect(a11y).toMatch(/:root\[data-text-scale="accessibility"\] \.notes-detail-pane \[data-notes-target="detailContent"\],[\s\S]*?\.cm-scroll-region \{[\s\S]*?flex: 0 0 auto;[\s\S]*?min-block-size: min-content;/);
+    expect(browse).toMatch(/:root\[data-text-scale="accessibility"\] \.notes-detail-pane \.cm-footer \{[\s\S]*?flex-basis: auto;/);
   });
 });

@@ -114,6 +114,53 @@ describe('G-EDITOR-SMOKE — CM6 mounts in jsdom and renders text', () => {
   });
 });
 
+describe('G-SAVE-STATE — truthful footer lifecycle attributes', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('exposes saving and saved states without remounting the editor', async () => {
+    vi.useFakeTimers();
+    const container = makeContainer();
+    const onSave = vi.fn<(doc: string) => Promise<void>>().mockResolvedValue(undefined);
+    const handle = mountEditor(container, { doc: 'draft', onSave });
+    const view = handle.getView();
+    const status = container.querySelector<HTMLElement>('.cm-toolbar__status')!;
+
+    expect(status.dataset.saveState).toBeUndefined();
+    view.dispatch({ changes: { from: 5, insert: ' note' } });
+    expect(status.dataset.saveState).toBe('saving');
+    expect(handle.getView()).toBe(view);
+
+    await vi.advanceTimersByTimeAsync(600);
+    expect(status.dataset.saveState).toBe('saved');
+    expect(status.textContent).toBe('Saved');
+    expect(handle.getView()).toBe(view);
+    handle.destroy();
+  });
+
+  it('marks failed and paused saves with their real state', async () => {
+    vi.useFakeTimers();
+    const container = makeContainer();
+    const handle = mountEditor(container, { doc: 'draft', onSave: async () => { throw new Error('offline'); } });
+    const view = handle.getView();
+    const status = container.querySelector<HTMLElement>('.cm-toolbar__status')!;
+
+    view.dispatch({ changes: { from: 5, insert: ' note' } });
+    await vi.advanceTimersByTimeAsync(600);
+    expect(status.dataset.saveState).toBe('failed');
+    expect(status.textContent).toBe('Save failed');
+
+    handle.setAutosavePaused(true);
+    expect(status.dataset.saveState).toBe('paused');
+    expect(status.textContent).toContain('Saving paused');
+    handle.setAutosavePaused(false);
+    expect(status.dataset.saveState).toBeUndefined();
+    expect(status.textContent).toBe('');
+    handle.destroy();
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // G-EDITOR-TAB — Tab indents list item; focus stays in .cm-editor
 // ─────────────────────────────────────────────────────────────────────────────
@@ -962,6 +1009,23 @@ describe('G-TOOLBAR-STRUCTURE — toolbar and footer DOM structure is present', 
     expect(container.querySelector('[aria-label="Focus mode"]'),          'Focus btn').not.toBeNull();
     expect(container.querySelector('[aria-label="Typewriter scrolling"]'), 'Typewriter btn').not.toBeNull();
     expect(container.querySelector('.cm-toolbar__toggle'),          'Reading toggle').not.toBeNull();
+
+    handle.destroy();
+  });
+
+  it('keeps every real command in labelled, accessible toolbar groups', () => {
+    const container = makeContainer();
+    const handle = mountEditor(container, { doc: '', onSave: async () => {} });
+
+    for (const label of ['Structure', 'Inline formatting', 'Lists', 'Blocks', 'Writing modes']) {
+      expect(container.querySelector(`[role="group"][aria-label="${label}"]`)).not.toBeNull();
+    }
+    expect(container.querySelector('[aria-label="Heading 1"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Bold"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Bulleted list"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Blockquote"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Focus mode"]')).not.toBeNull();
+    expect(container.querySelector('.cm-toolbar__toggle')).not.toBeNull();
 
     handle.destroy();
   });

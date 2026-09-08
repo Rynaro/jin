@@ -210,6 +210,10 @@
           data-section-name="today"
         >
           <!-- ── Date navigation toolbar ──────────────────────────────────── -->
+          <div class="today-agenda-intro">
+            <p class="today-agenda-intro__eyebrow">Living agenda</p>
+            <p class="today-agenda-intro__detail">A clear view of the time you have.</p>
+          </div>
           <div
             class="today-date-nav"
             role="toolbar"
@@ -417,6 +421,7 @@
             </button>
             <!-- NN-2: List pane header — compose button (K-NN-1) -->
             <div class="notes-list-pane__header jin-toolbar-strip jin-chrome">
+              <h1 class="notes-workspace-title" data-notes-target="scopeTitle">All Notes</h1>
               <div class="notes-search">
                 <label class="notes-search__label" for="notes-search-input">Search notes</label>
                 <input
@@ -1012,11 +1017,18 @@
             without looping back into another reload.
           -->
           <div
+            id="tasks-lists-rail"
             class="tasks-lists-rail jin-context-rail jin-navigation-rail jin-chrome"
             data-controller="lists"
             aria-label="Task lists"
             data-action="jin:tasks-changed@window->lists#handleTasksChanged jin:scope-set@window->lists#handleScopeSet"
           >
+            <div class="tasks-lists-rail__mobile-header">
+              <span>Task lists</span>
+              <button type="button" class="tasks-lists-rail__close jin-control jin-control--secondary" data-tasks-target="railCloseBtn" data-action="click->tasks#toggleRail" aria-label="Close task lists">
+                Close
+              </button>
+            </div>
             <!-- ── Smart Views group (S5) — above the Lists group (AC-S5-01) ── -->
             <div class="tasks-lists-rail__header jin-section-header">
               <span class="tasks-lists-rail__title text-caption1">Smart Views</span>
@@ -1220,6 +1232,17 @@
 
           <!-- ── List panel ─────────────────────────────────────────────────── -->
           <div data-tasks-target="listPanel">
+            <header class="tasks-workspace-header">
+              <h1 class="tasks-workspace-title" data-tasks-target="workspaceTitle">Inbox</h1>
+              <button
+                type="button"
+                class="tasks-rail-toggle jin-control jin-control--secondary"
+                data-tasks-target="railToggleBtn"
+                data-action="click->tasks#toggleRail"
+                aria-controls="tasks-lists-rail"
+                aria-expanded="false"
+              >Task lists</button>
+            </header>
             <!-- Filter bar — selects are passed through to invoke list_tasks -->
             <div class="tasks-filter-bar jin-toolbar-strip jin-chrome" role="group" aria-label="Filter tasks">
               <button
@@ -1500,7 +1523,7 @@
           data-section-name="events"
         >
           <!-- Month view (primary view) -->
-          <div data-calendar-view-target="monthView" class="calendar-month-view">
+          <div data-calendar-view-target="monthView" class="calendar-month-view" tabindex="0" aria-label="Calendar month">
             <div data-calendar-view-target="monthViewContent"></div>
           </div>
 
@@ -2493,6 +2516,11 @@
             <!-- Header: title + source badge + recurring flag -->
             <div class="today-event-row__header">
               <span class="today-event-row__title text-headline"></span>
+
+              <span class="today-event-row__overlap hidden" role="status" aria-label="">
+                <i data-lucide="list" aria-hidden="true"></i>
+                <span>Overlaps schedule</span>
+              </span>
 
               <!--
                 Source badge: text label (primary) + icon (supplementary).

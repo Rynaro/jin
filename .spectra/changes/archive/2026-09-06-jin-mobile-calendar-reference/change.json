@@ -1,0 +1,56 @@
+{
+  "esl_version": "1.1",
+  "change_id": "jin-mobile-calendar-reference",
+  "status": "archived",
+  "tier": "lite",
+  "maker": "vivi",
+  "checker": "atlas",
+  "acceptance_checks": [
+    {
+      "id": "AC1",
+      "given": "Existing Events Month view",
+      "when": "Mobile layout and existing interactions are exercised",
+      "then": "Compact mobile month composition",
+      "verify_method": "Focused tests and browser visual/geometry checks"
+    },
+    {
+      "id": "AC2",
+      "given": "Existing Events Month view",
+      "when": "Mobile layout and existing interactions are exercised",
+      "then": "Truthful today/focus/date states",
+      "verify_method": "Focused tests and browser visual/geometry checks"
+    },
+    {
+      "id": "AC3",
+      "given": "Existing Events Month view",
+      "when": "Mobile layout and existing interactions are exercised",
+      "then": "Source-colored event indicators and overflow",
+      "verify_method": "Focused tests and browser visual/geometry checks"
+    },
+    {
+      "id": "AC4",
+      "given": "Existing Events Month view",
+      "when": "Mobile layout and existing interactions are exercised",
+      "then": "Date-to-Day and event detail behavior",
+      "verify_method": "Focused tests and browser visual/geometry checks"
+    },
+    {
+      "id": "AC5",
+      "given": "Existing Events Month view",
+      "when": "Mobile layout and existing interactions are exercised",
+      "then": "Desktop unchanged",
+      "verify_method": "Focused tests and browser visual/geometry checks"
+    },
+    {
+      "id": "AC6",
+      "given": "Existing Events Month view",
+      "when": "Mobile layout and existing interactions are exercised",
+      "then": "Responsive/adaptive accessibility",
+      "verify_method": "Focused tests and browser visual/geometry checks"
+    }
+  ],
+  "spec_ref": "spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-09-06-jin-mobile-calendar-reference",
+  "has_code": true
+}

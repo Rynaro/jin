@@ -1,0 +1,70 @@
+{
+  "esl_version": "1.1",
+  "change_id": "living-notes-production",
+  "status": "archived",
+  "tier": "lite",
+  "maker": "vivi",
+  "checker": "atlas",
+  "acceptance_checks": [
+    {
+      "id": "AC1",
+      "given": "Real scope",
+      "when": "Opened or changed",
+      "then": "Exact heading and navigation",
+      "verify_method": "Controller/browser"
+    },
+    {
+      "id": "AC2",
+      "given": "Real notes/search",
+      "when": "Loaded",
+      "then": "Order metadata counts and truthful states preserved",
+      "verify_method": "Tests/browser"
+    },
+    {
+      "id": "AC3",
+      "given": "Folders collections",
+      "when": "Used",
+      "then": "Existing callbacks and tree focus preserved",
+      "verify_method": "Regression"
+    },
+    {
+      "id": "AC4",
+      "given": "Note editor",
+      "when": "Edited/read",
+      "then": "Editor save caret conflict behavior preserved",
+      "verify_method": "Editor/controller tests and browser"
+    },
+    {
+      "id": "AC5",
+      "given": "Real relationships",
+      "when": "Shown",
+      "then": "Exact labels routes readable",
+      "verify_method": "Tests/browser"
+    },
+    {
+      "id": "AC6",
+      "given": "Recovery/history",
+      "when": "Opened",
+      "then": "Guarded workflows retained and icon rendered",
+      "verify_method": "Tests/console"
+    },
+    {
+      "id": "AC7",
+      "given": "320/390/760/1440 andAX5",
+      "when": "Notes used",
+      "then": "Readable nooverflow reachablecontrols",
+      "verify_method": "Browser"
+    },
+    {
+      "id": "AC8",
+      "given": "Appearance preferences",
+      "when": "Enabled",
+      "then": "Legible semantic surfaces structuralfocus",
+      "verify_method": "Tokens/browser"
+    }
+  ],
+  "spec_ref": "spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-09-05-living-notes-production",
+  "has_code": true
+}

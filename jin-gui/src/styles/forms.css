@@ -29,6 +29,23 @@ dialog {
   margin: auto;
 }
 
+/* AX keeps every consequential label intact instead of compressing paired actions. */
+:root[data-text-scale="accessibility"] .capture-modal .form-actions,
+:root[data-text-scale="accessibility"] .action-dialog__footer,
+:root[data-text-scale="accessibility"] dialog .form-actions {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+:root[data-text-scale="accessibility"] .capture-modal .form-actions > button,
+:root[data-text-scale="accessibility"] .action-dialog__footer > button,
+:root[data-text-scale="accessibility"] dialog .form-actions > button {
+  inline-size: 100%;
+  min-block-size: var(--control-height-prominent);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 dialog::backdrop {
   background: rgba(0, 0, 0, 0.48);
   -webkit-backdrop-filter: blur(4px);
@@ -56,17 +73,24 @@ dialog::backdrop {
   flex-direction: column;
   gap: 0;
   max-block-size: inherit;
-  overflow: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: inherit;
 }
 
 .capture-modal__header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-3) var(--space-2);
   border-bottom: 0.5px solid var(--separator);
+  flex: 0 0 auto;
 }
+
+.capture-modal__header > div { min-inline-size: 0; }
+
+.capture-modal__header .modal-close-btn { flex: 0 0 auto; }
 
 .capture-modal__title {
   color: var(--ink-primary);
@@ -93,6 +117,7 @@ dialog::backdrop {
   padding: var(--space-2) var(--space-3);
   border-bottom: 0.5px solid var(--separator);
   role: tablist;
+  flex: 0 0 auto;
 }
 
 .capture-modal__tab {
@@ -157,7 +182,8 @@ dialog::backdrop {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  overflow-y: auto;
+  overflow: visible;
+  flex: 0 0 auto;
 }
 
 .capture-field-hint {
@@ -957,6 +983,56 @@ dialog::backdrop {
   font-weight: 500;
 }
 
+/* ── Living Agenda Capture surface ─────────────────────────────────────── */
+
+.capture-modal {
+  background: var(--agenda-elevated);
+  border-color: var(--agenda-timeline);
+}
+
+.capture-modal__header { border-bottom-color: var(--agenda-timeline); }
+
+.capture-modal__tabs {
+  border-bottom-color: var(--agenda-timeline);
+}
+
+.capture-modal__tab[aria-selected="true"] {
+  background: var(--agenda-indigo-tint);
+  color: var(--agenda-indigo);
+}
+
+.capture-modal__form {
+  min-block-size: 0;
+}
+
+.capture-modal .btn-primary {
+  background: var(--capture-vermilion);
+  color: var(--capture-on-vermilion);
+}
+
+.capture-modal .btn-primary:hover { background: var(--capture-vermilion-hover); }
+
+@media (max-width: 420px) {
+  .capture-modal { inline-size: calc(100vw - var(--space-2)); }
+  .capture-modal__header,
+  .capture-modal__tabs,
+  .capture-modal__form { padding-inline: var(--space-2); }
+  .capture-modal__tabs { gap: var(--space-half); }
+  .capture-modal__tab { min-inline-size: var(--hit-target); padding-inline: var(--space-1); }
+}
+
+:root[data-text-scale="accessibility"] .capture-modal__tabs {
+  flex-wrap: wrap;
+}
+
+:root[data-text-scale="accessibility"] .capture-modal__tab {
+  flex: 1 1 calc(50% - var(--space-1));
+}
+
+:root[data-text-scale="accessibility"] .capture-modal__form {
+  max-block-size: none;
+}
+
 .task-promote-btn.jin-control:hover {
   background: var(--workspace-row-selected);
   opacity: 1;
@@ -973,3 +1049,8 @@ dialog::backdrop {
   margin-top: var(--space-2);
   padding-block: var(--space-2);
 }
+
+.action-dialog__inner, .jin-modal__content, dialog .modal-content { background: var(--dialog-paper); box-shadow: var(--dialog-elevation); }
+.action-dialog__header, .action-dialog__footer { border-color: var(--separator); }
+.form-input, .form-select, .jin-select__trigger { border-color: var(--separator); background: var(--workspace-canvas); color: var(--label); }
+.form-input:focus-visible, .form-select:focus-visible, .jin-select__trigger:focus-visible { border-color: var(--accent); outline-color: var(--accent); }

@@ -1,0 +1,15 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "atlas"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "INFORM",
+  "objective": "Accept mobile Apple-calendar-inspired Jin month presentation",
+  "context_delta": {
+    "acceptance": "AC1–AC6 PASS by distinct static checker and browser geometry/interaction evidence; tests and final native build pass",
+    "native_visual_signoff": "not claimed"
+  }
+}

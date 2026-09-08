@@ -1,0 +1,63 @@
+{
+  "esl_version": "1.1",
+  "change_id": "living-agenda-production",
+  "status": "archived",
+  "tier": "full",
+  "maker": "vivi",
+  "checker": "atlas",
+  "acceptance_checks": [
+    {
+      "id": "AC1",
+      "given": "Persisted light/dark/auto appearance",
+      "when": "Shell and Today open",
+      "then": "Adaptive paper and ink with every navigation destination reachable",
+      "verify_method": "Appearance/sidebar tests and browser"
+    },
+    {
+      "id": "AC2",
+      "given": "Existing Capture dialog",
+      "when": "Four capture modes are used",
+      "then": "Existing submit, error, busy and focus behavior remains with accessible colors",
+      "verify_method": "Capture tests and keyboard browser checks"
+    },
+    {
+      "id": "AC3",
+      "given": "Real agenda DTOs",
+      "when": "Rendered",
+      "then": "Localized ranges, source, recurrence and exact task/prep links remain",
+      "verify_method": "Agenda projection/render tests"
+    },
+    {
+      "id": "AC4",
+      "given": "Comparable timed intervals",
+      "when": "Overlapping",
+      "then": "Both rows have textual overlap cues without invalid, touching or mixed-domain false positives",
+      "verify_method": "Pure projection and DOM tests"
+    },
+    {
+      "id": "AC5",
+      "given": "Loading/empty/error responses",
+      "when": "Today renders",
+      "then": "Truthful existing states remain",
+      "verify_method": "Today controller tests"
+    },
+    {
+      "id": "AC6",
+      "given": "Widths 320/390/760/1440 and AX5 text",
+      "when": "Today and Capture render",
+      "then": "No horizontal page scroll and controls reachable",
+      "verify_method": "Browser matrix"
+    },
+    {
+      "id": "AC7",
+      "given": "Accessibility preferences",
+      "when": "Enabled",
+      "then": "Focus and meaning survive reduced motion/transparency, increased contrast and forced colors",
+      "verify_method": "Tests and browser checks"
+    }
+  ],
+  "spec_ref": "spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-09-04-living-agenda-production",
+  "has_code": true
+}

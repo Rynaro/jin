@@ -184,6 +184,45 @@
   --seal-tint: rgba(181, 64, 47, 0.13);     /* active nav pill fill */
   --seal-shadow: 0 2px 8px rgba(181, 64, 47, 0.30); /* capture-button lift (the stamp press) */
 
+  /* Living Agenda — paper, indigo time, and a warm vermilion entry point. */
+  --agenda-canvas: #f7f4ee;
+  --agenda-rail: #eeebe3;
+  --agenda-elevated: #fffdf8;
+  --agenda-indigo: #4355a6;
+  --agenda-indigo-tint: rgba(67, 85, 166, 0.12);
+  --agenda-timeline: rgba(67, 85, 166, 0.28);
+  --agenda-overlap-tint: rgba(67, 85, 166, 0.16);
+  --capture-vermilion: #dc6a55;
+  --capture-vermilion-hover: #c95643;
+  --capture-on-vermilion: #201b18;
+
+  /* Tasks — paper ledger hierarchy. Components consume these roles only. */
+  --tasks-selected-wash: rgba(67, 85, 166, 0.12);
+  --tasks-selected-edge: #4355a6;
+  --tasks-board-paper: #fffdf8;
+  --tasks-detail-edge: rgba(67, 85, 166, 0.28);
+  --tasks-meta: rgba(33, 31, 28, 0.58);
+  --notes-selected-wash: var(--agenda-indigo-tint);
+  --notes-selected-edge: var(--agenda-indigo);
+  --notes-editor-paper: var(--agenda-canvas);
+  --notes-meta: var(--tasks-meta);
+  /* Notes editor — a quiet, continuous writing desk. */
+  --notes-writing-paper: #f7f4ee;
+  --notes-writing-ink: var(--ink-primary);
+  --notes-writing-muted: var(--ink-muted);
+  --notes-toolbar-wash: rgba(67, 85, 166, 0.055);
+  --notes-toolbar-rule: rgba(67, 85, 166, 0.24);
+  --notes-selection-tint: rgba(67, 85, 166, 0.22);
+  --notes-focus-tint: rgba(67, 85, 166, 0.56);
+  --notes-quote-rule: var(--agenda-indigo);
+  --notes-code-wash: rgba(67, 85, 166, 0.075);
+  --notes-save-saving: var(--agenda-indigo);
+  --notes-save-failed: var(--seal);
+  --notes-save-paused: var(--system-orange);
+  --notes-prose-measure: 66ch;
+  --notes-prose-size: 1.125rem;
+  --notes-prose-line: 1.7;
+
   /* Desktop component geometry. Coarse pointers promote hit targets to 44px. */
   --app-rail-width: 184px;
   --app-rail-collapsed-width: 52px;
@@ -217,6 +256,19 @@
   --prose-h3-line: 1.4375rem;
   --editor-text-size: 1rem;
   --editor-text-line: 1.5rem;
+}
+
+/* Whole-app editorial material roles. These stay narrow so accepted routes keep
+ * their established hierarchy while remaining surfaces share one paper system. */
+:root {
+  --calendar-paper: var(--workspace-canvas);
+  --calendar-rule: var(--separator);
+  --calendar-selected-wash: color-mix(in srgb, var(--agenda-indigo) 12%, var(--workspace-canvas));
+  --operational-wash: color-mix(in srgb, var(--agenda-indigo) 9%, var(--workspace-canvas));
+  --dialog-paper: var(--bg-elevated);
+  --dialog-elevation: var(--elevation-shadow);
+  --state-warning-wash: color-mix(in srgb, var(--system-orange) 10%, var(--workspace-canvas));
+  --state-danger-wash: color-mix(in srgb, var(--system-red) 9%, var(--workspace-canvas));
 }
 
 /* ── 4. Semantic color roles — dark via system preference ────────────────────
@@ -280,6 +332,38 @@
     --seal-on: #fbf7ef;
     --seal-tint: rgba(207, 84, 64, 0.20);
     --seal-shadow: 0 2px 10px rgba(207, 84, 64, 0.34);
+
+    --agenda-canvas: #191a1d;
+    --agenda-rail: #202126;
+    --agenda-elevated: #24262b;
+    --agenda-indigo: #aebcff;
+    --agenda-indigo-tint: rgba(174, 188, 255, 0.15);
+    --agenda-timeline: rgba(174, 188, 255, 0.40);
+    --agenda-overlap-tint: rgba(174, 188, 255, 0.20);
+    --capture-vermilion: #f08a72;
+    --capture-vermilion-hover: #ffa18a;
+    --capture-on-vermilion: #171313;
+    --tasks-selected-wash: rgba(174, 188, 255, 0.15);
+    --tasks-selected-edge: #aebcff;
+    --tasks-board-paper: #24262b;
+    --tasks-detail-edge: rgba(174, 188, 255, 0.40);
+    --tasks-meta: rgba(240, 237, 231, 0.60);
+    --notes-selected-wash: var(--agenda-indigo-tint);
+    --notes-selected-edge: var(--agenda-indigo);
+    --notes-editor-paper: var(--agenda-canvas);
+    --notes-meta: var(--tasks-meta);
+    --notes-writing-paper: #191a1d;
+    --notes-writing-ink: var(--ink-primary);
+    --notes-writing-muted: var(--ink-muted);
+    --notes-toolbar-wash: rgba(174, 188, 255, 0.08);
+    --notes-toolbar-rule: rgba(174, 188, 255, 0.36);
+    --notes-selection-tint: rgba(174, 188, 255, 0.30);
+    --notes-focus-tint: rgba(174, 188, 255, 0.78);
+    --notes-quote-rule: var(--agenda-indigo);
+    --notes-code-wash: rgba(174, 188, 255, 0.12);
+    --notes-save-saving: var(--agenda-indigo);
+    --notes-save-failed: var(--seal);
+    --notes-save-paused: var(--system-orange);
   }
 }
 
@@ -342,6 +426,38 @@
   --seal-on: #fbf7ef;
   --seal-tint: rgba(207, 84, 64, 0.20);
   --seal-shadow: 0 2px 10px rgba(207, 84, 64, 0.34);
+
+  --agenda-canvas: #191a1d;
+  --agenda-rail: #202126;
+  --agenda-elevated: #24262b;
+  --agenda-indigo: #aebcff;
+  --agenda-indigo-tint: rgba(174, 188, 255, 0.15);
+  --agenda-timeline: rgba(174, 188, 255, 0.40);
+  --agenda-overlap-tint: rgba(174, 188, 255, 0.20);
+  --capture-vermilion: #f08a72;
+  --capture-vermilion-hover: #ffa18a;
+  --capture-on-vermilion: #171313;
+  --tasks-selected-wash: rgba(174, 188, 255, 0.15);
+  --tasks-selected-edge: #aebcff;
+  --tasks-board-paper: #24262b;
+  --tasks-detail-edge: rgba(174, 188, 255, 0.40);
+  --tasks-meta: rgba(240, 237, 231, 0.60);
+  --notes-selected-wash: var(--agenda-indigo-tint);
+  --notes-selected-edge: var(--agenda-indigo);
+  --notes-editor-paper: var(--agenda-canvas);
+  --notes-meta: var(--tasks-meta);
+  --notes-writing-paper: #191a1d;
+  --notes-writing-ink: var(--ink-primary);
+  --notes-writing-muted: var(--ink-muted);
+  --notes-toolbar-wash: rgba(174, 188, 255, 0.08);
+  --notes-toolbar-rule: rgba(174, 188, 255, 0.36);
+  --notes-selection-tint: rgba(174, 188, 255, 0.30);
+  --notes-focus-tint: rgba(174, 188, 255, 0.78);
+  --notes-quote-rule: var(--agenda-indigo);
+  --notes-code-wash: rgba(174, 188, 255, 0.12);
+  --notes-save-saving: var(--agenda-indigo);
+  --notes-save-failed: var(--seal);
+  --notes-save-paused: var(--system-orange);
 }
 
 /* ── 6. Spacing grid (8pt / 4pt subdivision) ─────────────────────────────────
