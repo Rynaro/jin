@@ -35,11 +35,11 @@ than drifting apart.
 
 ## Development preview
 
-![Jin Today view — deterministic browser fixture preview](docs/assets/jin-today-preview.png)
+![Jin Today view — light Living Agenda demo with Q3 Review, Sprint Planning, Team Standup, and Partner review](docs/assets/jin-today-preview.png)
 
-This is a deterministic browser-fixture screenshot of the built frontend. It is
-useful for showing the interface, but it is not proof of native Tauri behavior
-or cross-platform visual sign-off.
+This screenshot shows the current paper-and-ink Today interface using Jin's
+deterministic Living Agenda demo data. It is useful for showing the interface,
+but it is not proof of native Tauri behavior or cross-platform visual sign-off.
 
 ## The workflow
 
