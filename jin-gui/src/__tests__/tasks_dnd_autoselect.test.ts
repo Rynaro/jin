@@ -79,6 +79,17 @@ function makeTaskDto(overrides: Partial<TaskDto> = {}): TaskDto {
   };
 }
 
+function firePointer(target: HTMLElement, type: string, clientX = 12, clientY = 12): void {
+  const event = new Event(type, { bubbles: true, cancelable: true }) as PointerEvent;
+  Object.defineProperties(event, {
+    pointerId: { value: 1 },
+    button: { value: 0 },
+    clientX: { value: clientX },
+    clientY: { value: clientY },
+  });
+  target.dispatchEvent(event);
+}
+
 // ── Minimal DOM factory ───────────────────────────────────────────────────────
 
 /**
@@ -264,7 +275,7 @@ describe('FIX-DND — auto-select default list on connect (currentListId set)', 
 // ── Tests: handleDrop calls moveTask in a selected-list context ───────────────
 
 describe('FIX-DND — handleDrop calls moveTask when a list is selected', () => {
-  it('moveTask is called after a drop event when currentListId is set', async () => {
+  it('moveTask is called after a pointer-grip reorder when currentListId is set', async () => {
     // Return two tasks with known positions so between() can compute a valid new key.
     // task-top (pos:'V') then task-bot (pos:'VV') — manual sort renders them in this order.
     vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([
@@ -280,24 +291,15 @@ describe('FIX-DND — handleDrop calls moveTask when a list is selected', () => 
 
     // After connect + auto-select + loadList, task rows must be in the DOM.
     const taskList = document.querySelector('[data-tasks-target="list"]') as HTMLElement;
-    // Drop target: task-bot (we drag task-top onto it, below it → append after)
+    // Target: task-bot (move task-top below it → append after).
     const botRow = taskList.querySelector('li[data-task-id="task-bot"]') as HTMLElement;
     expect(botRow).not.toBeNull();
-
-    // Simulate dragging task-top and dropping it below task-bot.
-    // Data transfer reports task-top as the dragged item.
-    const dt = {
-      getData: vi.fn((key: string) =>
-        key === 'application/x-jin-task-id' ? 'task-top' : '',
-      ),
-    };
-    const dropEvent = new Event('drop', { bubbles: true }) as DragEvent;
-    Object.defineProperty(dropEvent, 'dataTransfer', { value: dt });
-    // jsdom getBoundingClientRect() returns all zeros; midY = 0.
-    // clientY = 999 > 0 → isAbove = false → "drop below" the target row.
-    Object.defineProperty(dropEvent, 'clientY', { value: 999 });
-
-    botRow.dispatchEvent(dropEvent);
+    const topHandle = taskList.querySelector<HTMLElement>('li[data-task-id="task-top"] .task-item__drag-handle');
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => botRow });
+    firePointer(topHandle!, 'pointerdown', 10, 10);
+    // jsdom bounding rect is zero, so a positive y commits below task-bot.
+    firePointer(topHandle!, 'pointermove', 20, 999);
+    firePointer(topHandle!, 'pointerup', 20, 999);
     // Allow the async handleDrop to execute (two promise resolution ticks).
     await flushAsync();
 
@@ -343,5 +345,60 @@ describe('FIX-DND — handleDrop calls moveTask when a list is selected', () => 
 
     // No list selected → handleDrop guard blocks → moveTask must NOT be called.
     expect(moveTaskSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('completion stays local while persistence settles', () => {
+  it('updates immediately without replacing the list with loading, then reconciles', async () => {
+    const task = makeTaskDto({ id: 'toggle-me', title: 'Toggle me', status: 'todo' });
+    let resolveStatus!: (value: TaskDto) => void;
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([task]);
+    vi.spyOn(InvokeModule, 'setTaskStatus').mockImplementation(() => new Promise((resolve) => { resolveStatus = resolve; }));
+
+    startApp();
+    await flushAsync();
+    const completion = document.querySelector<HTMLButtonElement>('[data-task-id="toggle-me"] .task-completion')!;
+    completion.click();
+
+    expect(completion.closest('[data-task-id="toggle-me"]')).not.toBeNull();
+    expect((document.querySelector('[data-tasks-target="loadingState"]') as HTMLElement).classList.contains('hidden')).toBe(true);
+    const pending = document.querySelector<HTMLButtonElement>('[data-task-id="toggle-me"] .task-completion')!;
+    expect(pending.getAttribute('aria-checked')).toBe('true');
+    expect(pending.getAttribute('aria-busy')).toBe('true');
+
+    resolveStatus(makeTaskDto({ ...task, status: 'done' }));
+    await flushAsync();
+    expect((document.querySelector('[data-tasks-target="loadingState"]') as HTMLElement).classList.contains('hidden')).toBe(true);
+  });
+
+  it('rolls back a rejected completion without a blank loading state', async () => {
+    const task = makeTaskDto({ id: 'reject-me', title: 'Reject me', status: 'todo' });
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([task]);
+    vi.spyOn(InvokeModule, 'setTaskStatus').mockRejectedValue(new Error('offline'));
+
+    startApp();
+    await flushAsync();
+    document.querySelector<HTMLButtonElement>('[data-task-id="reject-me"] .task-completion')!.click();
+    await flushAsync();
+
+    const completion = document.querySelector<HTMLButtonElement>('[data-task-id="reject-me"] .task-completion')!;
+    expect(completion.getAttribute('aria-checked')).toBe('false');
+    expect(completion.getAttribute('aria-busy')).toBe('false');
+    expect((document.querySelector('[data-tasks-target="loadingState"]') as HTMLElement).classList.contains('hidden')).toBe(true);
+  });
+
+  it('persists a filtered subtask that is absent from the list projection', async () => {
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([]);
+    const setStatus = vi.spyOn(InvokeModule, 'setTaskStatus').mockResolvedValue(
+      makeTaskDto({ id: 'filtered-child', status: 'done' }),
+    );
+
+    startApp();
+    await flushAsync();
+    const controller = getController() as unknown as {
+      handleStatusToggle: (id: string, status: string) => Promise<boolean>;
+    };
+    await expect(controller.handleStatusToggle('filtered-child', 'todo')).resolves.toBe(true);
+    expect(setStatus).toHaveBeenCalledWith('filtered-child', 'done');
   });
 });

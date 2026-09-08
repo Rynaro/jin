@@ -292,29 +292,34 @@ describe('renderListsSidebar', () => {
     expect(deleteBtn).toBeNull();
   });
 
-  it('non-default rows have edit + delete buttons', () => {
+  it('non-default rows put edit + delete in one compact actions menu', () => {
     const container = makeContainer();
     renderListsSidebar(container, [
       makeList({ id: 'work', name: 'Work', is_default: false, position: 'B' }),
     ]);
     expect(container.querySelector('.lists-rail__edit-btn')).not.toBeNull();
     expect(container.querySelector('.lists-rail__delete-btn')).not.toBeNull();
+    expect(container.querySelector('.lists-rail__edit-btn')?.textContent).toContain('Edit list');
+    expect(container.querySelector('.lists-rail__delete-btn')?.textContent).toContain('Delete list');
     const row = container.querySelector('.lists-rail__row')!;
-    const actions = container.querySelector('.lists-rail__actions')!;
+    const actions = container.querySelector('.lists-rail__menu-btn')!;
+    const menu = container.querySelector('.lists-rail__menu')!;
     expect(row.classList.contains('jin-navigation-row--actions')).toBe(true);
     expect(actions.classList.contains('jin-navigation-row__actions')).toBe(true);
-    expect(actions.hasAttribute('aria-hidden')).toBe(false);
+    expect(actions.getAttribute('aria-haspopup')).toBe('menu');
+    expect(actions.getAttribute('aria-expanded')).toBe('false');
+    expect(menu.hasAttribute('hidden')).toBe(true);
   });
 
-  it('keeps action buttons keyboard focusable through the reserved shared slot', () => {
+  it('keeps the actions menu keyboard focusable through the reserved shared slot', () => {
     const container = makeContainer();
     renderListsSidebar(container, [
       makeList({ id: 'work', name: 'Work', is_default: false, position: 'B' }),
     ]);
-    const edit = container.querySelector<HTMLButtonElement>('.lists-rail__edit-btn')!;
-    edit.focus();
-    expect(document.activeElement).toBe(edit);
-    expect(edit.closest('.jin-navigation-row--actions')).not.toBeNull();
+    const menuBtn = container.querySelector<HTMLButtonElement>('.lists-rail__menu-btn')!;
+    menuBtn.focus();
+    expect(document.activeElement).toBe(menuBtn);
+    expect(menuBtn.closest('.jin-navigation-row--actions')).not.toBeNull();
   });
 
   it('clicking a row fires onSelect with the list id', () => {
@@ -333,6 +338,7 @@ describe('renderListsSidebar', () => {
     const list = makeList({ id: 'work', name: 'Work', is_default: false, position: 'B' });
     const container = makeContainer();
     renderListsSidebar(container, [list], { onEditRequest });
+    (container.querySelector('.lists-rail__menu-btn') as HTMLButtonElement).click();
     const editBtn = container.querySelector('.lists-rail__edit-btn') as HTMLElement;
     editBtn.click();
     expect(onEditRequest).toHaveBeenCalledWith(expect.objectContaining({ id: 'work' }));
@@ -343,9 +349,51 @@ describe('renderListsSidebar', () => {
     const list = makeList({ id: 'work', name: 'Work', is_default: false, position: 'B' });
     const container = makeContainer();
     renderListsSidebar(container, [list], { onDeleteRequest });
+    (container.querySelector('.lists-rail__menu-btn') as HTMLButtonElement).click();
     const deleteBtn = container.querySelector('.lists-rail__delete-btn') as HTMLElement;
     deleteBtn.click();
     expect(onDeleteRequest).toHaveBeenCalledWith(expect.objectContaining({ id: 'work' }));
+  });
+
+  it('opens and escapes the actions menu without selecting the list', () => {
+    const onSelect = vi.fn();
+    const container = makeContainer();
+    renderListsSidebar(container, [makeList({ id: 'work', name: 'Work', is_default: false })], { onSelect });
+    const row = container.querySelector<HTMLElement>('.lists-rail__row')!;
+    const menuBtn = container.querySelector<HTMLButtonElement>('.lists-rail__menu-btn')!;
+    const menu = container.querySelector<HTMLElement>('.lists-rail__menu')!;
+
+    menuBtn.click();
+    expect(menuBtn.getAttribute('aria-expanded')).toBe('true');
+    expect(menu.hasAttribute('hidden')).toBe(false);
+    expect(onSelect).not.toHaveBeenCalled();
+
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(menuBtn.getAttribute('aria-expanded')).toBe('false');
+    expect(menu.hasAttribute('hidden')).toBe(true);
+    expect(document.activeElement).toBe(menuBtn);
+  });
+
+  it('moves keyboard activation into the actions menu and contains its arrow keys', () => {
+    const container = makeContainer();
+    renderListsSidebar(container, [makeList({ id: 'work', name: 'Work', is_default: false })]);
+    const menuBtn = container.querySelector<HTMLButtonElement>('.lists-rail__menu-btn')!;
+    const edit = container.querySelector<HTMLButtonElement>('.lists-rail__edit-btn')!;
+    const remove = container.querySelector<HTMLButtonElement>('.lists-rail__delete-btn')!;
+
+    menuBtn.focus();
+    menuBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    expect(menuBtn.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(edit);
+
+    edit.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    expect(document.activeElement).toBe(remove);
+    remove.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    expect(document.activeElement).toBe(edit);
+
+    edit.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(menuBtn.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(menuBtn);
   });
 
   it('clears existing rows on re-render', () => {
@@ -589,6 +637,7 @@ describe('list drag-to-reorder (AC-S5-08)', () => {
 
     const row1 = container.querySelector('[data-list-id="list-1"]') as HTMLElement;
     const row2 = container.querySelector('[data-list-id="list-2"]') as HTMLElement;
+    const grip2 = row2.querySelector('.lists-rail__drag-handle') as HTMLElement;
     expect(row1).not.toBeNull();
     expect(row2).not.toBeNull();
 
@@ -596,10 +645,11 @@ describe('list drag-to-reorder (AC-S5-08)', () => {
     // of row1's zero-height jsdom bounding rect — same technique the task
     // item's own DnD tests use).
     const dragStart = new Event('dragstart', { bubbles: true }) as DragEvent;
+    const dragData = { setData: vi.fn(), effectAllowed: '' };
     Object.defineProperty(dragStart, 'dataTransfer', {
-      value: { setData: vi.fn(), effectAllowed: '' },
+      value: dragData,
     });
-    row2.dispatchEvent(dragStart);
+    grip2.dispatchEvent(dragStart);
 
     const drop = new Event('drop', { bubbles: true, cancelable: true }) as DragEvent;
     Object.defineProperty(drop, 'dataTransfer', {
@@ -613,6 +663,38 @@ describe('list drag-to-reorder (AC-S5-08)', () => {
     expect(reorderedId).toBe('list-2');
     // Strictly less than list1's position ('B') — the rank sorts BEFORE it.
     expect(newPosition < 'B').toBe(true);
+    expect(dragData.setData).toHaveBeenCalledWith('text/plain', 'list-2');
+  });
+
+  it('supports Alt+Arrow reordering from the grip', () => {
+    const onReorder = vi.fn();
+    const container = makeContainer();
+    renderListsSidebar(container, [
+      makeList({ id: 'list-1', is_default: false, position: 'B' }),
+      makeList({ id: 'list-2', is_default: false, position: 'D' }),
+      makeList({ id: 'list-3', is_default: false, position: 'F' }),
+    ], { onReorder });
+    const grip = container.querySelector('[data-list-id="list-2"] .lists-rail__drag-handle') as HTMLElement;
+    grip.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, altKey: true, key: 'ArrowUp' }));
+    expect(onReorder).toHaveBeenCalledWith('list-2', expect.stringMatching(/^[0-9A-Za-z]+$/));
+    const rank = onReorder.mock.calls[0][1] as string;
+    expect(rank < 'B').toBe(true);
+    expect(rank < 'D').toBe(true);
+  });
+
+  it('rejects foreign text/plain drops', () => {
+    const onReorder = vi.fn();
+    const container = makeContainer();
+    renderListsSidebar(container, [
+      makeList({ id: 'list-1', is_default: false, position: 'B' }),
+      makeList({ id: 'list-2', is_default: false, position: 'D' }),
+    ], { onReorder });
+    const row = container.querySelector('[data-list-id="list-1"]') as HTMLElement;
+    const drop = new Event('drop', { bubbles: true, cancelable: true }) as DragEvent;
+    Object.defineProperty(drop, 'dataTransfer', { value: { getData: () => 'foreign-id' } });
+    Object.defineProperty(drop, 'clientY', { value: -1 });
+    row.dispatchEvent(drop);
+    expect(onReorder).not.toHaveBeenCalled();
   });
 
   it('the default (Inbox) list is never draggable — it is pinned first', () => {
@@ -721,6 +803,7 @@ describe('S5 — live counts refresh (AC-S5-03)', () => {
     // non-default) for a genuine, legal reorder.
     const workRow = document.querySelector('[data-list-id="work"]') as HTMLElement;
     const archiveRow = document.querySelector('[data-list-id="archive"]') as HTMLElement;
+    const archiveGrip = archiveRow.querySelector('.lists-rail__drag-handle') as HTMLElement;
     expect(workRow, 'work row must be rendered').not.toBeNull();
     expect(archiveRow, 'archive row must be rendered').not.toBeNull();
 
@@ -728,7 +811,7 @@ describe('S5 — live counts refresh (AC-S5-03)', () => {
     Object.defineProperty(dragStart, 'dataTransfer', {
       value: { setData: vi.fn(), effectAllowed: '' },
     });
-    archiveRow.dispatchEvent(dragStart);
+    archiveGrip.dispatchEvent(dragStart);
 
     const drop = new Event('drop', { bubbles: true, cancelable: true }) as DragEvent;
     Object.defineProperty(drop, 'dataTransfer', { value: { getData: () => 'archive' } });

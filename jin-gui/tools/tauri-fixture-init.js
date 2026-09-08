@@ -40,6 +40,7 @@
     task({ id: 't5', title: 'Renew library books', list: 'home', status: 'done', completed_at: NOW, position: 'Z' }),
     task({ id: 't6', title: 'Book dentist appointment', list: 'inbox', position: 'a0', agenda_bucket: 'flexible' })
   ];
+  var nextTaskSequence = 7;
   var folders = [
     { path: 'Field Notes', name: 'Field Notes', note_count: 2 },
     { path: 'Field Notes/Water', name: 'Water', note_count: 0 },
@@ -368,6 +369,15 @@
   window.__TAURI_INTERNALS__ = {
     invoke: function invoke(cmd, args) {
       var options = args || {};
+      if (cmd === 'list_lists') {
+        return Promise.resolve(clone(lists));
+      }
+      if (cmd === 'reorder_list') {
+        var listIndex = lists.findIndex(function findList(item) { return item.id === options.id; });
+        if (listIndex === -1) return Promise.reject(new Error('List not found: ' + options.id));
+        lists[listIndex].position = String(options.position || '');
+        return Promise.resolve(clone(lists[listIndex]));
+      }
       if (cmd === 'list_tasks') {
         var matchingTasks = tasks.filter(function matchesTask(item) {
           if (!options.include_deleted && item.deleted_at !== null) return false;
@@ -385,6 +395,31 @@
         var taskDetail = tasks.find(function findTask(item) { return item.id === options.id; });
         if (!taskDetail) return Promise.reject(new Error('Task not found: ' + options.id));
         return Promise.resolve(clone(taskDetail));
+      }
+      if (cmd === 'create_task') {
+        var createInput = options.input || {};
+        var title = String(createInput.title || '').trim();
+        if (!title) return Promise.reject(new Error('Task title cannot be empty'));
+        var parentId = createInput.parent === undefined ? null : createInput.parent;
+        if (parentId !== null) {
+          var parentTask = tasks.find(function findParent(item) { return item.id === parentId; });
+          if (!parentTask) return Promise.reject(new Error('Parent task not found: ' + parentId));
+          if (parentTask.parent !== null) return Promise.reject(new Error('A subtask cannot have its own subtasks'));
+        }
+        var createdTask = task({
+          id: 'fixture-task-' + String(nextTaskSequence++).padStart(3, '0'),
+          title: title,
+          body: String(createInput.body || ''),
+          priority: String(createInput.priority || 'none'),
+          due: createInput.due === undefined ? null : createInput.due,
+          list: String(createInput.list || 'inbox'),
+          tags: clone(createInput.tags || []),
+          reminders: clone(createInput.reminders || []),
+          parent: parentId,
+          position: ''
+        });
+        tasks.push(createdTask);
+        return Promise.resolve(clone(createdTask));
       }
       if (cmd === 'edit_task') {
         var taskIndex = tasks.findIndex(function findTaskIndex(item) { return item.id === options.id; });
@@ -407,6 +442,16 @@
         statusTask.completed_at = statusTask.status === 'done' ? NOW : null;
         statusTask.updated = NOW;
         return Promise.resolve(clone(statusTask));
+      }
+      if (cmd === 'move_task') {
+        var moveTask = tasks.find(function findMoveTask(item) { return item.id === options.id; });
+        if (!moveTask) return Promise.reject(new Error('Task not found: ' + options.id));
+        var moveInput = options.input || {};
+        if (moveInput.list_id !== undefined) moveTask.list = moveInput.list_id;
+        if (moveInput.section_id !== undefined) moveTask.section_id = moveInput.section_id;
+        if (moveInput.position !== undefined) moveTask.position = moveInput.position;
+        moveTask.updated = NOW;
+        return Promise.resolve(clone(moveTask));
       }
       if (cmd === 'list_notes') {
         var matchingNotes = notes.filter(function matchesNote(item) {

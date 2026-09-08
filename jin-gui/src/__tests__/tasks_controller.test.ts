@@ -116,6 +116,24 @@ function makeTaskBacklink(overrides: Partial<TaskBacklinkDto> = {}): TaskBacklin
   };
 }
 
+function firePointer(target: HTMLElement, type: string, clientX = 12, clientY = 12): void {
+  const event = new Event(type, { bubbles: true, cancelable: true }) as PointerEvent;
+  Object.defineProperties(event, {
+    pointerId: { value: 1 },
+    button: { value: 0 },
+    clientX: { value: clientX },
+    clientY: { value: clientY },
+  });
+  target.dispatchEvent(event);
+}
+
+function setPointerHitTarget(target: Element | null): void {
+  Object.defineProperty(document, 'elementFromPoint', {
+    configurable: true,
+    value: () => target,
+  });
+}
+
 // ── jsdom helpers ─────────────────────────────────────────────────────────────
 
 function makeTasksViewElements(): TasksViewElements {
@@ -618,6 +636,7 @@ describe('renderTaskPane — title and meta', () => {
     renderTaskPane(el, templates, makeTask({ body: '' }), noopNavigate);
     const bodyEl = el.detailContent.querySelector('.task-detail__body') as HTMLTextAreaElement | null;
     expect(bodyEl?.value).toBe('');
+    expect(bodyEl?.placeholder).toBe('Add a description…');
   });
 });
 
@@ -1077,8 +1096,7 @@ describe('VG-P6 — renderListViewWithSections', () => {
     ];
     renderListViewWithSections(container, tmpl, tasks, [secA, secB], 'manual', () => {});
     const groups = container.querySelectorAll('.tasks-section-group');
-    // 2 named + 1 "No Section" = 3
-    expect(groups.length).toBe(3);
+    expect(groups.length).toBe(2);
   });
 
   it('groups tasks by section: tasks appear under their section', () => {
@@ -1097,12 +1115,24 @@ describe('VG-P6 — renderListViewWithSections', () => {
     expect(noSectionGroup!.textContent).toContain('Free Task');
   });
 
-  it('"No Section" group is rendered last', () => {
+  it('keeps a child in its parent section when the child has no stored section', () => {
+    const sec = makeSection({ id: 'sec-1', name: 'Work', position: 'a' });
+    const parent = makeTask({ id: 'parent', title: 'Parent', section_id: 'sec-1' });
+    // Older children can have no own section_id; they must still nest under
+    // the parent instead of becoming a top-level task in No Section.
+    const child = makeTask({ id: 'child', title: 'Child', parent: 'parent', section_id: null });
+    renderListViewWithSections(container, tmpl, [parent, child], [sec], 'manual', () => {});
+
+    const workGroup = container.querySelector<HTMLElement>('.tasks-section-group[data-section-id="sec-1"]');
+    expect(workGroup?.querySelector('[data-task-id="parent"]')).not.toBeNull();
+    expect(workGroup?.querySelector('[data-task-id="child"]')).not.toBeNull();
+    expect(container.querySelector('.tasks-section-group:not([data-section-id])')).toBeNull();
+  });
+
+  it('does not render an empty "No Section" group', () => {
     const sec = makeSection({ id: 'sec-1', name: 'Alpha', position: 'a' });
     renderListViewWithSections(container, tmpl, [], [sec], 'manual', () => {});
-    const groups = Array.from(container.querySelectorAll('.tasks-section-group'));
-    const lastGroup = groups[groups.length - 1] as HTMLElement;
-    expect(lastGroup.dataset.sectionId).toBeUndefined();
+    expect(container.querySelector('.tasks-section-group:not([data-section-id])')).toBeNull();
   });
 
   it('section headers include section name text', () => {
@@ -1196,24 +1226,30 @@ describe('VG-P9 — DnD affordances in renderTasksList', () => {
     expect(el.list.querySelector('.task-item__drag-handle')).toBeNull();
   });
 
-  it('fires onDragStart when dragstart event fires on a row', () => {
+  it('fires onDragStart only after the grip crosses the pointer threshold', () => {
     const onDragStart = vi.fn();
     renderTasksList(el, templates, [makeTask({ id: 'task-x', title: 'X' })], noopNavigate, {
       onDragStart,
+      onDrop: vi.fn(),
     });
-    const row = el.list.querySelector('li[data-task-id="task-x"]') as HTMLElement;
-    expect(row).not.toBeNull();
-
-    const dt = { setData: vi.fn(), effectAllowed: '' };
-    const dragEvent = new Event('dragstart', { bubbles: true }) as DragEvent;
-    Object.defineProperty(dragEvent, 'dataTransfer', { value: dt, writable: false });
-
-    row.dispatchEvent(dragEvent);
+    const handle = el.list.querySelector<HTMLElement>('li[data-task-id="task-x"] .task-item__drag-handle');
+    expect(handle).not.toBeNull();
+    firePointer(handle!, 'pointerdown', 10, 10);
+    firePointer(handle!, 'pointermove', 13, 13); // below the 6px threshold
+    expect(onDragStart).not.toHaveBeenCalled();
+    expect(document.querySelector('.task-drag-preview')).toBeNull();
+    firePointer(handle!, 'pointermove', 20, 20);
     expect(onDragStart).toHaveBeenCalledWith('task-x');
-    expect(dt.setData).toHaveBeenCalledWith('application/x-jin-task-id', 'task-x');
+    const preview = document.querySelector<HTMLElement>('.task-drag-preview');
+    expect(preview).not.toBeNull();
+    expect(preview?.getAttribute('aria-hidden')).toBe('true');
+    expect(preview?.hasAttribute('inert')).toBe(true);
+    expect(preview?.dataset.taskId).toBeUndefined();
+    firePointer(handle!, 'pointercancel');
+    expect(document.querySelector('.task-drag-preview')).toBeNull();
   });
 
-  it('fires onDrop when drop event fires and passes the dragged task id', () => {
+  it('fires onDrop from a grip pointer move and passes the dragged task id', () => {
     const onDrop = vi.fn();
     const tasks = [
       makeTask({ id: 'top', title: 'Top Task', position: 'V' }),
@@ -1221,19 +1257,17 @@ describe('VG-P9 — DnD affordances in renderTasksList', () => {
     ];
     renderTasksList(el, templates, tasks, noopNavigate, { onDrop });
 
-    const bottomRow = el.list.querySelector('li[data-task-id="bot"]') as HTMLElement;
+    const topHandle = el.list.querySelector<HTMLElement>('li[data-task-id="top"] .task-item__drag-handle');
+    const bottomRow = el.list.querySelector<HTMLElement>('li[data-task-id="bot"]');
     expect(bottomRow).not.toBeNull();
-
-    // Simulate a drop with the dragged id set in dataTransfer.
-    const dt = { getData: vi.fn().mockImplementation((key: string) =>
-      key === 'application/x-jin-task-id' ? 'top' : ''
-    ) };
-    const dropEvent = new Event('drop', { bubbles: true }) as DragEvent;
-    Object.defineProperty(dropEvent, 'dataTransfer', { value: dt, writable: false });
-    Object.defineProperty(dropEvent, 'clientY', { value: 999, writable: false }); // below midpoint
-
-    bottomRow.dispatchEvent(dropEvent);
+    setPointerHitTarget(bottomRow);
+    firePointer(topHandle!, 'pointerdown', 10, 10);
+    firePointer(topHandle!, 'pointermove', 20, 999);
+    expect(bottomRow.classList.contains('task-item--drop-below')).toBe(true);
+    firePointer(topHandle!, 'pointerup', 20, 999); // below midpoint
     expect(onDrop).toHaveBeenCalled();
+    expect(document.querySelector('.task-drag-preview')).toBeNull();
+    expect(bottomRow.classList.contains('task-item--drop-below')).toBe(false);
     // First argument must be the dragged task id.
     expect(onDrop.mock.calls[0][0]).toBe('top');
   });
@@ -1881,7 +1915,7 @@ describe('FIX-DND — flat list renders in position order when sort_mode is manu
     expect(sorted).toHaveLength(2);
   });
 
-  it('onDrop callback fires from the render layer when a task is dropped (guard-bypass verification)', () => {
+  it('onDrop callback fires from the render layer when a grip is moved (guard-bypass verification)', () => {
     // Verifies that the render layer correctly delivers onDrop to the controller.
     // Once currentListId is set (auto-select fix), the controller's handleDrop
     // will proceed past the guard and call moveTask.
@@ -1892,14 +1926,12 @@ describe('FIX-DND — flat list renders in position order when sort_mode is manu
     ];
     renderTasksList(el, templates, tasks, noopNavigate, { onDrop });
 
-    const topRow = el.list.querySelector('li[data-task-id="top"]') as HTMLElement;
-    const dt = {
-      getData: vi.fn((key: string) => key === 'application/x-jin-task-id' ? 'bot' : ''),
-    };
-    const dropEvent = new Event('drop', { bubbles: true }) as DragEvent;
-    Object.defineProperty(dropEvent, 'dataTransfer', { value: dt });
-    Object.defineProperty(dropEvent, 'clientY', { value: 0 }); // above midpoint → insert above
-    topRow.dispatchEvent(dropEvent);
+    const topRow = el.list.querySelector<HTMLElement>('li[data-task-id="top"]');
+    const bottomHandle = el.list.querySelector<HTMLElement>('li[data-task-id="bot"] .task-item__drag-handle');
+    setPointerHitTarget(topRow);
+    firePointer(bottomHandle!, 'pointerdown', 10, 10);
+    firePointer(bottomHandle!, 'pointermove', 20, -1);
+    firePointer(bottomHandle!, 'pointerup', 20, -1); // above midpoint → insert above
 
     expect(onDrop).toHaveBeenCalled();
     // First arg is the dragged task id; render layer correctly passes it to the controller.
@@ -2781,18 +2813,14 @@ describe('S2 — one item, two skins: row/card callback parity (AC-S2-02)', () =
     expect(onDeleteRequest).toHaveBeenNthCalledWith(1, 'parity-1', 'Parity Task');
     expect(onDeleteRequest).toHaveBeenNthCalledWith(2, 'parity-1', 'Parity Task');
 
-    // ── drag start ────────────────────────────────────────────────────────
-    const fireDragStart = (target: HTMLElement) => {
-      const dt = { setData: vi.fn(), effectAllowed: '' };
-      const evt = new Event('dragstart', { bubbles: true }) as DragEvent;
-      Object.defineProperty(evt, 'dataTransfer', { value: dt, writable: false });
-      target.dispatchEvent(evt);
-    };
-    fireDragStart(rowEl);
-    fireDragStart(cardEl);
-    expect(onDragStart).toHaveBeenCalledTimes(2);
-    expect(onDragStart).toHaveBeenNthCalledWith(1, 'parity-1');
-    expect(onDragStart).toHaveBeenNthCalledWith(2, 'parity-1');
+    // ── drag grips ────────────────────────────────────────────────────────
+    // Pointer movement is wired by the list/board render adapters because
+    // they own insertion targets and legal board lanes. Both variants still
+    // expose the same dedicated, non-draggable grip.
+    expect(rowEl.querySelector('.task-item__drag-handle')).not.toBeNull();
+    expect(cardEl.querySelector('.task-item__drag-handle')).toBeNull();
+    expect(rowEl.getAttribute('draggable')).toBeNull();
+    expect(cardEl.getAttribute('draggable')).toBeNull();
   });
 });
 
@@ -2940,14 +2968,16 @@ describe('S4 — Board becomes a Kanban by status (AC-S4-01..08)', () => {
     toggleBtn.click();
   }
 
-  /** Dispatch a real dragstart from a card so the board's dragstart listener marks illegal columns. */
-  function fireCardDragStart(taskId: string): void {
+  /** Start a grip-only pointer drag and leave it active for lane assertions. */
+  function startCardPointerDrag(taskId: string, hitTarget: HTMLElement | null = null): HTMLElement {
     const card = document.querySelector(`li[data-task-id="${taskId}"]`) as HTMLElement;
     expect(card, `card for ${taskId} must be rendered`).not.toBeNull();
-    const dt = { setData: vi.fn(), effectAllowed: '' };
-    const evt = new Event('dragstart', { bubbles: true }) as DragEvent;
-    Object.defineProperty(evt, 'dataTransfer', { value: dt, writable: false });
-    card.dispatchEvent(evt);
+    const handle = card.querySelector<HTMLElement>('.task-item__drag-handle');
+    expect(handle, `card grip for ${taskId} must be rendered`).not.toBeNull();
+    setPointerHitTarget(hitTarget);
+    firePointer(handle!, 'pointerdown', 10, 10);
+    firePointer(handle!, 'pointermove', 20, 20);
+    return handle!;
   }
 
   function getColumn(status: string): HTMLElement {
@@ -2956,31 +2986,9 @@ describe('S4 — Board becomes a Kanban by status (AC-S4-01..08)', () => {
     return col;
   }
 
-  /**
-   * Fires a cancelable dragover on `target` (which bubbles to the column's
-   * own listener) and returns whether preventDefault() was called anywhere
-   * in that bubble chain. Defaults the dispatch target to the column itself
-   * (empty-gutter hover); pass an existing CARD inside the column to prove
-   * the refusal holds even when hovering directly over a sibling card, not
-   * just empty column space (AC-S4-04's CONSTRAINT: "think about every drop
-   * pair" — a stray item-level dragover handler on the card could otherwise
-   * call preventDefault() first and silently re-enable the drop).
-   */
-  function fireColumnDragOver(col: HTMLElement, target: HTMLElement = col): boolean {
-    const dt = { dropEffect: '' };
-    const evt = new Event('dragover', { bubbles: true, cancelable: true }) as DragEvent;
-    Object.defineProperty(evt, 'dataTransfer', { value: dt, writable: false });
-    target.dispatchEvent(evt);
-    return evt.defaultPrevented;
-  }
-
-  function fireColumnDrop(col: HTMLElement, draggedId: string, target: HTMLElement = col): void {
-    const dt = {
-      getData: vi.fn().mockImplementation((key: string) => (key === 'application/x-jin-task-id' ? draggedId : '')),
-    };
-    const evt = new Event('drop', { bubbles: true, cancelable: true }) as DragEvent;
-    Object.defineProperty(evt, 'dataTransfer', { value: dt, writable: false });
-    target.dispatchEvent(evt);
+  function finishCardPointerDrag(handle: HTMLElement, hitTarget: HTMLElement | null): void {
+    setPointerHitTarget(hitTarget);
+    firePointer(handle, 'pointerup', 20, 20);
   }
 
   it('legal_board_drop_calls_set_task_status', async () => {
@@ -2994,16 +3002,18 @@ describe('S4 — Board becomes a Kanban by status (AC-S4-01..08)', () => {
     switchToBoardView();
     await flushStimulusAsync();
 
-    fireCardDragStart('todo-1');
     const doingCol = getColumn('doing');
-    // A legal target: the column DOES call preventDefault() on dragover.
-    expect(fireColumnDragOver(doingCol)).toBe(true);
-
-    fireColumnDrop(doingCol, 'todo-1');
+    const handle = startCardPointerDrag('todo-1', doingCol);
+    expect(doingCol.getAttribute('aria-disabled')).toBe('false');
+    expect(doingCol.classList.contains('tasks-board__column--pointer-drop-target')).toBe(true);
+    expect(document.querySelector('.task-drag-preview')).not.toBeNull();
+    finishCardPointerDrag(handle, doingCol);
     await flushStimulusAsync();
 
     expect(InvokeModule.setTaskStatus).toHaveBeenCalledTimes(1);
     expect(InvokeModule.setTaskStatus).toHaveBeenCalledWith('todo-1', 'doing');
+    expect(doingCol.classList.contains('tasks-board__column--pointer-drop-target')).toBe(false);
+    expect(document.querySelector('.task-drag-preview')).toBeNull();
   });
 
   it('illegal_board_drop_never_calls_bridge', async () => {
@@ -3021,22 +3031,13 @@ describe('S4 — Board becomes a Kanban by status (AC-S4-01..08)', () => {
     switchToBoardView();
     await flushStimulusAsync();
 
-    fireCardDragStart('done-1');
     const doingCol = getColumn('doing');
     const existingCard = document.querySelector('li[data-task-id="doing-1"]') as HTMLElement;
     expect(existingCard).not.toBeNull();
 
-    // AC-S4-04 CONSTRAINT: the illegal column must NEVER call preventDefault()
-    // on dragover — that is what makes a real browser refuse the drop, so the
-    // drop never fires and no bridge call is ever made. This is the assertion
-    // that matters; asserting on an error toast would mean the call WAS made.
-    // Dispatched on the EXISTING CARD (bubbles to the column) — not just the
-    // column's own empty gutter.
-    expect(fireColumnDragOver(doingCol, existingCard)).toBe(false);
-
-    // Defense in depth: even a manually-fired drop (impossible in a real
-    // browser once dragover refused it) must still not reach the bridge.
-    fireColumnDrop(doingCol, 'done-1', existingCard);
+    const handle = startCardPointerDrag('done-1', existingCard);
+    expect(doingCol.getAttribute('aria-disabled')).toBe('true');
+    finishCardPointerDrag(handle, existingCard);
     await flushStimulusAsync();
 
     expect(setTaskStatusSpy).not.toHaveBeenCalled();
@@ -3052,7 +3053,7 @@ describe('S4 — Board becomes a Kanban by status (AC-S4-01..08)', () => {
     switchToBoardView();
     await flushStimulusAsync();
 
-    fireCardDragStart('done-1');
+    const handle = startCardPointerDrag('done-1');
 
     // done's only legal successor is todo — Doing (genuinely illegal: not a
     // legal successor and not the source) must be aria-disabled with the
@@ -3070,6 +3071,7 @@ describe('S4 — Board becomes a Kanban by status (AC-S4-01..08)', () => {
 
     expect(getColumn('done').getAttribute('aria-disabled')).toBe('false');
     expect(getColumn('done').classList.contains('tasks-board__column--drop-disabled')).toBe(false);
+    firePointer(handle, 'pointercancel');
   });
 
   it('dropping_a_card_back_into_its_source_column_makes_no_bridge_call', async () => {
@@ -3088,17 +3090,13 @@ describe('S4 — Board becomes a Kanban by status (AC-S4-01..08)', () => {
     switchToBoardView();
     await flushStimulusAsync();
 
-    fireCardDragStart('done-1');
     const doneCol = getColumn('done');
     const ownCard = document.querySelector('li[data-task-id="done-1"]') as HTMLElement;
     expect(ownCard).not.toBeNull();
 
-    // The source column is a neutral, enabled drop target (AC-S4-05) — a
-    // real browser WOULD call preventDefault() on dragover here, unlike a
-    // genuinely illegal column.
-    expect(fireColumnDragOver(doneCol, ownCard)).toBe(true);
-
-    fireColumnDrop(doneCol, 'done-1', ownCard);
+    const handle = startCardPointerDrag('done-1', ownCard);
+    expect(doneCol.getAttribute('aria-disabled')).toBe('false');
+    finishCardPointerDrag(handle, ownCard);
     await flushStimulusAsync();
 
     expect(setTaskStatusSpy).not.toHaveBeenCalled();
@@ -3749,6 +3747,34 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     expect(document.querySelectorAll('[data-tasks-target="list"] [aria-selected="true"]').length).toBe(0);
   });
 
+  it('full_workspace_detail_hides_covered_list_controls_and_restores_the_invoking_row', async () => {
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([makeDefaultListDto()]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([
+      makeTaskDtoForStimulus({ id: 't1', title: 'Task One' }),
+    ]);
+    vi.spyOn(InvokeModule, 'getTaskById').mockResolvedValue(
+      makeTaskDtoForStimulus({ id: 't1', title: 'Task One' }),
+    );
+
+    startS3App();
+    await flushStimulusAsync();
+    clickItemBody('t1');
+    await flushStimulusAsync();
+
+    const panel = getListPanelEl();
+    expect(panel.getAttribute('aria-hidden')).toBe('true');
+    expect(panel.hasAttribute('inert')).toBe(true);
+
+    (document.querySelector('.tasks-detail-pane__close-btn') as HTMLButtonElement).click();
+    await flushStimulusAsync();
+
+    expect(panel.hasAttribute('inert')).toBe(false);
+    expect(panel.hasAttribute('aria-hidden')).toBe(false);
+    expect(document.activeElement).toBe(
+      document.querySelector('li[data-task-id="t1"] .task-item__body'),
+    );
+  });
+
   it('pane_renders_backlinks_section', async () => {
     const EVT_LABEL = 'Q3 Review Meeting';
     vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([makeDefaultListDto()]);
@@ -3903,6 +3929,79 @@ describe('AC-S6-12 — a subtask\'s pane disables its list and section selects',
   });
 });
 
+describe('subtask composer', () => {
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it('keeps a failed draft, restores focus, and associates its error', async () => {
+    const task = makeTask({ id: 'parent-composer' });
+    const onAddSubtask = vi.fn().mockResolvedValue(false);
+    document.body.appendChild(el.detailContent);
+    renderTaskPane(el, templates, task, noopNavigate, undefined, undefined, { onAddSubtask });
+    (el.detailContent.querySelector('.task-detail__subtask-add-trigger') as HTMLButtonElement).click();
+    const input = el.detailContent.querySelector<HTMLInputElement>('.task-detail__subtask-add-input')!;
+    const form = el.detailContent.querySelector<HTMLFormElement>('.task-detail__subtask-add')!;
+    input.value = 'Keep this draft';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await settle();
+    const error = el.detailContent.querySelector<HTMLElement>('.task-detail__subtask-add-error')!;
+    expect(onAddSubtask).toHaveBeenCalledWith('parent-composer', 'Keep this draft');
+    expect(input.value).toBe('Keep this draft');
+    expect(input.disabled).toBe(false);
+    expect(error.hidden).toBe(false);
+    expect(input.getAttribute('aria-describedby')).toBe(error.id);
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('keeps a rejected draft and blocks duplicate pending submits', async () => {
+    const task = makeTask({ id: 'parent-reject' });
+    let rejectCreate!: (reason?: unknown) => void;
+    const onAddSubtask = vi.fn().mockImplementation(() => new Promise<boolean>((_, reject) => { rejectCreate = reject; }));
+    document.body.appendChild(el.detailContent);
+    renderTaskPane(el, templates, task, noopNavigate, undefined, undefined, { onAddSubtask });
+    (el.detailContent.querySelector('.task-detail__subtask-add-trigger') as HTMLButtonElement).click();
+    const input = el.detailContent.querySelector<HTMLInputElement>('.task-detail__subtask-add-input')!;
+    const form = el.detailContent.querySelector<HTMLFormElement>('.task-detail__subtask-add')!;
+    input.value = 'Retry me';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    expect(onAddSubtask).toHaveBeenCalledTimes(1);
+    rejectCreate(new Error('offline'));
+    await settle();
+    expect(input.value).toBe('Retry me');
+    expect(input.disabled).toBe(false);
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('starts as a plain add line and collapses the editor on Cancel or Escape', () => {
+    const task = makeTask({ id: 'parent-collapsible-composer' });
+    document.body.appendChild(el.detailContent);
+    renderTaskPane(el, templates, task, noopNavigate, undefined, undefined, { onAddSubtask: vi.fn() });
+    const trigger = el.detailContent.querySelector<HTMLButtonElement>('.task-detail__subtask-add-trigger')!;
+    const form = el.detailContent.querySelector<HTMLFormElement>('.task-detail__subtask-add')!;
+    const input = el.detailContent.querySelector<HTMLInputElement>('.task-detail__subtask-add-input')!;
+    const cancel = el.detailContent.querySelector<HTMLButtonElement>('.task-detail__subtask-add-cancel')!;
+
+    expect(form.hidden).toBe(true);
+    trigger.click();
+    expect(form.hidden).toBe(false);
+    expect(document.activeElement).toBe(input);
+
+    input.value = 'Discard this draft';
+    cancel.click();
+    expect(form.hidden).toBe(true);
+    expect(trigger.hidden).toBe(false);
+    expect(input.value).toBe('');
+    expect(document.activeElement).toBe(trigger);
+
+    trigger.click();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(form.hidden).toBe(true);
+    expect(document.activeElement).toBe(trigger);
+  });
+});
+
 describe('AC-S6-13 — children render nested under their parent, never also top-level', () => {
   it('children_render_nested_under_parent_not_top_level', () => {
     const a = makeTask({ id: 'A', title: 'Parent A' });
@@ -3918,6 +4017,10 @@ describe('AC-S6-13 — children render nested under their parent, never also top
     expect(cItem, 'C must render').not.toBeNull();
     expect(bItem?.classList.contains('task-item--child')).toBe(true);
     expect(cItem?.classList.contains('task-item--child')).toBe(true);
+    expect(bItem?.classList.contains('task-item--without-drag')).toBe(true);
+    expect(cItem?.classList.contains('task-item--without-drag')).toBe(true);
+    const parentItem = document.querySelector('li[data-task-id="A"]');
+    expect(parentItem?.classList.contains('task-item--has-children')).toBe(true);
 
     // Each child id appears EXACTLY ONCE in the rendered list (not also as a
     // separate top-level row) — the whole point of AC-S6-13.
@@ -3985,26 +4088,26 @@ describe('AC-S6-14 — collapsing a parent hides its child items', () => {
   });
 });
 
-describe('AC-S6-15 — a child item exposes no drag handle and is not draggable', () => {
-  it('child_items_are_not_draggable', () => {
+describe('AC-S6-15 — a child item exposes no independent drag grip', () => {
+  it('child_items_are_not_independent_drag_sources', () => {
     const a = makeTask({ id: 'A' });
     const b = makeTask({ id: 'B', parent: 'A' });
     const onDrop = vi.fn();
     const onDragStart = vi.fn();
 
-    // Even though the caller passes DnD callbacks (as the real list-view
-    // caller always does), a nested CHILD must never become draggable.
+    // Even though the caller passes reorder callbacks, a nested CHILD must
+    // never get an independent pointer grip.
     renderTasksList(el, templates, [a, b], noopNavigate, { onDrop, onDragStart }, null, true);
 
     const childItem = document.querySelector('li[data-task-id="B"]') as HTMLElement;
     expect(childItem).not.toBeNull();
-    expect(childItem.getAttribute('draggable')).not.toBe('true');
+    expect(childItem.getAttribute('draggable')).toBeNull();
     expect(childItem.querySelector('.task-item__drag-handle')).toBeNull();
 
-    // The PARENT (a top-level item) still gets its drag handle — only the
-    // nested child is exempted.
+    // The PARENT retains the dedicated pointer grip.
     const parentItem = document.querySelector('li[data-task-id="A"]') as HTMLElement;
-    expect(parentItem.getAttribute('draggable')).toBe('true');
+    expect(parentItem.getAttribute('draggable')).toBeNull();
+    expect(parentItem.querySelector('.task-item__drag-handle')).not.toBeNull();
   });
 });
 
@@ -4761,7 +4864,7 @@ describe('S8 — reorderSection wiring (AC-S8-01)', () => {
     expect(position < 'b').toBe(true);
   });
 
-  it('the "No Section" bucket is never draggable (nothing to reorder it against)', async () => {
+  it('does not render an empty "No Section" bucket', async () => {
     const sectionA = makeSection({
       id: 'sec-a',
       list_id: 'inbox',
@@ -4778,14 +4881,8 @@ describe('S8 — reorderSection wiring (AC-S8-01)', () => {
     await flushStimulusAsync();
 
     const groups = document.querySelectorAll('.tasks-section-group');
-    // One named section + the "No Section" bucket = 2 groups.
-    expect(groups.length).toBe(2);
-    const noSectionGroup = Array.from(groups).find(
-      (g) => !(g as HTMLElement).dataset.sectionId,
-    ) as HTMLElement;
-    expect(noSectionGroup, '"No Section" group must render').not.toBeUndefined();
-    const header = noSectionGroup.querySelector('.tasks-section-group__header') as HTMLElement;
-    expect(header.draggable).toBe(false);
+    expect(groups.length).toBe(1);
+    expect(document.querySelector('.tasks-section-group:not([data-section-id])')).toBeNull();
   });
 });
 
