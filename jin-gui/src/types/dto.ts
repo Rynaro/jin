@@ -514,6 +514,40 @@ export interface AgendaDto {
   timed_events: AgendaEventDto[];
 }
 
+/** Compact, untimed task representation for the connected Today projection. */
+export interface AgendaTaskDto {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  due: string | null;
+  list: string;
+  position: string;
+  parent: string | null;
+  agenda_bucket: string | null;
+}
+
+/** A core-resolved live-focus reference into `TodayProjectionDto.agenda`. */
+export interface TodayFocusEventDto {
+  event_id: string;
+  start_utc: number;
+  end_utc: number;
+  minutes: number;
+}
+
+/** The authoritative aggregate used by the Today desk. */
+export interface TodayProjectionDto {
+  agenda: AgendaDto;
+  current_date: string;
+  is_current_date: boolean;
+  attention_tasks: AgendaTaskDto[];
+  due_tasks: AgendaTaskDto[];
+  flexible_tasks: AgendaTaskDto[];
+  active_events: TodayFocusEventDto[];
+  next_event: TodayFocusEventDto | null;
+  generated_at_utc: string;
+}
+
 // ── Auth / Sync / Export / Config DTOs ────────────────────────────────────────
 
 /** Mirrors jin-gui/src-tauri/src/commands/auth.rs AuthStatusDto */

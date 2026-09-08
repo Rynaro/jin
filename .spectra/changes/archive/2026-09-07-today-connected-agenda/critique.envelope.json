@@ -1,0 +1,16 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "forge"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "CRITIQUE",
+  "objective": "Implement the connected Today projection and accessible editorial composition.",
+  "context_delta": {
+    "clarification": "Deduplicate connected entity links and hide context when empty. Preserve legacy AgendaDto through new TodayProjectionDto.",
+    "deliberation": "deliberation.md",
+    "spec": "spec.md"
+  }
+}

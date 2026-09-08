@@ -7,7 +7,9 @@
  * Tested by: src/__tests__/today_controller.test.ts
  */
 
-import type { AgendaDto, AgendaEventDto } from '../../types/dto';
+import type {
+  AgendaDto, AgendaEventDto, AgendaTaskDto, TodayFocusEventDto, TodayProjectionDto,
+} from '../../types/dto';
 import { formatEventTime } from '../events/transform';
 
 // ── Output types ──────────────────────────────────────────────────────────────
@@ -31,6 +33,13 @@ export interface GroupedAgenda {
   presentationById?: ReadonlyMap<string, AgendaRowPresentation>;
   /** True when both buckets are empty — drives the empty state. */
   isEmpty: boolean;
+  currentDate?: string;
+  isCurrentDate?: boolean;
+  attentionTasks?: AgendaTaskDto[];
+  dueTasks?: AgendaTaskDto[];
+  flexibleTasks?: AgendaTaskDto[];
+  activeFocus?: TodayFocusEventDto[];
+  nextFocus?: TodayFocusEventDto | null;
 }
 
 /** Display-only metadata for a timed agenda row. It never changes the DTO. */
@@ -57,6 +66,25 @@ export function groupAgenda(dto: AgendaDto): GroupedAgenda {
     timed,
     presentationById: projectTimedAgenda(timed, dto.display_tz),
     isEmpty: dto.all_day_events.length === 0 && dto.timed_events.length === 0,
+  };
+}
+
+/** Compose the dedicated Today projection without recreating time authority in the browser. */
+export function groupTodayProjection(dto: TodayProjectionDto): GroupedAgenda {
+  const grouped = groupAgenda(dto.agenda);
+  return {
+    ...grouped,
+    currentDate: dto.current_date,
+    isCurrentDate: dto.is_current_date,
+    attentionTasks: [...dto.attention_tasks],
+    dueTasks: [...dto.due_tasks],
+    flexibleTasks: [...dto.flexible_tasks],
+    activeFocus: [...dto.active_events],
+    nextFocus: dto.next_event,
+    isEmpty: grouped.isEmpty
+      && dto.attention_tasks.length === 0
+      && dto.due_tasks.length === 0
+      && dto.flexible_tasks.length === 0,
   };
 }
 

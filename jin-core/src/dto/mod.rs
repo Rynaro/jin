@@ -14,7 +14,10 @@ pub mod result;
 pub mod tag;
 pub mod task;
 
-pub use agenda::{AgendaDto, AgendaEventDto, LinkedNoteRef, LinkedTaskRef};
+pub use agenda::{
+    AgendaDto, AgendaEventDto, AgendaTaskDto, LinkedNoteRef, LinkedTaskRef, TodayFocusEventDto,
+    TodayProjectionDto,
+};
 pub use dangling::DanglingEdgeDto;
 pub use event::{
     EditEventResultDto, EventDetailCapabilitiesDto, EventDetailDto, EventDisplayKind, EventDto,

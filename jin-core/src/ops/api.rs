@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::dto::{
     AgendaDto, DanglingEdgeDto, EventDetailCapabilitiesDto, EventDetailDto, EventDto, FolderDto,
-    ListDto, NoteDto, TagDto, TaskDto,
+    ListDto, NoteDto, TagDto, TaskDto, TodayProjectionDto,
 };
 use crate::index::{self, query, rebuild};
 use crate::store::fs;
@@ -290,6 +290,15 @@ pub fn today_events(root: &Path) -> Result<Vec<EventDto>> {
 pub fn agenda_for_date(root: &Path, date: Option<chrono::NaiveDate>) -> Result<AgendaDto> {
     recover_before_read(root)?;
     super::agenda::agenda_for_date(root, date)
+}
+
+/// Build the connected, timezone-authoritative Today projection.
+pub fn today_projection_for_date(
+    root: &Path,
+    date: Option<chrono::NaiveDate>,
+) -> Result<TodayProjectionDto> {
+    recover_before_read(root)?;
+    super::agenda::today_projection_for_date(root, date)
 }
 
 pub fn list_dangling(root: &Path) -> Result<Vec<DanglingEdgeDto>> {

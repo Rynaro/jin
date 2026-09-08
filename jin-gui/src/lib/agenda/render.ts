@@ -11,7 +11,7 @@
  * Tested by: src/__tests__/today_controller.test.ts
  */
 
-import type { AgendaEventDto } from '../../types/dto';
+import type { AgendaEventDto, AgendaTaskDto, TodayFocusEventDto } from '../../types/dto';
 import type { AgendaRowPresentation, GroupedAgenda } from './transform';
 import { sourceBadgeLabel, sourceBadgeIcon, isRecurring } from './transform';
 
@@ -25,6 +25,17 @@ export interface TodayViewElements {
   timedList: HTMLElement;
   emptyState: HTMLElement;
   loadingState: HTMLElement;
+  focusSection?: HTMLElement;
+  focusList?: HTMLElement;
+  attentionSection?: HTMLElement;
+  attentionList?: HTMLElement;
+  dueSection?: HTMLElement;
+  dueList?: HTMLElement;
+  flexibleSection?: HTMLElement;
+  flexibleList?: HTMLElement;
+  contextSection?: HTMLElement;
+  contextList?: HTMLElement;
+  scheduleClear?: HTMLElement;
 }
 
 /** References to the <template> elements used for dynamic rows. */
@@ -38,7 +49,7 @@ export interface TodayTemplates {
  * section: 'tasks' | 'notes'
  * id: the Jin object id to navigate to
  */
-export type NavigateCallback = (section: 'tasks' | 'notes', id: string) => void;
+export type NavigateCallback = (section: 'events' | 'tasks' | 'notes', id: string) => void;
 
 // ── Lifecycle helpers ─────────────────────────────────────────────────────────
 
@@ -50,6 +61,12 @@ export function showLoading(el: TodayViewElements): void {
   el.loadingState.classList.remove('hidden');
   el.allDaySection.classList.add('hidden');
   el.timedSection.classList.add('hidden');
+  el.focusSection?.classList.add('hidden');
+  el.attentionSection?.classList.add('hidden');
+  el.dueSection?.classList.add('hidden');
+  el.flexibleSection?.classList.add('hidden');
+  el.contextSection?.classList.add('hidden');
+  el.scheduleClear?.classList.add('hidden');
   el.emptyState.classList.add('hidden');
 }
 
@@ -68,6 +85,12 @@ export function hideLoading(el: TodayViewElements): void {
 export function showEmptyState(el: TodayViewElements): void {
   el.allDaySection.classList.add('hidden');
   el.timedSection.classList.add('hidden');
+  el.focusSection?.classList.add('hidden');
+  el.attentionSection?.classList.add('hidden');
+  el.dueSection?.classList.add('hidden');
+  el.flexibleSection?.classList.add('hidden');
+  el.contextSection?.classList.add('hidden');
+  el.scheduleClear?.classList.add('hidden');
   el.emptyState.classList.remove('hidden');
 }
 
@@ -90,8 +113,13 @@ export function renderTodayView(
   onNavigate: NavigateCallback
 ): void {
   // Clear stale rows
-  el.allDayList.innerHTML = '';
-  el.timedList.innerHTML = '';
+  el.allDayList.replaceChildren();
+  el.timedList.replaceChildren();
+  el.focusList?.replaceChildren();
+  el.attentionList?.replaceChildren();
+  el.dueList?.replaceChildren();
+  el.flexibleList?.replaceChildren();
+  el.contextList?.replaceChildren();
 
   if (grouped.isEmpty) {
     showEmptyState(el);
@@ -120,8 +148,110 @@ export function renderTodayView(
     el.timedSection.classList.add('hidden');
   }
 
+  renderFocus(el, grouped, onNavigate);
+  if (el.attentionSection && el.attentionList) renderTaskLane(el.attentionSection, el.attentionList, grouped.attentionTasks ?? [], onNavigate);
+  if (el.dueSection && el.dueList) renderTaskLane(el.dueSection, el.dueList, grouped.dueTasks ?? [], onNavigate);
+  if (el.flexibleSection && el.flexibleList) renderTaskLane(el.flexibleSection, el.flexibleList, grouped.flexibleTasks ?? [], onNavigate);
+  renderConnectedWork(el, grouped, onNavigate);
+  el.scheduleClear?.classList.toggle('hidden', grouped.timed.length > 0 || grouped.isEmpty);
+
   // Make sure empty-state is hidden when content rendered
   el.emptyState.classList.add('hidden');
+}
+
+function renderFocus(el: TodayViewElements, grouped: GroupedAgenda, onNavigate: NavigateCallback): void {
+  if (!el.focusSection || !el.focusList) return;
+  const byId = new Map(grouped.timed.map((event) => [event.id, event]));
+  const focusItems: Array<{ focus: TodayFocusEventDto; phase: 'Now' | 'Up next' }> = [
+    ...(grouped.activeFocus ?? []).map((focus) => ({ focus, phase: 'Now' as const })),
+    ...(grouped.nextFocus ? [{ focus: grouped.nextFocus, phase: 'Up next' as const }] : []),
+  ];
+  for (const { focus, phase } of focusItems) {
+    const event = byId.get(focus.event_id);
+    if (!event) continue;
+    const item = document.createElement('li');
+    item.className = 'today-focus-item';
+    const label = document.createElement('span');
+    label.className = 'today-focus-item__phase';
+    label.textContent = phase;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'today-focus-item__event';
+    button.textContent = event.title;
+    button.dataset.todayPreviewKind = 'events';
+    button.dataset.todayPreviewId = event.id;
+    button.setAttribute('aria-label', `${phase}: ${event.title}`);
+    button.addEventListener('click', () => onNavigate('events', event.id));
+    const minutes = document.createElement('span');
+    minutes.className = 'today-focus-item__minutes';
+    minutes.textContent = phase === 'Now' ? `${focus.minutes} min left` : `Starts in ${focus.minutes} min`;
+    const range = document.createElement('span');
+    range.className = 'today-focus-item__range';
+    range.textContent = grouped.presentationById?.get(event.id)?.timeRange ?? event.display_start;
+    range.setAttribute('aria-label', `Time: ${range.textContent}`);
+    item.append(label, button, range, minutes);
+    el.focusList.appendChild(item);
+  }
+  el.focusSection.classList.toggle('hidden', el.focusList.childElementCount === 0);
+}
+
+function renderTaskLane(section: HTMLElement, list: HTMLElement, tasks: AgendaTaskDto[], onNavigate: NavigateCallback): void {
+  for (const task of tasks) {
+    const item = document.createElement('li');
+    item.className = 'today-task-row';
+    const status = document.createElement('span');
+    status.className = 'today-task-row__status';
+    status.textContent = task.status === 'doing' ? 'In progress' : 'Open';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'today-task-row__title';
+    button.textContent = task.title;
+    button.dataset.todayPreviewKind = 'tasks';
+    button.dataset.todayPreviewId = task.id;
+    button.setAttribute('aria-label', `Open task: ${task.title}`);
+    button.addEventListener('click', () => onNavigate('tasks', task.id));
+    const meta = document.createElement('span');
+    meta.className = 'today-task-row__meta';
+    meta.textContent = task.due ? `Due ${task.due}` : task.list;
+    item.append(status, button, meta);
+    list.appendChild(item);
+  }
+  section.classList.toggle('hidden', tasks.length === 0);
+}
+
+function renderConnectedWork(el: TodayViewElements, grouped: GroupedAgenda, onNavigate: NavigateCallback): void {
+  if (!el.contextSection || !el.contextList) return;
+  const entities = new Map<string, { kind: 'tasks' | 'notes'; id: string; title: string; events: Array<{ id: string; title: string }> }>();
+  for (const event of [...grouped.allDay, ...grouped.timed]) {
+    if (event.originating_task) addContextEntity(entities, 'tasks', event.originating_task.id, event.originating_task.title, event.id, event.title);
+    for (const note of event.prep_notes) addContextEntity(entities, 'notes', note.id, note.title, event.id, event.title);
+  }
+  for (const entity of entities.values()) {
+    const item = document.createElement('li');
+    item.className = 'today-context-item';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'today-context-item__link';
+    button.textContent = entity.title;
+    button.setAttribute('aria-label', `Open ${entity.kind === 'tasks' ? 'task' : 'note'}: ${entity.title}`);
+    button.addEventListener('click', () => onNavigate(entity.kind, entity.id));
+    const events = document.createElement('span');
+    events.className = 'today-context-item__events';
+    events.textContent = entity.events.map((event) => event.title).join(', ');
+    item.append(button, events);
+    el.contextList.appendChild(item);
+  }
+  el.contextSection.classList.toggle('hidden', entities.size === 0);
+}
+
+function addContextEntity(
+  entities: Map<string, { kind: 'tasks' | 'notes'; id: string; title: string; events: Array<{ id: string; title: string }> }>,
+  kind: 'tasks' | 'notes', id: string, title: string, eventId: string, eventTitle: string,
+): void {
+  const key = `${kind}:${id}`;
+  const entity = entities.get(key) ?? { kind, id, title, events: [] };
+  if (!entity.events.some((event) => event.id === eventId)) entity.events.push({ id: eventId, title: eventTitle });
+  entities.set(key, entity);
 }
 
 // ── Internal ──────────────────────────────────────────────────────────────────
@@ -170,8 +300,16 @@ function buildEventRow(
   }
 
   // ── Title ─────────────────────────────────────────────────────────────────
-  const titleEl = row.querySelector('.today-event-row__title');
-  if (titleEl) titleEl.textContent = event.title;
+  const titleEl = row.querySelector('.today-event-row__title') as HTMLButtonElement | null;
+  if (titleEl) {
+    titleEl.textContent = event.title;
+    titleEl.dataset.todayPreviewKind = 'events';
+    titleEl.dataset.todayPreviewId = event.id;
+    titleEl.setAttribute('aria-label', `Open event: ${event.title}`);
+    titleEl.addEventListener('click', () => onNavigate('events', event.id));
+  }
+  const typeEl = row.querySelector('.today-event-row__type');
+  if (typeEl) typeEl.textContent = event.originating_task ? 'Task time block' : 'Event';
 
   // ── Source badge — text label + icon (NEVER color-only) ───────────────────
   const badgeEl = row.querySelector('.today-event-row__source-badge') as HTMLElement | null;
@@ -207,12 +345,15 @@ function buildEventRow(
     if (taskContainerEl && taskLinkEl && taskTitleEl && taskIdEl) {
       taskContainerEl.classList.remove('hidden');
       taskLinkEl.dataset.taskId = task.id;
+      taskLinkEl.dataset.todayPreviewKind = 'tasks';
+      taskLinkEl.dataset.todayPreviewId = task.id;
       taskLinkEl.setAttribute('aria-label', `Task: ${task.title}`);
       taskTitleEl.textContent = task.title;
       taskIdEl.textContent = task.id;
 
       taskLinkEl.addEventListener('click', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         onNavigate('tasks', task.id);
       });
     }
@@ -242,6 +383,7 @@ function buildEventRow(
 
           noteLinkEl.addEventListener('click', (e) => {
             e.preventDefault();
+            e.stopPropagation();
             onNavigate('notes', note.id);
           });
         }

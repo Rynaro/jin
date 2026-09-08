@@ -25,9 +25,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Application } from '@hotwired/stimulus';
 import TodayController from '../controllers/today_controller';
-import type { AgendaDto, AgendaEventDto } from '../types/dto';
+import type { AgendaDto, AgendaEventDto, AgendaTaskDto, EventDetailDto, TaskDto, TodayProjectionDto } from '../types/dto';
 import {
   groupAgenda,
+  groupTodayProjection,
   sortTimedEvents,
   sourceBadgeLabel,
   sourceBadgeIcon,
@@ -47,9 +48,19 @@ import {
   type TodayViewElements,
   type TodayTemplates,
 } from '../lib/agenda/render';
+import { isValidEventEditDraft, type EventEditDraft } from '../lib/events/edit';
 
-const invokeMocks = vi.hoisted(() => ({ todayAgenda: vi.fn() }));
-vi.mock('../invoke', () => ({ todayAgenda: invokeMocks.todayAgenda }));
+const invokeMocks = vi.hoisted(() => ({
+  todayProjection: vi.fn(), getTaskById: vi.fn(), setTaskStatus: vi.fn(), editTask: vi.fn(),
+  getEventDetailById: vi.fn(), editEvent: vi.fn(), editRoutedEvent: vi.fn(),
+  newOperationId: vi.fn(() => 'preview-operation'),
+}));
+vi.mock('../invoke', () => ({
+  todayProjection: invokeMocks.todayProjection, getTaskById: invokeMocks.getTaskById,
+  setTaskStatus: invokeMocks.setTaskStatus, editTask: invokeMocks.editTask,
+  getEventDetailById: invokeMocks.getEventDetailById, editEvent: invokeMocks.editEvent,
+  editRoutedEvent: invokeMocks.editRoutedEvent, newOperationId: invokeMocks.newOperationId,
+}));
 vi.mock('../lib/icons', () => ({ initIcons: vi.fn() }));
 
 // ── Fixture factories ─────────────────────────────────────────────────────────
@@ -128,6 +139,31 @@ function makeTodayViewElements(): TodayViewElements {
   return { allDaySection, allDayList, timedSection, timedList, emptyState, loadingState };
 }
 
+function makeConnectedTodayViewElements(): TodayViewElements {
+  const base = makeTodayViewElements();
+  const add = (tagName: string, className: string) => {
+    const node = document.createElement(tagName);
+    node.className = `${className} hidden`;
+    document.body.appendChild(node);
+    return node;
+  };
+  const focusSection = add('section', 'today-focus');
+  const focusList = document.createElement('ul'); focusSection.appendChild(focusList);
+  const attentionSection = add('section', 'today-section');
+  const attentionList = document.createElement('ul'); attentionSection.appendChild(attentionList);
+  const dueSection = add('section', 'today-section');
+  const dueList = document.createElement('ul'); dueSection.appendChild(dueList);
+  const flexibleSection = add('section', 'today-section');
+  const flexibleList = document.createElement('ul'); flexibleSection.appendChild(flexibleList);
+  const contextSection = add('aside', 'today-context');
+  const contextList = document.createElement('ul'); contextSection.appendChild(contextList);
+  const scheduleClear = add('p', 'today-schedule-clear');
+  return {
+    ...base, focusSection, focusList, attentionSection, attentionList, dueSection, dueList,
+    flexibleSection, flexibleList, contextSection, contextList, scheduleClear,
+  };
+}
+
 /** Build minimal TodayTemplates matching the structure in index.html */
 function makeTodayTemplates(): TodayTemplates {
   const eventRowTmpl = document.createElement('template');
@@ -138,7 +174,8 @@ function makeTodayTemplates(): TodayTemplates {
       </div>
       <div class="today-event-row__body">
         <div class="today-event-row__header">
-          <span class="today-event-row__title"></span>
+          <button type="button" class="today-event-row__title"></button>
+          <span class="today-event-row__type"></span>
           <span class="today-event-row__overlap hidden" role="status" aria-label="">
             <span>Overlaps schedule</span>
           </span>
@@ -1096,6 +1133,59 @@ describe('renderTodayView — re-render / stale-row clearing', () => {
   });
 });
 
+describe('renderTodayView — connected projection regions', () => {
+  const agendaTask = (id: string, title: string): AgendaTaskDto => ({
+    id, title, status: 'todo', priority: 'none', due: null, list: 'inbox', position: '', parent: null, agenda_bucket: null,
+  });
+
+  const projection = (overrides: Partial<TodayProjectionDto> = {}): TodayProjectionDto => ({
+    agenda: makeAgendaDto(), current_date: '2026-06-27', is_current_date: true,
+    attention_tasks: [], due_tasks: [], flexible_tasks: [], active_events: [], next_event: null,
+    generated_at_utc: '2026-06-27T10:00:00Z', ...overrides,
+  });
+
+  it('keeps every concurrent active focus event directly reachable', () => {
+    const connected = makeConnectedTodayViewElements();
+    const first = makeAgendaEvent({ id: 'active-one', title: 'First active event' });
+    const second = makeAgendaEvent({ id: 'active-two', title: 'Second active event' });
+    const grouped = groupTodayProjection(projection({
+      agenda: makeAgendaDto({ timed_events: [first, second] }),
+      active_events: [
+        { event_id: first.id, start_utc: 1, end_utc: 2, minutes: 20 },
+        { event_id: second.id, start_utc: 1, end_utc: 3, minutes: 35 },
+      ],
+    }));
+    renderTodayView(connected, templates, grouped, noopNavigate);
+    expect(Array.from(connected.focusList!.querySelectorAll('.today-focus-item__event')).map(item => item.textContent))
+      .toEqual(['First active event', 'Second active event']);
+    expect(connected.focusSection?.classList.contains('hidden')).toBe(false);
+  });
+
+  it('renders task-only work without the empty-day state or invented schedule', () => {
+    const connected = makeConnectedTodayViewElements();
+    const grouped = groupTodayProjection(projection({ due_tasks: [agendaTask('task-only', 'Only real work')] }));
+    renderTodayView(connected, templates, grouped, noopNavigate);
+    expect(connected.emptyState.classList.contains('hidden')).toBe(true);
+    expect(connected.dueSection?.classList.contains('hidden')).toBe(false);
+    expect(connected.dueList?.textContent).toContain('Only real work');
+    expect(connected.contextSection?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('deduplicates connected work by entity and hides the rail when relationships are absent', () => {
+    const connected = makeConnectedTodayViewElements();
+    const linkedTask = { id: 'task-linked', title: 'Shared task' };
+    const linkedNote = { id: 'note-linked', title: 'Prep note' };
+    const first = makeAgendaEvent({ id: 'one', title: 'First event', originating_task: linkedTask, prep_notes: [linkedNote] });
+    const second = makeAgendaEvent({ id: 'two', title: 'Second event', originating_task: linkedTask });
+    renderTodayView(connected, templates, groupTodayProjection(projection({ agenda: makeAgendaDto({ timed_events: [first, second] }) })), noopNavigate);
+    expect(connected.contextList?.querySelectorAll('.today-context-item')).toHaveLength(2);
+    expect(connected.contextList?.textContent).toContain('First event, Second event');
+
+    renderTodayView(connected, templates, groupTodayProjection(projection({ agenda: makeAgendaDto({ timed_events: [makeAgendaEvent()] }) })), noopNavigate);
+    expect(connected.contextSection?.classList.contains('hidden')).toBe(true);
+  });
+});
+
 describe('TodayController — mutation refresh wiring', () => {
   let app: Application;
 
@@ -1107,18 +1197,23 @@ describe('TodayController — mutation refresh wiring', () => {
     document.body.insertAdjacentHTML('beforeend', `
       <section
         data-controller="today"
-        data-action="jin:refresh-today@window->today#refreshAgenda"
+        data-action="jin:refresh-today@window->today#refreshAgenda jin:tasks-changed@window->today#refreshAgenda jin:events-mutated@window->today#refreshAgenda"
         data-today-date-value="2026-06-27"
       >
         <input data-today-target="dateInput" type="date">
         <output data-today-target="dateLabel"></output>
+        <p data-today-target="dateEyebrow"></p>
         <section data-today-target="allDaySection"><ul data-today-target="allDayList"></ul></section>
         <section data-today-target="timedSection"><ul data-today-target="timedList"></ul></section>
         <div data-today-target="emptyState"></div>
         <div data-today-target="loadingState"></div>
       </section>
     `);
-    invokeMocks.todayAgenda.mockReset().mockResolvedValue(makeAgendaDto());
+    invokeMocks.todayProjection.mockReset().mockResolvedValue({
+      agenda: makeAgendaDto(), current_date: '2026-06-27', is_current_date: true,
+      attention_tasks: [], due_tasks: [], flexible_tasks: [], active_events: [], next_event: null,
+      generated_at_utc: '2026-06-27T00:00:00Z',
+    });
     app = Application.start();
     app.register('today', TodayController);
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -1127,14 +1222,412 @@ describe('TodayController — mutation refresh wiring', () => {
   afterEach(() => app.stop());
 
   it('reloads the current date once when the real window mutation event fires', async () => {
-    expect(invokeMocks.todayAgenda).toHaveBeenCalledTimes(1);
-    invokeMocks.todayAgenda.mockClear();
+    expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(1);
+    invokeMocks.todayProjection.mockClear();
 
     window.dispatchEvent(new CustomEvent('jin:refresh-today'));
     await new Promise(resolve => setTimeout(resolve, 0));
 
-    expect(invokeMocks.todayAgenda).toHaveBeenCalledTimes(1);
-    expect(invokeMocks.todayAgenda).toHaveBeenCalledWith('2026-06-27');
-    expect(invokeMocks.todayAgenda.mock.calls[0][0]).not.toBeInstanceOf(Event);
+    expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(1);
+    expect(invokeMocks.todayProjection).toHaveBeenCalledWith('2026-06-27');
+    expect(invokeMocks.todayProjection.mock.calls[0][0]).not.toBeInstanceOf(Event);
+  });
+
+  it('reloads through the same projection path when tasks change', async () => {
+    invokeMocks.todayProjection.mockClear();
+
+    window.dispatchEvent(new CustomEvent('jin:tasks-changed'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(1);
+    expect(invokeMocks.todayProjection).toHaveBeenCalledWith('2026-06-27');
+  });
+
+  it('reloads through the same projection path when synced events mutate', async () => {
+    invokeMocks.todayProjection.mockClear();
+
+    window.dispatchEvent(new CustomEvent('jin:events-mutated'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(1);
+    expect(invokeMocks.todayProjection).toHaveBeenCalledWith('2026-06-27');
+  });
+});
+
+function makeProjection(date: string, title = 'Projection event') {
+  return {
+    agenda: makeAgendaDto({ date, timed_events: [makeAgendaEvent({ id: `evt-${date}`, title })] }),
+    current_date: '2026-06-27',
+    is_current_date: date === '2026-06-27',
+    attention_tasks: [], due_tasks: [], flexible_tasks: [], active_events: [], next_event: null,
+    generated_at_utc: '2026-06-27T10:00:00Z',
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
+async function flushController(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+async function mountLifecycleController(): Promise<{ app: Application; section: HTMLElement; controller: TodayController }> {
+  const controllerTemplates = makeTodayTemplates();
+  controllerTemplates.eventRow.id = 'tmpl-event-row';
+  controllerTemplates.prepNote.id = 'tmpl-prep-note';
+  document.body.append(controllerTemplates.eventRow, controllerTemplates.prepNote);
+  document.body.insertAdjacentHTML('beforeend', `
+    <section data-controller="today" data-section-name="today"
+      data-action="jin:section-activated->today#activateSection jin:refresh-today@window->today#refreshAgenda jin:tasks-changed@window->today#refreshAgenda jin:events-mutated@window->today#refreshAgenda"
+      data-today-date-value="2026-06-27">
+      <input data-today-target="dateInput" data-action="change->today#dateChanged" type="date"><output data-today-target="dateLabel"></output>
+      <p data-today-target="dateEyebrow"></p>
+      <section data-today-target="allDaySection"><ul data-today-target="allDayList"></ul></section>
+      <section data-today-target="timedSection"><ul data-today-target="timedList"></ul></section>
+      <div data-today-target="emptyState"></div><div data-today-target="loadingState"></div>
+    </section>
+  `);
+  const section = document.querySelector('[data-controller="today"]') as HTMLElement;
+  const app = Application.start();
+  app.register('today', TodayController);
+  await flushController();
+  const controller = app.getControllerForElementAndIdentifier(section, 'today') as TodayController;
+  return { app, section, controller };
+}
+
+describe('TodayController — active-section freshness lifecycle', () => {
+  let app: Application | undefined;
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    invokeMocks.todayProjection.mockReset().mockResolvedValue(makeProjection('2026-06-27'));
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-27T10:00:00Z'));
+  });
+
+  afterEach(() => {
+    app?.stop();
+    app = undefined;
+    vi.useRealTimers();
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+  });
+
+  it('refreshes on minute boundaries, pauses hidden, and resumes immediately when visible', async () => {
+    ({ app } = await mountLifecycleController());
+    expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(60_025);
+    expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(2);
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(2);
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushController();
+    expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(3);
+  });
+
+  it('cancels on route leave and reloads only after the router activates Today again', async () => {
+    const mounted = await mountLifecycleController();
+    app = mounted.app;
+    await flushController();
+    mounted.section.classList.add('hidden');
+    await flushController();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(1);
+
+    mounted.section.classList.remove('hidden');
+    await flushController();
+    expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(1);
+    // Router detail carries an object id only; Today uses its visible section state.
+    mounted.section.dispatchEvent(new CustomEvent('jin:section-activated', { detail: { id: 'task-42' } }));
+    await flushController();
+    expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let a disconnected deferred request render or restart a timer', async () => {
+    const pending = deferred<ReturnType<typeof makeProjection>>();
+    invokeMocks.todayProjection.mockReset().mockReturnValue(pending.promise);
+    const mounted = await mountLifecycleController();
+    app = mounted.app;
+    await flushController();
+    expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(1);
+
+    mounted.section.remove();
+    await flushController();
+    pending.resolve(makeProjection('2026-06-27', 'Late response'));
+    await flushController();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(mounted.section.querySelector('.today-event-row')).toBeNull();
+    expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the newest successful projection and its date controls after a stale response and failed date refresh', async () => {
+    const mounted = await mountLifecycleController();
+    app = mounted.app;
+    await flushController();
+    const old = deferred<ReturnType<typeof makeProjection>>();
+    const newest = deferred<ReturnType<typeof makeProjection>>();
+    invokeMocks.todayProjection.mockReset()
+      .mockReturnValueOnce(old.promise)
+      .mockReturnValueOnce(newest.promise)
+      .mockRejectedValueOnce(new Error('temporary outage'));
+
+    void mounted.controller.loadAgenda('2026-06-28');
+    void mounted.controller.loadAgenda('2026-06-29');
+    newest.resolve(makeProjection('2026-06-29', 'Newest content'));
+    await flushController();
+    old.resolve(makeProjection('2026-06-28', 'Stale content'));
+    await flushController();
+    expect(mounted.section.querySelector('.today-event-row__title')?.textContent).toBe('Newest content');
+    expect((mounted.section.querySelector('[data-today-target="dateInput"]') as HTMLInputElement).value).toBe('2026-06-29');
+
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await mounted.controller.loadAgenda('2026-06-30');
+    expect(mounted.section.querySelector('.today-event-row__title')?.textContent).toBe('Newest content');
+    expect((mounted.section.querySelector('[data-today-target="dateInput"]') as HTMLInputElement).value).toBe('2026-06-29');
+    error.mockRestore();
+  });
+
+  it('restores the native date input to the rendered day when a date change fails', async () => {
+    const mounted = await mountLifecycleController();
+    app = mounted.app;
+    const input = mounted.section.querySelector('[data-today-target="dateInput"]') as HTMLInputElement;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(input.value).toBe('2026-06-27');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    invokeMocks.todayProjection.mockReset().mockRejectedValue(new Error('temporary outage'));
+
+    input.value = '2026-06-30';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(input.value).toBe('2026-06-27');
+    expect(mounted.section.querySelector('[data-today-target="dateLabel"]')?.textContent).not.toBe('');
+    error.mockRestore();
+  });
+});
+
+function makePreviewTask(overrides: Partial<TaskDto> = {}): TaskDto {
+  return {
+    id: 'task-preview', title: 'Preview task', status: 'todo', priority: 'medium', due: '2026-06-27', list: 'Work',
+    completed_at: null, deleted_at: null, created: '2026-06-01T00:00:00Z', updated: '2026-06-01T00:00:00Z', backlinks: [],
+    ...overrides,
+  };
+}
+
+function makePreviewDetail(overrides: Partial<EventDetailDto['event']> = {}, canEdit = true): EventDetailDto {
+  return {
+    event: {
+      ...makeAgendaEvent({ id: 'event-preview', title: 'Preview event' }),
+      location: 'Studio', description: 'Keep this description', recurrence: [], sequence: 1,
+      ...overrides,
+    } as EventDetailDto['event'],
+    edit_token: 'event-preview:1',
+    capabilities: {
+      display_kind: 'event', can_edit: canEdit, can_delete: canEdit, read_only_reason: canEdit ? null : 'external_authority_or_source',
+      can_return_task_to_flexible: false, originating_task: null,
+    },
+  };
+}
+
+describe('TodayController — task and event previews', () => {
+  let app: Application | undefined;
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    Object.values(invokeMocks).forEach(mock => { if (typeof mock === 'function') mock.mockReset?.(); });
+    invokeMocks.newOperationId.mockReturnValue('preview-operation');
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+      configurable: true,
+      value: function show(this: HTMLDialogElement) { this.setAttribute('open', ''); },
+    });
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', {
+      configurable: true,
+      value: function close(this: HTMLDialogElement) { this.removeAttribute('open'); },
+    });
+  });
+
+  afterEach(() => {
+    app?.stop();
+    app = undefined;
+    delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).showModal;
+    delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).close;
+  });
+
+  async function openEventPreview(detail: EventDetailDto): Promise<{ section: HTMLElement; controller: TodayController }> {
+    const projection = makeProjection('2026-06-27', detail.event.title);
+    projection.agenda.timed_events[0].id = detail.event.id;
+    invokeMocks.todayProjection.mockResolvedValue(projection);
+    const mounted = await mountLifecycleController();
+    app = mounted.app;
+    await flushController();
+    (mounted.section.querySelector('.today-event-row__title') as HTMLButtonElement).click();
+    await flushController();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    return { section: mounted.section, controller: mounted.controller };
+  }
+
+  it('keeps Today visible, saves a compact event edit, and refreshes the rendered title', async () => {
+    const first = makeProjection('2026-06-27', 'Preview event');
+    const refreshed = makeProjection('2026-06-27', 'Renamed event');
+    const detail = makePreviewDetail();
+    const canonical = makePreviewDetail({ title: 'Renamed event', location: 'Library' });
+    invokeMocks.todayProjection.mockResolvedValueOnce(first).mockResolvedValue(refreshed);
+    invokeMocks.getEventDetailById.mockResolvedValueOnce(detail).mockResolvedValueOnce(canonical);
+    invokeMocks.editEvent.mockResolvedValue({ event: canonical.event, no_op: false });
+    const mounted = await mountLifecycleController();
+    app = mounted.app;
+    await flushController();
+
+    (mounted.section.querySelector('.today-event-row__title') as HTMLButtonElement).click();
+    await flushController();
+    expect(document.querySelector('.today-preview__go')?.textContent).toBe('Go to event');
+    expect(mounted.section.classList.contains('hidden')).toBe(false);
+
+    const title = document.querySelector<HTMLInputElement>('.today-preview [name="title"]')!;
+    const location = document.querySelector<HTMLInputElement>('.today-preview [name="location"]')!;
+    title.value = 'Renamed event';
+    location.value = 'Library';
+    document.querySelector<HTMLButtonElement>('.today-preview [name="event-save"]')!.focus();
+    document.querySelector<HTMLFormElement>('.today-preview__form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushController();
+    await flushController();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(invokeMocks.editEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event_id: 'event-preview', title: 'Renamed event', location: 'Library',
+      start: detail.event.start, end: detail.event.end, description: 'Keep this description',
+    }));
+    expect(mounted.section.querySelector('.today-event-row__title')?.textContent).toBe('Renamed event');
+    expect(mounted.section.classList.contains('hidden')).toBe(false);
+  });
+
+  it('opens a task preview and keeps a failed task mutation visible for retry', async () => {
+    const projection = makeProjection('2026-06-27', 'Event with task');
+    projection.agenda.timed_events[0].originating_task = { id: 'task-preview', title: 'Preview task' };
+    invokeMocks.todayProjection.mockResolvedValue(projection);
+    invokeMocks.getTaskById.mockResolvedValue(makePreviewTask());
+    invokeMocks.setTaskStatus.mockRejectedValue(new Error('offline'));
+    const mounted = await mountLifecycleController();
+    app = mounted.app;
+    await flushController();
+
+    (mounted.section.querySelector('.today-event-row__task-link') as HTMLAnchorElement).click();
+    await flushController();
+    expect(document.querySelector('.today-preview__go')?.textContent).toBe('Go to task');
+    (document.querySelector('.today-preview__controls .btn-secondary') as HTMLButtonElement).click();
+    await flushController();
+
+    expect(invokeMocks.setTaskStatus).toHaveBeenCalledWith('task-preview', 'done');
+    expect(document.querySelector('.today-preview__message')?.textContent).toContain('Could not update');
+    expect(document.querySelector('#jin-modal-root dialog')).not.toBeNull();
+  });
+
+  it('gates the editor from provider capabilities and ignores a detail result after close', async () => {
+    const projection = makeProjection('2026-06-27', 'Read-only event');
+    invokeMocks.todayProjection.mockResolvedValue(projection);
+    const pending = deferred<EventDetailDto>();
+    invokeMocks.getEventDetailById.mockReturnValueOnce(pending.promise);
+    const mounted = await mountLifecycleController();
+    app = mounted.app;
+    await flushController();
+    (mounted.section.querySelector('.today-event-row__title') as HTMLButtonElement).click();
+    await flushController();
+    (document.querySelector('.modal-close-btn') as HTMLButtonElement).click();
+    pending.resolve(makePreviewDetail({}, false));
+    await flushController();
+    await Promise.resolve();
+
+    expect(document.querySelector('#jin-modal-root dialog')).toBeNull();
+    expect(invokeMocks.editEvent).not.toHaveBeenCalled();
+  });
+
+  it('uses the exact routed edit identity and only a provider-allowed recurrence scope', async () => {
+    const detail = makePreviewDetail({
+      sync_context: {
+        provider: 'google', account_id: 'account-9', account_alias: 'Work', calendar_id: 'calendar-7',
+        calendar_name: 'Primary', access_role: 'writer', writable: true, state: 'synced',
+      },
+    });
+    detail.capabilities.recurrence_scopes = ['entire_series'];
+    invokeMocks.editRoutedEvent.mockResolvedValue(detail.event);
+    invokeMocks.getEventDetailById.mockResolvedValueOnce(detail).mockResolvedValueOnce(detail);
+    const { controller } = await openEventPreview(detail);
+    const preview = controller as unknown as {
+      previewDraft: EventEditDraft;
+      saveEventPreview(): Promise<void>;
+    };
+    preview.previewDraft.title = 'Routed rename';
+
+    await preview.saveEventPreview();
+
+    expect(invokeMocks.getEventDetailById).toHaveBeenCalledTimes(2);
+    expect(invokeMocks.editRoutedEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event_id: 'event-preview', edit_token: 'event-preview:1', operation_id: 'preview-operation',
+      account_id: 'account-9', calendar_id: 'calendar-7', recurrence_scope: 'entire_series', title: 'Routed rename',
+    }));
+    expect(invokeMocks.editEvent).not.toHaveBeenCalled();
+  });
+
+  it('rebuilds a stale preview from canonical time and description while retaining only title and location edits', async () => {
+    const detail = makePreviewDetail({ description: 'Original description' });
+    const canonical = makePreviewDetail({
+      start: '2026-06-28T14:00:00Z', end: '2026-06-28T15:30:00Z',
+      description: 'Canonical description', location: 'Canonical room', title: 'Canonical title',
+    });
+    canonical.edit_token = 'event-preview:2';
+    invokeMocks.editEvent.mockRejectedValue({
+      code: 4, kind: 'sync_conflict', message: 'changed', retriable: false,
+      details: { type: 'stale_event', event_id: 'event-preview' },
+    });
+    invokeMocks.getEventDetailById.mockResolvedValueOnce(detail).mockResolvedValueOnce(canonical);
+    const { controller } = await openEventPreview(detail);
+    const preview = controller as unknown as {
+      previewDraft: EventEditDraft;
+      saveEventPreview(): Promise<void>;
+    };
+    preview.previewDraft.title = 'My title';
+    preview.previewDraft.location = 'My location';
+    expect(isValidEventEditDraft(preview.previewDraft)).toBe(true);
+
+    await preview.saveEventPreview();
+
+    expect(invokeMocks.editEvent).toHaveBeenCalledTimes(1);
+    expect(invokeMocks.getEventDetailById).toHaveBeenCalledTimes(2);
+    expect(preview.previewDraft).toMatchObject({
+      title: 'My title', location: 'My location', description: 'Canonical description',
+      baseline: { start: '2026-06-28T14:00:00Z', end: '2026-06-28T15:30:00Z' },
+    });
+  });
+
+  it('announces a committed save after close without reviving the preview', async () => {
+    const detail = makePreviewDetail();
+    const mutation = deferred<{ event: EventDetailDto['event']; no_op: boolean }>();
+    invokeMocks.editEvent.mockReturnValue(mutation.promise);
+    invokeMocks.getEventDetailById.mockResolvedValueOnce(detail).mockResolvedValueOnce(detail);
+    const { controller } = await openEventPreview(detail);
+    const eventsMutated = vi.fn();
+    window.addEventListener('jin:events-mutated', eventsMutated, { once: true });
+    const preview = controller as unknown as { saveEventPreview(): Promise<void> };
+    const save = preview.saveEventPreview();
+    await flushController();
+    (document.querySelector('.modal-close-btn') as HTMLButtonElement).click();
+    mutation.resolve({ event: detail.event, no_op: false });
+    await save;
+    await Promise.resolve();
+
+    expect(eventsMutated).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('#jin-modal-root dialog')).toBeNull();
   });
 });

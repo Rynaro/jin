@@ -338,10 +338,10 @@ export class JinModal {
    *
    * Lifecycle: onClose() → dialog.close() → restore prior focus.
    */
-  close(): void {
+  close(options: { restoreFocus?: boolean } = {}): void {
     this.onClose();
     this.dialog.close();
-    if (this._priorFocus instanceof HTMLElement) {
+    if ((options.restoreFocus ?? true) && this._priorFocus instanceof HTMLElement) {
       this._priorFocus.focus();
     }
   }

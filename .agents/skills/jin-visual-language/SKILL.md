@@ -29,6 +29,20 @@ editorial/brand titles; keep controls, metadata, and prose in the text face.
 Keep seal/brand, capture, and semantic danger roles distinct; reuse existing
 seal-based explicit-action primitives where the surface already has them.
 
+For Today, treat `TodayProjectionDto` as the presentation contract. Keep the
+legacy `AgendaDto`/`today_agenda` path compatible, let core's display timezone
+drive date and focus decisions, and preserve the projection's disjoint
+attention/due/flexible lanes. Render every active focus item and the real next
+event when present; never derive task times or durations in the browser. Keep
+promoted task commitments as event rows with event identity, and deduplicate
+Connected work by linked entity while retaining its associated agenda event
+ids. Hide that rail when the projection has no relationships. Event titles and
+task links open an in-place, preview-first modal with an explicit path to the
+full detail route; note links keep their existing navigation. The timed agenda
+uses one continuous, undivided rail with each marker aligned to its event
+content. Capture and every preview control must remain real controls with their
+existing handlers.
+
 For verification, run focused behavior tests when interaction changes, the
 relevant style/token checks, and a proportional visual review. Exercise the
 actual responsive seams and preference states involved, including large text,

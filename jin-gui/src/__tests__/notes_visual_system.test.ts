@@ -67,7 +67,7 @@ describe('Continuous Ink Workspace', () => {
   it('uses the display voice only for prominent identity and title surfaces', () => {
     expect(typography).toContain('.text-display-title');
     expect(typography).toContain('font-family: var(--font-display)');
-    expect(today).toMatch(/\.today-date-nav__label \{[\s\S]*?font-family: var\(--font-display\);/);
+    expect(today).toMatch(/\.today-agenda-intro__title \{[\s\S]*?font-family: var\(--font-display\);/);
     expect(settings).toMatch(/\.settings-view__heading \{[\s\S]*?font-family: var\(--font-display\);/);
     expect(forms).toMatch(/\.action-dialog__title \{[\s\S]*?font-family: var\(--font-display\);/);
     expect(browse).toMatch(/\.notes-detail-pane \.browse-detail__title--input\.jin-title-field \{[\s\S]*?font-family: var\(--font-display\);/);

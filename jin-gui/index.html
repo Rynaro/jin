@@ -204,15 +204,21 @@
           class="jin-content-body"
           aria-label="Today's agenda"
           data-controller="today"
-          data-action="jin:refresh-today@window->today#refreshAgenda"
+          data-action="jin:section-activated->today#activateSection jin:refresh-today@window->today#refreshAgenda jin:tasks-changed@window->today#refreshAgenda jin:events-mutated@window->today#refreshAgenda"
           data-today-date-value=""
           data-router-target="section"
           data-section-name="today"
         >
           <!-- ── Date navigation toolbar ──────────────────────────────────── -->
           <div class="today-agenda-intro">
-            <p class="today-agenda-intro__eyebrow">Living agenda</p>
-            <p class="today-agenda-intro__detail">A clear view of the time you have.</p>
+            <div>
+              <p data-today-target="dateEyebrow" class="today-agenda-intro__eyebrow">Your selected day</p>
+              <h1 class="today-agenda-intro__title">Today</h1>
+              <p class="today-agenda-intro__detail">A connected desk for the work already in motion.</p>
+            </div>
+            <button type="button" class="today-capture-btn tap-target" data-action="click->capture#open" aria-label="Capture a task or note">
+              <i data-lucide="plus" aria-hidden="true"></i><span>Capture</span>
+            </button>
           </div>
           <div
             class="today-date-nav"
@@ -296,6 +302,13 @@
             <p class="text-callout">Nothing scheduled for this day.</p>
           </div>
 
+          <div class="today-desk">
+            <div class="today-desk__main">
+          <section data-today-target="focusSection" class="today-focus hidden" aria-labelledby="today-focus-heading">
+            <h2 id="today-focus-heading" class="today-section__heading">Focus</h2>
+            <ul data-today-target="focusList" class="today-focus-list" role="list" aria-label="Current and upcoming events"></ul>
+          </section>
+
           <!-- ── All-day bucket ────────────────────────────────────────────── -->
           <section
             data-today-target="allDaySection"
@@ -325,6 +338,27 @@
               aria-label="Scheduled events list"
             ></ul>
           </section>
+
+          <p data-today-target="scheduleClear" class="today-schedule-clear hidden" role="status">No more scheduled events.</p>
+
+          <section data-today-target="attentionSection" class="today-section hidden" aria-labelledby="today-attention-heading">
+            <h2 id="today-attention-heading" class="today-section__heading">Needs attention</h2>
+            <ul data-today-target="attentionList" class="today-task-list" role="list" aria-label="Tasks needing attention"></ul>
+          </section>
+          <section data-today-target="dueSection" class="today-section hidden" aria-labelledby="today-due-heading">
+            <h2 id="today-due-heading" class="today-section__heading">Due this day</h2>
+            <ul data-today-target="dueList" class="today-task-list" role="list" aria-label="Tasks due on this day"></ul>
+          </section>
+          <section data-today-target="flexibleSection" class="today-section hidden" aria-labelledby="today-flexible-heading">
+            <h2 id="today-flexible-heading" class="today-section__heading">Anytime</h2>
+            <ul data-today-target="flexibleList" class="today-task-list" role="list" aria-label="Flexible tasks"></ul>
+          </section>
+            </div>
+            <aside data-today-target="contextSection" class="today-context hidden" aria-labelledby="today-context-heading">
+              <h2 id="today-context-heading" class="today-section__heading">Connected work</h2>
+              <ul data-today-target="contextList" class="today-context-list" role="list" aria-label="Tasks and notes connected to today’s events"></ul>
+            </aside>
+          </div>
         </section>
 
         <!--
@@ -2515,7 +2549,8 @@
           <div class="today-event-row__body">
             <!-- Header: title + source badge + recurring flag -->
             <div class="today-event-row__header">
-              <span class="today-event-row__title text-headline"></span>
+              <button type="button" class="today-event-row__title text-headline"></button>
+              <span class="today-event-row__type text-caption1"></span>
 
               <span class="today-event-row__overlap hidden" role="status" aria-label="">
                 <i data-lucide="list" aria-hidden="true"></i>

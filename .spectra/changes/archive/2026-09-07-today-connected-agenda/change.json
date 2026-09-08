@@ -1,0 +1,205 @@
+{
+  "esl_version": "1.1",
+  "change_id": "today-connected-agenda",
+  "status": "archived",
+  "tier": "full",
+  "maker": "vivi",
+  "checker": "root",
+  "acceptance_checks": [
+    {
+      "id": "AC-TODAY-001",
+      "given": "an open task is overdue under date-only or datetime semantics in the configured display timezone",
+      "then": "the current-day projection SHALL place it in attention",
+      "verify_method": "fixed-clock Rust tests crossing UTC and display-timezone date boundaries"
+    },
+    {
+      "id": "AC-TODAY-002",
+      "given": "an open task due value localizes to the selected date and it is not in attention",
+      "then": "the projection SHALL place it in due work",
+      "verify_method": "Rust tests for date-only and RFC 3339 due values on current, past, and future selected dates"
+    },
+    {
+      "id": "AC-TODAY-003",
+      "given": "the selected date is the authoritative current date and an open task is explicitly flexible",
+      "then": "the projection SHALL place it in flexible work unless a higher-precedence lane contains it",
+      "verify_method": "Rust tests for flexible-only and flexible-plus-due tasks"
+    },
+    {
+      "id": "AC-TODAY-004",
+      "then": "completed, cancelled, deleted, or invalid-due tasks SHALL not enter a Today task lane through due evaluation",
+      "verify_method": "Rust eligibility tests over every excluded state and invalid due value"
+    },
+    {
+      "id": "AC-TODAY-005",
+      "given": "a task is an originating task represented by an event in the selected agenda",
+      "then": "the projection SHALL exclude it from standalone task lanes",
+      "verify_method": "core and frontend tests asserting one visible representation for the task id"
+    },
+    {
+      "id": "AC-TODAY-006",
+      "then": "standalone Today task lane id sets SHALL be pairwise disjoint",
+      "verify_method": "Rust precedence test over attention, due, and flexible eligibility"
+    },
+    {
+      "id": "AC-TODAY-007",
+      "given": "the selected date differs from the authoritative current date",
+      "then": "attention, flexible work, active focus, and next focus SHALL be absent",
+      "verify_method": "fixed-clock Rust tests for past and future dates"
+    },
+    {
+      "id": "AC-TODAY-008",
+      "given": "multiple valid timed events contain the current instant",
+      "then": "active focus SHALL include every concurrent event in stable start/end/id order",
+      "verify_method": "fixed-clock Rust overlap test plus DOM assertion that every focus event remains directly accessible"
+    },
+    {
+      "id": "AC-TODAY-009",
+      "given": "a valid timed event starts later on the current date",
+      "then": "next focus SHALL identify the earliest resolved future event",
+      "verify_method": "fixed-clock Rust test with unsorted anchored and floating fixtures"
+    },
+    {
+      "id": "AC-TODAY-010",
+      "given": "an interval is invalid, unresolved, all-day, cancelled, or outside the selected date",
+      "when": "focus is derived",
+      "then": "that interval SHALL not appear in active or next focus",
+      "verify_method": "Rust exclusion tests"
+    },
+    {
+      "id": "AC-TODAY-011",
+      "given": "a floating or anchored event crosses a timezone or daylight-saving boundary",
+      "then": "core focus SHALL resolve it through Jin's explicit timezone policy before instant comparison",
+      "verify_method": "fixed-clock Rust tests for offset crossing, DST overlap, and DST gap"
+    },
+    {
+      "id": "AC-TODAY-012",
+      "then": "focus minute values SHALL be nonnegative and derived from core-resolved instants",
+      "verify_method": "Rust boundary tests at before, exact, within, and after interval times"
+    },
+    {
+      "id": "AC-TODAY-013",
+      "given": "Today displays the authoritative current date",
+      "when": "a minute boundary arrives while the document is visible",
+      "then": "Today SHALL reload one authoritative projection",
+      "verify_method": "fake-timer controller test"
+    },
+    {
+      "id": "AC-TODAY-014",
+      "given": "Today is connected",
+      "when": "document visibility changes",
+      "then": "refresh timing SHALL pause while hidden and refresh immediately when visible",
+      "verify_method": "controller lifecycle test including disconnect cleanup"
+    },
+    {
+      "id": "AC-TODAY-015",
+      "given": "two projection requests resolve out of order",
+      "when": "the active selected date has changed",
+      "then": "the older response SHALL not overwrite the newer date's content",
+      "verify_method": "deferred-promise controller race test"
+    },
+    {
+      "id": "AC-TODAY-016",
+      "given": "a task or event mutation succeeds elsewhere in Jin",
+      "when": "its existing mutation signal reaches Today",
+      "then": "Today SHALL refresh through the same projection path",
+      "verify_method": "Stimulus integration tests for jin:tasks-changed and event refresh"
+    },
+    {
+      "id": "AC-TODAY-017",
+      "given": "the Today header is visible",
+      "when": "Capture is activated",
+      "then": "the existing Capture dialog SHALL open",
+      "verify_method": "static wiring assertion and browser interaction"
+    },
+    {
+      "id": "AC-TODAY-018",
+      "given": "active or next focus exists",
+      "then": "the focus region SHALL show real phase, event title, time range, minute value, and concurrent state from the projection",
+      "verify_method": "DOM tests for one active, concurrent active, next-only, and focus-empty fixtures"
+    },
+    {
+      "id": "AC-TODAY-019",
+      "then": "standalone task rows SHALL not display invented start times, end times, or durations",
+      "verify_method": "DOM negative assertions over attention, due, and flexible fixtures"
+    },
+    {
+      "id": "AC-TODAY-020",
+      "given": "an event has an originating task",
+      "then": "its timeline row SHALL expose a square marker and Task time block label while retaining event identity",
+      "verify_method": "DOM test for marker, visible type, data-event-id, event navigation, and task link"
+    },
+    {
+      "id": "AC-TODAY-021",
+      "given": "a user activates an event, task, or prep-note control",
+      "when": "Today dispatches navigation",
+      "then": "Jin SHALL open the corresponding existing Events, Tasks, or Notes detail route",
+      "verify_method": "Today and router integration tests including nested-link isolation"
+    },
+    {
+      "id": "AC-TODAY-022",
+      "given": "agenda events carry originating-task or prep-note relationships",
+      "then": "Connected work SHALL deduplicate real linked task/note entities and associate their actual agenda events.",
+      "verify_method": "DOM tests for task-only, notes-only, combined, and unrelated events"
+    },
+    {
+      "id": "AC-TODAY-023",
+      "given": "no agenda event carries a task or prep-note relationship",
+      "then": "Connected work SHALL be hidden when no real relationships exist.",
+      "verify_method": "DOM test for relationship-empty projection"
+    },
+    {
+      "id": "AC-TODAY-024",
+      "given": "no future timed event remains while standalone task work remains",
+      "then": "Today SHALL describe only the schedule as clear",
+      "verify_method": "DOM copy assertion with a tasks-only fixture"
+    },
+    {
+      "id": "AC-TODAY-025",
+      "then": "Today SHALL preserve real headings, lists, buttons, links, live status, accessible names, keyboard focus, event metadata, and source labels",
+      "verify_method": "static/DOM assertions, keyboard browser walkthrough, and automated accessibility scan"
+    },
+    {
+      "id": "AC-TODAY-026",
+      "given": "standard desktop width",
+      "then": "Today SHALL present a dominant continuous agenda field and readable Connected work rail without generic content cards",
+      "verify_method": "Playwright geometry and screenshot review at 1440x900"
+    },
+    {
+      "id": "AC-TODAY-027",
+      "given": "a viewport of 390 CSS pixels or less",
+      "then": "Today SHALL stack header, agenda, task lanes, and Connected work without document-level horizontal overflow",
+      "verify_method": "Playwright checks at 390x844 and 320x700"
+    },
+    {
+      "id": "AC-TODAY-028",
+      "given": "accessibility text scale is active",
+      "then": "Today SHALL reflow intrinsically without fixed-height clipping or document-level horizontal overflow",
+      "verify_method": "Playwright checks at 390x844 and 1280x800 with accessibility text scale"
+    },
+    {
+      "id": "AC-TODAY-029",
+      "given": "dark appearance, increased contrast, forced colors, reduced transparency, reduced motion, or coarse pointer input is active",
+      "then": "Today SHALL retain legibility, non-color cues, preference behavior, and usable targets",
+      "verify_method": "focused CSS assertions and Playwright preference matrix"
+    },
+    {
+      "id": "AC-TODAY-030",
+      "then": "existing AgendaDto fields and today_agenda command behavior SHALL remain compatible",
+      "verify_method": "Rust bridge tests, TypeScript DTO tests, and existing Today tests"
+    },
+    {
+      "id": "AC-TODAY-031",
+      "then": "the implementation SHALL add no runtime dependency, persistence field, schema migration, or raw component color literal",
+      "verify_method": "manifest/schema diff inspection and CSS lint"
+    },
+    {
+      "id": "AC-TODAY-032",
+      "then": "focused tests, full frontend tests, Rust workspace tests, CSS lint, production build, repository verification, and diff checks SHALL pass",
+      "verify_method": "recorded command outputs indexed to this criterion"
+    }
+  ],
+  "spec_ref": "spec.md",
+  "has_code": true,
+  "drift_checked": true,
+  "archive_path": ".spectra/changes/archive/2026-09-07-today-connected-agenda"
+}

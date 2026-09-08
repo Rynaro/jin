@@ -49,6 +49,7 @@ pub fn run(root: std::path::PathBuf) {
         .invoke_handler(tauri::generate_handler![
             // Agenda (hero view — VG-GUI-2)
             commands::agenda::today_agenda,
+            commands::agenda::today_projection,
             // Vault-managed content-addressed attachments
             commands::assets::import_attachment,
             commands::assets::list_attachments,

@@ -33,12 +33,12 @@
   var taskBase = { status: 'todo', priority: 'none', due: null, list: 'inbox', completed_at: null, deleted_at: null, created: NOW, updated: NOW, backlinks: [], body: '', section_id: null, parent: null, tags: [], position: 'V', reminders: [], agenda_bucket: null };
   function task(fields) { return Object.assign({}, taskBase, fields); }
   var tasks = [
-    task({ id: 't1', title: 'Reply to the design review email with the complete workspace rationale', body: 'Document the continuous workspace rationale and verify the interaction details.', list: 'work', section_id: 's1', priority: 'high', due: '2026-06-28', tags: ['email', 'urgent'], position: 'V' }),
-    task({ id: 't2', title: 'Draft Q3 planning doc', list: 'work', section_id: 's1', priority: 'medium', due: '2026-07-05T14:00:00Z', tags: ['email'], position: 'W', agenda_bucket: 'flexible' }),
+    task({ id: 't1', title: 'Reply to the design review email with the complete workspace rationale', body: 'Document the continuous workspace rationale and verify the interaction details.', list: 'work', section_id: 's1', priority: 'high', due: '2026-08-19', tags: ['email', 'urgent'], position: 'V' }),
+    task({ id: 't2', title: 'Draft Q3 planning doc', list: 'work', section_id: 's1', priority: 'medium', due: '2026-08-20T14:00:00Z', tags: ['email'], position: 'W', agenda_bucket: 'flexible' }),
     task({ id: 't3', title: 'Prepare stakeholder notes', list: 'work', section_id: 's2', status: 'doing', priority: 'low', position: 'X' }),
     task({ id: 't4', title: 'Water the plants', list: 'home', priority: 'low', position: 'Y' }),
     task({ id: 't5', title: 'Renew library books', list: 'home', status: 'done', completed_at: NOW, position: 'Z' }),
-    task({ id: 't6', title: 'Book dentist appointment', list: 'inbox', position: 'a0' })
+    task({ id: 't6', title: 'Book dentist appointment', list: 'inbox', position: 'a0', agenda_bucket: 'flexible' })
   ];
   var folders = [
     { path: 'Field Notes', name: 'Field Notes', note_count: 2 },
@@ -156,6 +156,23 @@
     return 'fixture-event:' + item.id + ':' + item.sequence;
   }
 
+  function syncTodayProjectionEvent(updatedEvent) {
+    if (!fixtures || !fixtures.today_projection) return;
+    var agenda = fixtures.today_projection.agenda;
+    [agenda.all_day_events, agenda.timed_events].forEach(function syncAgendaRows(rows) {
+      rows.forEach(function syncAgendaRow(row) {
+        if (row.id !== updatedEvent.id) return;
+        row.title = updatedEvent.title;
+        row.start = updatedEvent.start;
+        row.end = updatedEvent.end;
+        row.is_all_day = updatedEvent.is_all_day;
+        row.start_tzid = updatedEvent.start_tzid;
+        row.floating = updatedEvent.floating;
+        row.updated = updatedEvent.updated;
+      });
+    });
+  }
+
   function attachNoteBacklink(noteId, eventId, edgeType) {
     var sourceNote = notes.find(function findSourceNote(item) { return item.id === noteId; });
     if (!sourceNote) throw new Error('Note not found: ' + noteId);
@@ -191,6 +208,24 @@
     app_config: { root_path: '/tmp', display_tz: 'UTC', calendar_id: null, schema_version: 3 },
     get_config: { root_path: '/tmp', display_tz: 'UTC', calendar_id: null, schema_version: 3 }
   };
+  function todayTask(id, title, due, bucket) {
+    return { id: id, title: title, status: 'todo', priority: 'high', due: due, list: 'Work', position: id, parent: null, agenda_bucket: bucket || null };
+  }
+  fixtures.today_projection = {
+    agenda: clone(fixtures.today_agenda), current_date: '2026-08-20', is_current_date: true,
+    attention_tasks: [todayTask('t1', 'Reply to the design review email with the complete workspace rationale', '2026-08-19', null)],
+    due_tasks: [todayTask('t2', 'Draft Q3 planning doc', '2026-08-20', null)],
+    flexible_tasks: [todayTask('t6', 'Book dentist appointment', null, 'flexible')],
+    active_events: [{ event_id: 'e1', start_utc: 1787216400, end_utc: 1787221800, minutes: 35 }],
+    next_event: { event_id: 'e2', start_utc: 1787220000, end_utc: 1787220900, minutes: 20 },
+    generated_at_utc: NOW
+  };
+  fixtures.today_projection.agenda.timed_events.push({
+    id: 'e9', title: 'Prepare stakeholder notes', start: '2026-08-20T12:15:00', end: '2026-08-20T13:00:00', is_all_day: false,
+    start_tzid: null, floating: false, status: 'confirmed', source: 'jin', authority: 'jin', ical_uid: null,
+    derived_from: 't3', recurrence_unexpanded: false, created: NOW, updated: NOW, display_start: '12:15',
+    originating_task: { id: 't3', title: 'Prepare stakeholder notes' }, prep_notes: [{ id: 'n3', title: 'Nanquim studies' }]
+  });
   var notificationState = {
     platform: 'macos', permission: 'prompt',
     reason: 'macOS has not asked for notification permission yet.',
@@ -364,6 +399,14 @@
         if (input.clear_parent) tasks[taskIndex].parent = null;
         tasks[taskIndex].updated = NOW;
         return Promise.resolve(clone(tasks[taskIndex]));
+      }
+      if (cmd === 'set_task_status') {
+        var statusTask = tasks.find(function findStatusTask(item) { return item.id === options.id; });
+        if (!statusTask) return Promise.reject(new Error('Task not found: ' + options.id));
+        statusTask.status = String(options.status || 'todo');
+        statusTask.completed_at = statusTask.status === 'done' ? NOW : null;
+        statusTask.updated = NOW;
+        return Promise.resolve(clone(statusTask));
       }
       if (cmd === 'list_notes') {
         var matchingNotes = notes.filter(function matchesNote(item) {
@@ -718,6 +761,7 @@
           location: editInput.location === undefined ? null : editInput.location,
           sequence: original.sequence + 1, updated: NOW
         });
+        syncTodayProjectionEvent(events[editIndex]);
         fixtures.list_events = events;
         var editResult = { event: events[editIndex], no_op: false };
         eventEditOperations[editInput.operation_id] = { request: editRequest, result: clone(editResult) };
@@ -749,6 +793,7 @@
           sequence: routedOriginal.sequence + 1, updated: NOW,
           sync_context: Object.assign({}, routedOriginal.sync_context, { state: 'pending' })
         });
+        syncTodayProjectionEvent(events[routedEditIndex]);
         fixtures.list_events = events;
         return Promise.resolve(clone(events[routedEditIndex]));
       }
@@ -917,6 +962,30 @@
           completeMutation.item.updated_at = NOW;
           return Promise.resolve(clone(completeMutation.item));
         } catch (completeError) { return Promise.reject(completeError); }
+      }
+      if (cmd === 'today_projection') {
+        var projection = clone(fixtures.today_projection);
+        function activeTodayTask(task) {
+          var source = tasks.find(function matchingTask(item) { return item.id === task.id; });
+          return source && (source.status === 'todo' || source.status === 'doing') && source.deleted_at === null;
+        }
+        projection.attention_tasks = projection.attention_tasks.filter(activeTodayTask);
+        projection.due_tasks = projection.due_tasks.filter(activeTodayTask);
+        projection.flexible_tasks = projection.flexible_tasks.filter(activeTodayTask);
+        var requestedDate = options.date || projection.current_date;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) return Promise.reject(new Error('invalid date'));
+        projection.agenda.date = requestedDate;
+        projection.is_current_date = requestedDate === projection.current_date;
+        if (!projection.is_current_date) {
+          projection.attention_tasks = [];
+          projection.flexible_tasks = [];
+          projection.active_events = [];
+          projection.next_event = null;
+          projection.due_tasks = projection.due_tasks.filter(function dueForDate(task) { return task.due === requestedDate; });
+          projection.agenda.all_day_events = projection.agenda.all_day_events.filter(function allDayForDate(event) { return event.start <= requestedDate && requestedDate < event.end; });
+          projection.agenda.timed_events = projection.agenda.timed_events.filter(function timedForDate(event) { return event.start.slice(0, 10) === requestedDate; });
+        }
+        return Promise.resolve(projection);
       }
       if (cmd === 'notification_status') return Promise.resolve(clone(notificationState));
       if (cmd === 'request_notification_permission') {
