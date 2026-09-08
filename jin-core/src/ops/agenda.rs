@@ -571,7 +571,13 @@ mod today_projection_tests {
         .unwrap()
     }
 
-    fn timed_event(root: &Path, title: &str, start: &str, end: &str, floating: bool) -> crate::model::Event {
+    fn timed_event(
+        root: &Path,
+        title: &str,
+        start: &str,
+        end: &str,
+        floating: bool,
+    ) -> crate::model::Event {
         let start = NaiveDateTime::parse_from_str(start, "%Y-%m-%dT%H:%M:%S").unwrap();
         let end = NaiveDateTime::parse_from_str(end, "%Y-%m-%dT%H:%M:%S").unwrap();
         events::create_event(
@@ -599,7 +605,9 @@ mod today_projection_tests {
     }
 
     fn utc(value: &str) -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339(value).unwrap().with_timezone(&Utc)
+        DateTime::parse_from_rfc3339(value)
+            .unwrap()
+            .with_timezone(&Utc)
     }
 
     #[test]
@@ -659,49 +667,126 @@ mod today_projection_tests {
     #[test]
     fn projection_enforces_task_eligibility_precedence_and_promoted_suppression() {
         let root = root_with_display_tz("UTC");
-        let overdue = task(root.path(), "overdue", Some(DueDate::Date(NaiveDate::from_ymd_opt(2026, 6, 26).unwrap())));
-        let due = task(root.path(), "due", Some(DueDate::Date(NaiveDate::from_ymd_opt(2026, 6, 27).unwrap())));
-        let mut due_and_flexible = task(root.path(), "due and flexible", Some(DueDate::Date(NaiveDate::from_ymd_opt(2026, 6, 27).unwrap())));
+        let overdue = task(
+            root.path(),
+            "overdue",
+            Some(DueDate::Date(NaiveDate::from_ymd_opt(2026, 6, 26).unwrap())),
+        );
+        let due = task(
+            root.path(),
+            "due",
+            Some(DueDate::Date(NaiveDate::from_ymd_opt(2026, 6, 27).unwrap())),
+        );
+        let mut due_and_flexible = task(
+            root.path(),
+            "due and flexible",
+            Some(DueDate::Date(NaiveDate::from_ymd_opt(2026, 6, 27).unwrap())),
+        );
         due_and_flexible.frontmatter.agenda_bucket = Some(AgendaBucket::Flexible);
         fs::write_task(&root.path().join("tasks"), &due_and_flexible).unwrap();
         let mut flexible = task(root.path(), "flexible", None);
         flexible.frontmatter.agenda_bucket = Some(AgendaBucket::Flexible);
         fs::write_task(&root.path().join("tasks"), &flexible).unwrap();
-        let mut done = task(root.path(), "done", Some(DueDate::Date(NaiveDate::from_ymd_opt(2026, 6, 27).unwrap())));
+        let mut done = task(
+            root.path(),
+            "done",
+            Some(DueDate::Date(NaiveDate::from_ymd_opt(2026, 6, 27).unwrap())),
+        );
         done.frontmatter.status = TaskStatus::Done;
         fs::write_task(&root.path().join("tasks"), &done).unwrap();
-        let promoted = task(root.path(), "promoted", Some(DueDate::Date(NaiveDate::from_ymd_opt(2026, 6, 27).unwrap())));
-        let mut promoted_event = timed_event(root.path(), "task block", "2026-06-27T15:00:00", "2026-06-27T16:00:00", false);
+        let promoted = task(
+            root.path(),
+            "promoted",
+            Some(DueDate::Date(NaiveDate::from_ymd_opt(2026, 6, 27).unwrap())),
+        );
+        let mut promoted_event = timed_event(
+            root.path(),
+            "task block",
+            "2026-06-27T15:00:00",
+            "2026-06-27T16:00:00",
+            false,
+        );
         promoted_event.frontmatter.derived_from = Some(promoted.id().to_string());
         fs::write_event(&root.path().join("events"), &promoted_event).unwrap();
         api::refresh(root.path()).unwrap();
 
-        let projection = today_projection_for_date_at(root.path(), None, utc("2026-06-27T12:00:00Z")).unwrap();
-        assert_eq!(projection.attention_tasks.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(), vec![overdue.id()]);
-        assert_eq!(projection.due_tasks.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(), vec![due.id(), due_and_flexible.id()]);
-        assert_eq!(projection.flexible_tasks.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(), vec![flexible.id()]);
-        let standalone = projection.attention_tasks.iter().chain(&projection.due_tasks).chain(&projection.flexible_tasks)
-            .map(|item| item.id.as_str()).collect::<HashSet<_>>();
+        let projection =
+            today_projection_for_date_at(root.path(), None, utc("2026-06-27T12:00:00Z")).unwrap();
+        assert_eq!(
+            projection
+                .attention_tasks
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![overdue.id()]
+        );
+        assert_eq!(
+            projection
+                .due_tasks
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![due.id(), due_and_flexible.id()]
+        );
+        assert_eq!(
+            projection
+                .flexible_tasks
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![flexible.id()]
+        );
+        let standalone = projection
+            .attention_tasks
+            .iter()
+            .chain(&projection.due_tasks)
+            .chain(&projection.flexible_tasks)
+            .map(|item| item.id.as_str())
+            .collect::<HashSet<_>>();
         assert!(!standalone.contains(promoted.id()));
         assert!(!standalone.contains(done.id()));
-        assert_eq!(standalone.len(), 4, "precedence keeps standalone lanes disjoint");
+        assert_eq!(
+            standalone.len(),
+            4,
+            "precedence keeps standalone lanes disjoint"
+        );
     }
 
     #[test]
     fn projection_hides_current_only_lanes_and_focus_for_noncurrent_dates() {
         let root = root_with_display_tz("UTC");
-        let due_tomorrow = task(root.path(), "tomorrow", Some(DueDate::Date(NaiveDate::from_ymd_opt(2026, 6, 28).unwrap())));
+        let due_tomorrow = task(
+            root.path(),
+            "tomorrow",
+            Some(DueDate::Date(NaiveDate::from_ymd_opt(2026, 6, 28).unwrap())),
+        );
         let mut flexible = task(root.path(), "flexible", None);
         flexible.frontmatter.agenda_bucket = Some(AgendaBucket::Flexible);
         fs::write_task(&root.path().join("tasks"), &flexible).unwrap();
-        timed_event(root.path(), "tomorrow event", "2026-06-28T15:00:00", "2026-06-28T16:00:00", false);
+        timed_event(
+            root.path(),
+            "tomorrow event",
+            "2026-06-28T15:00:00",
+            "2026-06-28T16:00:00",
+            false,
+        );
         api::refresh(root.path()).unwrap();
 
         let projection = today_projection_for_date_at(
-            root.path(), Some(NaiveDate::from_ymd_opt(2026, 6, 28).unwrap()), utc("2026-06-27T12:00:00Z"),
-        ).unwrap();
+            root.path(),
+            Some(NaiveDate::from_ymd_opt(2026, 6, 28).unwrap()),
+            utc("2026-06-27T12:00:00Z"),
+        )
+        .unwrap();
         assert!(!projection.is_current_date);
-        assert_eq!(projection.due_tasks.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(), vec![due_tomorrow.id()]);
+        assert_eq!(
+            projection
+                .due_tasks
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![due_tomorrow.id()]
+        );
         assert!(projection.attention_tasks.is_empty());
         assert!(projection.flexible_tasks.is_empty());
         assert!(projection.active_events.is_empty());
@@ -711,18 +796,34 @@ mod today_projection_tests {
     #[test]
     fn projection_focus_uses_dst_policy_and_excludes_exact_end_and_invalid_intervals() {
         let root = root_with_display_tz("America/New_York");
-        let overlap = timed_event(root.path(), "fall overlap", "2026-11-01T01:00:00", "2026-11-01T02:00:00", true);
+        let overlap = timed_event(
+            root.path(),
+            "fall overlap",
+            "2026-11-01T01:00:00",
+            "2026-11-01T02:00:00",
+            true,
+        );
         api::refresh(root.path()).unwrap();
-        let projection = today_projection_for_date_at(root.path(), None, utc("2026-11-01T05:30:00Z")).unwrap();
+        let projection =
+            today_projection_for_date_at(root.path(), None, utc("2026-11-01T05:30:00Z")).unwrap();
         assert_eq!(projection.active_events.len(), 1);
         assert_eq!(projection.active_events[0].event_id, overlap.id());
-        assert_eq!(projection.active_events[0].start_utc, utc("2026-11-01T05:00:00Z").timestamp());
+        assert_eq!(
+            projection.active_events[0].start_utc,
+            utc("2026-11-01T05:00:00Z").timestamp()
+        );
         assert_eq!(projection.active_events[0].minutes, 90);
 
         let invalid = event("invalid", "not-a-time", "2026-11-01T03:00:00");
         let ended = event("ended", "2026-11-01T00:00:00", "2026-11-01T01:00:00");
         let (active, next) = project_focus(&[invalid, ended], utc("2026-11-01T01:00:00Z"), "UTC");
-        assert!(active.is_empty(), "half-open intervals exclude their exact end");
-        assert!(next.is_none(), "invalid and already-ended intervals cannot become next focus");
+        assert!(
+            active.is_empty(),
+            "half-open intervals exclude their exact end"
+        );
+        assert!(
+            next.is_none(),
+            "invalid and already-ended intervals cannot become next focus"
+        );
     }
 }
