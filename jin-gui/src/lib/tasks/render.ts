@@ -46,7 +46,8 @@ import {
 } from './transform';
 import { listNameById } from '../lists/transform';
 import type { BrowseNavigateCallback } from '../notes/render';
-import { buildTaskItem, type TaskRowCallbacks } from './item';
+import { buildTaskItem, createTaskDragPreview, wirePointerDrag, type TaskRowCallbacks } from './item';
+import { configureTaskCompletion } from './completion';
 import { between } from './rank';
 import type { FlexibleTaskGroup } from './scopes';
 
@@ -159,8 +160,8 @@ export interface TaskDetailCallbacks {
   // ── S6: Subtasks section ──────────────────────────────────────────────────
   /** This task's direct children (empty/omitted when it has none, or when `task` is itself a subtask — depth is capped at one). */
   subtasks?: TaskDto[];
-  /** Called when the add-subtask input is submitted. Should call create_task({parent: taskId, list: task.list, title}). */
-  onAddSubtask?: (parentId: string, title: string) => void;
+  /** Creates a child. Resolve true only after persistence, so the composer can retain a failed draft. */
+  onAddSubtask?: (parentId: string, title: string) => Promise<boolean>;
   /** Called when a subtask row's status checkbox is toggled. Should call set_task_status. */
   onToggleSubtaskStatus?: (subtaskId: string, currentStatus: string) => void;
   /** Called when a subtask row's delete button is activated. Controller opens the delete confirm dialog. */
@@ -406,8 +407,8 @@ function appendTasksWithNesting(
     container.appendChild(parentItem);
 
     if (children.length > 0) {
-      const childItems = children.map((child) =>
-        buildTaskItem(
+      const childItems = children.map((child) => {
+        const childItem = buildTaskItem(
           templates.taskItem,
           child,
           'row',
@@ -415,8 +416,10 @@ function appendTasksWithNesting(
           callbacks,
           resolveItemSelected(child.id, selectedTaskId, selectedTaskIds),
           { isChild: true },
-        ),
-      );
+        );
+        childItem.dataset.parentId = task.id;
+        return childItem;
+      });
       for (const childItem of childItems) container.appendChild(childItem);
       appendCollapseToggle(parentItem, childItems);
     }
@@ -432,6 +435,7 @@ function appendTasksWithNesting(
  * in original order.
  */
 function appendCollapseToggle(parentItem: HTMLElement, childItems: HTMLElement[]): void {
+  parentItem.classList.add('task-item--has-children');
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'task-item__collapse-toggle tap-target';
@@ -463,7 +467,7 @@ function appendCollapseToggle(parentItem: HTMLElement, childItems: HTMLElement[]
     }
   });
 
-  parentItem.insertBefore(toggle, parentItem.firstChild);
+  parentItem.appendChild(toggle);
 }
 
 // ── P6 — List view with section groups ───────────────────────────────────────
@@ -495,7 +499,23 @@ export function renderListViewWithSections(
 ): void {
   container.innerHTML = '';
 
-  const groups = groupTasksBySection(tasks, sections);
+  // A child belongs beside its parent in the list, even for legacy children
+  // that were saved before section inheritance was introduced. Grouping them
+  // by the child's own (often null) section would split a nested pair across
+  // a named section and the No Section bucket. This projection is render-only:
+  // the stored task keeps its own data and moving a parent is reflected on the
+  // next render without a background migration.
+  const parentsById = new Map(tasks.map((task) => [task.id, task]));
+  const tasksInParentSections = tasks.map((task) => {
+    const parent = task.parent ? parentsById.get(task.parent) : undefined;
+    if (!parent || task.section_id === parent.section_id) return task;
+    return { ...task, section_id: parent.section_id };
+  });
+
+  const groups = groupTasksBySection(tasksInParentSections, sections)
+    // An empty No Section heading is never useful; named empty sections stay
+    // visible because they are deliberate planning containers.
+    .filter((group) => group.sectionId !== null || group.tasks.length > 0);
 
   for (const group of groups) {
     const groupEl = buildSectionGroup(
@@ -526,17 +546,6 @@ export function renderListViewWithSections(
  * `cancelled -> done`, both illegal per `TaskStatus::can_transition_to`.
  */
 const BOARD_STATUS_COLUMNS: readonly string[] = ['todo', 'doing', 'done'];
-
-/**
- * BoardDragState — mutable state shared between the board-level `dragstart`
- * listener (which records the dragged card's current status) and each
- * column's own `drop` handler (which reads it to recognize a drop back into
- * the card's source column as a no-op cancel, AC-S4-09). `null` when no drag
- * is in progress.
- */
-interface BoardDragState {
-  draggedStatus: string | null;
-}
 
 /**
  * renderBoardView — render tasks as Kanban columns keyed by `TaskStatus`
@@ -608,12 +617,6 @@ export function renderBoardView(
   // may land in a different status column than the parent itself.
   const displayInfo = subtaskDisplayInfo ?? computeSubtaskDisplayInfo(boardTasks);
 
-  // Shared mutable drag state, read by each column's own `drop` handler
-  // (built below, before the dragstart that populates it) to recognize a
-  // drop back into the dragged card's own source column (AC-S4-09) without
-  // making a bridge call — see buildStatusColumn's `drop` listener.
-  const dragState: BoardDragState = { draggedStatus: null };
-
   const columnEls: HTMLElement[] = [];
   for (const status of BOARD_STATUS_COLUMNS) {
     const colTasks = boardTasks.filter((t) => t.status === status);
@@ -627,53 +630,62 @@ export function renderBoardView(
       selectedTaskId,
       displayInfo,
       selectedTaskIds,
-      dragState,
     );
     columnEls.push(colEl);
     boardEl.appendChild(colEl);
   }
 
-  // ── AC-S4-04/05/09: illegal drops are impossible, not merely refused ─────
-  // At dragstart, mark every column that is NEITHER the dragged task's own
-  // current-status (source) column NOR a legal successor
-  // `aria-disabled="true"` + `.tasks-board__column--drop-disabled`. Those
-  // columns' own `dragover` (below, in buildStatusColumn) then never calls
-  // `preventDefault()`, so the browser refuses the drop and NO bridge call
-  // is ever made — the drop simply never fires, which is the whole point (a
-  // test asserting "an error toast appeared" would mean the call WAS made;
-  // that is backwards).
-  //
-  // The task's OWN current column is not in `legalNextStatuses` (the FSM has
-  // no self-transition arm — `can_transition_to(X, X)` is false for every
-  // status X), but it is NOT an illegal *target* either: it is simply where
-  // the card already is. Greying it out here previously (wrongly documented
-  // as "exactly correct") told the user they could not put the card back,
-  // which is false — dropping on the source column is a no-op cancel
-  // (AC-S4-09), so it must stay a neutral, enabled drop target, same as a
-  // legal successor. `dragState.draggedStatus` records which status that is
-  // so the per-column `drop` handler can no-op that one case explicitly.
-  boardEl.addEventListener('dragstart', (e: DragEvent) => {
-    const dragged = e.target as HTMLElement | null;
-    const draggedStatus = dragged?.dataset?.taskStatus;
-    if (!draggedStatus) return;
-    dragState.draggedStatus = draggedStatus;
-    const legal = new Set(legalNextStatuses(draggedStatus));
+  const resetBoardDrag = () => {
     for (const colEl of columnEls) {
-      const colStatus = colEl.dataset.columnStatus ?? '';
-      const isSource = colStatus === draggedStatus;
-      const isLegal = isSource || legal.has(colStatus);
-      colEl.classList.toggle('tasks-board__column--drop-disabled', !isLegal);
-      colEl.setAttribute('aria-disabled', isLegal ? 'false' : 'true');
-    }
-  });
-
-  boardEl.addEventListener('dragend', () => {
-    dragState.draggedStatus = null;
-    for (const colEl of columnEls) {
-      colEl.classList.remove('tasks-board__column--drop-disabled');
+      colEl.classList.remove('tasks-board__column--drop-disabled', 'tasks-board__column--pointer-drop-target');
       colEl.setAttribute('aria-disabled', 'false');
     }
-  });
+  };
+
+  // Board movement is pointer-captured from its grip. The source and legal
+  // successor lanes remain available; dropping back into the source is a
+  // safe no-op and within-lane ordering remains intentionally unchanged.
+  for (const card of Array.from(boardEl.querySelectorAll<HTMLElement>('.task-item--card[data-task-id]'))) {
+    const handle = card.querySelector<HTMLElement>('.task-item__drag-handle');
+    const taskId = card.dataset.taskId;
+    const sourceStatus = card.dataset.taskStatus;
+    if (!handle || !taskId || !sourceStatus || !taskCallbacks?.onStatusDrop) continue;
+    const legal = new Set(legalNextStatuses(sourceStatus));
+
+    wirePointerDrag(handle, {
+      onActivate: () => {
+        card.classList.add('task-item--dragging');
+        taskCallbacks.onDragStart?.(taskId);
+        for (const colEl of columnEls) {
+          const status = colEl.dataset.columnStatus ?? '';
+          const available = status === sourceStatus || legal.has(status);
+          colEl.classList.toggle('tasks-board__column--drop-disabled', !available);
+          colEl.setAttribute('aria-disabled', available ? 'false' : 'true');
+        }
+      },
+      createPreview: () => createTaskDragPreview(card),
+      resolveTarget: (clientX, clientY) => {
+        const hit = document.elementFromPoint?.(clientX, clientY) ?? null;
+        const column = hit?.closest<HTMLElement>('.tasks-board__column') ?? null;
+        return column && boardEl.contains(column) ? column : null;
+      },
+      onTargetChange: (_previous, next) => {
+        for (const colEl of columnEls) colEl.classList.remove('tasks-board__column--pointer-drop-target');
+        const status = next?.dataset.columnStatus ?? '';
+        if (next && (status === sourceStatus || legal.has(status))) {
+          next.classList.add('tasks-board__column--pointer-drop-target');
+        }
+      },
+      onCommit: (target) => {
+        const status = target.dataset.columnStatus ?? '';
+        if (status !== sourceStatus && legal.has(status)) taskCallbacks.onStatusDrop?.(taskId, status);
+      },
+      onCleanup: () => {
+        card.classList.remove('task-item--dragging');
+        resetBoardDrag();
+      },
+    });
+  }
 
   container.appendChild(boardEl);
   ensureRovingTabStop(boardEl);
@@ -696,7 +708,6 @@ function buildStatusColumn(
   selectedTaskId?: string | null,
   displayInfo?: Map<string, SubtaskDisplayInfo>,
   selectedTaskIds?: ReadonlySet<string>,
-  dragState?: BoardDragState,
 ): HTMLElement {
   const col = document.createElement('div');
   col.className = 'tasks-board__column';
@@ -754,40 +765,6 @@ function buildStatusColumn(
   if (status === 'todo' && taskCallbacks?.onCreateTask) {
     cardList.appendChild(buildAddTaskRow(taskCallbacks.onCreateTask, taskCallbacks.onPickDueForCreate));
   }
-
-  // ── Column-level drop target (S4: a cross-column drop IS a status
-  // transition) ────────────────────────────────────────────────────────────
-  // AC-S4-03/04/05: `dragover` ONLY calls `preventDefault()` when this column
-  // is not currently marked `aria-disabled` (set by the board-level
-  // `dragstart` listener per the dragged task's `legalNextStatuses` PLUS its
-  // own source column, AC-S4-05) — a genuinely illegal column therefore
-  // never calls `preventDefault()`, the browser refuses the drop, and `drop`
-  // never fires here at all. The `aria-disabled` re-check inside `drop`
-  // itself is defense in depth, not the primary mechanism (which is the
-  // absent `preventDefault()`).
-  col.addEventListener('dragover', (e: DragEvent) => {
-    if (col.getAttribute('aria-disabled') === 'true') return;
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-  });
-
-  col.addEventListener('drop', (e: DragEvent) => {
-    if (col.getAttribute('aria-disabled') === 'true') return;
-    e.preventDefault();
-    const draggedId = e.dataTransfer?.getData('application/x-jin-task-id') ?? '';
-    if (!draggedId) return;
-    // AC-S4-09: a drop back into the dragged card's OWN source column is a
-    // no-op cancel, not a transition request. The source column is no
-    // longer aria-disabled (AC-S4-05 — it must read as a neutral, valid drop
-    // target, not a blocked one), so `dragover` above DOES call
-    // `preventDefault()` and this `drop` handler DOES run for it. This check
-    // is what stops it from reaching `onStatusDrop` (-> `setTaskStatus(id,
-    // sameStatus)`, which core rejects as `InvalidStateTransition` — the FSM
-    // has no self-transition arm) and turning "put the card back" into an
-    // error toast.
-    if (dragState?.draggedStatus === status) return;
-    taskCallbacks?.onStatusDrop?.(draggedId, status);
-  });
 
   return col;
 }
@@ -1165,6 +1142,7 @@ export function renderTaskPane(
   bodyEl.id = `task-body-${task.id}`;
   bodyEl.className = 'task-detail__body form-input';
   bodyEl.value = task.body ?? '';
+  bodyEl.placeholder = 'Add a description…';
   bodyEl.setAttribute('aria-label', 'Task notes (body)');
   bodyEl.rows = 4;
 
@@ -1331,6 +1309,50 @@ export function renderTaskPane(
     const backlinksSection = buildTaskBacklinksSection(task.backlinks, templates, onNavigate);
     el.detailContent.appendChild(backlinksSection);
   }
+
+  // Compose the existing, fully wired controls into a task workspace. Keeping
+  // the controls themselves intact preserves their save/reminder/calendar
+  // behavior while making the task content primary and metadata companion.
+  const existing = Array.from(el.detailContent.children);
+  const layout = document.createElement('div');
+  layout.className = 'task-detail__layout';
+  const main = document.createElement('div');
+  main.className = 'task-detail__main';
+  const attributes = document.createElement('aside');
+  attributes.className = 'task-detail__attributes';
+  attributes.setAttribute('aria-label', 'Task attributes');
+
+  const title = existing.find((node) => node.classList.contains('browse-detail__title'));
+  if (title) {
+    const titleRow = document.createElement('div');
+    titleRow.className = 'task-detail__title-row';
+    if (detailCallbacks?.onSaveStatus) {
+      const completion = document.createElement('button');
+      configureTaskCompletion(completion, task, (_taskId, currentStatus) => {
+        void detailCallbacks.onSaveStatus?.(task.id, currentStatus === 'done' ? 'todo' : 'done');
+      });
+      titleRow.appendChild(completion);
+    }
+    titleRow.appendChild(title);
+    main.appendChild(titleRow);
+  }
+
+  for (const node of existing) {
+    if (node === title) continue;
+    if (
+      node.classList.contains('task-detail__body-section')
+      || node.classList.contains('task-detail__subtasks')
+      || node.classList.contains('browse-detail__backlinks')
+      || node.classList.contains('tasks-detail-pane__header')
+    ) {
+      main.appendChild(node);
+    } else {
+      attributes.appendChild(node);
+    }
+  }
+
+  layout.append(main, attributes);
+  el.detailContent.replaceChildren(layout);
 }
 
 // ── S7 — bulk panel (Approach: "With ≥2 selected, the pane switches to a
@@ -1492,7 +1514,7 @@ export function renderBulkPanel(
 /**
  * buildSubtasksSection — S6: the pane's Subtasks section (Approach §6 action
  * plan item 6). Renders each direct child as a compact row (status toggle,
- * title — click selects it in the pane, delete) plus an "Add subtask…" input.
+ * title — click selects it in the pane, delete) plus a deliberate inline composer.
  * Not the shared `buildTaskItem` (that renderer is list/board-item shaped;
  * this is a lightweight, pane-scoped list) — no innerHTML, createElement +
  * textContent only.
@@ -1524,25 +1546,102 @@ function buildSubtasksSection(
 
   if (cbs.onAddSubtask) {
     const onAddSubtask = cbs.onAddSubtask;
-    const addRow = document.createElement('div');
+    const addTrigger = document.createElement('button');
+    addTrigger.type = 'button';
+    addTrigger.className = 'task-detail__subtask-add-trigger';
+    addTrigger.textContent = 'Add subtask';
+
+    const addRow = document.createElement('form');
     addRow.className = 'task-detail__subtask-add';
+    addRow.noValidate = true;
+    addRow.hidden = true;
+
+    const error = document.createElement('p');
+    error.className = 'task-detail__subtask-add-error';
+    error.id = `subtask-add-error-${task.id}`;
+    error.setAttribute('role', 'status');
+    error.hidden = true;
 
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'task-detail__subtask-add-input form-input';
     input.placeholder = 'Add subtask…';
     input.setAttribute('aria-label', 'New subtask title');
+    input.setAttribute('aria-describedby', error.id);
+
+    const actions = document.createElement('div');
+    actions.className = 'task-detail__subtask-add-actions';
+    const addButton = document.createElement('button');
+    addButton.type = 'submit';
+    addButton.className = 'task-detail__subtask-add-submit jin-control jin-control--primary';
+    addButton.textContent = 'Add';
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'task-detail__subtask-add-cancel jin-control jin-control--secondary';
+    cancelButton.textContent = 'Cancel';
+
+    const collapse = () => {
+      if (addButton.disabled) return;
+      input.value = '';
+      error.hidden = true;
+      error.textContent = '';
+      addRow.hidden = true;
+      addTrigger.hidden = false;
+      addTrigger.focus();
+    };
+    addTrigger.addEventListener('click', () => {
+      addTrigger.hidden = true;
+      addRow.hidden = false;
+      input.focus();
+    });
+    cancelButton.addEventListener('click', collapse);
     input.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Escape') {
         e.preventDefault();
-        const title = input.value.trim();
-        if (title) {
-          onAddSubtask(task.id, title);
-          input.value = '';
-        }
+        collapse();
       }
     });
     addRow.appendChild(input);
+    actions.append(addButton, cancelButton);
+    addRow.append(actions, error);
+    addRow.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (addButton.disabled) return;
+      const title = input.value.trim();
+      if (!title) {
+        error.textContent = 'Enter a subtask title.';
+        error.hidden = false;
+        input.focus();
+        return;
+      }
+      void (async () => {
+        let restoreFocus = false;
+        addButton.disabled = true;
+        cancelButton.disabled = true;
+        input.disabled = true;
+        error.hidden = true;
+        try {
+          const created = await onAddSubtask(task.id, title);
+          if (created) {
+            input.value = '';
+          } else {
+            error.textContent = 'Could not add subtask. Try again.';
+            error.hidden = false;
+            restoreFocus = true;
+          }
+        } catch {
+          error.textContent = 'Could not add subtask. Try again.';
+          error.hidden = false;
+          restoreFocus = true;
+        } finally {
+          addButton.disabled = false;
+          cancelButton.disabled = false;
+          input.disabled = false;
+          if (restoreFocus) input.focus();
+        }
+      })();
+    });
+    section.appendChild(addTrigger);
     section.appendChild(addRow);
   }
 
@@ -1560,20 +1659,9 @@ function buildSubtaskRow(
   row.dataset.taskId = subtask.id;
   row.dataset.taskStatus = subtask.status.toLowerCase();
 
-  const isDone = subtask.status === 'done';
   const statusBtn = document.createElement('button');
-  statusBtn.type = 'button';
-  statusBtn.className = 'task-detail__subtask-status jin-check tap-target';
-  statusBtn.setAttribute('role', 'checkbox');
-  statusBtn.setAttribute('aria-checked', isDone ? 'true' : 'false');
-  statusBtn.setAttribute(
-    'aria-label',
-    isDone ? `Reopen "${subtask.title}"` : `Mark "${subtask.title}" as done`,
-  );
-  if (cbs.onToggleSubtaskStatus) {
-    const onToggle = cbs.onToggleSubtaskStatus;
-    statusBtn.addEventListener('click', () => onToggle(subtask.id, subtask.status));
-  }
+  statusBtn.className = 'task-detail__subtask-status tap-target';
+  configureTaskCompletion(statusBtn, subtask, cbs.onToggleSubtaskStatus);
   row.appendChild(statusBtn);
 
   const titleBtn = document.createElement('button');
@@ -1934,10 +2022,14 @@ function buildAddTaskRow(
   // input affordance, not a selectable option — excluded from that role.
   li.setAttribute('role', 'presentation');
 
+  const plusSlot = document.createElement('span');
+  plusSlot.className = 'task-add-row__plus';
+
   const plusIcon = document.createElement('i');
   plusIcon.setAttribute('data-lucide', 'plus');
   plusIcon.setAttribute('aria-hidden', 'true');
-  li.appendChild(plusIcon);
+  plusSlot.appendChild(plusIcon);
+  li.appendChild(plusSlot);
 
   const input = document.createElement('input');
   input.type = 'text';

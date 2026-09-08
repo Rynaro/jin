@@ -14,6 +14,8 @@ import type { TaskScope } from '../tasks/scopes';
 import type { SidebarCounts } from './counts';
 import { applyJinColor } from '../ui/color_picker';
 
+let draggedListId: string | null = null;
+
 // ── Callbacks ─────────────────────────────────────────────────────────────────
 
 export interface ListRowCallbacks {
@@ -240,19 +242,28 @@ function buildListRow(list: ListDto, options?: ListsRailRenderOptions): HTMLElem
     li.removeAttribute('aria-current');
   }
 
-  // Color swatch
+  // The colour dot is the single leading identity cue for a user list. When
+  // manual ordering is available, that same 28px target is the drag/keyboard
+  // handle; a separate grip would make the narrow rail look like a toolbox.
+  let dragGrip: HTMLButtonElement | null = null;
   const swatch = document.createElement('span');
   swatch.className = 'lists-rail__swatch';
   applyJinColor(swatch, list.color);
   swatch.setAttribute('aria-hidden', 'true');
-  li.appendChild(swatch);
-
-  // Icon (lucide inbox for default, list icon for others)
-  const icon = document.createElement('i');
-  icon.className = 'jin-navigation-row__icon';
-  icon.setAttribute('data-lucide', list.is_default ? 'inbox' : 'list');
-  icon.setAttribute('aria-hidden', 'true');
-  li.appendChild(icon);
+  if (!list.is_default && options?.onReorder) {
+    li.classList.add('lists-rail__row--reorderable');
+    dragGrip = document.createElement('button');
+    dragGrip.type = 'button';
+    // Keep the established hook for DnD tests/integration; the visual is the
+    // dot identity control, not a second, visible grip.
+    dragGrip.className = 'lists-rail__identity-control lists-rail__drag-handle tap-target';
+    dragGrip.draggable = true;
+    dragGrip.setAttribute('aria-label', `Reorder list "${list.name}". Use Alt+Up or Alt+Down to move it.`);
+    dragGrip.appendChild(swatch);
+    li.appendChild(dragGrip);
+  } else {
+    li.appendChild(swatch);
+  }
 
   // Main button (name + count)
   const btn = document.createElement('button');
@@ -264,11 +275,12 @@ function buildListRow(list: ListDto, options?: ListsRailRenderOptions): HTMLElem
   // never `list.task_count` — that field counts `done` tasks too
   // (index/query.rs) and a badge sourced from it never goes down.
   const count = options?.counts?.[list.id] ?? 0;
-  btn.setAttribute('aria-label', `${list.name} — ${count} tasks`);
+  const displayName = list.is_default ? 'Inbox list' : list.name;
+  btn.setAttribute('aria-label', `${displayName} — ${count} tasks`);
 
   const nameEl = document.createElement('span');
   nameEl.className = 'lists-rail__name jin-navigation-row__label';
-  nameEl.textContent = list.name;
+  nameEl.textContent = displayName;
   btn.appendChild(nameEl);
 
   const countEl = document.createElement('span');
@@ -283,48 +295,119 @@ function buildListRow(list: ListDto, options?: ListsRailRenderOptions): HTMLElem
     btn.addEventListener('click', () => onSelect(list.id));
   }
 
-  // Action cluster (edit + delete) — only for non-default lists
+  // A compact Notes-style More menu avoids putting destructive controls in
+  // the row itself. The menu owns the current Edit/Delete callbacks.
   if (!list.is_default) {
-    const actions = document.createElement('div');
-    actions.className = 'lists-rail__actions jin-navigation-row__actions';
+    const menuButton = document.createElement('button');
+    menuButton.type = 'button';
+    menuButton.className = 'lists-rail__menu-btn jin-navigation-row__actions jin-control jin-control--icon tap-target';
+    menuButton.setAttribute('aria-label', `Actions for list "${list.name}"`);
+    menuButton.setAttribute('aria-haspopup', 'menu');
+    menuButton.setAttribute('aria-expanded', 'false');
+    const menuIcon = document.createElement('i');
+    menuIcon.setAttribute('data-lucide', 'ellipsis-vertical');
+    menuIcon.setAttribute('aria-hidden', 'true');
+    menuButton.appendChild(menuIcon);
+    li.appendChild(menuButton);
+
+    const menu = document.createElement('div');
+    menu.className = 'lists-rail__menu';
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('hidden', '');
 
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
-    editBtn.className = 'lists-rail__edit-btn jin-control jin-control--icon tap-target';
+    editBtn.className = 'lists-rail__edit-btn lists-rail__menuitem';
+    editBtn.setAttribute('role', 'menuitem');
     editBtn.setAttribute('aria-label', `Edit list "${list.name}"`);
     const editIcon = document.createElement('i');
     editIcon.setAttribute('data-lucide', 'pencil');
     editIcon.setAttribute('aria-hidden', 'true');
     editBtn.appendChild(editIcon);
-    actions.appendChild(editBtn);
-
-    if (options?.onEditRequest) {
-      const onEditRequest = options.onEditRequest;
-      editBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        onEditRequest(list);
-      });
-    }
+    editBtn.appendChild(document.createTextNode('Edit list'));
+    menu.appendChild(editBtn);
 
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
-    deleteBtn.className = 'lists-rail__delete-btn jin-control jin-control--icon tap-target';
+    deleteBtn.className = 'lists-rail__delete-btn lists-rail__menuitem';
+    deleteBtn.setAttribute('role', 'menuitem');
     deleteBtn.setAttribute('aria-label', `Delete list "${list.name}"`);
     const deleteIcon = document.createElement('i');
     deleteIcon.setAttribute('data-lucide', 'trash-2');
     deleteIcon.setAttribute('aria-hidden', 'true');
     deleteBtn.appendChild(deleteIcon);
-    actions.appendChild(deleteBtn);
+    deleteBtn.appendChild(document.createTextNode('Delete list'));
+    menu.appendChild(deleteBtn);
+    li.appendChild(menu);
 
-    if (options?.onDeleteRequest) {
-      const onDeleteRequest = options.onDeleteRequest;
-      deleteBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        onDeleteRequest(list);
-      });
-    }
+    const closeMenu = () => {
+      menuButton.setAttribute('aria-expanded', 'false');
+      menu.setAttribute('hidden', '');
+      document.removeEventListener('pointerdown', onOutsidePointerDown);
+    };
+    const onOutsidePointerDown = (event: Event) => {
+      if (!li.contains(event.target as Node)) closeMenu();
+    };
+    const openMenu = () => {
+      menuButton.setAttribute('aria-expanded', 'true');
+      menu.removeAttribute('hidden');
+      document.addEventListener('pointerdown', onOutsidePointerDown);
+    };
+    const menuItems = [editBtn, deleteBtn];
+    const focusMenuItem = (index: number) => {
+      menuItems[(index + menuItems.length) % menuItems.length]?.focus();
+    };
 
-    li.appendChild(actions);
+    menuButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (menuButton.getAttribute('aria-expanded') === 'true') {
+        closeMenu();
+      } else {
+        openMenu();
+        // Native keyboard activation dispatches a click with detail 0. Move
+        // directly into the menu so Tab continues through its real actions.
+        if (event.detail === 0) focusMenuItem(0);
+      }
+    });
+    menuButton.addEventListener('keydown', (event) => {
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openMenu();
+      focusMenuItem(event.key === 'ArrowDown' || event.key === 'Home' ? 0 : menuItems.length - 1);
+    });
+    li.addEventListener('keydown', (event) => {
+      if (menuButton.getAttribute('aria-expanded') !== 'true') return;
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        closeMenu();
+        menuButton.focus();
+        return;
+      }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === 'Home') {
+        focusMenuItem(0);
+        return;
+      }
+      if (event.key === 'End') {
+        focusMenuItem(menuItems.length - 1);
+        return;
+      }
+      const currentIndex = menuItems.indexOf(event.target as HTMLButtonElement);
+      focusMenuItem((currentIndex === -1 ? 0 : currentIndex) + (event.key === 'ArrowDown' ? 1 : -1));
+    });
+    editBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      closeMenu();
+      options?.onEditRequest?.(list);
+    });
+    deleteBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      closeMenu();
+      options?.onDeleteRequest?.(list);
+    });
   }
 
   // ── S5: drag-to-reorder (AC-S5-08) ────────────────────────────────────────
@@ -333,20 +416,44 @@ function buildListRow(list: ListDto, options?: ListsRailRenderOptions): HTMLElem
   // item's own row-to-row DnD (lib/tasks/item.ts): dragstart stashes the
   // dragged list id; drop on a sibling computes `between()` from the
   // hover-half (top vs bottom) and calls back with a fresh rank key.
-  if (!list.is_default && options?.onReorder) {
+  if (dragGrip && options?.onReorder) {
     const onReorder = options.onReorder;
-    li.draggable = true;
+    const draggableLists = () => Array.from(li.parentElement?.children ?? []).filter(
+      (child): child is HTMLElement =>
+        child instanceof HTMLElement &&
+        child.dataset.listId !== undefined &&
+        !child.classList.contains('lists-rail__row--default'),
+    );
 
-    li.addEventListener('dragstart', (e: DragEvent) => {
+    const moveBy = (offset: -1 | 1) => {
+      const siblings = draggableLists();
+      const index = siblings.indexOf(li);
+      const targetIndex = index + offset;
+      if (index === -1 || targetIndex < 0 || targetIndex >= siblings.length) return;
+      const above = offset < 0 ? siblings[targetIndex - 1] : siblings[index + 1];
+      const below = offset < 0 ? siblings[targetIndex] : siblings[index + 2];
+      onReorder(list.id, between(above?.dataset.listPosition ?? null, below?.dataset.listPosition ?? null));
+    };
+
+    dragGrip.addEventListener('dragstart', (e: DragEvent) => {
+      draggedListId = list.id;
       if (e.dataTransfer) {
         e.dataTransfer.setData('application/x-jin-list-id', list.id);
+        e.dataTransfer.setData('text/plain', list.id);
         e.dataTransfer.effectAllowed = 'move';
       }
       li.classList.add('lists-rail__row--dragging');
     });
 
-    li.addEventListener('dragend', () => {
+    dragGrip.addEventListener('dragend', () => {
+      draggedListId = null;
       li.classList.remove('lists-rail__row--dragging');
+    });
+
+    dragGrip.addEventListener('keydown', (event: KeyboardEvent) => {
+      if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+      event.preventDefault();
+      moveBy(event.key === 'ArrowUp' ? -1 : 1);
     });
 
     li.addEventListener('dragover', (e: DragEvent) => {
@@ -356,12 +463,21 @@ function buildListRow(list: ListDto, options?: ListsRailRenderOptions): HTMLElem
 
     li.addEventListener('drop', (e: DragEvent) => {
       e.preventDefault();
-      const draggedId = e.dataTransfer?.getData('application/x-jin-list-id') ?? '';
+      const draggedId =
+        e.dataTransfer?.getData('application/x-jin-list-id') ||
+        e.dataTransfer?.getData('text/plain') ||
+        draggedListId || '';
       if (!draggedId || draggedId === list.id) return;
 
+      // `text/plain` is only a fallback for native/WebView MIME loss. The id
+      // still has to name a reorderable sibling in this rail.
+      const sourceExists = draggableLists().some((row) => row.dataset.listId === draggedId);
+      if (!sourceExists) return;
+
       const parentList = li.parentElement;
-      const siblings = Array.from(
-        parentList?.querySelectorAll<HTMLElement>('[data-list-id]') ?? [],
+      const siblings = Array.from(parentList?.children ?? []).filter(
+        (child): child is HTMLElement =>
+          child instanceof HTMLElement && child.dataset.listId !== undefined && child.dataset.listId !== draggedId,
       );
       const idx = siblings.indexOf(li);
 

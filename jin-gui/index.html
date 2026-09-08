@@ -1256,11 +1256,10 @@
           </div>
 
           <!--
-            ── tasks-main: two-column grid (S3) — the list stays visible and
-            clickable at ALL times (AC-S3-01); the second column is the ONE
-            detail pane, collapsed to 0 width until a task is selected.
-            TasksController toggles `.tasks-main--detail-open` here (never a
-            `.hidden` class on the list panel — that was the retired page-swap).
+            ── tasks-main: the list remains mounted behind the one task-detail
+            workspace view, preserving its scroll position and selection.
+            TasksController toggles `.tasks-main--detail-open` and makes the
+            covered list inert until Close restores focus.
           -->
           <div class="tasks-main jin-workspace-pane" data-tasks-target="main">
 
@@ -1285,14 +1284,14 @@
                 data-tasks-target="filtersToggleBtn"
                 data-action="click->tasks#toggleFilters"
                 aria-controls="tasks-filter-controls"
-                aria-expanded="true"
+                aria-expanded="false"
               >
                 <i data-lucide="list-filter" aria-hidden="true"></i>
                 <span>Filters</span>
                 <span class="tasks-filter-count" data-tasks-target="filterCount" aria-live="polite"></span>
               </button>
 
-              <div id="tasks-filter-controls" class="tasks-filter-controls" data-tasks-target="filtersPanel">
+              <div id="tasks-filter-controls" class="tasks-filter-controls" data-tasks-target="filtersPanel" hidden>
               <label class="visually-hidden" for="tasks-status-filter">Status</label>
               <select
                 id="tasks-status-filter"
@@ -1499,10 +1498,9 @@
           </div>
 
           <!--
-            ── Detail pane (S3) — the ONE task editor. Never `.hidden`ed;
-            visually collapsed to 0 width by `.tasks-main`'s grid track until
-            a task is selected. renderTaskPane() (lib/tasks/render.ts) builds
-            its own header (Close + Delete) inside detailContent below.
+            ── Detail pane — the one task editor. It covers the task workspace
+            only while a task is selected. renderTaskPane() builds its header
+            (Close + Delete) inside detailContent below.
           -->
           <div data-tasks-target="detailPanel" class="tasks-detail-pane">
             <div
@@ -2713,9 +2711,6 @@
       -->
       <template id="tmpl-task-item">
         <li class="task-item">
-          <span class="task-item__drag-handle" aria-hidden="true">
-            <i data-lucide="grip-vertical" aria-hidden="true"></i>
-          </span>
           <button
             type="button"
             class="task-item__status-btn task-item__checkbox jin-check tap-target"
@@ -2725,23 +2720,23 @@
           >
             <i class="task-item__status-icon" aria-hidden="true"></i>
           </button>
-          <span class="browse-status-badge task-item__status-badge jin-badge" role="img" aria-label="">
-            <span class="task-item__status-label"></span>
-          </span>
           <div class="task-item__content">
             <button type="button" class="task-item__body tap-target" aria-label="">
               <span class="task-item__title"></span>
-              <span class="task-item__subtask-progress" aria-hidden="true"></span>
             </button>
             <span class="task-item__meta">
+              <span class="task-item__subtask-progress" aria-hidden="true"></span>
               <span class="task-item__tags"></span>
+              <span class="browse-status-badge task-item__priority jin-badge" role="img" aria-label="">
+                <i class="task-item__priority-icon" aria-hidden="true"></i>
+                <span class="task-item__priority-label"></span>
+              </span>
             </span>
           </div>
-          <span class="browse-status-badge task-item__priority jin-badge" role="img" aria-label="">
-            <i class="task-item__priority-icon" aria-hidden="true"></i>
-            <span class="task-item__priority-label"></span>
-          </span>
-          <div class="task-item__actions" aria-hidden="true">
+          <div class="task-item__actions">
+            <button type="button" class="task-item__drag-handle" aria-label="Reorder task">
+              <i data-lucide="grip-vertical" aria-hidden="true"></i>
+            </button>
             <button type="button" class="task-item__delete-btn jin-control jin-control--icon tap-target" aria-label="Delete task">
               <i data-lucide="trash-2" aria-hidden="true"></i>
             </button>

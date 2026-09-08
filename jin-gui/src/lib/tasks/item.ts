@@ -51,6 +51,182 @@ import {
 } from './transform';
 import { buildTagChips } from '../lists/render';
 import type { BrowseNavigateCallback } from '../notes/render';
+import { configureTaskCompletion } from './completion';
+
+/**
+ * Pointer-driven task dragging keeps reordering inside the app rather than
+ * relying on the host WebView's HTML5 drag session. `elementFromPoint` is
+ * deliberately used for targeting: pointer capture means `event.target`
+ * remains the grip during a drag.
+ */
+export interface PointerDragHooks<T extends HTMLElement> {
+  onActivate: () => void;
+  createPreview?: () => HTMLElement;
+  resolveTarget: (clientX: number, clientY: number) => T | null;
+  onTargetChange: (previous: T | null, next: T | null, point: { x: number; y: number }) => void;
+  onCommit: (target: T, point: { x: number; y: number }) => void;
+  onCleanup: () => void;
+}
+
+export function wirePointerDrag<T extends HTMLElement>(
+  handle: HTMLElement,
+  hooks: PointerDragHooks<T>,
+): void {
+  let session: {
+    pointerId: number;
+    startX: number;
+    startY: number;
+    active: boolean;
+    target: T | null;
+    preview: HTMLElement | null;
+    previewPoint: { x: number; y: number } | null;
+    previewFrame: number | null;
+  } | null = null;
+  let suppressClick = false;
+  let cleaning = false;
+
+  const cleanup = () => {
+    if (!session || cleaning) return;
+    cleaning = true;
+    const pointerId = session.pointerId;
+    const preview = session.preview;
+    const previewFrame = session.previewFrame;
+    session = null;
+    if (previewFrame !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(previewFrame);
+    preview?.remove();
+    hooks.onCleanup();
+    if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture?.(pointerId);
+    document.removeEventListener('keydown', onKeyDown, true);
+    window.removeEventListener('blur', cleanup);
+    cleaning = false;
+  };
+
+  const updateTarget = (clientX: number, clientY: number) => {
+    if (!session?.active) return;
+    const next = hooks.resolveTarget(clientX, clientY);
+    hooks.onTargetChange(session.target, next, { x: clientX, y: clientY });
+    session.target = next;
+  };
+
+  const updatePreview = (clientX: number, clientY: number) => {
+    if (!session?.preview) return;
+    session.previewPoint = { x: clientX, y: clientY };
+    if (session.previewFrame !== null) return;
+    const paint = () => {
+      if (!session?.preview || !session.previewPoint) return;
+      session.previewFrame = null;
+      const { x, y } = session.previewPoint;
+      const rect = session.preview.getBoundingClientRect();
+      const viewportWidth = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
+      const viewportHeight = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
+      const maxX = Math.max(8, viewportWidth - rect.width - 8);
+      const maxY = Math.max(8, viewportHeight - rect.height - 8);
+      session.preview.style.transform = `translate3d(${Math.min(Math.max(8, x + 10), maxX)}px, ${Math.min(Math.max(8, y + 10), maxY)}px, 0)`;
+      session.preview.style.visibility = 'visible';
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      session.previewFrame = requestAnimationFrame(paint);
+    } else {
+      paint();
+    }
+  };
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || !session) return;
+    event.preventDefault();
+    cleanup();
+  };
+
+  handle.addEventListener('pointerdown', (event: PointerEvent) => {
+    if (event.button !== 0 || session) return;
+    event.preventDefault();
+    session = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+      target: null,
+      preview: null,
+      previewPoint: null,
+      previewFrame: null,
+    };
+    handle.setPointerCapture?.(event.pointerId);
+    document.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('blur', cleanup);
+  });
+
+  handle.addEventListener('pointermove', (event: PointerEvent) => {
+    if (!session || event.pointerId !== session.pointerId) return;
+    if (!session.active) {
+      const distance = Math.hypot(event.clientX - session.startX, event.clientY - session.startY);
+      if (distance < 6) return;
+      session.active = true;
+      suppressClick = true;
+      hooks.onActivate();
+      const preview = hooks.createPreview?.();
+      if (preview) {
+        preview.style.transform = 'translate3d(-9999px, -9999px, 0)';
+        preview.style.visibility = 'hidden';
+        session.preview = preview;
+        document.body.appendChild(preview);
+      }
+    }
+    updatePreview(event.clientX, event.clientY);
+    updateTarget(event.clientX, event.clientY);
+  });
+
+  handle.addEventListener('pointerup', (event: PointerEvent) => {
+    if (!session || event.pointerId !== session.pointerId) return;
+    const target = session.active ? hooks.resolveTarget(event.clientX, event.clientY) : null;
+    if (session.active && target) hooks.onCommit(target, { x: event.clientX, y: event.clientY });
+    cleanup();
+  });
+
+  handle.addEventListener('pointercancel', cleanup);
+  handle.addEventListener('lostpointercapture', cleanup);
+  handle.addEventListener('click', (event) => {
+    if (!suppressClick) return;
+    suppressClick = false;
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
+}
+
+/** Build a non-interactive visual proxy without duplicating any task controls. */
+export function createTaskDragPreview(source: HTMLElement): HTMLElement {
+  const preview = document.createElement('div');
+  const content = source.cloneNode(true) as HTMLElement;
+  const sourceWidth = source.getBoundingClientRect().width;
+  const isCard = source.classList.contains('task-item--card');
+  preview.classList.add('task-drag-preview');
+  preview.setAttribute('aria-hidden', 'true');
+  preview.setAttribute('inert', '');
+  preview.style.inlineSize = `${isCard
+    ? Math.min(Math.max(sourceWidth, 180), 300)
+    : Math.min(Math.max(sourceWidth, 240), 360)}px`;
+  content.classList.remove('task-item--dragging', 'task-item--drop-above', 'task-item--drop-below');
+  content.removeAttribute('id');
+  content.removeAttribute('role');
+  content.removeAttribute('aria-selected');
+  for (const attribute of Array.from(content.attributes)) {
+    if (attribute.name.startsWith('data-')) content.removeAttribute(attribute.name);
+  }
+  content.querySelectorAll('.task-item__actions, .task-item__collapse-toggle').forEach((node) => node.remove());
+  content.querySelectorAll<HTMLElement>('*').forEach((node) => {
+    node.removeAttribute('id');
+    for (const attribute of Array.from(node.attributes)) {
+      if (attribute.name.startsWith('data-')) node.removeAttribute(attribute.name);
+    }
+  });
+  content.querySelectorAll<HTMLElement>('button, a, input, select, textarea').forEach((control) => {
+    const replacement = document.createElement('span');
+    replacement.className = control.className;
+    while (control.firstChild) replacement.appendChild(control.firstChild);
+    control.replaceWith(replacement);
+  });
+  preview.appendChild(content);
+  return preview;
+}
 
 export type TaskItemVariant = 'row' | 'card';
 
@@ -79,6 +255,8 @@ export interface TaskItemNestingInfo extends SubtaskDisplayInfo {
 export interface TaskRowCallbacks {
   /** Called when the status circle is clicked. Controller decides the next status. */
   onStatusToggle?: (taskId: string, currentStatus: string) => void;
+  /** True while this task's optimistic completion mutation is in flight. */
+  isStatusPending?: (taskId: string) => boolean;
   /** Called when the delete button is clicked. Controller opens confirm dialog. */
   onDeleteRequest?: (taskId: string, taskTitle: string) => void;
   /** Called when Enter is pressed in the add-task input. Optional due passed when set via the inline calendar. */
@@ -202,107 +380,118 @@ export function buildTaskItem(
   const isChild = nesting?.isChild === true;
   item.classList.toggle('task-item--child', isChild);
 
-  // ── Drag handle + DnD events ──────────────────────────────────────────────
-  // dragstart/dragend are identical wiring for both variants (AC-S2-02
-  // parity, and S4's board needs dragstart to fire on a card so it can
-  // compute legalNextStatuses and mark illegal columns — AC-S4-05).
+  // ── Dedicated pointer drag grip ───────────────────────────────────────────
+  // Native HTML5 DnD is intercepted inconsistently by host WebViews. Task
+  // movement therefore begins only from this grip and commits through the
+  // existing callbacks. List rows calculate insertion neighbors here; Board
+  // cards delegate lane targeting to render.ts.
   //
-  // Item-to-item reorder-hover (dragover/dragleave/drop straight onto
-  // ANOTHER item) is a LIST-ROW-ONLY concern (S4): the board is now Kanban
-  // by status, within-column drag never reorders (Approach §3), and a card
-  // drop is accepted at the COLUMN level (render.ts), never per-card.
-  // Wiring an unconditional `e.preventDefault()` here for the card variant
-  // would silently defeat the column's own illegal-drop refusal the instant
-  // the pointer happened to be over another card rather than empty column
-  // space — exactly the bug AC-S4-04's CONSTRAINT warns about ("no drag path
-  // that reaches an illegal transition_task").
-  //
-  // S6 (AC-S6-15): a nested CHILD item never offers drag — child reorder is
-  // out of scope for v1 — regardless of which DnD callbacks the caller passed.
+  // S6: nested children are never independent drag sources.
   const dragHandleEl = item.querySelector('.task-item__drag-handle');
   const wantsDrag =
     !isChild &&
-    (callbacks?.onDragStart !== undefined ||
-      callbacks?.onDrop !== undefined ||
-      callbacks?.onStatusDrop !== undefined);
+    (variant === 'row'
+      ? callbacks?.onDrop !== undefined
+      : callbacks?.onStatusDrop !== undefined);
   if (wantsDrag) {
-    item.setAttribute('draggable', 'true');
+    if (dragHandleEl instanceof HTMLElement) {
+      dragHandleEl.removeAttribute('aria-hidden');
+      dragHandleEl.setAttribute('aria-label', `Reorder "${task.title}"`);
+      dragHandleEl.addEventListener('click', (event) => event.stopPropagation());
+      if (variant === 'row' && callbacks?.onDrop) {
+        const onDrop = callbacks.onDrop;
+        let dropIndicator: HTMLElement | null = null;
 
-    item.addEventListener('dragstart', (e: DragEvent) => {
-      if (e.dataTransfer) {
-        e.dataTransfer.setData('application/x-jin-task-id', task.id);
-        e.dataTransfer.setData('text/plain', task.id);
-        e.dataTransfer.effectAllowed = 'move';
+        const clearIndicator = () => {
+          dropIndicator?.classList.remove('task-item--drop-above', 'task-item--drop-below');
+          dropIndicator = null;
+        };
+
+        const resolveRowTarget = (clientX: number, clientY: number): HTMLElement | null => {
+          const hit = document.elementFromPoint?.(clientX, clientY) ?? null;
+          const row = hit?.closest<HTMLElement>('.task-item--row[data-task-id]') ?? null;
+          if (!row || row === item) return row;
+          return row.parentElement === item.parentElement ? row : null;
+        };
+
+        const parentOfChild = (row: HTMLElement): HTMLElement | null => {
+          if (!row.classList.contains('task-item--child')) return row;
+          const parentId = row.dataset.parentId;
+          return parentId
+            ? Array.from(row.parentElement?.children ?? []).find(
+              (candidate): candidate is HTMLElement =>
+                candidate instanceof HTMLElement && candidate.dataset.taskId === parentId,
+            ) ?? null
+            : null;
+        };
+
+        const lastChildOf = (parent: HTMLElement): HTMLElement => {
+          let boundary = parent;
+          for (let sibling = parent.nextElementSibling as HTMLElement | null;
+            sibling?.classList.contains('task-item--child') && sibling.dataset.parentId === parent.dataset.taskId;
+            sibling = sibling.nextElementSibling as HTMLElement | null) {
+            boundary = sibling;
+          }
+          return boundary;
+        };
+
+        wirePointerDrag(dragHandleEl, {
+          onActivate: () => {
+            item.classList.add('task-item--dragging');
+            callbacks.onDragStart?.(task.id);
+          },
+          createPreview: () => createTaskDragPreview(item),
+          resolveTarget: resolveRowTarget,
+          onTargetChange: (_previous, next, point) => {
+            clearIndicator();
+            if (!next || next === item) return;
+            const parent = parentOfChild(next);
+            if (!parent) return;
+            const rect = next.getBoundingClientRect();
+            const isAbove = point.y < rect.top + rect.height / 2;
+            dropIndicator = next.classList.contains('task-item--child') && !isAbove
+              ? lastChildOf(parent)
+              : parent;
+            dropIndicator.classList.add(isAbove ? 'task-item--drop-above' : 'task-item--drop-below');
+          },
+          onCommit: (target, point) => {
+            if (target === item) return;
+            const parent = parentOfChild(target);
+            if (!parent) return;
+            const parentList = parent.parentElement;
+            if (parentList !== item.parentElement) return;
+            const topLevelRows = Array.from(parentList?.children ?? []).filter(
+              (child): child is HTMLElement =>
+                child instanceof HTMLElement &&
+                child.matches('.task-item--row[data-task-id]:not(.task-item--child)') &&
+                child.dataset.taskId !== task.id,
+            );
+            const targetIndex = topLevelRows.indexOf(parent);
+            if (targetIndex < 0) return;
+            const rect = target.getBoundingClientRect();
+            const isAbove = point.y < rect.top + rect.height / 2;
+            const aboveId = isAbove
+              ? topLevelRows[targetIndex - 1]?.dataset.taskId ?? null
+              : parent.dataset.taskId ?? null;
+            const belowId = isAbove
+              ? parent.dataset.taskId ?? null
+              : topLevelRows[targetIndex + 1]?.dataset.taskId ?? null;
+            const sectionId = parent.closest<HTMLElement>('[data-section-id]')?.dataset.sectionId ?? null;
+            if (aboveId === task.id || belowId === task.id) return;
+            onDrop(task.id, sectionId, aboveId, belowId);
+          },
+          onCleanup: () => {
+            clearIndicator();
+            item.classList.remove('task-item--dragging');
+          },
+        });
       }
-      item.classList.add('task-item--dragging');
-      callbacks?.onDragStart?.(task.id);
-    });
-
-    item.addEventListener('dragend', () => {
-      item.classList.remove('task-item--dragging');
-    });
-
-    if (variant === 'row' && callbacks?.onDrop) {
-      const onDrop = callbacks.onDrop;
-
-      item.addEventListener('dragover', (e: DragEvent) => {
-        e.preventDefault();
-        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-        const rect = item.getBoundingClientRect();
-        const midY = rect.top + rect.height / 2;
-        if (e.clientY < midY) {
-          item.classList.add('task-item--drop-above');
-          item.classList.remove('task-item--drop-below');
-        } else {
-          item.classList.add('task-item--drop-below');
-          item.classList.remove('task-item--drop-above');
-        }
-      });
-
-      item.addEventListener('dragleave', () => {
-        item.classList.remove('task-item--drop-above', 'task-item--drop-below');
-      });
-
-      item.addEventListener('drop', (e: DragEvent) => {
-        e.preventDefault();
-        const draggedId = e.dataTransfer?.getData('application/x-jin-task-id') ?? '';
-        if (!draggedId || draggedId === task.id) return;
-
-        item.classList.remove('task-item--drop-above', 'task-item--drop-below');
-
-        // The nearest ancestor carrying data-section-id is the section group
-        // (List view); a flat list (no section context at all) yields
-        // sectionId = null.
-        const containerEl = item.closest<HTMLElement>('[data-section-id]');
-        const sectionId = containerEl?.dataset.sectionId ?? null;
-
-        const rect2 = item.getBoundingClientRect();
-        const isAbove = e.clientY < rect2.top + rect2.height / 2;
-
-        const parentList = item.parentElement;
-        const siblings = Array.from(
-          parentList?.querySelectorAll<HTMLElement>('[data-task-id]') ?? [],
-        );
-        const idx = siblings.indexOf(item);
-
-        let aboveId: string | null;
-        let belowId: string | null;
-
-        if (isAbove) {
-          aboveId = siblings[idx - 1]?.dataset.taskId ?? null;
-          belowId = task.id;
-        } else {
-          aboveId = task.id;
-          belowId = siblings[idx + 1]?.dataset.taskId ?? null;
-        }
-
-        onDrop(draggedId, sectionId, aboveId, belowId);
-      });
     }
   } else {
     // No DnD wiring at all — remove the (otherwise inert) handle rather than
     // show a grip icon that does nothing, matching the pre-S2 behavior.
     dragHandleEl?.remove();
+    item.classList.add('task-item--without-drag');
   }
 
   // ── Status toggle (checkbox) ──────────────────────────────────────────────
@@ -312,8 +501,6 @@ export function buildTaskItem(
   const statusLabelEl = item.querySelector('.task-item__status-label');
 
   const sLabel = taskStatusLabel(task.status);
-  const isDone = task.status === 'done';
-
   if (statusBadgeEl) {
     statusBadgeEl.setAttribute('aria-label', `Status: ${sLabel}`);
     statusBadgeEl.dataset.taskStatus = task.status.toLowerCase();
@@ -322,20 +509,10 @@ export function buildTaskItem(
   if (statusLabelEl) statusLabelEl.textContent = sLabel;
 
   if (statusBtnEl) {
-    statusBtnEl.classList.add('jin-check');
-    statusBtnEl.setAttribute('role', 'checkbox');
-    statusBtnEl.setAttribute('aria-checked', isDone ? 'true' : 'false');
-    statusBtnEl.setAttribute(
-      'aria-label',
-      isDone ? `Reopen "${task.title}"` : `Mark "${task.title}" as done`,
-    );
-    if (callbacks?.onStatusToggle) {
-      const onStatusToggle = callbacks.onStatusToggle;
-      statusBtnEl.addEventListener('click', (e) => {
-        e.stopPropagation();
-        onStatusToggle(task.id, task.status);
-      });
-    }
+    configureTaskCompletion(statusBtnEl as HTMLButtonElement, task, callbacks?.onStatusToggle);
+    const isPending = callbacks?.isStatusPending?.(task.id) === true;
+    (statusBtnEl as HTMLButtonElement).disabled = isPending;
+    statusBtnEl.setAttribute('aria-busy', String(isPending));
   }
 
   // ── Main body button (select / navigate) ──────────────────────────────────

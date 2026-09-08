@@ -164,7 +164,7 @@ describe('Continuous Ink Workspace', () => {
 
   it('keeps ledger anatomy stable while allowing Tasks rows to grow with meaning', () => {
     expect(navigation).toContain('grid-template-columns: 14px var(--icon-size-standard) minmax(0, 1fr) auto var(--control-height)');
-    expect(browse).toContain('grid-template-columns: 20px 40px minmax(0, 1fr) auto 40px');
+    expect(browse).toContain("grid-template-columns: 32px minmax(0, 1fr) 64px");
     expect(browse).toContain('height: auto;');
     expect(browse).toContain('max-height: none;');
     expect(browse).toContain('min-block-size: var(--note-row-height)');
@@ -175,8 +175,22 @@ describe('Continuous Ink Workspace', () => {
     expect(browse).toContain('opacity: 0');
   });
 
+  it('keeps Tasks list hit geometry fixed while contextual actions are revealed', () => {
+    const rail = browse.match(/\/\* Lists use a single identity mark\.[\s\S]*?\.tasks-lists-rail \.lists-rail__menuitem svg \{[^}]*\}/)?.[0] ?? '';
+
+    expect(rail).toMatch(/\.lists-rail__row:not\(\.lists-rail__row--smart\) \{[\s\S]*?grid-template-columns: 28px minmax\(0, 1fr\) 28px;[\s\S]*?overflow: visible;/);
+    expect(rail).toContain('.tasks-lists-rail .lists-rail__row::before { content: none; }');
+    expect(rail).toMatch(/\.lists-rail__row:not\(\.lists-rail__row--smart\):hover > \.lists-rail__menu-btn,[\s\S]*?opacity: 1;[\s\S]*?pointer-events: auto;/);
+
+    // A changing grid moves the pointer target between mousedown and mouseup.
+    // The action can reveal progressively, but it must never rewrite the row
+    // tracks or clip its menu outside the row.
+    expect(browse).not.toMatch(/\.tasks-lists-rail \.lists-rail__row(?:--reorderable)?\.jin-navigation-row--actions(?::hover|:focus-within)[^{]*\{\s*grid-template-columns:/);
+    expect(browse).not.toMatch(/@media \(hover: none\), \(pointer: coarse\)[\s\S]*?\.tasks-lists-rail \.lists-rail__row\.jin-navigation-row--actions[^{]*\{\s*grid-template-columns:/);
+  });
+
   it('preserves a usable title track and wraps task metadata beneath it in split states', () => {
-    expect(browse).toContain('grid-template-columns: 20px 40px minmax(0, 1fr) auto 40px');
+    expect(browse).toContain("grid-template-columns: 32px minmax(0, 1fr) 64px");
     expect(browse).toMatch(/\.task-item--row \.task-item__content \{[\s\S]*?flex-direction: column;/);
     expect(browse).toMatch(/\.task-item--row \.task-item__title \{[\s\S]*?width: 100%;/);
     expect(browse).toMatch(/\.task-item--row \.task-item__title \{[\s\S]*?white-space: normal;[\s\S]*?overflow-wrap: anywhere;/);
@@ -343,10 +357,12 @@ describe('Continuous Ink Workspace', () => {
 
   it('keeps task checks compact and clears stale detail before a scope reload', () => {
     expect(markup).toContain('task-item__checkbox jin-check tap-target');
-    expect(taskRenderer).toContain("statusBtnEl.classList.add('jin-check')");
-    expect(taskDetailRenderer).toContain("task-detail__subtask-status jin-check tap-target");
+    expect(taskRenderer).toContain('configureTaskCompletion(statusBtnEl as HTMLButtonElement');
+    expect(taskDetailRenderer).toContain('configureTaskCompletion(statusBtn, subtask');
+    expect(browse).toMatch(/\.task-item--child\.task-item--row\.jin-list-row \{[\s\S]*?margin-inline-start: 32px;/);
+    expect(browse).toMatch(/\.task-item__collapse-toggle \{[\s\S]*?position: absolute;[\s\S]*?inset-inline-start: -24px;/);
     expect(taskController).toMatch(/setScope\(event: Event\): void \{[\s\S]*?this\.selectedTaskId = null;[\s\S]*?this\.selectedTaskIds\.clear\(\);[\s\S]*?this\.selectionAnchorId = null;[\s\S]*?this\.setDetailOpen\(false\);[\s\S]*?this\.detailContentTarget\.replaceChildren\(\);[\s\S]*?this\.currentScope = ce\.detail\.scope;/);
-    expect(browse).toMatch(/@media \(pointer: coarse\) \{[\s\S]*?\.task-detail__subtask-status\.jin-check,[\s\S]*?min-width: var\(--coarse-hit-target\);[\s\S]*?min-height: var\(--coarse-hit-target\);/);
+    expect(browse).toMatch(/@media \(pointer: coarse\) \{[\s\S]*?\.task-completion\.jin-check,[\s\S]*?min-width: var\(--coarse-hit-target\);[\s\S]*?min-height: var\(--coarse-hit-target\);/);
   });
 
   it('keeps rescheduling reachable without clipping task metadata', () => {

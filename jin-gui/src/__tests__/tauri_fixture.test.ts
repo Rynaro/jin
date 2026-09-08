@@ -52,6 +52,33 @@ describe('deterministic Tauri visual-QA fixture', () => {
     expect(urgent.map((task) => task.id)).toEqual(['t1']);
   });
 
+  it('persists list and task reorder commands used by drag and drop', async () => {
+    const bridge = loadFixture();
+    const reorderedList = await bridge.invoke('reorder_list', { id: 'home', position: 'Q' }) as Record<string, unknown>;
+    expect(reorderedList.position).toBe('Q');
+    const lists = await bridge.invoke('list_lists') as Array<Record<string, unknown>>;
+    expect(lists.find((list) => list.id === 'home')?.position).toBe('Q');
+
+    const movedTask = await bridge.invoke('move_task', {
+      id: 't2', input: { list_id: 'work', section_id: 's1', position: 'VV' },
+    }) as Record<string, unknown>;
+    expect(movedTask.position).toBe('VV');
+    const work = await bridge.invoke('list_tasks', { list: 'work' }) as Array<Record<string, unknown>>;
+    expect(work.find((task) => task.id === 't2')?.position).toBe('VV');
+  });
+
+  it('creates a deterministic subtask with the submitted parent and list', async () => {
+    const bridge = loadFixture();
+    const created = await bridge.invoke('create_task', {
+      input: { title: 'Verify the new composer', list: 'work', parent: 't1' },
+    }) as Record<string, unknown>;
+    expect(created).toMatchObject({
+      id: 'fixture-task-007', title: 'Verify the new composer', list: 'work', parent: 't1', status: 'todo',
+    });
+    const work = await bridge.invoke('list_tasks', { list: 'work' }) as Array<Record<string, unknown>>;
+    expect(work.find((item) => item.id === created.id)).toMatchObject({ parent: 't1', list: 'work' });
+  });
+
   it('isolates exact note folders and tags', async () => {
     const bridge = loadFixture();
     const fieldNotes = await bridge.invoke('list_notes', {

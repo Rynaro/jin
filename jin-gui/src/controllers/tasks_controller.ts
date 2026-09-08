@@ -183,6 +183,7 @@ export default class TasksController extends Controller {
   declare hasMainTarget: boolean;
   declare mainTarget: HTMLElement;
   declare listPanelTarget: HTMLElement;
+  declare hasListPanelTarget: boolean;
   declare workspaceTitleTarget: HTMLElement;
   declare hasWorkspaceTitleTarget: boolean;
   declare railToggleBtnTarget: HTMLButtonElement;
@@ -267,6 +268,11 @@ export default class TasksController extends Controller {
    * handler to look up fractional position keys by task id.
    */
   private currentTasks: TaskDto[] = [];
+  /** Latest optimistic status mutation per task. A stale response may never
+   * overwrite a newer user decision or a newer scope refresh. */
+  private readonly pendingStatusVersions = new Map<string, number>();
+  private statusMutationVersion = 0;
+  private loadGeneration = 0;
   /**
    * S7: all known lists, refreshed on every `loadList()` (same fetch that
    * already resolves `activeList`'s sections/sort_mode) — used by the bulk
@@ -297,7 +303,9 @@ export default class TasksController extends Controller {
   private currentView: 'list' | 'board' = 'list';
   /** Sort mode for the currently active list. */
   private currentSortMode: string = 'manual';
-  private filtersExpanded = true;
+  // Filters begin as a single compact disclosure. The active-count remains
+  // visible beside List/Board and the controls expand in place on request.
+  private filtersExpanded = false;
   private _filterMedia: MediaQueryList | null = null;
   private _boundFilterMediaChange: (() => void) | null = null;
   /** ID of the currently active list (null = a smart-view scope, no single list). */
@@ -462,14 +470,15 @@ export default class TasksController extends Controller {
     this.updateFilterCount();
     if (typeof window.matchMedia === 'function') {
       this._filterMedia = window.matchMedia('(max-width: 900px)');
-      this.filtersExpanded = !this._filterMedia.matches;
       this._boundFilterMediaChange = () => {
-        this.filtersExpanded = !this.isFiltersConstrained();
+        if (this.isFiltersConstrained()) this.filtersExpanded = false;
         this.updateFilterDisclosure();
       };
       this._filterMedia.addEventListener('change', this._boundFilterMediaChange);
+
     }
     this.updateFilterDisclosure();
+    this.updateDetailOverlayAccessibility();
 
     // P3/P4: populate the tag filter, then auto-select the default list so
     // drag-and-drop works immediately (S5: via currentScope, not a select).
@@ -501,6 +510,10 @@ export default class TasksController extends Controller {
     }
     if (this._filterMedia && this._boundFilterMediaChange) {
       this._filterMedia.removeEventListener('change', this._boundFilterMediaChange);
+    }
+    if (this.hasListPanelTarget) {
+      this.listPanelTarget.removeAttribute('inert');
+      this.listPanelTarget.removeAttribute('aria-hidden');
     }
     // S2: clean up the programmatic delete-confirm modal.
     this._deleteConfirmModal?.destroy();
@@ -725,9 +738,7 @@ export default class TasksController extends Controller {
 
   private updateFilterDisclosure(): void {
     if (!this.hasFiltersToggleBtnTarget || !this.hasFiltersPanelTarget) return;
-    const constrained = this.isFiltersConstrained();
-    if (!constrained) this.filtersExpanded = true;
-    this.filtersPanelTarget.hidden = constrained && !this.filtersExpanded;
+    this.filtersPanelTarget.hidden = !this.filtersExpanded;
     this.filtersToggleBtnTarget.setAttribute('aria-expanded', String(!this.filtersPanelTarget.hidden));
   }
 
@@ -1072,9 +1083,10 @@ export default class TasksController extends Controller {
    * WITHOUT a `list` filter (spans every list) and narrow client-side via
    * `applyScope` — the pure function `lib/tasks/scopes.ts` exists for.
    */
-  async loadList(filter: TasksFilter): Promise<void> {
+  async loadList(filter: TasksFilter, preserveContent = false): Promise<void> {
     const el = this.viewElements;
-    showTasksListLoading(el);
+    const generation = ++this.loadGeneration;
+    if (!preserveContent) showTasksListLoading(el);
 
     // P6: when a specific list is selected, load sections + sort mode.
     // S1 (Approach §5): currentView is a GLOBAL preference — it is loaded once
@@ -1095,6 +1107,7 @@ export default class TasksController extends Controller {
     // smart-view scope didn't make pre-S5 ("All Lists" never looked it up);
     // cheap per Assumption A4 (personal-scale data).
     const lists = await this.guarded(() => listLists(), 'loadList:listLists');
+    if (generation !== this.loadGeneration) return;
     // S7: cache the full list set for the bulk panel's "Move to list" select.
     this.currentLists = lists ?? [];
     this.updateWorkspaceTitle();
@@ -1116,7 +1129,8 @@ export default class TasksController extends Controller {
         }),
       'loadList:listTasks',
     );
-    hideTasksListLoading(el);
+    if (generation !== this.loadGeneration) return;
+    if (!preserveContent) hideTasksListLoading(el);
     if (tasks === undefined) return; // guarded() already surfaced app:error
 
     // S5: narrow to the active smart view (a no-op for a list scope — the
@@ -1164,6 +1178,7 @@ export default class TasksController extends Controller {
       onStatusToggle: (taskId, currentStatus) => {
         void this.handleStatusToggle(taskId, currentStatus);
       },
+      isStatusPending: (taskId) => this.pendingStatusVersions.has(taskId),
       onDeleteRequest: (taskId, taskTitle) => {
         this.openDeleteDialog(taskId, taskTitle);
       },
@@ -1182,13 +1197,13 @@ export default class TasksController extends Controller {
         void this.openDueDatePickerForReschedule(taskId, currentDue);
       },
       // P9: DnD
-      onDragStart: (_taskId) => {
-        // Auto→manual flip is deferred to the drop event (only flip if the drop
-        // actually happens, not just on drag start — avoids spurious list rewrites).
-      },
-      onDrop: (draggedId, sectionId, aboveId, belowId) => {
-        void this.handleDrop(draggedId, sectionId, aboveId, belowId);
-      },
+      // Manual row ordering has a truthful affordance only in one concrete
+      // list. Board cards retain their independent status-column drag path.
+      onDrop: this.currentListId
+        ? (draggedId, sectionId, aboveId, belowId) => {
+            void this.handleDrop(draggedId, sectionId, aboveId, belowId);
+          }
+        : undefined,
       // S4: board Kanban-by-status — Reopen action + cross-column drop.
       onReopen: (taskId) => {
         void this.handleReopen(taskId);
@@ -1417,10 +1432,16 @@ export default class TasksController extends Controller {
    * the selection and collapses the pane.
    */
   private closePane(): void {
+    const closedTaskId = this.selectedTaskId;
     this.selectedTaskId = null;
     this.setDetailOpen(false);
     this.viewElements.detailContent.innerHTML = '';
     this.renderList();
+    if (closedTaskId) {
+      const body = Array.from(this.viewElements.list.querySelectorAll<HTMLElement>('.task-item__body'))
+        .find((candidate) => candidate.dataset.taskId === closedTaskId);
+      body?.focus();
+    }
   }
 
   /** setDetailOpen — toggles the `.tasks-main--detail-open` grid-track class. */
@@ -1428,8 +1449,25 @@ export default class TasksController extends Controller {
     if (this.hasMainTarget) {
       this.mainTarget.classList.toggle('tasks-main--detail-open', open);
     }
+    this.updateDetailOverlayAccessibility();
     if (open && this.isFiltersConstrained()) this.filtersExpanded = false;
     this.updateFilterDisclosure();
+  }
+
+  /**
+   * Detail is an in-place full-workspace view. Its list remains rendered to
+   * preserve context and scroll position, so CSS alone cannot keep covered
+   * controls out of keyboard navigation.
+   */
+  private updateDetailOverlayAccessibility(): void {
+    if (!this.hasMainTarget || !this.hasListPanelTarget) return;
+    const covered = this.mainTarget.classList.contains('tasks-main--detail-open');
+    this.listPanelTarget.toggleAttribute('inert', covered);
+    if (covered) {
+      this.listPanelTarget.setAttribute('aria-hidden', 'true');
+    } else {
+      this.listPanelTarget.removeAttribute('aria-hidden');
+    }
   }
 
   // ── S7: bulk multi-select (Approach: "click, shift-click range, cmd/ctrl-
@@ -1895,21 +1933,28 @@ export default class TasksController extends Controller {
       allTagSlugs,
       // ── S6: Subtasks section ────────────────────────────────────────────
       subtasks,
-      onAddSubtask: (parentId, title) => {
-        void (async () => {
+      onAddSubtask: async (parentId, title) => {
           const result = await this.mutate(
             () => createTask({ title, list: task.list, parent: parentId }),
             'onAddSubtask',
           );
-          if (result === undefined) return;
+          if (result === undefined) return false;
           void this.loadList(this.currentFilter);
-          void this.refreshPane(parentId);
-        })();
+          await this.refreshPane(parentId);
+          this.viewElements.detailContent
+            .querySelector<HTMLButtonElement>('.task-detail__subtask-add-trigger')
+            ?.focus();
+          return true;
       },
       onToggleSubtaskStatus: (subtaskId, currentStatus) => {
-        void this.handleStatusToggle(subtaskId, currentStatus).then(() => {
-          void this.refreshPane(task.id);
-        });
+        void (async () => {
+          if (!await this.handleStatusToggle(subtaskId, currentStatus)) return;
+          await this.refreshPane(task.id);
+          const row = Array.from(
+            this.viewElements.detailContent.querySelectorAll<HTMLElement>('.task-detail__subtask-row'),
+          ).find((candidate) => candidate.dataset.taskId === subtaskId);
+          row?.querySelector<HTMLButtonElement>('.task-completion')?.focus();
+        })();
       },
       onDeleteSubtask: (subtaskId, subtaskTitle) => {
         this.openDeleteDialog(subtaskId, subtaskTitle);
@@ -1937,14 +1982,38 @@ export default class TasksController extends Controller {
 
   // ── P1 S1.1 — Status toggle (complete/reopen) ─────────────────────────────
 
-  private async handleStatusToggle(taskId: string, currentStatus: string): Promise<void> {
+  private async handleStatusToggle(taskId: string, currentStatus: string): Promise<boolean> {
     // legal transitions per task.rs:39-51
     const nextStatus = currentStatus === 'done' ? 'todo' : 'done';
+    const task = this.currentTasks.find((candidate) => candidate.id === taskId);
+    if (this.pendingStatusVersions.has(taskId)) return false;
+
+    const previousStatus = task?.status;
+    const previousCompletedAt = task?.completed_at;
+    const version = ++this.statusMutationVersion;
+    this.pendingStatusVersions.set(taskId, version);
+    if (task) {
+      task.status = nextStatus;
+      task.completed_at = nextStatus === 'done' ? new Date().toISOString() : null;
+      this.renderList();
+    }
 
     const result = await this.mutate(() => setTaskStatus(taskId, nextStatus), 'handleStatusToggle');
-    if (result === undefined) return;
-    // Reload list to reflect new status (optimistic update handled by class + reload)
-    void this.loadList(this.currentFilter);
+    if (this.pendingStatusVersions.get(taskId) !== version) return result !== undefined;
+    this.pendingStatusVersions.delete(taskId);
+
+    if (result === undefined) {
+      if (task && previousStatus !== undefined) {
+        task.status = previousStatus;
+        task.completed_at = previousCompletedAt ?? null;
+        this.renderList();
+      }
+      return false;
+    }
+
+    // Reconcile without replacing the visible list with the global loader.
+    void this.loadList(this.currentFilter, true);
+    return true;
   }
 
   // ── S4: board Kanban-by-status — Reopen action + cross-column drop ───────

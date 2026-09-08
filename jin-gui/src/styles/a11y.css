@@ -358,7 +358,7 @@
     forced-color-adjust: auto;
   }
 
-  .task-item__checkbox[aria-checked="true"]::before {
+  .task-completion[aria-checked="true"]::before {
     background: Highlight;
     border-color: Highlight;
   }
