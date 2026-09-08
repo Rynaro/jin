@@ -690,7 +690,6 @@ export default class TodayController extends Controller {
         : await editEvent({ event_id: detail.event.id, edit_token: detail.edit_token, operation_id: operationId, ...patch, recurrence_scope });
       if (!result.no_op) {
         this.dispatch('events-mutated', { prefix: 'jin', bubbles: true });
-        this.dispatch('refresh-today', { prefix: 'jin', bubbles: true });
       }
       const canonical = await getEventDetailById(result.event.id);
       if (!this.isCurrentPreview(request, 'events', detail.event.id)) return;

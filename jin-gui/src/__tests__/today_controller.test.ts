@@ -1197,7 +1197,7 @@ describe('TodayController — mutation refresh wiring', () => {
     document.body.insertAdjacentHTML('beforeend', `
       <section
         data-controller="today"
-        data-action="jin:refresh-today@window->today#refreshAgenda jin:tasks-changed@window->today#refreshAgenda"
+        data-action="jin:refresh-today@window->today#refreshAgenda jin:tasks-changed@window->today#refreshAgenda jin:events-mutated@window->today#refreshAgenda"
         data-today-date-value="2026-06-27"
       >
         <input data-today-target="dateInput" type="date">
@@ -1242,6 +1242,16 @@ describe('TodayController — mutation refresh wiring', () => {
     expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(1);
     expect(invokeMocks.todayProjection).toHaveBeenCalledWith('2026-06-27');
   });
+
+  it('reloads through the same projection path when synced events mutate', async () => {
+    invokeMocks.todayProjection.mockClear();
+
+    window.dispatchEvent(new CustomEvent('jin:events-mutated'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(invokeMocks.todayProjection).toHaveBeenCalledTimes(1);
+    expect(invokeMocks.todayProjection).toHaveBeenCalledWith('2026-06-27');
+  });
 });
 
 function makeProjection(date: string, title = 'Projection event') {
@@ -1274,7 +1284,7 @@ async function mountLifecycleController(): Promise<{ app: Application; section: 
   document.body.append(controllerTemplates.eventRow, controllerTemplates.prepNote);
   document.body.insertAdjacentHTML('beforeend', `
     <section data-controller="today" data-section-name="today"
-      data-action="jin:section-activated->today#activateSection jin:refresh-today@window->today#refreshAgenda jin:tasks-changed@window->today#refreshAgenda"
+      data-action="jin:section-activated->today#activateSection jin:refresh-today@window->today#refreshAgenda jin:tasks-changed@window->today#refreshAgenda jin:events-mutated@window->today#refreshAgenda"
       data-today-date-value="2026-06-27">
       <input data-today-target="dateInput" data-action="change->today#dateChanged" type="date"><output data-today-target="dateLabel"></output>
       <p data-today-target="dateEyebrow"></p>
