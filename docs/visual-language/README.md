@@ -164,7 +164,7 @@ Each recipe names the visual purpose and the behavior styling must leave alone.
 | Surface | Recipe and invariants | Owners |
 | --- | --- | --- |
 | Shell, brand, navigation | Keep the rail quiet and legible; current route remains discoverable; Capture remains a distinct entry point; collapse/overlay behavior and keyboard navigation stay intact. Keep the logo mark sparse and do not turn it into a repeating texture. | [`layout.css`](../../jin-gui/src/styles/layout.css), [`navigation.css`](../../jin-gui/src/styles/navigation.css), [`sidebar_controller.ts`](../../jin-gui/src/controllers/sidebar_controller.ts) |
-| Today | Keep date/time hierarchy and the indigo timeline readable on a warm agenda field. Preserve task/note/event links, source badges, ordering, and the capture action. Empty and error states remain actionable. | [`today.css`](../../jin-gui/src/styles/today.css), [`today_controller.ts`](../../jin-gui/src/controllers/today_controller.ts) |
+| Today | Keep the editorial date and time hierarchy readable on a continuous warm agenda field. Preserve task/note/event links, source badges, ordering, focus items, the Capture action, and truthful schedule/task states. | [`today.css`](../../jin-gui/src/styles/today.css), [`today_controller.ts`](../../jin-gui/src/controllers/today_controller.ts), [`render.ts`](../../jin-gui/src/lib/agenda/render.ts) |
 | Capture, forms, dialogs | Give one clear action path, readable fields, and transient elevation. Preserve labels, validation, focus return, submit/cancel behavior, and real destination/provider choices. Reduced transparency must leave dialogs legible. | [`forms.css`](../../jin-gui/src/styles/forms.css), [`components.css`](../../jin-gui/src/styles/components.css), [`capture_controller.ts`](../../jin-gui/src/controllers/capture_controller.ts), [`temporal_editor_controller.ts`](../../jin-gui/src/controllers/temporal_editor_controller.ts) |
 | Tasks | Treat the list as a paper ledger and the inspector as a focused companion. Preserve selected/current state, status glyph plus label, drag/drop, keyboard actions, filtering, and error surfacing. Large text turns row heights into minimums. | [`browse.css`](../../jin-gui/src/styles/browse.css), [`tasks_controller.ts`](../../jin-gui/src/controllers/tasks_controller.ts), [`a11y.css`](../../jin-gui/src/styles/a11y.css) |
 | Notes browser/editor | Keep folders and notes as open list fields rather than rounded cards. Give the CM6 editor a continuous writing desk, readable measure, quiet toolbar, and truthful save state. Preserve Markdown editing, selection, links, search, and large-text reflow. | [`browse.css`](../../jin-gui/src/styles/browse.css), [`a11y.css`](../../jin-gui/src/styles/a11y.css), [`notes_controller.ts`](../../jin-gui/src/controllers/notes_controller.ts), [`editor.ts`](../../jin-gui/src/lib/notes/editor.ts), [`render.ts`](../../jin-gui/src/lib/notes/render.ts) |
@@ -175,6 +175,44 @@ Each recipe names the visual purpose and the behavior styling must leave alone.
 The same rules apply to shared empty, loading, error, and confirmation surfaces:
 they inherit the owning surface's field and type hierarchy rather than becoming
 generic gray cards.
+
+### Today contract
+
+Today reads the dedicated `TodayProjectionDto` through `today_projection`. The
+legacy `AgendaDto` and `today_agenda` contract remain stable for their existing
+consumers. Core resolves `current_date`, `is_current_date`, task eligibility,
+and focus in `config.display_tz` from one transactional projection. Open work
+is shown in disjoint `attention`, `due`, and `flexible` lanes in that precedence
+order; tasks already represented by a promoted event stay reachable through the
+event and do not repeat in a standalone lane. A task due value is metadata, not
+a scheduled start, end, duration, or estimate.
+
+Focus keeps every active timed event directly accessible and adds the earliest
+resolved future event when one exists. Core resolves anchored and floating
+intervals to real instants before comparison, so the browser does not infer
+time authority. The controller refreshes only the current day while the Today
+route is active, pauses while that route or the document is hidden, refreshes
+on return, listens for task/event mutation signals, cancels on disconnect, and
+ignores stale responses from older date requests.
+
+The header uses the localized selected-date eyebrow, the `Today` editorial
+title, compact date navigation, and the existing Capture button. Event titles
+and task controls open preview-first modals that keep Today visible and place a
+clear `Go to event` or `Go to task` action first; prep-note controls keep their
+existing detail routes. Promoted events retain event identity and use a square
+marker plus `Task time block`; ordinary events use a circular marker plus
+`Event`. Connected work deduplicates linked task and note entities by kind and
+id while retaining the agenda event ids/titles that establish each association.
+The rail is hidden when no relationship exists; empty schedule copy describes
+the schedule only, even when task lanes contain work.
+
+The visual composition stays a continuous paper field: the agenda owns the
+primary measure, the Connected work rail is a readable secondary field, and a
+single indigo timeline runs without row dividers behind markers aligned to each
+event's content. Header actions wrap and the rail follows agenda/task lanes on
+compact screens; large text uses intrinsic geometry and the document remains
+free of horizontal overflow. Keep these rules with the Today owner rather than
+introducing generic cards or route-wide tokens.
 
 ## Ownership and cascade
 

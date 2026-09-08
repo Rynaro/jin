@@ -12,6 +12,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   AgendaDto,
+  TodayProjectionDto,
   AssetEntry,
   AssetRepairReport,
   AppConfigDto,
@@ -57,6 +58,11 @@ export function newOperationId(prefix: string): string {
 /** today_agenda(date?: string) -> AgendaDto */
 export function todayAgenda(date?: string): Promise<AgendaDto> {
   return invoke<AgendaDto>('today_agenda', { date });
+}
+
+/** today_projection(date?: string) -> backend-authoritative connected Today data. */
+export function todayProjection(date?: string): Promise<TodayProjectionDto> {
+  return invoke<TodayProjectionDto>('today_projection', { date });
 }
 
 // ── Notes ──────────────────────────────────────────────────────────────────────

@@ -1,0 +1,21 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "root"
+  },
+  "to": {
+    "eidolon": "idg"
+  },
+  "performative": "INFORM",
+  "objective": "Record independently reviewed implementation and final validation of Today.",
+  "context_delta": {
+    "verify_pass": true,
+    "evidence": "verification.md",
+    "independent_review": "ATLAS review findings corrected by Vivi; final correction verification by root.",
+    "lifecycle": "Local archive fallback; Tonberry transport unavailable; no mechanical conformance pass claimed."
+  },
+  "integrity": {
+    "algorithm": "sha256",
+    "value": "7646db66d1c3af4373f72fbfded060fc1c99e4e37e9ff95e81f359519e0b2a8c"
+  }
+}

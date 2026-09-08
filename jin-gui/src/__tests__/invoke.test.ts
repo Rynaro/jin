@@ -18,6 +18,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 import { invoke } from '@tauri-apps/api/core';
 import {
   todayAgenda,
+  todayProjection,
   listNotes,
   createNote,
   editNote,
@@ -86,6 +87,18 @@ describe('todayAgenda', () => {
     const err = { code: 7, kind: 'integrity', message: 'not initialized', retriable: false };
     mockInvoke.mockRejectedValueOnce(err);
     await expect(todayAgenda()).rejects.toMatchObject({ code: 7, kind: 'integrity' });
+  });
+});
+
+describe('todayProjection', () => {
+  it('calls the dedicated projection command with the selected date', async () => {
+    mockInvoke.mockResolvedValueOnce({
+      agenda: { date: '2026-06-27', display_tz: 'UTC', timed_events: [], all_day_events: [] },
+      current_date: '2026-06-27', is_current_date: true, attention_tasks: [], due_tasks: [],
+      flexible_tasks: [], active_events: [], next_event: null, generated_at_utc: '2026-06-27T00:00:00Z',
+    });
+    await todayProjection('2026-06-27');
+    expect(mockInvoke).toHaveBeenCalledWith('today_projection', { date: '2026-06-27' });
   });
 });
 

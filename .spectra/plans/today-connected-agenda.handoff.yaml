@@ -1,0 +1,48 @@
+from: ramza
+from_version: 1.1.0
+to: vivi
+performative: DELEGATE
+status: superseded
+superseded_by: ../changes/today-connected-agenda/spec.md
+tier: standard
+objective: Implement Jin's backend-authoritative connected Today agenda and editorial responsive composition under the frozen criteria.
+spec: today-connected-agenda.md
+criteria: today-connected-agenda.criteria.md
+scope:
+  - jin-core/src/dto/agenda.rs
+  - jin-core/src/ops/agenda.rs
+  - jin-gui/src-tauri/tests/bridge.rs
+  - jin-gui/src/types/dto.ts
+  - jin-gui/tools/tauri-fixture-init.js
+  - jin-gui/index.html
+  - jin-gui/src/controllers/today_controller.ts
+  - jin-gui/src/controllers/router_controller.ts
+  - jin-gui/src/lib/agenda/transform.ts
+  - jin-gui/src/lib/agenda/render.ts
+  - jin-gui/src/styles/today.css
+  - jin-gui/src/__tests__/today_controller.test.ts
+  - jin-gui/src/__tests__/dto_shapes.test.ts
+stages:
+  - Add deterministic core DTO projection, task lanes, focus derivation, and Rust tests.
+  - Update bridge and frontend DTO fixtures without changing today_agenda arguments.
+  - Reshape Today markup and render model while preserving existing relationship semantics.
+  - Extend real event navigation and controller refresh lifecycle.
+  - Apply responsive Jin visual language in the owning Today stylesheet.
+  - Run focused, full, and visual verification against every frozen criterion.
+constraints:
+  - Never fabricate task time, duration, linkage, context, or completion state.
+  - Use config.display_tz and existing DST-safe core helpers as time authority.
+  - Deduplicate originating tasks and enforce disjoint standalone lanes.
+  - Preserve existing Capture, event, task, note, source, recurrence, overlap, error, and date-navigation behavior.
+  - Add no dependency, persistence field, schema migration, or background service.
+rollback:
+  - Keep AgendaDto additions additive and isolate projection behind agenda_for_date_at.
+  - Preserve existing Stimulus target names until the replacement composition is green.
+  - Reverse feature hunks by stage; never reset unrelated worktree changes.
+verification_commands:
+  - cargo test -p jin-core agenda
+  - cargo test -p jin-gui --test bridge
+  - npm --prefix jin-gui test -- src/__tests__/today_controller.test.ts src/__tests__/dto_shapes.test.ts src/__tests__/router_controller_wiring.test.ts
+  - npm --prefix jin-gui run lint:css
+  - make verify-gui
+  - git diff --check

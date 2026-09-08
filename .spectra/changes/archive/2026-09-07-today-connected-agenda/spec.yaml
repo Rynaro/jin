@@ -1,0 +1,88 @@
+change_id: today-connected-agenda
+title: Today connected agenda
+author: ramza
+status: ready_for_maker
+tier: full
+executor: vivi
+checker: atlas
+objective: Build a backend-authoritative connected Today desk with plural live focus, real task lanes, event chronology, relationship context, and adaptive Jin presentation.
+source_of_truth:
+  spec: spec.md
+  criteria: criteria.md
+  deliberation: deliberation.md
+data_contract:
+  command: today_projection
+  legacy_command_unchanged: today_agenda
+  dto: TodayProjectionDto
+  clock_seam: today_projection_for_date_at
+  timezone_authority: config.display_tz
+  fields:
+    - agenda
+    - current_date
+    - is_current_date
+    - attention_tasks
+    - due_tasks
+    - flexible_tasks
+    - active_events
+    - next_event
+    - generated_at_utc
+invariants:
+  - All active concurrent events remain directly accessible.
+  - No task appears in more than one standalone lane.
+  - An originating task represented by an agenda event is not duplicated as a standalone task.
+  - Standalone tasks never receive invented start times or durations.
+  - Anchored and floating events are resolved to real UTC instants in core before focus comparison.
+  - Current-day and refresh decisions use server-authoritative current_date and is_current_date.
+  - Existing Capture and event/task/note detail flows are reused.
+  - Existing AgendaDto and today_agenda consumers remain compatible.
+stages:
+  - id: core_projection
+    owner: vivi
+    output: Dedicated DTO, task lanes, plural focus, fixed-clock tests.
+  - id: bridge_contract
+    owner: vivi
+    output: Core API, Tauri command/registration, TS wrapper/types, bridge and shape tests.
+  - id: composition
+    owner: vivi
+    output: Editorial header, focus, continuous timeline, task lanes, context rail and navigation.
+  - id: freshness
+    owner: vivi
+    output: Minute, visibility, mutation and race-safe reload lifecycle.
+  - id: adaptive_visuals
+    owner: vivi
+    output: Today-owned desktop/mobile/AX/preference styling.
+  - id: verification
+    owner: atlas
+    output: AC-indexed behavior, contract and visual evidence.
+scope:
+  - jin-core/src/dto/agenda.rs
+  - jin-core/src/ops/agenda.rs
+  - jin-core/src/ops/api.rs
+  - jin-gui/src-tauri/src/commands/agenda.rs
+  - jin-gui/src-tauri/src/lib.rs
+  - jin-gui/src-tauri/tests/bridge.rs
+  - jin-gui/src/types/dto.ts
+  - jin-gui/src/invoke.ts
+  - jin-gui/tools/tauri-fixture-init.js
+  - jin-gui/index.html
+  - jin-gui/src/controllers/today_controller.ts
+  - jin-gui/src/lib/agenda/transform.ts
+  - jin-gui/src/lib/agenda/render.ts
+  - jin-gui/src/styles/today.css
+  - jin-gui/src/__tests__/today_controller.test.ts
+  - jin-gui/src/__tests__/dto_shapes.test.ts
+  - jin-gui/src/__tests__/invoke.test.ts
+  - jin-gui/src/__tests__/router_controller_wiring.test.ts
+out_of_scope:
+  - persistence or schema changes
+  - new scheduling or task editing behavior
+  - fabricated content or AI summaries
+  - provider sync changes
+  - new dependencies or background services
+verification:
+  - cargo test --workspace
+  - npm --prefix jin-gui test
+  - npm --prefix jin-gui run lint:css
+  - npm --prefix jin-gui run build
+  - git diff --check
+  - deterministic Playwright responsive and preference matrix

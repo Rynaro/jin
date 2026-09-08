@@ -81,3 +81,47 @@ pub struct AgendaDto {
     /// Timed and floating events, sorted by UTC start time (ascending).
     pub timed_events: Vec<AgendaEventDto>,
 }
+
+/// The compact task projection used by the connected Today desk.
+///
+/// This deliberately carries no scheduling fields: a task due value is not a
+/// promised start time or duration. Timed work remains represented by events.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgendaTaskDto {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub priority: String,
+    pub due: Option<String>,
+    pub list: String,
+    pub position: String,
+    pub parent: Option<String>,
+    pub agenda_bucket: Option<String>,
+}
+
+/// A timed agenda event resolved by core for the current-focus presentation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TodayFocusEventDto {
+    pub event_id: String,
+    pub start_utc: i64,
+    pub end_utc: i64,
+    /// Minutes left for active work, or minutes until start for upcoming work.
+    pub minutes: i64,
+}
+
+/// Backend-authoritative daily projection for the Today route.
+///
+/// `AgendaDto` remains the stable legacy agenda contract. This wrapper adds
+/// current-day work and focus without changing existing consumers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TodayProjectionDto {
+    pub agenda: AgendaDto,
+    pub current_date: String,
+    pub is_current_date: bool,
+    pub attention_tasks: Vec<AgendaTaskDto>,
+    pub due_tasks: Vec<AgendaTaskDto>,
+    pub flexible_tasks: Vec<AgendaTaskDto>,
+    pub active_events: Vec<TodayFocusEventDto>,
+    pub next_event: Option<TodayFocusEventDto>,
+    pub generated_at_utc: String,
+}
