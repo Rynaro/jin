@@ -204,8 +204,9 @@ export default class EventsController extends Controller {
 
     const active = document.activeElement as HTMLElement | null;
     if (active?.dataset.eventId) this.returnFocusId = active.dataset.eventId;
-    const visiblePanel = this.element.querySelector<HTMLElement>('.calendar-day-view:not(.hidden), .calendar-month-view:not(.hidden)');
-    if (visiblePanel) this.returnScrollTop = visiblePanel.scrollTop;
+    // Month scroll belongs to the route section. Week and Day preserve their
+    // own chronological scroll in CalendarViewController.
+    this.returnScrollTop = this.element.scrollTop;
 
     this.element.querySelectorAll<HTMLElement>('.calendar-month-view, .calendar-day-view')
       .forEach(panel => panel.classList.add('hidden'));
