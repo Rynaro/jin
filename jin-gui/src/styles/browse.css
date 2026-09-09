@@ -4332,7 +4332,7 @@ figure.code-block {
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-half);
-  min-block-size: var(--control-height-compact);
+  min-block-size: var(--control-height);
   margin: 0;
 }
 
@@ -4359,7 +4359,7 @@ figure.code-block {
   cursor: pointer;
 }
 .notes-detail-pane .note-detail__tag-remove:hover,
-.notes-detail-pane .note-detail__tag-remove:focus-visible { color: var(--red); background: var(--fill-tertiary); }
+.notes-detail-pane .note-detail__tag-remove:focus-visible { color: var(--system-red); background: var(--fill-tertiary); }
 .notes-detail-pane .note-detail__tag-chip:hover,
 .notes-detail-pane .note-detail__tag-chip:focus-visible { color: var(--agenda-indigo); background: var(--notes-selected-wash); }
 .notes-detail-pane .note-detail__tag-input { inline-size: 7rem; padding-inline: var(--space-1); background: transparent; }
@@ -4443,15 +4443,15 @@ figure.code-block {
   border-radius: var(--radius-md);
   background: var(--bg-elevated-2);
   color: var(--label);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--dialog-elevation);
 }
 .notes-link-composer::backdrop { background: color-mix(in srgb, var(--label) 30%, transparent); }
 .notes-link-composer form { display: grid; gap: var(--space-2); padding: var(--space-3); }
 .notes-link-composer h2 { margin: 0; font: 650 var(--text-title3-size)/1.2 var(--font-text); }
 .notes-link-composer label { display: grid; gap: var(--space-half); color: var(--label-secondary); font-size: var(--text-subheadline-size); }
-.notes-link-composer input, .notes-link-composer select { min-block-size: var(--control-height); padding-inline: var(--space-1); border: 1px solid var(--separator); border-radius: var(--radius-sm); background: var(--bg-elevated-1); color: var(--label); font: inherit; }
+.notes-link-composer input, .notes-link-composer select { min-block-size: var(--control-height); padding-inline: var(--space-1); border: 1px solid var(--separator); border-radius: var(--radius-sm); background: var(--bg-elevated); color: var(--label); font: inherit; }
 .notes-link-composer__hint { margin: 0; color: var(--label-secondary); font-size: var(--text-caption1-size); }
-.notes-link-composer__error { min-block-size: 1.2em; margin: 0; color: var(--red); font-size: var(--text-caption1-size); }
+.notes-link-composer__error { min-block-size: 1.2em; margin: 0; color: var(--system-red); font-size: var(--text-caption1-size); }
 
 /* Final Notes writing-column authority. These follow legacy browse rules so
  * the document title reads as the first line of writing, not a page poster. */
@@ -4509,7 +4509,7 @@ figure.code-block {
   background: var(--bg-elevated-2);
   border: 0.5px solid var(--separator);
   border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--elevation-shadow);
 }
 
 @media (max-width: 900px) {

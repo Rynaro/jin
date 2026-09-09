@@ -198,14 +198,11 @@
     var sourceNote = notes.find(function findReferenceSource(item) { return item.id === noteId; });
     if (!sourceNote) throw new Error('Note not found: ' + noteId);
     var target = notes.find(function findTargetNote(item) { return item.id === targetId; });
-    var targetKind = 'note';
     if (!target) {
       target = tasks.find(function findTargetTask(item) { return item.id === targetId; });
-      targetKind = 'task';
     }
     if (!target) {
       target = events.find(function findTargetEvent(item) { return item.id === targetId; });
-      targetKind = 'event';
     }
     if (!target) throw new Error('Reference target not found: ' + targetId);
     if (!sourceNote.links.some(function sameLink(link) { return link.target === targetId && link.edge_type === 'references'; })) {
@@ -214,7 +211,7 @@
     if (!target.backlinks.some(function sameBacklink(link) { return link.source_id === noteId && link.edge_type === 'references'; })) {
       target.backlinks.push({ source_id: noteId, source_kind: 'note', edge_type: 'references', label: sourceNote.title });
     }
-    return { edge_type: 'references', source_id: noteId, source_kind: 'note', target_id: targetId, target_kind: targetKind };
+    return { edge_type: 'references', source_id: noteId, target_id: targetId };
   }
   var fixtures = {
     list_lists: lists,
