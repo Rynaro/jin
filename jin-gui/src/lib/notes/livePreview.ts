@@ -11,7 +11,7 @@
  * No markdown-it, no dompurify, no innerHTML.
  */
 
-import { type EditorState, RangeSetBuilder } from '@codemirror/state';
+import { type EditorState, RangeSetBuilder, StateField } from '@codemirror/state';
 import {
   Decoration,
   type DecorationSet,
@@ -90,8 +90,10 @@ export class CheckboxWidget extends WidgetType {
   toDOM(): HTMLElement {
     const span = document.createElement('span');
     span.className = 'cm-task-glyph' + (this.checked ? ' cm-task-glyph--checked' : '');
-    span.textContent = this.checked ? '☑' : '☐';
-    span.setAttribute('aria-hidden', 'true');
+    span.setAttribute('role', 'checkbox');
+    span.setAttribute('aria-checked', this.checked ? 'true' : 'false');
+    span.setAttribute('aria-label', this.checked ? 'Mark task incomplete' : 'Mark task complete');
+    span.tabIndex = 0;
     return span;
   }
 
@@ -152,6 +154,7 @@ export function buildLivePreviewDecorations(
           // The label is NOT a node — computed as [open.to, closeB.from).
           const linkMarks: Array<{ from: number; to: number }> = [];
           let urlNode: { from: number; to: number } | null = null;
+          let cardMarker = false;
           let hasNested = false;
 
           let child = n.firstChild;
@@ -160,7 +163,9 @@ export function buildLivePreviewDecorations(
               linkMarks.push(child);
             } else if (child.name === 'URL') {
               urlNode = child;
-            } else if (child.name !== 'LinkTitle') {
+            } else if (child.name === 'LinkTitle') {
+              cardMarker = state.doc.sliceString(child.from, child.to).replace(/^['"]|['"]$/g, '') === 'jin-card';
+            } else {
               // Any child name ∉ {LinkMark, URL, LinkTitle} ⇒ nested markup (R2).
               hasNested = true;
             }
@@ -185,7 +190,19 @@ export function buildLivePreviewDecorations(
           // Emit 3 decorations in strictly ascending from-order (critical for
           // RangeSetBuilder — any out-of-order add throws).
           builder.add(node.from, open.to, Decoration.replace({}));           // hide '['
-          builder.add(lf, lt, Decoration.mark({ class: 'cm-link-label' })); // style label
+          const line = state.doc.lineAt(node.from);
+          const wholeLine = line.text.trim() === state.doc.sliceString(node.from, node.to);
+          const labelClass = cardMarker && wholeLine
+            ? 'cm-link-label cm-link-card-label'
+            : 'cm-link-label';
+          let linkHost = '';
+          if (cardMarker && wholeLine) {
+            try { linkHost = new URL(urlText).hostname; } catch { /* safe scheme may be non-hierarchical */ }
+          }
+          builder.add(lf, lt, Decoration.mark({
+            class: labelClass,
+            attributes: linkHost ? { 'data-link-host': linkHost } : undefined,
+          })); // style label/card
           builder.add(closeB.from, node.to, Decoration.replace({}));         // hide '](url)'
 
           return false; // skip children: link syntax fully handled by the 3 decorations
@@ -444,6 +461,21 @@ export const taskCheckboxClickHandler = EditorView.domEventHandlers({
     event.preventDefault();
     return true; // consume — do NOT move the caret or reveal raw markdown
   },
+  keydown(event: KeyboardEvent, view: EditorView): boolean {
+    if (event.key !== ' ' && event.key !== 'Enter') return false;
+    const target = event.target as HTMLElement | null;
+    const glyph = target?.closest('.cm-task-glyph') as HTMLElement | null;
+    if (!glyph) return false;
+    let pos: number;
+    try { pos = view.posAtDOM(glyph); } catch { return false; }
+    const line = view.state.doc.lineAt(pos);
+    const match = /^(\s*(?:[-*+]|\d+\.)\s+\[)([ xX])(\])/.exec(line.text);
+    if (!match) return false;
+    const boxPos = line.from + match[1].length;
+    view.dispatch({ changes: { from: boxPos, to: boxPos + 1, insert: match[2] === ' ' ? 'x' : ' ' } });
+    event.preventDefault();
+    return true;
+  },
 });
 
 // ── ViewPlugin wrapper ────────────────────────────────────────────────────────
@@ -486,4 +518,96 @@ export function jinLivePreview() {
   );
 
   return plugin;
+}
+
+class TableWidget extends WidgetType {
+  constructor(readonly from: number, readonly rows: string[][]) { super(); }
+  toDOM(): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-table-widget'; wrap.dataset.cmTableFocus = String(this.from); wrap.tabIndex = 0;
+    wrap.setAttribute('role', 'button'); wrap.setAttribute('aria-label', 'Table preview. Focus to edit source.');
+    const table = document.createElement('table');
+    this.rows.forEach((row, i) => { const tr = document.createElement('tr'); row.forEach(value => { const cell = document.createElement(i ? 'td' : 'th'); cell.textContent = value; tr.appendChild(cell); }); table.appendChild(tr); });
+    wrap.appendChild(table); return wrap;
+  }
+  eq(other: WidgetType): boolean { return other instanceof TableWidget && other.from === this.from && JSON.stringify(other.rows) === JSON.stringify(this.rows); }
+  ignoreEvent(): boolean { return false; }
+}
+
+class ManagedImageWidget extends WidgetType {
+  constructor(readonly from: number, readonly hash: string, readonly label: string) { super(); }
+  toDOM(): HTMLElement {
+    const wrap = document.createElement('figure');
+    wrap.className = 'cm-managed-image-placeholder';
+    wrap.dataset.cmImageFocus = String(this.from);
+    wrap.dataset.jinAssetHash = this.hash;
+    wrap.dataset.jinAssetLabel = this.label || `Attachment ${this.hash.slice(0, 12)}`;
+    wrap.tabIndex = 0;
+    wrap.setAttribute('role', 'button');
+    wrap.setAttribute('aria-label', `Image ${wrap.dataset.jinAssetLabel}. Focus to edit source.`);
+    wrap.textContent = wrap.dataset.jinAssetLabel;
+    return wrap;
+  }
+  eq(other: WidgetType): boolean {
+    return other instanceof ManagedImageWidget && other.from === this.from && other.hash === this.hash && other.label === this.label;
+  }
+  ignoreEvent(): boolean { return false; }
+}
+
+const MANAGED_IMAGE_LINE = /^\s*!\[((?:\\.|[^\]])*)\]\(jin-asset:\/\/sha256\/([a-f0-9]{64})\)\s*$/;
+
+/** Render a verified-local image marker as a widget unless its source line is active. */
+export function jinManagedImagePreview() {
+  const make = (state: EditorState): DecorationSet => {
+    const builder = new RangeSetBuilder<Decoration>();
+    for (let n = 1; n <= state.doc.lines; n++) {
+      const line = state.doc.line(n);
+      const match = MANAGED_IMAGE_LINE.exec(line.text);
+      const active = state.selection.ranges.some((range) => range.from <= line.to && range.to >= line.from);
+      if (!match || active) continue;
+      builder.add(line.from, line.to, Decoration.replace({
+        widget: new ManagedImageWidget(line.from, match[2], match[1].replace(/\\([\\\]])/g, '$1')),
+        block: true,
+      }));
+    }
+    return builder.finish();
+  };
+  return StateField.define<DecorationSet>({
+    create: make,
+    update(value, transaction) { return transaction.docChanged || transaction.selection ? make(transaction.state) : value; },
+    provide: field => EditorView.decorations.from(field),
+  });
+}
+function tableCells(line: string): string[] | null {
+  if (!line.includes('|')) return null;
+  const cells = line.trim().replace(/^\||\|$/g, '').split('|').map(value => value.trim());
+  return cells.length > 1 ? cells : null;
+}
+export function jinTablePreview() {
+  const make = (state: EditorState): DecorationSet => {
+    const builder = new RangeSetBuilder<Decoration>(); let lineNo = 1;
+    while (lineNo < state.doc.lines) {
+      const header = tableCells(state.doc.line(lineNo).text); const separator = state.doc.line(lineNo + 1);
+      if (!header || !/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(separator.text)) { lineNo++; continue; }
+      const rows = [header]; let endLine = lineNo + 1;
+      while (endLine < state.doc.lines) { const row = tableCells(state.doc.line(endLine + 1).text); if (!row) break; rows.push(row); endLine++; }
+      const first = state.doc.line(lineNo); const end = state.doc.line(endLine).to;
+      const active = state.selection.ranges.some((range) => range.from <= end && range.to >= first.from);
+      if (!active) builder.add(first.from, end, Decoration.replace({
+        widget: new TableWidget(first.from, rows),
+        block: true,
+      }));
+      lineNo = endLine + 1;
+    }
+    return builder.finish();
+  };
+  // Replacing table line breaks is legal only from a StateField. ViewPlugin
+  // decorations are intentionally constrained by CM6 and throw at runtime.
+  return StateField.define<DecorationSet>({
+    create: make,
+    update(value, transaction) {
+      return transaction.docChanged || transaction.selection ? make(transaction.state) : value;
+    },
+    provide: field => EditorView.decorations.from(field),
+  });
 }

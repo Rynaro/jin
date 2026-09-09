@@ -54,6 +54,7 @@ pub fn run(root: std::path::PathBuf) {
             commands::assets::import_attachment,
             commands::assets::list_attachments,
             commands::assets::repair_attachments,
+            commands::assets::resolve_image_attachment,
             // Declarative Notes Collections
             commands::collections::list_collections,
             commands::collections::create_collection,

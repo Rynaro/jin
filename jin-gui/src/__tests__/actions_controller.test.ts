@@ -101,7 +101,7 @@ describe('event context dialogs use human-title search without ID or edge contro
          <div data-actions-target="linkLegacyGroup"><input data-actions-target="linkTargetId"></div>
          <div data-actions-target="linkLegacyGroup"><select data-actions-target="linkEdgeType"><option value="references"></option></select></div>`;
     return `<dialog data-actions-target="${kind}Dialog"><h2 class="action-dialog__title">${capital}</h2><button class="modal-close-btn"></button>
-      <div class="hidden" data-actions-target="${kind}ContextGroup"><label></label><input data-actions-target="${kind}ContextSearch"><datalist data-actions-target="${kind}ContextOptions"></datalist></div>
+      <div class="hidden" data-actions-target="${kind}ContextGroup"><label for="${kind}-context-title"></label><input id="${kind}-context-title" data-actions-target="${kind}ContextSearch"><datalist data-actions-target="${kind}ContextOptions"></datalist></div>
       ${idTargets}<p data-actions-target="${kind}Error" class="hidden"></p><div class="form-actions"><button></button><button data-actions-target="${kind}Submit"></button></div></dialog>`;
   }
 
@@ -159,6 +159,61 @@ describe('event context dialogs use human-title search without ID or edge contro
     expect(mockInvoke).not.toHaveBeenCalledWith('list_tasks', expect.anything());
     expect(mockInvoke).not.toHaveBeenCalledWith('list_events', expect.anything());
     expect(contextAttached).toHaveBeenCalledWith(expect.objectContaining({ detail: { id: 'event-private-id' } }));
+  });
+
+  it('note Connect offers real typed entities, hides IDs, and submits the selected identity', async () => {
+    const host = document.querySelector<HTMLElement>('[data-controller="actions"]')!;
+    host.dispatchEvent(new CustomEvent('jin:open-link', {
+      bubbles: true,
+      detail: { context: 'note-connect', sourceId: 'note-source-id' },
+    }));
+    await flush();
+
+    const labels = [...document.querySelectorAll<HTMLOptionElement>('[data-actions-target="linkContextOptions"] option')]
+      .map((option) => option.value);
+    expect(labels).toEqual([
+      'Note · Roadmap notes',
+      'Task · Prepare deck',
+      'Event · Design review',
+    ]);
+    expect(labels.join(' ')).not.toContain('private-id');
+    const submit = document.querySelector<HTMLButtonElement>('[data-actions-target="linkSubmit"]')!;
+    expect(submit.getAttribute('aria-label')).toBe('Connect this note');
+
+    document.querySelector<HTMLInputElement>('[data-actions-target="linkContextSearch"]')!.value = 'Task · Prepare deck';
+    const controller = app.getControllerForElementAndIdentifier(host, 'actions') as ActionsController;
+    await controller.submitLink();
+    expect(mockInvoke).toHaveBeenCalledWith('link', {
+      source_id: 'note-source-id', target_id: 'task-private-id', edge_type: 'references',
+    });
+  });
+
+  it('ignores an older Connect result after the dialog is closed and reopened', async () => {
+    let resolveFirst!: (notes: Array<{ id: string; title: string }>) => void;
+    const firstNotes = new Promise<Array<{ id: string; title: string }>>((resolve) => { resolveFirst = resolve; });
+    let noteCall = 0;
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === 'list_notes') {
+        noteCall += 1;
+        return noteCall === 1 ? firstNotes : [{ id: 'fresh-note', title: 'Fresh choice' }];
+      }
+      if (command === 'list_tasks' || command === 'list_events') return [];
+      return undefined;
+    });
+    const host = document.querySelector<HTMLElement>('[data-controller="actions"]')!;
+    const controller = app.getControllerForElementAndIdentifier(host, 'actions') as ActionsController;
+    host.dispatchEvent(new CustomEvent('jin:open-link', { bubbles: true, detail: { context: 'note-connect', sourceId: 'source-a' } }));
+    controller.closeLink();
+    host.dispatchEvent(new CustomEvent('jin:open-link', { bubbles: true, detail: { context: 'note-connect', sourceId: 'source-b' } }));
+    await flush();
+    expect(document.querySelector<HTMLDataListElement>('[data-actions-target="linkContextOptions"]')!.options[0].value)
+      .toBe('Note · Fresh choice');
+
+    resolveFirst([{ id: 'stale-note', title: 'Stale choice' }]);
+    await flush();
+    const labels = [...document.querySelectorAll<HTMLOptionElement>('[data-actions-target="linkContextOptions"] option')]
+      .map((option) => option.value);
+    expect(labels).toEqual(['Note · Fresh choice']);
   });
 
   it('disambiguates duplicate titles with human folder labels and never exposes IDs', async () => {

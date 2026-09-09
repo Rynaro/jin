@@ -135,7 +135,7 @@ describe('VG-GUI-5: tokens.css defines required semantic tokens', () => {
       '--notes-toolbar-wash:', '--notes-toolbar-rule:', '--notes-selection-tint:',
       '--notes-focus-tint:', '--notes-quote-rule:', '--notes-code-wash:',
       '--notes-save-saving:', '--notes-save-failed:', '--notes-save-paused:',
-      '--notes-prose-measure: 66ch', '--notes-prose-size: 1.125rem', '--notes-prose-line: 1.7',
+      '--notes-prose-measure: 66ch', '--notes-prose-size: 1rem', '--notes-prose-line: 1.6',
     ]) expect(tokens).toContain(token);
   });
 

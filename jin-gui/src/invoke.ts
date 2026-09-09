@@ -15,6 +15,7 @@ import type {
   TodayProjectionDto,
   AssetEntry,
   AssetRepairReport,
+  ResolvedImageAssetDto,
   AppConfigDto,
   AuthStatusDto,
   CaptureResultDto,
@@ -156,6 +157,11 @@ export function importAttachment(source: string): Promise<AssetEntry> {
 
 export function listAttachments(): Promise<AssetEntry[]> {
   return invoke<AssetEntry[]>('list_attachments', {});
+}
+
+/** Read locally-managed image bytes after backend hash, manifest and MIME checks. */
+export function resolveImageAttachment(hash: string): Promise<ResolvedImageAssetDto> {
+  return invoke<ResolvedImageAssetDto>('resolve_image_attachment', { hash });
 }
 
 export function repairAttachments(): Promise<AssetRepairReport> {

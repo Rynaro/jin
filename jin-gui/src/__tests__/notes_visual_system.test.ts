@@ -170,7 +170,7 @@ describe('Continuous Ink Workspace', () => {
     expect(browse).toContain('min-block-size: var(--note-row-height)');
     expect(browse).toContain('max-block-size: none;');
     expect(browse).toContain('width: min(100%, var(--reading-width))');
-    expect(browse).toContain('font-size: var(--document-title-size)');
+    expect(browse).toContain('font-size: clamp(1.75rem, 3vw, 2rem) !important');
     expect(browse).toContain('visibility: hidden');
     expect(browse).toContain('opacity: 0');
   });
@@ -399,7 +399,7 @@ describe('Continuous Ink Workspace', () => {
     for (const token of [
       '--notes-writing-paper:', '--notes-writing-ink:', '--notes-toolbar-wash:',
       '--notes-selection-tint:', '--notes-quote-rule:', '--notes-code-wash:',
-      '--notes-prose-measure: 66ch', '--notes-prose-size: 1.125rem', '--notes-prose-line: 1.7',
+      '--notes-prose-measure: 66ch', '--notes-prose-size: 1rem', '--notes-prose-line: 1.6',
     ]) expect(tokens).toContain(token);
 
     expect(browse).toMatch(/\.notes-detail-pane,\n\.notes-detail-pane \.note-detail__body,[\s\S]*?background: var\(--notes-writing-paper\);/);
@@ -407,6 +407,10 @@ describe('Continuous Ink Workspace', () => {
     expect(browse).toMatch(/\.notes-detail-pane \.cm-reading-wrapper \{[\s\S]*?font-size: var\(--notes-prose-size\);[\s\S]*?line-height: var\(--notes-prose-line\);/);
     expect(browse).toMatch(/\.notes-detail-pane \.browse-detail__title--input\.jin-title-field:focus-visible \{[\s\S]*?border-bottom-color: var\(--notes-focus-tint\);/);
     expect(browse).toContain('.cm-toolbar__group');
+    expect(browse).toMatch(/\.notes-detail-pane \{ container-type: inline-size; \}[\s\S]*?@container \(max-width: 42rem\) \{[\s\S]*?\.notes-detail-pane \.cm-toolbar \{[\s\S]*?flex-wrap: wrap;/);
+    expect(browse).toMatch(/\.notes-detail-pane \.note-detail__status \{[\s\S]*?inline-size: var\(--control-height-prominent\);[\s\S]*?align-self: center;/);
+    expect(browse).toMatch(/\.notes-detail-pane \.note-detail__status-icon svg \{[\s\S]*?inline-size: 18px;[\s\S]*?block-size: 18px;/);
+    expect(browse).toMatch(/@media \(pointer: coarse\) \{[\s\S]*?\.notes-detail-pane \.note-detail__status \{[\s\S]*?inline-size: var\(--coarse-hit-target\);/);
     expect(browse).not.toMatch(/\.notes-detail-pane \.cm-editor-wrapper \{[^}]*border-radius:/);
     expect(a11y).toContain('.notes-detail-pane .cm-toolbar__group');
     expect(a11y).toContain('.notes-detail-pane .cm-toolbar__status[data-save-state="failed"]');

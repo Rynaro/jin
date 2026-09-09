@@ -708,18 +708,23 @@ describe('List bullet + task-checkbox widget gates (LPL-1 / LPL-2 / LPL-3)', () 
   it('G-LP-NO-INNERHTML(ext): CheckboxWidget.toDOM() (unchecked ☐) builds DOM correctly', () => {
     const widget = new CheckboxWidget(false);
     const el = widget.toDOM();
-    expect(el.textContent, 'Unchecked CheckboxWidget glyph must be ☐').toBe('☐');
+    expect(el.textContent, 'CheckboxWidget must not depend on a platform font glyph').toBe('');
     expect(el.children.length, 'CheckboxWidget DOM must have no child elements').toBe(0);
-    expect(el.getAttribute('aria-hidden')).toBe('true');
+    expect(el.getAttribute('role')).toBe('checkbox');
+    expect(el.getAttribute('aria-checked')).toBe('false');
+    expect(el.getAttribute('aria-label')).toBe('Mark task complete');
+    expect(el.tabIndex).toBe(0);
     expect(el.className).toBe('cm-task-glyph');
   });
 
-  it('G-LP-NO-INNERHTML(ext): CheckboxWidget.toDOM() (checked ☑) has correct glyph and modifier class', () => {
+  it('G-LP-NO-INNERHTML(ext): checked CheckboxWidget exposes state without a font glyph', () => {
     const widget = new CheckboxWidget(true);
     const el = widget.toDOM();
-    expect(el.textContent, 'Checked CheckboxWidget glyph must be ☑').toBe('☑');
+    expect(el.textContent).toBe('');
     expect(el.className).toContain('cm-task-glyph');
     expect(el.className).toContain('cm-task-glyph--checked');
+    expect(el.getAttribute('aria-checked')).toBe('true');
+    expect(el.getAttribute('aria-label')).toBe('Mark task incomplete');
   });
 
   it('G-LP-NO-INNERHTML(ext): CheckboxWidget.eq() rebuilds on checked-state flip', () => {
@@ -794,8 +799,8 @@ describe('Blockquote bar gates (LPQ-1 / LPQ-2)', () => {
   // `class` is read from cursor.value.spec.class (truthy for line/mark decos).
   function collectDecos(
     set: import('@codemirror/state').RangeSet<import('@codemirror/view').Decoration>,
-  ): Array<{ from: number; to: number; class: string | undefined; hasWidget: boolean }> {
-    const out: Array<{ from: number; to: number; class: string | undefined; hasWidget: boolean }> = [];
+  ): Array<{ from: number; to: number; class: string | undefined; hasWidget: boolean; attributes?: Record<string, string> }> {
+    const out: Array<{ from: number; to: number; class: string | undefined; hasWidget: boolean; attributes?: Record<string, string> }> = [];
     const cursor = set.iter();
     while (cursor.value !== null) {
       const spec = (cursor.value as unknown as { spec: Record<string, unknown> }).spec;
@@ -804,6 +809,7 @@ describe('Blockquote bar gates (LPQ-1 / LPQ-2)', () => {
         to: cursor.to,
         class: spec['class'] as string | undefined,
         hasWidget: Boolean(spec['widget']),
+        attributes: spec['attributes'] as Record<string, string> | undefined,
       });
       cursor.next();
     }
@@ -1077,8 +1083,8 @@ describe('Link-collapse gates (LPK-1 / LPK-2)', () => {
   // `class` is read from cursor.value.spec.class (truthy for mark decorations only).
   function collectDecos(
     set: import('@codemirror/state').RangeSet<import('@codemirror/view').Decoration>,
-  ): Array<{ from: number; to: number; class: string | undefined; hasWidget: boolean }> {
-    const out: Array<{ from: number; to: number; class: string | undefined; hasWidget: boolean }> = [];
+  ): Array<{ from: number; to: number; class: string | undefined; hasWidget: boolean; attributes?: Record<string, string> }> {
+    const out: Array<{ from: number; to: number; class: string | undefined; hasWidget: boolean; attributes?: Record<string, string> }> = [];
     const cursor = set.iter();
     while (cursor.value !== null) {
       const spec = (cursor.value as unknown as { spec: Record<string, unknown> }).spec;
@@ -1087,6 +1093,7 @@ describe('Link-collapse gates (LPK-1 / LPK-2)', () => {
         to: cursor.to,
         class: spec['class'] as string | undefined,
         hasWidget: Boolean(spec['widget']),
+        attributes: spec['attributes'] as Record<string, string> | undefined,
       });
       cursor.next();
     }
@@ -1123,6 +1130,18 @@ describe('Link-collapse gates (LPK-1 / LPK-2)', () => {
     // G-LP-LINK-NO-BUFFER-MUTATION: doc text must be unchanged
     expect(state.doc.toString(), 'Buffer must not be mutated').toBe(doc);
     expect(state.doc.sliceString(3, 8), 'Label text in buffer must still be "label"').toBe('label');
+  });
+
+  it('renders the explicit card form as a card label and hides its source marker off-line', () => {
+    const doc = 'x\n[Project](https://example.com "jin-card")';
+    const state = makeState(doc, 0);
+    const items = collectDecos(buildLivePreviewDecorations(state));
+    expect(items.some((item) => item.class === 'cm-link-label cm-link-card-label')).toBe(true);
+    expect(items.find((item) => item.class === 'cm-link-label cm-link-card-label')?.attributes)
+      .toEqual({ 'data-link-host': 'example.com' });
+    const sourceTail = doc.indexOf('](');
+    expect(items.some((item) => item.from === sourceTail && item.to === doc.length && !item.class)).toBe(true);
+    expect(state.doc.toString()).toBe(doc);
   });
 
   it('G-LP-LINK-COLLAPSE: two inline links on the same inactive line → correct ranges', () => {

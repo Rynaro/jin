@@ -47,13 +47,15 @@
     { path: 'Studio', name: 'Studio', note_count: 2 },
     { path: 'Empty', name: 'Empty', note_count: 0 }
   ];
-  var noteBase = { status: 'active', created: NOW, updated: NOW, deleted_at: null, links: [], backlinks: [], revision: 1 };
+  var noteBase = { status: 'active', created: NOW, updated: NOW, deleted_at: null, links: [], backlinks: [], revision: 1, body_markdown: '' };
   var notes = [
     Object.assign({}, noteBase, { id: 'n1', title: 'A current moving through glass', tags: ['jin', 'visual'], excerpt: 'Liquid depth, brush restraint, and a bright flash of betta red.', folder_path: 'Field Notes' }),
     Object.assign({}, noteBase, { id: 'n2', title: 'Margins with their own tide', tags: ['layout'], excerpt: 'The page breathes differently when every edge refuses symmetry.', folder_path: 'Field Notes' }),
     Object.assign({}, noteBase, { id: 'n3', title: 'Nanquim studies', tags: ['ink'], excerpt: 'Dry brush, pooled pigment, rice paper, one decisive seal.', folder_path: 'Studio' }),
     Object.assign({}, noteBase, { id: 'n4', title: 'Small rituals', tags: [], excerpt: 'A quiet list of details worth returning to.', folder_path: 'Studio' })
   ];
+  var nextNoteSequence = 5;
+  var createdNoteIds = {};
   var collections = [];
   var eventBase = { description: null, location: null, is_all_day: false, start_tzid: null, end_tzid: null, floating: false, status: 'confirmed', source: 'jin', authority: 'jin', ical_uid: null, derived_from: null, recurrence: [], recurring_event_id: null, original_start: null, master_id: null, recurrence_unexpanded: false, sequence: 0, organizer: null, attendees: null, attendees_omitted: null, conference_data: null, hangout_link: null, reminders: null, created: NOW, updated: NOW, backlinks: [], sync_context: null };
   function event(fields) {
@@ -191,6 +193,28 @@
       });
     }
     return { edge_type: edgeType, source_id: noteId, target_id: eventId };
+  }
+  function linkNoteReference(noteId, targetId) {
+    var sourceNote = notes.find(function findReferenceSource(item) { return item.id === noteId; });
+    if (!sourceNote) throw new Error('Note not found: ' + noteId);
+    var target = notes.find(function findTargetNote(item) { return item.id === targetId; });
+    var targetKind = 'note';
+    if (!target) {
+      target = tasks.find(function findTargetTask(item) { return item.id === targetId; });
+      targetKind = 'task';
+    }
+    if (!target) {
+      target = events.find(function findTargetEvent(item) { return item.id === targetId; });
+      targetKind = 'event';
+    }
+    if (!target) throw new Error('Reference target not found: ' + targetId);
+    if (!sourceNote.links.some(function sameLink(link) { return link.target === targetId && link.edge_type === 'references'; })) {
+      sourceNote.links.push({ target: targetId, edge_type: 'references' });
+    }
+    if (!target.backlinks.some(function sameBacklink(link) { return link.source_id === noteId && link.edge_type === 'references'; })) {
+      target.backlinks.push({ source_id: noteId, source_kind: 'note', edge_type: 'references', label: sourceNote.title });
+    }
+    return { edge_type: 'references', source_id: noteId, source_kind: 'note', target_id: targetId, target_kind: targetKind };
   }
   var fixtures = {
     list_lists: lists,
@@ -369,6 +393,13 @@
   window.__TAURI_INTERNALS__ = {
     invoke: function invoke(cmd, args) {
       var options = args || {};
+      if (cmd === 'plugin:dialog|open') {
+        var dialogOptions = options.options || {};
+        if (dialogOptions.multiple === true || dialogOptions.directory === true) {
+          return Promise.reject(new Error('Jin fixture only supports one image file'));
+        }
+        return Promise.resolve('/tmp/jin-fixture-note-image.png');
+      }
       if (cmd === 'list_lists') {
         return Promise.resolve(clone(lists));
       }
@@ -462,13 +493,44 @@
         });
         return Promise.resolve(clone(matchingNotes));
       }
+      if (cmd === 'create_note') {
+        var createInput = options.input || {};
+        var createdNoteId = 'fixture-note-' + String(nextNoteSequence++);
+        var createdNote = Object.assign({}, noteBase, {
+          id: createdNoteId,
+          title: String(createInput.title || ''),
+          body_markdown: String(createInput.body || ''),
+          excerpt: String(createInput.body || '').slice(0, 160),
+          tags: Array.isArray(createInput.tags) ? createInput.tags.slice() : [],
+          folder_path: String(createInput.folder || '')
+        });
+        createdNoteIds[createdNoteId] = true;
+        notes.push(createdNote);
+        return Promise.resolve(clone(createdNote));
+      }
       if (cmd === 'get_note') {
         var note = notes.find(function findNote(item) { return item.id === options.id; });
         if (!note) return Promise.reject(new Error('Note not found: ' + options.id));
         return Promise.resolve(clone(Object.assign({}, note, {
-          body_markdown: '# ' + note.title + '\n\nA deterministic note body for visual QA.\n\n> Ink is reserved for meaning, not atmosphere.',
+          body_markdown: createdNoteIds[note.id]
+            ? note.body_markdown
+            : note.body_markdown || ('# ' + note.title + '\n\nA deterministic note body for visual QA.\n\n> Ink is reserved for meaning, not atmosphere.'),
           folder_path: null
         })));
+      }
+      if (cmd === 'edit_note') {
+        var editedNote = notes.find(function findNote(item) { return item.id === options.id; });
+        if (!editedNote) return Promise.reject(new Error('Note not found: ' + options.id));
+        var noteInput = options.input || {};
+        if (noteInput.expected_revision !== undefined && Number(noteInput.expected_revision) !== editedNote.revision) {
+          return Promise.reject({ code: 4, message: 'Note revision is stale', details: { expected_revision: noteInput.expected_revision, current_revision: editedNote.revision } });
+        }
+        if (noteInput.title !== undefined) editedNote.title = String(noteInput.title);
+        if (noteInput.body !== undefined) editedNote.body_markdown = String(noteInput.body);
+        (noteInput.add_tags || []).forEach(function addTag(tag) { if (editedNote.tags.indexOf(tag) === -1) editedNote.tags.push(tag); });
+        if (noteInput.rm_tags) editedNote.tags = editedNote.tags.filter(function keepTag(tag) { return noteInput.rm_tags.indexOf(tag) === -1; });
+        editedNote.revision += 1; editedNote.updated = NOW;
+        return Promise.resolve(clone(editedNote));
       }
       if (cmd === 'search_notes') {
         var needle = String(options.text || '').toLowerCase();
@@ -544,12 +606,22 @@
       if (cmd === 'import_attachment') {
         var source = String(options.source || '');
         var filename = source.split('/').pop() || 'attachment';
+        var image = /\.(?:png|jpe?g|gif|webp)$/i.test(filename);
         return Promise.resolve({
-          sha256: 'fixture-asset-' + filename.replace(/[^a-z0-9]/gi, '').toLowerCase(),
-          mime: 'application/octet-stream',
-          size: 1,
+          // A valid fixed digest keeps the browser fixture on the same strict
+          // canonical URI path as native assets; it is not a permissive stub.
+          sha256: image ? 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' : 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          mime: image ? 'image/png' : 'application/octet-stream',
+          size: image ? 67 : 1,
           original_names: [filename]
         });
+      }
+      if (cmd === 'resolve_image_attachment') {
+        if (options.hash !== 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') {
+          return Promise.reject(new Error('Fixture managed image not found'));
+        }
+        // 1×1 PNG, served only for the known canonical fixture asset.
+        return Promise.resolve({ mime: 'image/png', bytes: [137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,6,0,0,0,31,21,196,137,0,0,0,13,73,68,65,84,8,215,99,248,207,192,240,31,0,5,0,1,255,137,153,61,29,0,0,0,0,73,69,78,68,174,66,96,130] });
       }
       if (cmd === 'list_events') {
         var matchingEvents = events.filter(function matchesEvent(item) {
@@ -738,7 +810,7 @@
           return Promise.reject(new Error('fixture event context only supports references'));
         }
         try {
-          return Promise.resolve(clone(attachNoteBacklink(options.source_id, options.target_id, options.edge_type)));
+          return Promise.resolve(clone(linkNoteReference(options.source_id, options.target_id)));
         } catch (linkError) {
           return Promise.reject(linkError);
         }

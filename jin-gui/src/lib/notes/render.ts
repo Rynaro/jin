@@ -10,6 +10,8 @@
 
 import type { NoteDto, BacklinkDto, FolderDto, LinkDto } from '../../types/dto';
 import { noteStatusLabel, noteStatusGlyph, noteStatusTooltip, formatNoteDate, noteDisplayTitle } from './transform';
+
+let statusInfoSequence = 0;
 import { mountEditor, type EditorHandle } from './editor';
 import type { TreeNode } from './folderTree';
 
@@ -429,6 +431,7 @@ export function renderNoteDetail(
   onTitleSave?: (newTitle: string) => Promise<void>,
   onAddAttachment?: (noteId: string) => void,
   onHistory?: (noteId: string) => void,
+  onTagsChange?: (add: string[], remove: string[]) => Promise<void>,
 ): EditorHandle {
   el.detailContent.innerHTML = '';
 
@@ -441,23 +444,26 @@ export function renderNoteDetail(
   const titleRowEl = document.createElement('div');
   titleRowEl.className = 'browse-detail__title-row';
 
-  const titleEl = document.createElement('input');
-  titleEl.type = 'text';
+  const titleEl = document.createElement('textarea');
+  titleEl.rows = 1;
   titleEl.className = 'browse-detail__title browse-detail__title--input jin-title-field text-title2';
   titleEl.value = note.title;
   titleEl.placeholder = 'Untitled';
   titleEl.setAttribute('aria-label', 'Note title');
+  titleEl.setAttribute('aria-multiline', 'true');
   titleRowEl.appendChild(titleEl);
 
   // ── Status badge (title row, right-aligned via flex) ─────────────────────
   // has-tooltip: item-4 — hover/focus tooltip balloon explaining the status.
   // Moved out of metaEl/scroll-region so it renders on the title row (Gap-B fix).
-  const statusEl = document.createElement('span');
-  statusEl.className = 'browse-status-badge note-detail__status jin-badge has-tooltip';
-  statusEl.setAttribute('role', 'img');
+  const statusEl = document.createElement('button');
+  statusEl.type = 'button';
+  statusEl.className = 'note-detail__status';
+  statusEl.dataset.noteStatus = note.status.toLowerCase();
   const label = noteStatusLabel(note.status);
-  statusEl.setAttribute('aria-label', `Status: ${label}`);
-  statusEl.setAttribute('data-tooltip', noteStatusTooltip(note.status));
+  const tooltip = noteStatusTooltip(note.status);
+  statusEl.setAttribute('aria-label', tooltip);
+  statusEl.setAttribute('aria-expanded', 'false');
 
   const statusIconEl = document.createElement('i');
   statusIconEl.className = 'note-detail__status-icon';
@@ -468,11 +474,46 @@ export function renderNoteDetail(
   statusLabelEl.className = 'note-detail__status-label';
   statusLabelEl.textContent = label;
 
+  const statusInfoEl = document.createElement('span');
+  statusInfoEl.className = 'note-detail__status-info';
+  statusInfoEl.id = `jin-note-status-info-${++statusInfoSequence}`;
+  statusInfoEl.setAttribute('role', 'tooltip');
+  statusInfoEl.textContent = tooltip;
+  statusEl.setAttribute('aria-describedby', statusInfoEl.id);
+
   statusEl.appendChild(statusIconEl);
   statusEl.appendChild(statusLabelEl);
-  titleRowEl.appendChild(statusEl);
+  statusEl.appendChild(statusInfoEl);
 
-  el.detailContent.appendChild(titleRowEl);
+  const closeStatusInfo = (): void => {
+    statusEl.classList.remove('is-explaining');
+    statusEl.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', closeStatusInfoOnOutsidePress);
+  };
+  const closeStatusInfoOnOutsidePress = (event: PointerEvent): void => {
+    if (!statusEl.contains(event.target as Node)) closeStatusInfo();
+  };
+  statusEl.addEventListener('click', () => {
+    statusEl.classList.remove('suppress-focus-info');
+    const opening = !statusEl.classList.contains('is-explaining');
+    closeStatusInfo();
+    if (opening) {
+      statusEl.classList.add('is-explaining');
+      statusEl.setAttribute('aria-expanded', 'true');
+      document.addEventListener('pointerdown', closeStatusInfoOnOutsidePress);
+    }
+  });
+  statusEl.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    statusEl.classList.add('suppress-focus-info');
+    closeStatusInfo();
+  });
+  statusEl.addEventListener('blur', () => {
+    statusEl.classList.remove('suppress-focus-info');
+    closeStatusInfo();
+  });
 
   // Title save wiring (D-TITLE-SAVE-TRIGGER):
   //   blur + Enter commit (dirty-check vs baseline; committing guard prevents double-save).
@@ -492,6 +533,20 @@ export function renderNoteDetail(
     }
   });
 
+  const resizeTitle = (): void => {
+    titleEl.style.height = 'auto';
+    titleEl.style.height = `${titleEl.scrollHeight}px`;
+  };
+  titleEl.addEventListener('input', resizeTitle);
+  const titleResizeFrame = requestAnimationFrame(resizeTitle);
+  // A long title can wrap after a narrow pane, text-scale, or reading-mode
+  // layout change. Keep the textarea's visible height in sync with its width.
+  let titleResizeObserver: ResizeObserver | null = null;
+  if (typeof ResizeObserver !== 'undefined') {
+    titleResizeObserver = new ResizeObserver(resizeTitle);
+    titleResizeObserver.observe(titleRowEl);
+  }
+
   titleEl.addEventListener('blur', () => {
     if (committing) return;
     const newTitle = titleEl.value;
@@ -509,18 +564,71 @@ export function renderNoteDetail(
       });
   });
 
-  // ── Tags (prepended into scroll region below) ─────────────────────────────
+  // ── Tags (quiet metadata in the document header, never in prose flow) ────
   // Status badge is now in the title row; only tags live in metaEl.
   const metaEl = document.createElement('div');
   metaEl.className = 'browse-detail__meta';
 
-  if (note.tags.length > 0) {
-    const tagsEl = document.createElement('span');
+  const renderTags = (): void => {
+    metaEl.replaceChildren();
+    const tagsEl = document.createElement('div');
     tagsEl.className = 'note-detail__tags text-caption1';
-    tagsEl.setAttribute('aria-label', `Tags: ${note.tags.join(', ')}`);
-    tagsEl.textContent = note.tags.map((t) => `#${t}`).join(' ');
+    tagsEl.setAttribute('aria-label', note.tags.length ? `Tags: ${note.tags.join(', ')}` : 'No tags');
+    for (const tag of note.tags) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'note-detail__tag-chip';
+      chip.textContent = `#${tag}`;
+      chip.setAttribute('aria-label', `Rename tag ${tag}`);
+      chip.title = `Rename ${tag}`;
+      chip.addEventListener('click', () => {
+        const input = tagsEl.querySelector<HTMLInputElement>('.note-detail__tag-input');
+        if (!input) return;
+        input.value = tag;
+        input.dataset.replaceTag = tag;
+        input.placeholder = 'Rename tag';
+        input.setAttribute('aria-label', `Rename tag ${tag}`);
+        input.focus();
+      });
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'note-detail__tag-remove';
+      remove.textContent = '×';
+      remove.setAttribute('aria-label', `Remove tag ${tag}`);
+      remove.addEventListener('click', () => {
+      void onTagsChange?.([], [tag]).then(() => {
+          note.tags = note.tags.filter((value) => value !== tag);
+          renderTags();
+          el.detailActions?.querySelector<HTMLButtonElement>('[data-tooltip="Manage tags"]')?.setAttribute('aria-label', `Manage tags${note.tags.length ? ` (${note.tags.length})` : ''}`);
+        }).catch(() => { /* controller has already surfaced the mutation error */ });
+      });
+      tagsEl.appendChild(chip);
+      tagsEl.appendChild(remove);
+    }
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'note-detail__tag-input';
+    input.placeholder = 'Add tag';
+    input.setAttribute('aria-label', 'Add tag');
+    input.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      const tag = input.value.trim().replace(/^#/, '');
+      const replace = input.dataset.replaceTag;
+      if (!tag || note.tags.includes(tag) && tag !== replace) return;
+      if (tag === replace) { renderTags(); return; }
+      void onTagsChange?.([tag], replace ? [replace] : []).then(() => {
+        note.tags = replace ? note.tags.map(value => value === replace ? tag : value) : [...note.tags, tag];
+        input.value = '';
+        delete input.dataset.replaceTag;
+        renderTags();
+        el.detailActions?.querySelector<HTMLButtonElement>('[data-tooltip="Manage tags"]')?.setAttribute('aria-label', `Manage tags (${note.tags.length})`);
+      }).catch(() => { /* controller has already surfaced the mutation error */ });
+    });
+    tagsEl.appendChild(input);
     metaEl.appendChild(tagsEl);
-  }
+  };
+  renderTags();
 
   // ── Body — CM6 source editor (S1/S2/S3 of spec) ─────────────────────────
   // mountEditor creates: formatting toolbar + scroll region + stats footer.
@@ -531,20 +639,39 @@ export function renderNoteDetail(
   const editorHandle = mountEditor(bodyEl, {
     doc: note.body_markdown ?? '',
     onSave: onSave ?? (async () => {}),
+    onAddAttachment: () => onAddAttachment?.(note.id),
+  });
+  const destroyEditor = editorHandle.destroy.bind(editorHandle);
+  editorHandle.destroy = (): void => {
+    cancelAnimationFrame(titleResizeFrame);
+    titleResizeObserver?.disconnect();
+    titleResizeObserver = null;
+    closeStatusInfo();
+    destroyEditor();
+  };
+
+  // Title and body are one writing flow: Enter commits the title and moves into
+  // the document; ArrowDown at its end does the same without re-mounting CM6.
+  titleEl.addEventListener('keydown', (event) => {
+    const atEnd = titleEl.selectionStart === titleEl.value.length && titleEl.selectionEnd === titleEl.value.length;
+    if (event.key === 'Enter' || (event.key === 'ArrowDown' && atEnd)) {
+      event.preventDefault();
+      titleEl.blur();
+      editorHandle.focus();
+    }
   });
 
   // Get the scroll region created by mountEditor; fall back to bodyEl.
   const scrollRegion = bodyEl.querySelector('.cm-scroll-region') ?? bodyEl;
 
-  // Prepend tags BEFORE the editor wrapper inside the scroll region.
-  // Guard: with the status badge now in the title row, metaEl only holds tags —
-  // skip prepending an empty meta div (its margin-bottom would leave a stray gap
-  // above the editor for the common no-tags note).
-  if (metaEl.childElementCount > 0) {
-    scrollRegion.prepend(metaEl);
-  }
-
+  // The toolbar is document chrome, so it sits above the title. The title and
+  // editor then become one uninterrupted writing column below it.
+  const toolbar = bodyEl.querySelector<HTMLElement>('.cm-toolbar');
+  if (toolbar) el.detailContent.appendChild(toolbar);
   el.detailContent.appendChild(bodyEl);
+  // Title is part of the same scrollable writing surface as the body.  The
+  // toolbar stays above it as document chrome; tags live in their popover.
+  scrollRegion.insertBefore(titleRowEl, scrollRegion.firstChild);
 
   // ── Outgoing links (appended into scroll region, after the editor) ────────
   if (note.links.length > 0) {
@@ -565,6 +692,7 @@ export function renderNoteDetail(
   // Callbacks are unchanged: onAttach dispatches open-attach, onLink open-link.
   if ((onAttach || onLink || onAddAttachment || onHistory) && el.detailActions) {
     el.detailActions.innerHTML = '';
+    el.detailActions.appendChild(statusEl);
 
     if (onAttach) {
       const attachBtn = document.createElement('button');
@@ -583,27 +711,12 @@ export function renderNoteDetail(
       el.detailActions.appendChild(attachBtn);
     }
 
-    if (onAddAttachment) {
-      const addAttachmentBtn = document.createElement('button');
-      addAttachmentBtn.type = 'button';
-      addAttachmentBtn.className = 'cm-toolbar__btn jin-control jin-control--icon has-tooltip';
-      addAttachmentBtn.setAttribute('aria-label', 'Add attachment');
-      addAttachmentBtn.setAttribute('data-tooltip', 'Add Attachment');
-
-      const icon = document.createElement('i');
-      icon.setAttribute('data-lucide', 'paperclip');
-      icon.setAttribute('aria-hidden', 'true');
-      addAttachmentBtn.appendChild(icon);
-      addAttachmentBtn.addEventListener('click', () => onAddAttachment(note.id));
-      el.detailActions.appendChild(addAttachmentBtn);
-    }
-
     if (onLink) {
       const linkBtn = document.createElement('button');
       linkBtn.type = 'button';
       linkBtn.className = 'cm-toolbar__btn jin-control jin-control--icon has-tooltip';
-      linkBtn.setAttribute('aria-label', `Create typed link from "${note.title}"`);
-      linkBtn.setAttribute('data-tooltip', 'Link');
+      linkBtn.setAttribute('aria-label', 'Connect this note');
+      linkBtn.setAttribute('data-tooltip', 'Connect');
       linkBtn.dataset.sourceId = note.id;
 
       const linkIcon = document.createElement('i');
@@ -629,6 +742,28 @@ export function renderNoteDetail(
       historyBtn.addEventListener('click', () => onHistory(note.id));
       el.detailActions.appendChild(historyBtn);
     }
+    // Tags belong to compact document chrome rather than the title/body flow.
+    const tagsButton = document.createElement('button');
+    tagsButton.type = 'button';
+    tagsButton.className = 'cm-toolbar__btn jin-control jin-control--icon has-tooltip';
+    tagsButton.setAttribute('aria-label', `Manage tags${note.tags.length ? ` (${note.tags.length})` : ''}`);
+    tagsButton.setAttribute('data-tooltip', 'Manage tags');
+    tagsButton.setAttribute('aria-expanded', 'false');
+    const tagsIcon = document.createElement('i');
+    tagsIcon.setAttribute('data-lucide', 'tag');
+    tagsIcon.setAttribute('aria-hidden', 'true');
+    tagsButton.appendChild(tagsIcon);
+    tagsButton.addEventListener('click', () => {
+      const open = metaEl.classList.toggle('is-open');
+      tagsButton.setAttribute('aria-expanded', String(open));
+      if (open) metaEl.querySelector<HTMLInputElement>('input')?.focus();
+    });
+    el.detailActions.appendChild(tagsButton);
+    el.detailActions.appendChild(metaEl);
+  } else {
+    // Rendering helpers are also used outside the full Notes shell in tests and
+    // previews; keep this truthful metadata reachable in that minimal host.
+    titleRowEl.append(statusEl, metaEl);
   }
 
   return editorHandle;

@@ -78,6 +78,8 @@ import {
   focusTreeItem,
 } from '../lib/notes/render';
 import type { EditorHandle } from '../lib/notes/editor';
+import { renderMarkdownFragment, hydrateManagedImages } from '../lib/notes/markdown';
+import { resolveImageAttachment } from '../invoke';
 import { initIcons } from '../lib/icons';
 import {
   buildFolderTree,
@@ -228,6 +230,12 @@ export default class NotesController extends Controller {
   private conflictActive = false;
   private conflictDraft = '';
   private selectedHistoryRevision: number | null = null;
+  private historyRequestId = 0;
+  /** Latest-wins guard for overlapping note-detail loads. */
+  private detailRequestId = 0;
+  private revokeHistoryMedia: (() => void) | null = null;
+  /** Serializes every body/title/tag revision for the mounted note. */
+  private noteMutation: Promise<void> = Promise.resolve();
   private collectionRenameTarget: CollectionDto | null = null;
   private collectionDeleteTarget: CollectionDto | null = null;
 
@@ -1177,8 +1185,13 @@ export default class NotesController extends Controller {
       this.conflictPanelTarget.focus();
       return false;
     }
+    this.detailRequestId += 1;
     if (this.editorHandle) {
       await this.editorHandle.flush();
+      // Give metadata handlers that were already awaiting the same flush a
+      // chance to register their mutation before we replace note identity.
+      await Promise.resolve();
+      await this.noteMutation;
       this.editorHandle.destroy();
       this.editorHandle = null;
       this.currentNoteId = null;
@@ -1198,7 +1211,10 @@ export default class NotesController extends Controller {
       this.conflictPanelTarget.focus();
       return;
     }
+    const requestId = ++this.detailRequestId;
     const el = this.viewElements;
+
+    this.closeHistory();
 
     // ── Flush + destroy the outgoing editor before switching notes ────────────
     // This ensures any unsaved changes in the PREVIOUS note are persisted before
@@ -1206,9 +1222,21 @@ export default class NotesController extends Controller {
     // destroy only happen here, NEVER on the autosave path (§5 / R1 spec).
     if (this.editorHandle) {
       await this.editorHandle.flush();
+      if (requestId !== this.detailRequestId) return;
+      await Promise.resolve();
+      // Body flushes and metadata edits share one queue. Do not replace the
+      // mounted note identity until every outgoing revision has settled.
+      await this.noteMutation;
+      if (requestId !== this.detailRequestId) return;
       this.editorHandle.destroy();
       this.editorHandle = null;
+    } else {
+      await this.noteMutation;
+      if (requestId !== this.detailRequestId) return;
     }
+    this.currentNoteId = null;
+    this.currentNoteRevision = undefined;
+    this.lastSavedBody = '';
 
     // Show detail panel, hide list; expand grid to 3 columns.
     this.listPanelTarget.classList.add('hidden');
@@ -1226,6 +1254,7 @@ export default class NotesController extends Controller {
 
     try {
       const note = await getNoteById(id);
+      if (requestId !== this.detailRequestId) return;
 
       // Track state for onSave (dirty-check baseline — the LOADED body, not re-fetched).
       this.currentNoteId = note.id;
@@ -1248,6 +1277,7 @@ export default class NotesController extends Controller {
         async (newTitle) => { await this.onTitleSave(note.id, newTitle); },
         (noteId) => { void this.addAttachment(noteId); },
         (noteId) => { void this.openHistory(noteId); },
+        async (addTags, removeTags) => { await this.updateTags(note.id, addTags, removeTags); },
       );
 
       // item 3: set breadcrumb from currentFolder (controller state, not note DTO —
@@ -1259,6 +1289,7 @@ export default class NotesController extends Controller {
 
       initIcons();
     } catch (err: unknown) {
+      if (requestId !== this.detailRequestId) return;
       el.detailLoadingState.classList.add('hidden');
       if (isJinErrorDto(err) && err.code === 3) {
         el.detailNotFoundState.classList.remove('hidden');
@@ -1293,41 +1324,43 @@ export default class NotesController extends Controller {
     // 2. Dirty-check.
     if (body === this.lastSavedBody) return;
 
-    try {
-      // 3. Save body-only (title/folder preserved by the in-place overwrite branch).
-      const updated = await editNote(id, {
-        body,
-        expected_revision: this.currentNoteRevision,
-      });
+    await this.enqueueNoteMutation(async () => {
+      if (id !== this.currentNoteId || body === this.lastSavedBody) return;
+      try {
+        // 3. Save body-only (title/folder preserved by the in-place overwrite branch).
+        const updated = await editNote(id, {
+          body,
+          expected_revision: this.currentNoteRevision,
+        });
 
-      // 4. Update lastSavedBody to the SENT text — NOT a re-fetch.
-      //    A re-fetch + setDoc would clobber in-flight typing and move the caret.
-      this.lastSavedBody = body;
-      this.currentNoteRevision = updated.revision ?? undefined;
+        if (id !== this.currentNoteId) return;
 
-      // 5. Targeted DOM update: refresh the list-row date from the returned NoteDto.
-      //    Uses .querySelector to find the note row if it is currently visible.
-      if (updated.updated) {
-        const rowInner = document.querySelector<HTMLElement>(
-          `.browse-row__inner[data-note-id="${id}"]`
-        );
-        const dateEl = rowInner?.closest('.browse-row')?.querySelector('.note-row__date');
-        if (dateEl) dateEl.textContent = formatNoteDate(updated.updated);
+        // 4. Update lastSavedBody to the SENT text — NOT a re-fetch.
+        //    A re-fetch + setDoc would clobber in-flight typing and move the caret.
+        this.lastSavedBody = body;
+        this.currentNoteRevision = updated.revision ?? undefined;
+
+        // 5. Targeted DOM update: refresh the list-row date from the returned NoteDto.
+        if (updated.updated) {
+          const rowInner = document.querySelector<HTMLElement>(
+            `.browse-row__inner[data-note-id="${id}"]`,
+          );
+          const dateEl = rowInner?.closest('.browse-row')?.querySelector('.note-row__date');
+          if (dateEl) dateEl.textContent = formatNoteDate(updated.updated);
+        }
+      } catch (err: unknown) {
+        if (id !== this.currentNoteId) return;
+        // Keep the mounted editor and local body intact on failure.
+        if (isJinErrorDto(err) && err.code === 4) {
+          this.presentConflict(id, body, err);
+        } else if (isJinErrorDto(err)) {
+          this.dispatch('error', { detail: err, prefix: 'app', bubbles: true });
+        } else {
+          console.error('[NotesController] unexpected error saving note body:', err);
+        }
+        throw err;
       }
-      // The "Saved" status indicator is updated by the module's callOnSave wrapper.
-    } catch (err: unknown) {
-      // A stale write is not retried or overwritten. Keep the mounted editor and
-      // local body intact, then require an explicit recovery action.
-      if (isJinErrorDto(err) && err.code === 4) {
-        this.presentConflict(id, body, err);
-      } else if (isJinErrorDto(err)) {
-        this.dispatch('error', { detail: err, prefix: 'app', bubbles: true });
-      } else {
-        console.error('[NotesController] unexpected error saving note body:', err);
-      }
-      // lastSavedBody unchanged → next flush will retry.
-      throw err;
-    }
+    });
   }
 
   /**
@@ -1344,42 +1377,81 @@ export default class NotesController extends Controller {
    */
   private async onTitleSave(id: string, newTitle: string): Promise<void> {
     if (id !== this.currentNoteId) return;
-    try {
-      // 1. Defensive flush: drain any pending body change before rename.
-      await this.editorHandle?.flush();
+    // Drain pending prose before appending the title revision to the same queue.
+    await this.editorHandle?.flush();
+    await this.enqueueNoteMutation(async () => {
+      if (id !== this.currentNoteId) return;
+      try {
+        const updated = await editNote(id, {
+          title: newTitle,
+          expected_revision: this.currentNoteRevision,
+        });
+        if (id !== this.currentNoteId) return;
+        this.currentNoteRevision = updated.revision ?? undefined;
 
-      // 2. Save the title (ULID preserved by jin-core — body-save still routes).
-      const updated = await editNote(id, {
-        title: newTitle,
-        expected_revision: this.currentNoteRevision,
-      });
-      this.currentNoteRevision = updated.revision ?? undefined;
-
-      // 3. Targeted DOM: mirror onSave list-row update pattern (~531-539).
-      const rowInner = document.querySelector<HTMLElement>(
-        `.browse-row__inner[data-note-id="${id}"]`
-      );
-      if (rowInner) {
-        const row = rowInner.closest('.browse-row');
-        const rowTitleEl = row?.querySelector('.browse-row__title');
-        if (rowTitleEl) rowTitleEl.textContent = noteDisplayTitle(newTitle);
-        if (updated.updated) {
-          const dateEl = row?.querySelector('.note-row__date');
-          if (dateEl) dateEl.textContent = formatNoteDate(updated.updated);
+        const rowInner = document.querySelector<HTMLElement>(
+          `.browse-row__inner[data-note-id="${id}"]`,
+        );
+        if (rowInner) {
+          const row = rowInner.closest('.browse-row');
+          const rowTitleEl = row?.querySelector('.browse-row__title');
+          if (rowTitleEl) rowTitleEl.textContent = noteDisplayTitle(newTitle);
+          if (updated.updated) {
+            const dateEl = row?.querySelector('.note-row__date');
+            if (dateEl) dateEl.textContent = formatNoteDate(updated.updated);
+          }
+          rowInner.setAttribute('aria-label', noteDisplayTitle(newTitle));
         }
-        rowInner.setAttribute('aria-label', noteDisplayTitle(newTitle));
+        const attachAction = this.detailActionsTarget.querySelector<HTMLButtonElement>(
+          `[data-note-id="${id}"]`,
+        );
+        if (attachAction) {
+          attachAction.setAttribute('aria-label', `Attach "${noteDisplayTitle(newTitle)}" to an event`);
+        }
+      } catch (err: unknown) {
+        if (id !== this.currentNoteId) return;
+        if (isJinErrorDto(err) && err.code === 4) {
+          this.presentConflict(id, this.editorHandle?.getDoc() ?? this.lastSavedBody, err);
+        } else if (isJinErrorDto(err)) {
+          this.dispatch('error', { detail: err, prefix: 'app', bubbles: true });
+        } else {
+          console.error('[NotesController] unexpected error saving note title:', err);
+        }
+        throw err;
       }
-    } catch (err: unknown) {
-      if (isJinErrorDto(err) && err.code === 4) {
-        this.presentConflict(id, this.editorHandle?.getDoc() ?? this.lastSavedBody, err);
-      } else if (isJinErrorDto(err)) {
-        this.dispatch('error', { detail: err, prefix: 'app', bubbles: true });
-      } else {
-        console.error('[NotesController] unexpected error saving note title:', err);
+    });
+  }
+
+  /** Update note-local tags without rebuilding the editor or losing its caret. */
+  private async updateTags(id: string, addTags: string[], removeTags: string[]): Promise<void> {
+    if (id !== this.currentNoteId || (addTags.length === 0 && removeTags.length === 0)) return;
+    await this.editorHandle?.flush();
+    await this.enqueueNoteMutation(async () => {
+      if (id !== this.currentNoteId) return;
+      try {
+        const updated = await editNote(id, {
+          add_tags: addTags,
+          rm_tags: removeTags,
+          expected_revision: this.currentNoteRevision,
+        });
+        if (id !== this.currentNoteId) return;
+        this.currentNoteRevision = updated.revision ?? undefined;
+      } catch (err: unknown) {
+        if (id !== this.currentNoteId) return;
+        if (isJinErrorDto(err) && err.code === 4) {
+          this.presentConflict(id, this.editorHandle?.getDoc() ?? this.lastSavedBody, err);
+        } else if (isJinErrorDto(err)) {
+          this.dispatch('error', { detail: err, prefix: 'app', bubbles: true });
+        }
+        throw err;
       }
-      // re-throw so the blur handler's .catch() runs and baseline is NOT advanced
-      throw err;
-    }
+    });
+  }
+
+  private enqueueNoteMutation(run: () => Promise<void>): Promise<void> {
+    const pending = this.noteMutation.then(run, run);
+    this.noteMutation = pending.catch(() => {});
+    return pending;
   }
 
   // ── Attachments, recovery, and local conflicts ─────────────────────────────
@@ -1391,6 +1463,8 @@ export default class NotesController extends Controller {
    */
   private async addAttachment(noteId: string): Promise<void> {
     if (noteId !== this.currentNoteId || !this.editorHandle || this.conflictActive) return;
+    const editor = this.editorHandle;
+    const selection = editor.getView().state.selection.main;
     try {
       const { open } = await import('@tauri-apps/plugin-dialog');
       const selected = await open({
@@ -1402,8 +1476,16 @@ export default class NotesController extends Controller {
       const source = typeof selected === 'string' ? selected : selected[0];
       if (!source) return;
       const asset = await importAttachment(source);
+      // The native picker is async. Insert exactly where the writing cursor was
+      // when it opened, but never into a note switched while it was open.
+      if (noteId !== this.currentNoteId || this.editorHandle !== editor) return;
+      const view = editor.getView();
+      const anchor = Math.min(selection.anchor, view.state.doc.length);
+      const head = Math.min(selection.head, view.state.doc.length);
+      view.dispatch({ selection: { anchor, head } });
       const filename = this.escapeMarkdownLinkLabel(asset.original_names[0] || 'attachment');
-      this.editorHandle.insertText(`[${filename}](jin-asset://sha256/${asset.sha256})`);
+      const isImage = typeof asset.mime === 'string' && /^image\/(?:png|jpeg|gif|webp)$/.test(asset.mime);
+      editor.insertText(`${isImage ? '!' : ''}[${filename}](jin-asset://sha256/${asset.sha256})`);
     } catch (err: unknown) {
       if (isJinErrorDto(err)) {
         this.dispatch('error', { detail: err, prefix: 'app', bubbles: true });
@@ -1421,6 +1503,9 @@ export default class NotesController extends Controller {
     if (noteId instanceof Event) noteId = this.currentNoteId ?? '';
     if (!noteId || noteId !== this.currentNoteId) return;
     this.selectedHistoryRevision = null;
+    const requestId = ++this.historyRequestId;
+    this.revokeHistoryMedia?.();
+    this.revokeHistoryMedia = null;
     this.restoreRevisionButtonTarget.disabled = true;
     this.historyRevisionListTarget.replaceChildren();
     this.historyPreviewTarget.textContent = '';
@@ -1428,6 +1513,7 @@ export default class NotesController extends Controller {
     this.historyModalTarget.showModal();
     try {
       const revisions = await listNoteRevisions(noteId);
+      if (requestId !== this.historyRequestId || noteId !== this.currentNoteId || !this.historyModalTarget.open) return;
       this.historyStatusTarget.textContent = revisions.length
         ? 'Select a revision to preview it before restoring.'
         : 'No saved revisions are available.';
@@ -1440,6 +1526,7 @@ export default class NotesController extends Controller {
         this.historyRevisionListTarget.appendChild(button);
       }
     } catch (err: unknown) {
+      if (requestId !== this.historyRequestId || noteId !== this.currentNoteId || !this.historyModalTarget.open) return;
       this.historyStatusTarget.textContent = isJinErrorDto(err)
         ? err.message
         : 'Could not load revision history.';
@@ -1447,18 +1534,36 @@ export default class NotesController extends Controller {
   }
 
   private async previewHistoryRevision(noteId: string, revision: number): Promise<void> {
+    const requestId = ++this.historyRequestId;
     this.selectedHistoryRevision = revision;
     this.restoreRevisionButtonTarget.disabled = true;
     try {
       const preview = await previewNoteRevision(noteId, revision);
-      if (this.selectedHistoryRevision !== revision) return;
+      if (this.selectedHistoryRevision !== revision || requestId !== this.historyRequestId || !this.historyModalTarget.open) return;
       this.restoreRevisionButtonTarget.disabled = false;
-      // textContent keeps history content inert; it is not rendered as HTML or Markdown.
-      this.historyPreviewTarget.textContent =
-        `${preview.title}\nRevision ${preview.revision} · ${preview.updated}\n\n${preview.body_markdown}`;
+      // Markdown passes the same sanitizer chokepoint as Reading view. Assets
+      // can only hydrate through the verified image-byte bridge.
+      this.revokeHistoryMedia?.();
+      const heading = document.createElement('h1');
+      heading.textContent = preview.title;
+      const metadata = document.createElement('p');
+      metadata.className = 'notes-history__preview-meta';
+      metadata.textContent = `Revision ${preview.revision} · ${preview.updated}`;
+      this.historyPreviewTarget.replaceChildren(heading, metadata, renderMarkdownFragment(preview.body_markdown));
+      if (this.historyPreviewTarget.querySelector('.jin-asset-placeholder')) {
+        void hydrateManagedImages(this.historyPreviewTarget, resolveImageAttachment).then((revoke) => {
+          if (requestId === this.historyRequestId && this.selectedHistoryRevision === revision && noteId === this.currentNoteId && this.historyModalTarget.open) this.revokeHistoryMedia = revoke;
+          else revoke();
+        });
+      }
       this.historyStatusTarget.textContent = `Previewing revision ${revision}.`;
     } catch (err: unknown) {
-      if (this.selectedHistoryRevision !== revision) return;
+      if (
+        requestId !== this.historyRequestId ||
+        this.selectedHistoryRevision !== revision ||
+        noteId !== this.currentNoteId ||
+        !this.historyModalTarget.open
+      ) return;
       this.selectedHistoryRevision = null;
       this.historyStatusTarget.textContent = isJinErrorDto(err)
         ? err.message
@@ -1467,8 +1572,13 @@ export default class NotesController extends Controller {
   }
 
   closeHistory(): void {
-    this.historyModalTarget.close();
+    // JSDOM does not implement HTMLDialogElement.close; browsers do.  Keeping
+    // the guard also makes teardown safe if the history dialog is unavailable.
+    if (typeof this.historyModalTarget.close === 'function') this.historyModalTarget.close();
     this.selectedHistoryRevision = null;
+    this.historyRequestId += 1;
+    this.revokeHistoryMedia?.();
+    this.revokeHistoryMedia = null;
   }
 
   requestRestoreRevision(): void {
@@ -1611,7 +1721,7 @@ export default class NotesController extends Controller {
       await this.loadActiveList();
       await this.loadDetail(note.id);
       // Focus + select-all so the user can immediately type a name.
-      const titleInput = this.detailContentTarget.querySelector<HTMLInputElement>(
+      const titleInput = this.detailContentTarget.querySelector<HTMLTextAreaElement>(
         '.browse-detail__title'
       );
       if (titleInput) {
@@ -1653,7 +1763,7 @@ export default class NotesController extends Controller {
 
   private openLinkDialog(sourceId: string, targetId: string): void {
     this.dispatch('open-link', {
-      detail: { sourceId, targetId },
+      detail: { sourceId, targetId, context: 'note-connect' },
       prefix: 'jin',
       bubbles: true,
     });

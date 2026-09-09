@@ -220,8 +220,8 @@
   --notes-save-failed: var(--seal);
   --notes-save-paused: var(--system-orange);
   --notes-prose-measure: 66ch;
-  --notes-prose-size: 1.125rem;
-  --notes-prose-line: 1.7;
+  --notes-prose-size: 1rem;
+  --notes-prose-line: 1.6;
 
   /* Desktop component geometry. Coarse pointers promote hit targets to 44px. */
   --app-rail-width: 184px;

@@ -26,6 +26,8 @@ import {
   mountEditor,
   toggleInlineWrap,
   toggleLink,
+  toggleLinePrefix,
+  insertTable,
   setHeading,
   jinHighlightStyle,
   NOTE_CODE_LANGUAGES,
@@ -34,7 +36,7 @@ import {
 } from '../lib/notes/editor';
 import { EditorView } from '@codemirror/view';
 import { insertNewlineContinueMarkup } from '@codemirror/lang-markdown';
-import { indentMore, indentLess } from '@codemirror/commands';
+import { indentMore, indentLess, undo } from '@codemirror/commands';
 import { tags as lezerTags } from '@lezer/highlight';
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
@@ -1478,6 +1480,101 @@ describe('G-TOGGLE-CARET-SAFE — toggling modes preserves EditorView identity +
     ).toBe(initialHead);
     expect(typewriterBtn!.getAttribute('aria-pressed')).toBe('false');
 
+    handle.destroy();
+  });
+});
+
+describe('notes rich block previews — mounted EditorView regressions', () => {
+  it('replaces an inactive managed-image source line with its live widget', async () => {
+    const hash = 'a'.repeat(64);
+    const source = `![jin-fixture-note-image.png](jin-asset://sha256/${hash})`;
+    const container = makeContainer();
+    const handle = mountEditor(container, { doc: `${source}\n\na`, onSave: async () => {} });
+    const view = handle.getView();
+    view.dispatch({ selection: { anchor: view.state.doc.length } });
+    await Promise.resolve();
+
+    expect(container.querySelector('.cm-managed-image-placeholder')).not.toBeNull();
+    expect(container.querySelector('.cm-content')?.textContent).not.toContain(source);
+    handle.destroy();
+  });
+
+  it('places typing after a checklist marker created on an empty line', () => {
+    const container = makeContainer();
+    const handle = mountEditor(container, { doc: '', onSave: async () => {} });
+    const view = handle.getView();
+
+    toggleLinePrefix(view, '- [ ] ');
+    expect(view.state.selection.main.head).toBe(6);
+    view.dispatch({ changes: { from: view.state.selection.main.head, insert: 'Review this idea' } });
+    expect(handle.getDoc()).toBe('- [ ] Review this idea');
+    handle.destroy();
+  });
+
+  it('inserts a table as an isolated block at document and prose boundaries', () => {
+    const table = '| Heading 1 | Heading 2 |\n| --- | --- |\n| Cell | Cell |';
+    const atStart = mountEditor(makeContainer(), { doc: 'existing', onSave: async () => {} });
+    insertTable(atStart.getView());
+    expect(atStart.getDoc()).toBe(`${table}\n\nexisting`);
+    expect(atStart.getView().state.sliceDoc(
+      atStart.getView().state.selection.main.from,
+      atStart.getView().state.selection.main.to,
+    )).toBe('Heading 1');
+    atStart.destroy();
+
+    const inProse = mountEditor(makeContainer(), { doc: 'beforeafter', onSave: async () => {} });
+    inProse.getView().dispatch({ selection: { anchor: 6 } });
+    insertTable(inProse.getView());
+    expect(inProse.getDoc()).toBe(`before\n\n${table}\n\nafter`);
+    expect(undo(inProse.getView())).toBe(true);
+    expect(inProse.getDoc()).toBe('beforeafter');
+    inProse.destroy();
+  });
+
+  it('mounts a table widget after editing below it and reveals source by pointer', () => {
+    const table = '| A | B |\n| --- | --- |\n| 1 | 2 |';
+    const container = makeContainer();
+    const handle = mountEditor(container, { doc: `${table}\n\na`, onSave: async () => {} });
+    const view = handle.getView();
+    view.dispatch({ selection: { anchor: view.state.doc.length } });
+    const widget = container.querySelector<HTMLElement>('.cm-table-widget');
+    expect(widget).not.toBeNull();
+    expect(() => view.dispatch({ changes: { from: view.state.doc.length, insert: '\nmore' } })).not.toThrow();
+    widget!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    expect(view.state.selection.main.head).toBe(0);
+    expect(container.querySelector('.cm-table-widget')).toBeNull();
+    expect(handle.getDoc()).toContain(table);
+    handle.destroy();
+  });
+
+  it('removes its per-editor link dialog on destroy', () => {
+    const handle = mountEditor(makeContainer(), { doc: '', onSave: async () => {} });
+    const dialog = document.querySelector('.notes-link-composer');
+    expect(dialog).not.toBeNull();
+    handle.destroy();
+    expect(document.body.contains(dialog)).toBe(false);
+  });
+
+  it('inserts a card at an existing block boundary without redundant blank lines', () => {
+    const container = makeContainer();
+    const handle = mountEditor(container, { doc: 'before\n\nafter', onSave: async () => {} });
+    handle.getView().dispatch({ selection: { anchor: 8 } });
+
+    const dialog = document.querySelector<HTMLDialogElement>('.notes-link-composer')!;
+    dialog.showModal = vi.fn(() => { dialog.open = true; });
+    dialog.close = vi.fn(() => { dialog.open = false; });
+    container.querySelector<HTMLButtonElement>('[aria-label="Insert link"]')!.click();
+    const select = dialog.querySelector('select')!;
+    const inputs = dialog.querySelectorAll<HTMLInputElement>('input');
+    select.value = 'card';
+    select.dispatchEvent(new Event('change'));
+    inputs[0].value = 'https://example.com/project';
+    inputs[1].value = 'Project';
+    dialog.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    expect(handle.getDoc()).toBe('before\n\n[Project](https://example.com/project "jin-card")\n\nafter');
+    expect(dialog.querySelector('.btn-secondary')?.textContent).toBe('Cancel');
+    expect(dialog.querySelector('.jin-control--primary')?.textContent).toBe('Insert link');
     handle.destroy();
   });
 });
