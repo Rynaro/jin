@@ -47,8 +47,9 @@ import {
 import { languages } from '@codemirror/language-data';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { tags } from '@lezer/highlight';
-import { renderMarkdownFragment } from './markdown';
-import { jinLivePreview, jinCodeBlockBackground, taskCheckboxClickHandler } from './livePreview';
+import { renderMarkdownFragment, hydrateManagedImages } from './markdown';
+import { resolveImageAttachment } from '../../invoke';
+import { jinLivePreview, jinCodeBlockBackground, jinTablePreview, jinManagedImagePreview, taskCheckboxClickHandler } from './livePreview';
 import { jinFocusMode } from './focusMode';
 import { typewriterExtender } from './typewriter';
 import { initIcons } from '../icons';
@@ -89,6 +90,8 @@ export interface MountEditorOptions {
   onSave: (doc: string) => Promise<void>;
   /** If true, disable editing (read-only mode). Defaults to false. */
   readOnly?: boolean;
+  /** Opens the app-owned attachment picker. The caller owns the async bridge. */
+  onAddAttachment?: () => void;
 }
 
 export interface CompactEditorHandle {
@@ -462,6 +465,24 @@ export function toggleLink(view: EditorView): boolean {
   return true;
 }
 
+/** Insert a small, useful GFM table and place the selection in its first header. */
+export function insertTable(view: EditorView): boolean {
+  const { state, dispatch } = view;
+  const sel = state.selection.main;
+  const prefix = sel.from > 0 && state.sliceDoc(sel.from - 1, sel.from) !== '\n' ? '\n\n' : '';
+  // A table is a block.  Preserve the text after the selection as a new block
+  // too, otherwise inserting at BOF or in the middle of prose makes that prose
+  // part of the final table row.
+  const suffix = sel.to < state.doc.length && state.sliceDoc(sel.to, sel.to + 1) !== '\n' ? '\n\n' : '';
+  const table = '| Heading 1 | Heading 2 |\n| --- | --- |\n| Cell | Cell |';
+  dispatch(state.update({
+    changes: { from: sel.from, to: sel.to, insert: `${prefix}${table}${suffix}` },
+    selection: { anchor: sel.from + prefix.length + 2, head: sel.from + prefix.length + 11 },
+    scrollIntoView: true,
+  }));
+  return true;
+}
+
 /**
  * setHeading — set an ATX heading level on the current line.
  * Running the same level twice toggles the heading off (removes the markers).
@@ -540,7 +561,14 @@ export function toggleLinePrefix(view: EditorView, prefix: string): boolean {
   }
 
   if (changes.length > 0) {
-    dispatch(state.update({ changes, scrollIntoView: true }));
+    const changeSet = state.changes(changes);
+    // Associate the selection with inserted prefixes so typing continues after
+    // a newly-created list/checklist marker instead of before it.
+    dispatch(state.update({
+      changes: changeSet,
+      selection: state.selection.map(changeSet, 1),
+      scrollIntoView: true,
+    }));
   }
   return true;
 }
@@ -567,7 +595,7 @@ export function toggleLinePrefix(view: EditorView, prefix: string): boolean {
  * A test seam attaches the handle to parent._cmHandle for controller-level tests.
  */
 export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): EditorHandle {
-  const { doc, onSave, readOnly = false } = opts;
+  const { doc, onSave, readOnly = false, onAddAttachment } = opts;
 
   // ── Internal state ────────────────────────────────────────────────────────
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -576,6 +604,10 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   let isReadingView = false;
   let destroyed = false;
   let autosavePaused = false;
+  let revokeReadingMedia: (() => void) | null = null;
+  let readingHydrationGeneration = 0;
+  let revokeLiveMedia: (() => void) | null = null;
+  let liveHydrationGeneration = 0;
   // Mode-toggle flags (per-mount, default OFF — D-PERSIST)
   let focusOn = false;
   let typewriterOn = false;
@@ -618,6 +650,7 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   const h1Btn = mkBtn('heading-1', 'Heading 1');
   const h2Btn = mkBtn('heading-2', 'Heading 2');
   const h3Btn = mkBtn('heading-3', 'Heading 3');
+  const tableBtn = mkBtn('table-2', 'Insert table');
 
   // Inline group
   const boldBtn   = mkBtn('bold',          'Bold');
@@ -633,6 +666,8 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   // Block group
   const quoteBtn   = mkBtn('quote', 'Blockquote');
   const linkFmtBtn = mkBtn('link',  'Insert link');
+  const attachmentBtn = mkBtn('paperclip', 'Add image or attachment');
+  attachmentBtn.dataset.tooltip = 'Add Attachment';
 
   // Spacer keeps the real mode controls visually distinct on wide screens.
   const toolbarSpacer = document.createElement('div');
@@ -653,10 +688,11 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   toggleBtn.setAttribute('aria-label', 'Switch to reading mode');
   toggleBtn.title = 'Switch to reading mode';
 
-  toolbar.appendChild(mkGroup('Structure', [h1Btn, h2Btn, h3Btn]));
+  toolbar.appendChild(mkGroup('Structure', [h1Btn, h2Btn, h3Btn, tableBtn]));
   toolbar.appendChild(mkGroup('Inline formatting', [boldBtn, italicBtn, strikeBtn, codeBtn]));
   toolbar.appendChild(mkGroup('Lists', [bulletBtn, numberedBtn, checklistBtn]));
   toolbar.appendChild(mkGroup('Blocks', [quoteBtn, linkFmtBtn]));
+  toolbar.appendChild(mkGroup('Media', [attachmentBtn]));
   toolbar.appendChild(toolbarSpacer);
   toolbar.appendChild(mkGroup('Writing modes', [focusBtn, typewriterBtn, toggleBtn]));
 
@@ -810,6 +846,8 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
         highlightCompartment.of(syntaxHighlighting(jinHighlightStyle)),
         // Live-preview: hide/reveal markdown markers on inactive lines (default-on)
         livePreviewCompartment.of(jinLivePreview()),
+        jinTablePreview(),
+        jinManagedImagePreview(),
         // Fenced-code background: tint code-block lines so code stands out from prose
         jinCodeBlockBackground(),
         // Task-checkbox click handler: toggle [ ]/[x] on .cm-task-glyph mousedown
@@ -841,6 +879,7 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
         ),
         // Doc-change listener → schedule debounced save + update footer stats
         EditorView.updateListener.of((update: ViewUpdate) => {
+          if (update.docChanged || update.selectionSet || update.viewportChanged) scheduleLiveImageHydration();
           if (update.docChanged && !readOnly) {
             if (autosavePaused) {
               setSaveStatus('paused', 'Saving paused — resolve conflict');
@@ -854,6 +893,27 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
         }),
         // Blur → flush (caret-safe; no re-render)
         EditorView.domEventHandlers({
+          mousedown: (event, view) => {
+            const preview = (event.target as HTMLElement).closest<HTMLElement>('.cm-table-widget[data-cm-table-focus], .cm-managed-image-placeholder[data-cm-image-focus]');
+            if (!preview) return false;
+            const from = Number(preview.dataset.cmTableFocus ?? preview.dataset.cmImageFocus);
+            if (!Number.isFinite(from)) return false;
+            event.preventDefault();
+            view.dispatch({ selection: { anchor: from }, scrollIntoView: true });
+            view.focus();
+            return true;
+          },
+          keydown: (event, view) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return false;
+            const preview = (event.target as HTMLElement).closest<HTMLElement>('.cm-table-widget[data-cm-table-focus], .cm-managed-image-placeholder[data-cm-image-focus]');
+            if (!preview) return false;
+            const from = Number(preview.dataset.cmTableFocus ?? preview.dataset.cmImageFocus);
+            if (!Number.isFinite(from)) return false;
+            event.preventDefault();
+            view.dispatch({ selection: { anchor: from }, scrollIntoView: true });
+            view.focus();
+            return true;
+          },
           blur: () => {
             if (!destroyed) void handle.flush();
             return false; // don't suppress the event
@@ -863,10 +923,113 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
     }),
   });
 
+  /** Hydrate only parser-created managed-image widgets via verified local bytes. */
+  const scheduleLiveImageHydration = (): void => {
+    const generation = ++liveHydrationGeneration;
+    revokeLiveMedia?.();
+    revokeLiveMedia = null;
+    queueMicrotask(async () => {
+      const urls: string[] = [];
+      const widgets = Array.from(editorWrapper.querySelectorAll<HTMLElement>('.cm-managed-image-placeholder[data-jin-asset-hash]'));
+      await Promise.all(widgets.map(async (widget) => {
+        const hash = widget.dataset.jinAssetHash ?? '';
+        if (!/^[a-f0-9]{64}$/.test(hash)) return;
+        try {
+          const asset = await resolveImageAttachment(hash);
+          if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(asset.mime) || !Array.isArray(asset.bytes)) return;
+          const url = URL.createObjectURL(new Blob([new Uint8Array(asset.bytes)], { type: asset.mime }));
+          if (destroyed || generation !== liveHydrationGeneration || !editorWrapper.contains(widget)) { URL.revokeObjectURL(url); return; }
+          urls.push(url);
+          const image = document.createElement('img');
+          image.className = 'cm-managed-image';
+          image.src = url;
+          image.alt = widget.dataset.jinAssetLabel || 'Managed image';
+          widget.replaceChildren(image);
+        } catch { /* leave a readable inert placeholder */ }
+      }));
+      if (destroyed || generation !== liveHydrationGeneration) urls.forEach((url) => URL.revokeObjectURL(url));
+      else revokeLiveMedia = () => urls.forEach((url) => URL.revokeObjectURL(url));
+    });
+  };
+  scheduleLiveImageHydration();
+
+  // Link insertion is intentionally explicit: all three choices persist as
+  // portable Markdown and never fetch page metadata. The card title sentinel
+  // opts into card presentation without changing ordinary standalone links.
+  const linkDialog = document.createElement('dialog');
+  linkDialog.className = 'notes-link-composer';
+  linkDialog.setAttribute('aria-label', 'Insert web link');
+  const linkForm = document.createElement('form');
+  linkForm.method = 'dialog';
+  const linkHeading = document.createElement('h2'); linkHeading.textContent = 'Insert link';
+  const formatLabel = document.createElement('label'); formatLabel.textContent = 'Format';
+  const formatSelect = document.createElement('select');
+  for (const [value, label] of [['plain', 'Plain URL'], ['inline', 'Inline decorated link'], ['card', 'Link card']] as const) {
+    const option = document.createElement('option'); option.value = value; option.textContent = label; formatSelect.appendChild(option);
+  }
+  formatLabel.appendChild(formatSelect);
+  const urlLabel = document.createElement('label'); urlLabel.textContent = 'Web address';
+  const urlInput = document.createElement('input'); urlInput.type = 'url'; urlInput.required = true; urlInput.placeholder = 'https://example.com'; urlLabel.appendChild(urlInput);
+  const labelLabel = document.createElement('label'); labelLabel.textContent = 'Label';
+  const labelInput = document.createElement('input'); labelInput.type = 'text'; labelInput.placeholder = 'Optional for a plain URL'; labelLabel.appendChild(labelInput);
+  const hint = document.createElement('p'); hint.className = 'notes-link-composer__hint'; hint.textContent = 'Choose how the link should appear.';
+  const error = document.createElement('p'); error.className = 'notes-link-composer__error'; error.setAttribute('role', 'alert');
+  const actions = document.createElement('div'); actions.className = 'form-actions';
+  const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'btn-secondary'; cancel.textContent = 'Cancel';
+  const submit = document.createElement('button'); submit.type = 'submit'; submit.className = 'btn-primary jin-control jin-control--primary'; submit.textContent = 'Insert link'; actions.append(cancel, submit);
+  linkForm.append(linkHeading, formatLabel, urlLabel, labelLabel, hint, error, actions);
+  linkDialog.appendChild(linkForm); document.body.appendChild(linkDialog);
+  let linkSelection: { from: number; to: number; label: string } | null = null;
+  const updateLinkFields = (): void => {
+    const plain = formatSelect.value === 'plain';
+    labelLabel.hidden = plain;
+    labelInput.required = !plain;
+    hint.textContent = plain ? 'Shows the web address.' : formatSelect.value === 'card'
+      ? 'Shows a full-width card with your label and address.'
+      : 'Shows your label inside the sentence.';
+  };
+  formatSelect.addEventListener('change', updateLinkFields);
+  cancel.addEventListener('click', () => linkDialog.close());
+  linkForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (destroyed) return;
+    const selected = linkSelection;
+    if (!selected) return;
+    let url: URL;
+    try { url = new URL(urlInput.value.trim()); } catch { error.textContent = 'Enter a valid http or https address.'; return; }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') { error.textContent = 'Only http and https links can be inserted.'; return; }
+    const label = (labelInput.value.trim() || selected.label || url.href).replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]');
+    const href = url.href;
+    const format = formatSelect.value;
+    const from = Math.min(selected.from, view.state.doc.length);
+    const to = Math.min(selected.to, view.state.doc.length);
+    let inserted: string;
+    if (format === 'plain') {
+      inserted = href;
+    } else if (format === 'card') {
+      const before = view.state.sliceDoc(0, from);
+      const after = view.state.sliceDoc(to);
+      const prefix = from === 0 || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
+      const suffix = to === view.state.doc.length || after.startsWith('\n\n') ? '' : after.startsWith('\n') ? '\n' : '\n\n';
+      inserted = `${prefix}[${label}](${href} "jin-card")${suffix}`;
+    } else {
+      inserted = `[${label}](${href})`;
+    }
+    view.dispatch({ changes: { from, to, insert: inserted }, selection: { anchor: from + inserted.length }, scrollIntoView: true });
+    linkDialog.close(); view.focus();
+  });
+  const openLinkComposer = (): void => {
+    const selection = view.state.selection.main;
+    linkSelection = { from: selection.from, to: selection.to, label: view.state.sliceDoc(selection.from, selection.to) };
+    formatSelect.value = 'inline'; urlInput.value = ''; labelInput.value = linkSelection.label; error.textContent = ''; updateLinkFields();
+    linkDialog.showModal(); urlInput.focus();
+  };
+
   // ── Wire toolbar button click handlers (view is now available) ────────────
   h1Btn.addEventListener('click', () => { setHeading(1)(view); });
   h2Btn.addEventListener('click', () => { setHeading(2)(view); });
   h3Btn.addEventListener('click', () => { setHeading(3)(view); });
+  tableBtn.addEventListener('click', () => { insertTable(view); });
   boldBtn.addEventListener('click',   () => { toggleInlineWrap('**')(view); });
   italicBtn.addEventListener('click', () => { toggleInlineWrap('*')(view); });
   strikeBtn.addEventListener('click', () => { toggleInlineWrap('~~')(view); });
@@ -875,7 +1038,8 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   numberedBtn.addEventListener('click',  () => { toggleLinePrefix(view, '1. '); });
   checklistBtn.addEventListener('click', () => { toggleLinePrefix(view, '- [ ] '); });
   quoteBtn.addEventListener('click',   () => { toggleLinePrefix(view, '> '); });
-  linkFmtBtn.addEventListener('click', () => { toggleLink(view); });
+  linkFmtBtn.addEventListener('click', openLinkComposer);
+  attachmentBtn.addEventListener('click', () => { onAddAttachment?.(); });
 
   // Focus mode toggle (COZY-1) — reconfigure compartment; no remount, caret-safe
   focusBtn.addEventListener('click', () => {
@@ -923,7 +1087,14 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
         editorWrapper.style.display = 'none';
         readingWrapper.style.display = '';
         // Render via renderMarkdownFragment — NEVER innerHTML of raw markdown
+        revokeReadingMedia?.();
+        revokeReadingMedia = null;
+        const generation = ++readingHydrationGeneration;
         readingWrapper.replaceChildren(renderMarkdownFragment(view.state.doc.toString()));
+        void hydrateManagedImages(readingWrapper, resolveImageAttachment).then((revoke) => {
+          if (generation === readingHydrationGeneration && isReadingView && !destroyed && readingWrapper.isConnected) revokeReadingMedia = revoke;
+          else revoke();
+        });
         // Hydrate Lucide <i data-lucide> icons added by codeChrome decorateCodeBlocks
         initIcons();
         toggleBtn.textContent = 'Edit';
@@ -935,6 +1106,9 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
         editorWrapper.style.display = '';
         readingWrapper.style.display = 'none';
         readingWrapper.replaceChildren(); // clear reading view DOM
+        readingHydrationGeneration += 1;
+        revokeReadingMedia?.();
+        revokeReadingMedia = null;
         toggleBtn.textContent = 'Read';
         toggleBtn.setAttribute('aria-label', 'Switch to reading mode');
         toggleBtn.title = 'Switch to reading mode';
@@ -1002,6 +1176,13 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
         debounceTimer = null;
       }
       view.destroy();
+      liveHydrationGeneration += 1;
+      revokeLiveMedia?.();
+      revokeLiveMedia = null;
+      readingHydrationGeneration += 1;
+      revokeReadingMedia?.();
+      revokeReadingMedia = null;
+      linkDialog.remove();
     },
 
     getView(): EditorView {

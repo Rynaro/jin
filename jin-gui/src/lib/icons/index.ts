@@ -119,6 +119,7 @@ import {
   // S4: board Kanban-by-status
   RotateCcw,      // Reopen action on a `done` board card (done -> todo)
   History,        // Note revision history action
+  Table2,         // Note editor table insertion
 } from 'lucide';
 
 export {
@@ -218,6 +219,7 @@ export {
   // S4: board Kanban-by-status
   RotateCcw,
   History,
+  Table2,
 };
 
 const REGISTERED_ICONS = {
@@ -317,6 +319,7 @@ const REGISTERED_ICONS = {
   // S4: board Kanban-by-status
   RotateCcw,
   History,
+  Table2,
 };
 
 const ICON_ATTRS = {

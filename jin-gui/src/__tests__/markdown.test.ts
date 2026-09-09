@@ -19,8 +19,15 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { globSync } from 'node:fs';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderMarkdownFragment, _getMdInstance } from '../lib/notes/markdown';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { renderMarkdownFragment, hydrateManagedImages, _getMdInstance } from '../lib/notes/markdown';
+
+if (!URL.createObjectURL) {
+  Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: () => 'blob:test' });
+}
+if (!URL.revokeObjectURL) {
+  Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: () => {} });
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -112,6 +119,10 @@ beforeEach(() => {
   delete win['__xss'];
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 // ── AC-B1.8 — Return type is DocumentFragment ─────────────────────────────────
 
 describe('renderMarkdownFragment — return type', () => {
@@ -198,6 +209,62 @@ describe('renderMarkdownFragment — positive controls (real markdown renders)',
     expect(queryFrag(frag, 'a')).toBeNull();
     expect(queryFrag(frag, 'img')).toBeNull();
     expect(queryFrag(frag, 'video')).toBeNull();
+  });
+
+  it('preserves a managed image label in an inert placeholder for verified hydration', () => {
+    const hash = 'a'.repeat(64);
+    const frag = renderMarkdownFragment(`![Diagram](jin-asset://sha256/${hash})`);
+    const placeholder = queryFrag(frag, '.jin-asset-placeholder') as HTMLElement | null;
+    expect(placeholder?.dataset.jinAssetHash).toBe(hash);
+    expect(placeholder?.dataset.jinAssetLabel).toBe('Diagram');
+    expect(queryFrag(frag, 'img')).toBeNull();
+  });
+
+  it('keeps plain, labelled, and explicit card links as distinct portable forms', () => {
+    const plain = queryFrag(renderMarkdownFragment('https://example.com'), 'a')!;
+    const inline = queryFrag(renderMarkdownFragment('[Example](https://example.com)'), 'a')!;
+    const card = queryFrag(renderMarkdownFragment('[Example](https://example.com "jin-card")'), 'a')!;
+    expect(plain.classList.contains('jin-plain-link')).toBe(true);
+    expect(inline.classList.contains('jin-inline-link')).toBe(true);
+    expect(inline.classList.contains('jin-link-card')).toBe(false);
+    expect(card.classList.contains('jin-link-card')).toBe(true);
+    expect(card.hasAttribute('title')).toBe(false);
+  });
+});
+
+describe('managed image hydration lifecycle', () => {
+  it('creates and revokes only an app-owned Blob URL', async () => {
+    const hash = 'a'.repeat(64);
+    const host = document.createElement('div');
+    host.append(renderMarkdownFragment(`![Diagram](jin-asset://sha256/${hash})`));
+    const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:verified-image');
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+    const dispose = await hydrateManagedImages(host, async () => ({
+      mime: 'image/png', bytes: [137, 80, 78, 71],
+    }));
+    const image = host.querySelector<HTMLImageElement>('img');
+    expect(image?.src).toContain('blob:verified-image');
+    expect(image?.alt).toBe('Diagram');
+    expect(create).toHaveBeenCalledTimes(1);
+    dispose();
+    expect(revoke).toHaveBeenCalledWith('blob:verified-image');
+  });
+
+  it('revokes a resolved URL when its placeholder was detached while loading', async () => {
+    const hash = 'a'.repeat(64);
+    const host = document.createElement('div');
+    host.append(renderMarkdownFragment(`![Diagram](jin-asset://sha256/${hash})`));
+    let finish!: (asset: { mime: string; bytes: number[] }) => void;
+    const resolved = new Promise<{ mime: string; bytes: number[] }>((resolve) => { finish = resolve; });
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:stale-image');
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const hydration = hydrateManagedImages(host, () => resolved);
+    host.replaceChildren();
+    finish({ mime: 'image/png', bytes: [137, 80, 78, 71] });
+    await hydration;
+    expect(revoke).toHaveBeenCalledWith('blob:stale-image');
+    expect(host.querySelector('img')).toBeNull();
   });
 });
 

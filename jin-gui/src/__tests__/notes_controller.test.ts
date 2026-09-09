@@ -540,6 +540,34 @@ describe('renderNoteDetail — title and meta', () => {
     expect(badgeEl?.getAttribute('aria-label')).toContain('Active');
   });
 
+  it('status is a keyboard and touch-sized information disclosure', () => {
+    const handle = renderNoteDetail(el, templates, makeNote({ status: 'archived' }), noopNavigate);
+    const status = el.detailContent.querySelector<HTMLButtonElement>('.note-detail__status')!;
+    const info = status.querySelector<HTMLElement>('[role="tooltip"]')!;
+
+    expect(status).toBeInstanceOf(HTMLButtonElement);
+    expect(status.type).toBe('button');
+    expect(status.dataset.noteStatus).toBe('archived');
+    expect(status.getAttribute('aria-describedby')).toBe(info.id);
+    expect(status.getAttribute('aria-expanded')).toBe('false');
+    expect(info.textContent).toContain('Archived');
+
+    status.click();
+    expect(status.classList.contains('is-explaining')).toBe(true);
+    expect(status.getAttribute('aria-expanded')).toBe('true');
+
+    status.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(status.classList.contains('is-explaining')).toBe(false);
+    expect(status.classList.contains('suppress-focus-info')).toBe(true);
+    expect(status.getAttribute('aria-expanded')).toBe('false');
+
+    status.click();
+    document.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(status.classList.contains('is-explaining')).toBe(false);
+    expect(status.getAttribute('aria-expanded')).toBe('false');
+    handle.destroy();
+  });
+
   it('renders tags in the detail', () => {
     renderNoteDetail(el, templates, makeNote({ tags: ['project', 'q3'] }), noopNavigate);
     const tagsEl = el.detailContent.querySelector('.note-detail__tags');
@@ -1831,6 +1859,82 @@ describe('G-SAVE — CM6 autosave: debounce + flush + caret-safe (no re-render)'
     expect(handleB.getDoc()).toBe('note B body');
     expect(handleB).not.toBe(handleA); // different handle instance
   });
+
+  it('serializes tag and body revisions and drains the outgoing note before switching', async () => {
+    vi.mocked(getNoteById).mockResolvedValueOnce(
+      makeNote({ id: 'note-save-1', revision: 1, body_markdown: NOTE_BODY }),
+    );
+    let finishTag!: (note: NoteDto) => void;
+    const tagResult = new Promise<NoteDto>((resolve) => { finishTag = resolve; });
+    vi.mocked(editNote).mockImplementation(async (_id, patch) => {
+      if (patch.add_tags) return tagResult;
+      return makeNote({ id: 'note-save-1', revision: 3, body_markdown: String(patch.body) });
+    });
+    await openNote('note-save-1');
+    const handle = getHandle();
+
+    document.querySelector<HTMLButtonElement>('[data-tooltip="Manage tags"]')!.click();
+    const tagInput = document.querySelector<HTMLInputElement>('.note-detail__tag-input')!;
+    tagInput.value = 'writing';
+    tagInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(editNote).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(editNote).mock.calls[0][1]).toMatchObject({
+      add_tags: ['writing'], expected_revision: 1,
+    });
+
+    handle.getView().dispatch({
+      changes: { from: 0, to: handle.getDoc().length, insert: 'body after tag' },
+    });
+    const bodyFlush = handle.flush();
+    await Promise.resolve();
+    expect(editNote).toHaveBeenCalledTimes(1);
+
+    const switchPromise = openNote('note-save-2');
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    expect(getNoteById).toHaveBeenCalledTimes(1);
+
+    vi.mocked(getNoteById).mockResolvedValueOnce(
+      makeNote({ id: 'note-save-2', revision: 1, body_markdown: 'note B body' }),
+    );
+    finishTag(makeNote({ id: 'note-save-1', revision: 2, tags: ['writing'] }));
+    await bodyFlush;
+    await switchPromise;
+
+    expect(vi.mocked(editNote).mock.calls[1][1]).toMatchObject({
+      body: 'body after tag', expected_revision: 2,
+    });
+    expect(getHandle().getDoc()).toBe('note B body');
+  });
+
+  it('keeps the latest note when overlapping detail requests finish out of order', async () => {
+    let finishA!: (note: NoteDto) => void;
+    let finishB!: (note: NoteDto) => void;
+    const noteA = new Promise<NoteDto>((resolve) => { finishA = resolve; });
+    const noteB = new Promise<NoteDto>((resolve) => { finishB = resolve; });
+    vi.mocked(getNoteById).mockImplementation((id) => id === 'note-save-1' ? noteA : noteB);
+    const section = document.querySelector('[data-section-name="notes"]') as HTMLElement;
+
+    section.dispatchEvent(new CustomEvent('jin:open-detail', {
+      detail: { id: 'note-save-1' }, bubbles: false,
+    }));
+    await Promise.resolve();
+    await Promise.resolve();
+    section.dispatchEvent(new CustomEvent('jin:open-detail', {
+      detail: { id: 'note-save-2' }, bubbles: false,
+    }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    finishB(makeNote({ id: 'note-save-2', title: 'Latest', body_markdown: 'latest body' }));
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    finishA(makeNote({ id: 'note-save-1', title: 'Older', body_markdown: 'older body' }));
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+    expect(getHandle().getDoc()).toBe('latest body');
+    expect(document.querySelector<HTMLTextAreaElement>('.browse-detail__title--input')?.value).toBe('Latest');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2547,7 +2651,7 @@ describe('renderNoteDetail — NN-1 editable title input (DOM-level)', () => {
   it('renders an <input> with .browse-detail__title and value=note.title', () => {
     renderNoteDetail(el, templates, makeNote({ title: 'Test Title' }), noopNavigate);
     const input = el.detailContent.querySelector<HTMLInputElement>('.browse-detail__title');
-    expect(input?.tagName).toBe('INPUT');
+    expect(input?.tagName).toBe('TEXTAREA');
     expect(input?.value).toBe('Test Title');
   });
 
@@ -2974,7 +3078,7 @@ describe('G-NEWNOTE — controller-driven New Note button gates', () => {
 
     const titleInput = document.querySelector<HTMLInputElement>('.browse-detail__title');
     expect(titleInput, '.browse-detail__title input must exist after New Note').not.toBeNull();
-    expect(titleInput!.tagName).toBe('INPUT');
+    expect(titleInput!.tagName).toBe('TEXTAREA');
     // New note has empty title → value is '' and placeholder shows 'Untitled'
     expect(titleInput!.value).toBe('');
     expect(titleInput!.placeholder).toBe('Untitled');
@@ -3882,6 +3986,39 @@ describe('VG-A11Y-KEBAB — kebab button accessibility invariants', () => {
       )!.click();
       await waitForController();
       expect(restoreNoteRevision).toHaveBeenCalledWith(NOTE_ID, 2, 3);
+    });
+
+    it('ignores an older failure when the same history revision was requested again', async () => {
+      await openSurfaceNote();
+      vi.mocked(listNoteRevisions).mockResolvedValue([2]);
+      let rejectFirst!: (error: unknown) => void;
+      const firstPreview = new Promise<never>((_resolve, reject) => { rejectFirst = reject; });
+      vi.mocked(previewNoteRevision)
+        .mockImplementationOnce(() => firstPreview)
+        .mockResolvedValueOnce({
+          revision: 2,
+          title: 'Latest successful preview',
+          body_markdown: 'new preview body',
+          updated: '2026-06-01T00:00:00Z',
+        });
+
+      document.querySelector<HTMLButtonElement>('[data-tooltip="History"]')!.click();
+      await waitForController();
+      const revision = document.querySelector<HTMLButtonElement>('.notes-history__revision')!;
+      revision.click();
+      revision.click();
+      await waitForController();
+      const restore = document.querySelector<HTMLButtonElement>('[data-notes-target="restoreRevisionButton"]')!;
+      expect(restore.disabled).toBe(false);
+      expect(document.querySelector('[data-notes-target="historyStatus"]')?.textContent)
+        .toContain('Previewing revision 2');
+
+      rejectFirst(new Error('older request failed'));
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(restore.disabled).toBe(false);
+      expect(document.querySelector('[data-notes-target="historyStatus"]')?.textContent)
+        .toContain('Previewing revision 2');
     });
 
     it('pauses autosave on a structured stale write, preserves the draft, and reloads only after confirmation', async () => {

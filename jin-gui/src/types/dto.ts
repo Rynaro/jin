@@ -46,6 +46,12 @@ export interface AssetRepairReport {
   invalid: string[];
 }
 
+/** Verified local image bytes; exposed without a filesystem path. */
+export interface ResolvedImageAssetDto {
+  mime: string;
+  bytes: number[];
+}
+
 export interface BacklinkDto {
   source_id: string;
   source_kind: string;

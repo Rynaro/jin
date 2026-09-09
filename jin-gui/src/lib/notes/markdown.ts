@@ -215,10 +215,126 @@ function replaceAssetLinksWithPlaceholders(fragment: DocumentFragment): void {
     const placeholder = document.createElement('span');
     placeholder.className = 'jin-asset-placeholder';
     placeholder.dataset.jinAssetHash = hash;
+    const label = anchor.textContent?.trim() || `Attachment ${hash.slice(0, 12)}`;
+    placeholder.dataset.jinAssetLabel = label;
     placeholder.setAttribute('role', 'img');
-    placeholder.setAttribute('aria-label', `Locally managed attachment ${hash}`);
-    placeholder.textContent = `Attachment ${hash.slice(0, 12)}`;
+    placeholder.setAttribute('aria-label', `Locally managed attachment: ${label}`);
+    placeholder.textContent = label;
     anchor.replaceWith(placeholder);
+  }
+  // markdown-it renders image syntax as <img>, which is deliberately excluded
+  // from DOMPurify's allow-list.  Promote only a managed `jin-asset` image to
+  // the same inert, app-owned placeholder before sanitization removes it.
+  // No image element or user supplied src survives this chokepoint.
+  for (const image of fragment.querySelectorAll<HTMLElement>('.jin-asset-image-source')) {
+    const hash = image.dataset.jinAssetHash ?? '';
+    if (!/^[a-f0-9]{64}$/.test(hash)) continue;
+    const placeholder = document.createElement('span');
+    placeholder.className = 'jin-asset-placeholder';
+    placeholder.dataset.jinAssetHash = hash;
+    const label = image.dataset.jinAssetLabel || `Attachment ${hash.slice(0, 12)}`;
+    placeholder.dataset.jinAssetLabel = label;
+    placeholder.setAttribute('role', 'img');
+    placeholder.setAttribute('aria-label', `Locally managed attachment: ${label}`);
+    placeholder.textContent = label;
+    image.replaceWith(placeholder);
+  }
+}
+
+/**
+ * Convert only markdown-it's managed image output into inert spans *before*
+ * sanitization. The parser output is detached and still sent through DOMPurify;
+ * arbitrary raw HTML images remain forbidden.
+ */
+function promoteManagedImageMarkup(html: string): string {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  for (const image of template.content.querySelectorAll<HTMLImageElement>('img[src]')) {
+    const src = image.getAttribute('src') ?? '';
+    if (!ASSET_REFERENCE_RE.test(src)) continue;
+    const owned = document.createElement('span');
+    owned.className = 'jin-asset-image-source';
+    owned.dataset.jinAssetHash = src.slice('jin-asset://sha256/'.length);
+    owned.dataset.jinAssetLabel = image.getAttribute('alt') || '';
+    image.replaceWith(owned);
+  }
+  return template.innerHTML;
+}
+
+/**
+ * Turn post-sanitization, app-owned attachment placeholders into images. This
+ * deliberately accepts only the placeholder produced above and takes bytes
+ * from a caller that has already verified the managed asset store. Markdown
+ * itself can never supply a src, data URI, Blob URI, file path or remote URL.
+ * Returns a revoker for every object URL created during this hydration pass.
+ */
+export async function hydrateManagedImages(
+  root: ParentNode,
+  resolve: (hash: string) => Promise<{ mime: string; bytes: number[] }>,
+): Promise<() => void> {
+  const objectUrls: string[] = [];
+  const placeholders = Array.from(root.querySelectorAll<HTMLElement>('.jin-asset-placeholder[data-jin-asset-hash]'));
+  await Promise.all(placeholders.map(async (placeholder) => {
+    const hash = placeholder.dataset.jinAssetHash ?? '';
+    if (!/^[a-f0-9]{64}$/.test(hash)) return;
+    try {
+      const asset = await resolve(hash);
+      if (!matchesSafeImageMime(asset.mime) || !Array.isArray(asset.bytes)) return;
+      const url = URL.createObjectURL(new Blob([new Uint8Array(asset.bytes)], { type: asset.mime }));
+      if (!root.contains(placeholder)) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      objectUrls.push(url);
+      const figure = document.createElement('figure');
+      figure.className = 'jin-managed-image';
+      const image = document.createElement('img');
+      image.src = url;
+      image.alt = placeholder.dataset.jinAssetLabel || 'Managed image';
+      image.loading = 'lazy';
+      figure.appendChild(image);
+      placeholder.replaceWith(figure);
+    } catch {
+      // A missing, altered, or unsupported asset stays a plain inert placeholder.
+    }
+  }));
+  return () => objectUrls.forEach((url) => URL.revokeObjectURL(url));
+}
+
+function matchesSafeImageMime(mime: string): boolean {
+  return mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/gif' || mime === 'image/webp';
+}
+
+/** Add presentational hooks only after sanitization; no metadata is fetched. */
+function decorateExternalLinks(fragment: DocumentFragment): void {
+  for (const anchor of fragment.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+    const href = anchor.getAttribute('href') ?? '';
+    if (!/^https?:\/\//i.test(href)) continue;
+    let hostname = '';
+    try { hostname = new URL(href).hostname.replace(/^www\./, ''); } catch { continue; }
+    const label = (anchor.textContent ?? '').trim();
+    if (label && label !== href) {
+      anchor.classList.add('jin-inline-link');
+      anchor.dataset.linkHost = hostname;
+      const parent = anchor.parentElement;
+      if (anchor.getAttribute('title') === 'jin-card' && parent?.tagName === 'P' && parent.childNodes.length === 1) {
+        anchor.classList.remove('jin-inline-link');
+        anchor.classList.add('jin-link-card');
+        anchor.removeAttribute('title');
+        parent.classList.add('jin-link-card-wrap');
+      }
+    } else {
+      anchor.classList.add('jin-plain-link');
+    }
+  }
+  for (const table of Array.from(fragment.querySelectorAll('table'))) {
+    const wrap = document.createElement('div');
+    wrap.className = 'jin-table-scroll';
+    wrap.tabIndex = 0;
+    wrap.setAttribute('role', 'region');
+    wrap.setAttribute('aria-label', 'Scrollable table');
+    table.replaceWith(wrap);
+    wrap.appendChild(table);
   }
 }
 
@@ -234,12 +350,13 @@ function replaceAssetLinksWithPlaceholders(fragment: DocumentFragment): void {
  * @returns    A sanitized DocumentFragment safe to append to the document
  */
 export function renderMarkdownFragment(src: string): DocumentFragment {
-  const html = md.render(src);
+  const html = promoteManagedImageMarkup(md.render(src));
   // DOMPurify.sanitize with RETURN_DOM_FRAGMENT: true returns a DocumentFragment.
   // The cast is required because the overload for RETURN_DOM_FRAGMENT isn't always
   // narrowed by TypeScript's DOMPurify typings.
   const frag = DOMPurify.sanitize(html, SANITIZE_CONFIG) as unknown as DocumentFragment;
   replaceAssetLinksWithPlaceholders(frag);
+  decorateExternalLinks(frag);
   // POST-sanitize: decorate <pre> blocks with the app-built code-block chrome
   // (copy button, language badge, soft-wrap toggle).  This runs AFTER DOMPurify
   // so we operate on already-sanitized nodes; the decoration itself uses only

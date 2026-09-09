@@ -607,36 +607,67 @@
   box-sizing: border-box;
   display: inline-block;
   flex-shrink: 0;
-  width: 1.05em;
-  height: 1.05em;
+  width: 18px;
+  height: 18px;
   margin: 0 0.4em 0 0;
   padding: 0;
-  vertical-align: -0.15em;
-  border: 1.5px solid var(--label-tertiary);
-  border-radius: 0.28em; /* gentle square — clearly not a circle */
-  background-color: transparent;
+  vertical-align: -3px;
+  border: 1.5px solid var(--agenda-indigo);
+  border-radius: 50%;
+  background-color: var(--notes-writing-paper);
   cursor: default;
   position: relative;
   transition: border-color var(--duration-fast) var(--ease-standard);
 }
 
-/* Ticked: accent outline + accent check, matching the editor's accent ☑ (no fill). */
+/* Ticked: the same indigo circle and light mark used by Tasks. */
 .cm-reading-wrapper .task-list-item-checkbox:checked {
-  border-color: var(--accent);
+  border-color: var(--agenda-indigo);
+  background-color: var(--agenda-indigo);
+  background-image:
+    linear-gradient(45deg, transparent 42%, var(--notes-writing-paper) 42% 58%, transparent 58%),
+    linear-gradient(-45deg, transparent 42%, var(--notes-writing-paper) 42% 58%, transparent 58%);
+  background-position: 4px 9px, 7px 7px;
+  background-size: 5px 3px, 8px 3px;
+  background-repeat: no-repeat;
 }
 
-/* Drawn checkmark (rotated border L) — em-scaled so it tracks the box size. */
-.cm-reading-wrapper .task-list-item-checkbox:checked::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 47%;
-  width: 0.25em;
-  height: 0.5em;
-  border: solid var(--accent);
-  border-width: 0 0.125em 0.125em 0;
-  transform: translate(-50%, -55%) rotate(45deg);
+/* Interactive editor checklists reuse the Tasks circle without a font glyph. */
+.cm-task-glyph {
+  position: relative;
+  display: inline-flex;
+  inline-size: 20px;
+  block-size: 20px;
+  margin-inline-end: var(--space-half);
+  vertical-align: -4px;
+  cursor: pointer;
 }
+.cm-task-glyph::before {
+  content: '';
+  box-sizing: border-box;
+  inline-size: 18px;
+  block-size: 18px;
+  margin: 1px;
+  border: 1.5px solid var(--agenda-indigo);
+  border-radius: 50%;
+  background: var(--notes-writing-paper);
+}
+.cm-task-glyph::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: 7px;
+  inset-block-start: 4px;
+  inline-size: 5px;
+  block-size: 9px;
+  border: solid var(--notes-writing-paper);
+  border-width: 0 1.75px 1.75px 0;
+  opacity: 0;
+  transform: rotate(45deg);
+}
+.cm-task-glyph:hover::before { background: var(--agenda-indigo-tint); }
+.cm-task-glyph[aria-checked='true']::before { background: var(--agenda-indigo); }
+.cm-task-glyph[aria-checked='true']::after { opacity: 1; }
+.cm-task-glyph:focus-visible { outline: 2px solid var(--notes-focus-tint); outline-offset: 1px; border-radius: 50%; }
 
 .cm-reading-wrapper blockquote {
   margin: 0 0 var(--space-2);
@@ -1747,14 +1778,22 @@ figure.code-block {
 /* ── Note history preview (inert text only) ───────────────────────────────── */
 
 .notes-history-dialog {
-  max-width: min(720px, calc(100vw - var(--space-4)));
+  max-width: min(960px, calc(100vw - var(--space-4)));
 }
+#jin-note-history-modal {
+  inline-size: min(960px, calc(100vw - var(--space-4)));
+  min-inline-size: 0;
+  max-inline-size: calc(100vw - var(--space-4));
+  max-block-size: calc(100dvh - var(--space-4));
+}
+#jin-note-history-modal .notes-history-dialog { max-block-size: inherit; overflow: auto; }
+#jin-note-history-modal .form-actions { padding: var(--space-2) var(--space-3); }
 
 .notes-history__layout {
   display: grid;
   grid-template-columns: minmax(120px, 0.35fr) minmax(0, 1fr);
   gap: var(--space-2);
-  min-height: 240px;
+  min-height: min(620px, 65vh);
 }
 
 .notes-history__revisions {
@@ -1771,7 +1810,7 @@ figure.code-block {
 
 .notes-history__preview {
   min-width: 0;
-  max-height: 360px;
+  max-height: min(62vh, 640px);
   margin: 0;
   overflow: auto;
   padding: var(--space-2);
@@ -1779,9 +1818,17 @@ figure.code-block {
   border-radius: var(--radius-sm);
   background: var(--fill-quaternary);
   color: var(--label);
-  font-family: var(--font-mono);
-  font-size: var(--text-footnote-size);
-  white-space: pre-wrap;
+  font-family: var(--font-text);
+  font-size: var(--notes-prose-size);
+  line-height: var(--notes-prose-line);
+}
+
+@media (max-width: 640px) {
+  #jin-note-history-modal { inline-size: calc(100vw - var(--space-2)); max-inline-size: calc(100vw - var(--space-2)); min-inline-size: 0; }
+  .notes-history-dialog { max-width: calc(100vw - var(--space-2)); }
+  .notes-history__layout { grid-template-columns: 1fr; min-height: 0; }
+  .notes-history__revisions { max-height: 10rem; }
+  .notes-history__preview { max-height: 50vh; }
 }
 
 .notes-history__status {
@@ -4172,11 +4219,13 @@ figure.code-block {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  font-family: var(--font-display);
-  font-size: var(--document-title-size);
-  font-weight: 600;
-  line-height: var(--document-title-line);
+  font-family: var(--font-text);
+  font-size: clamp(1.75rem, 4vw, 2rem);
+  font-weight: 650;
+  line-height: 1.2;
   letter-spacing: -0.012em;
+  resize: none;
+  overflow: hidden;
 }
 
 .notes-detail-pane .browse-detail__title--input.jin-title-field:focus {
@@ -4185,16 +4234,232 @@ figure.code-block {
   box-shadow: none;
 }
 
+/* Status is an informational disclosure with the same geometry as adjacent
+ * header controls. It never mutates the note's status. */
 .notes-detail-pane .note-detail__status {
-  margin-top: var(--space-1);
+  position: relative;
+  inline-size: var(--control-height-prominent);
+  block-size: var(--control-height-prominent);
+  min-inline-size: var(--control-height-prominent);
+  min-block-size: var(--control-height-prominent);
+  display: inline-grid;
+  place-items: center;
+  align-self: center;
   flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, currentcolor 28%, transparent);
+  border-radius: 50%;
+  color: var(--agenda-indigo);
+  background: var(--notes-selected-wash);
+  font: inherit;
+  cursor: help;
 }
+
+.notes-detail-pane .note-detail__status:hover {
+  background: var(--notes-selection-tint);
+}
+
+.notes-detail-pane .note-detail__status:focus-visible {
+  outline: 2px solid var(--notes-focus-tint);
+  outline-offset: 2px;
+}
+
+.notes-detail-pane .note-detail__status-icon,
+.notes-detail-pane .note-detail__status-icon svg {
+  display: grid;
+  place-items: center;
+  inline-size: 18px;
+  block-size: 18px;
+  stroke-width: 2;
+}
+
+.notes-detail-pane .note-detail__status-label { display: none; }
+.notes-detail-pane .note-detail__status[data-note-status="archived"] {
+  color: var(--notes-writing-muted);
+  background: var(--fill-tertiary);
+  border-color: var(--separator);
+}
+
+.notes-detail-pane .note-detail__status-info {
+  position: absolute;
+  z-index: 100;
+  inset-block-start: calc(100% + 6px);
+  inset-inline-end: 0;
+  inline-size: max-content;
+  max-inline-size: min(18rem, calc(100vw - var(--space-4)));
+  padding: var(--space-half) var(--space-1);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated-2);
+  box-shadow: var(--elevation-shadow);
+  color: var(--label-secondary);
+  font-size: var(--text-caption1-size);
+  font-weight: 400;
+  line-height: var(--text-caption1-line);
+  text-align: start;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-2px);
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard),
+    visibility 0s linear var(--duration-fast);
+}
+
+.notes-detail-pane .note-detail__status:hover .note-detail__status-info,
+.notes-detail-pane .note-detail__status:focus-visible:not(.suppress-focus-info) .note-detail__status-info,
+.notes-detail-pane .note-detail__status.is-explaining .note-detail__status-info {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition-delay: 0s;
+}
+
+@media (pointer: coarse) {
+  .notes-detail-pane .note-detail__status {
+    inline-size: var(--coarse-hit-target);
+    block-size: var(--coarse-hit-target);
+    min-inline-size: var(--coarse-hit-target);
+    min-block-size: var(--coarse-hit-target);
+  }
+}
+
+.notes-detail-pane .note-detail__tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-half);
+  min-block-size: var(--control-height);
+  margin: 0;
+}
+
+.notes-detail-pane .note-detail__tag-chip,
+.notes-detail-pane .note-detail__tag-input {
+  min-block-size: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--fill-tertiary);
+  color: var(--label-secondary);
+  font: inherit;
+  font-size: var(--text-caption1-size);
+}
+.notes-detail-pane .note-detail__tag-chip { padding: 0 var(--space-1); cursor: pointer; }
+.notes-detail-pane .note-detail__tag-remove {
+  inline-size: 22px;
+  block-size: 22px;
+  margin-inline-start: calc(var(--space-half) * -1);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--label-tertiary);
+  cursor: pointer;
+}
+.notes-detail-pane .note-detail__tag-remove:hover,
+.notes-detail-pane .note-detail__tag-remove:focus-visible { color: var(--system-red); background: var(--fill-tertiary); }
+.notes-detail-pane .note-detail__tag-chip:hover,
+.notes-detail-pane .note-detail__tag-chip:focus-visible { color: var(--agenda-indigo); background: var(--notes-selected-wash); }
+.notes-detail-pane .note-detail__tag-input { inline-size: 7rem; padding-inline: var(--space-1); background: transparent; }
+.notes-detail-pane .note-detail__tag-input:focus-visible { outline: 2px solid var(--notes-focus-tint); outline-offset: 1px; }
 
 .notes-detail-pane .note-detail__body,
 .notes-detail-pane .cm-toolbar,
 .notes-detail-pane .cm-footer,
 .notes-detail-pane .cm-reading-wrapper {
   background-color: transparent;
+}
+
+.notes-detail-pane > [data-notes-target="detailContent"] > .cm-toolbar {
+  flex: 0 0 auto;
+  order: -1;
+  margin-bottom: var(--space-2);
+}
+
+/* Markdown is rendered on the same writing desk, with component-only overflow
+ * for wide tables and calm, provenance-free link treatments. */
+.cm-reading-wrapper .jin-table-scroll {
+  overflow-x: auto;
+  margin-block: var(--space-2);
+  outline: none;
+}
+.cm-reading-wrapper .jin-table-scroll:focus-visible { outline: 2px solid var(--notes-focus-tint); outline-offset: 2px; }
+.cm-reading-wrapper table { inline-size: 100%; border-collapse: collapse; font-size: var(--text-subheadline-size); }
+.cm-reading-wrapper th, .cm-reading-wrapper td { min-inline-size: 7rem; padding: var(--space-1); border: 0.5px solid var(--separator); text-align: start; vertical-align: top; }
+.cm-reading-wrapper th { background: var(--fill-tertiary); font-weight: 650; }
+.cm-reading-wrapper .jin-inline-link::after { content: attr(data-link-host) " ↗"; margin-inline-start: .35em; color: var(--label-tertiary); font-size: .82em; }
+.cm-reading-wrapper .jin-link-card-wrap { margin-block: var(--space-2); }
+.cm-reading-wrapper .jin-link-card {
+  display: block;
+  padding: var(--space-2);
+  border-inline-start: 3px solid var(--agenda-indigo);
+  background: var(--fill-tertiary);
+  color: var(--label);
+  text-decoration: none;
+}
+.cm-reading-wrapper .jin-link-card::after { content: attr(href); display: block; margin-top: var(--space-half); color: var(--label-secondary); font-size: var(--text-caption1-size); overflow-wrap: anywhere; }
+.cm-reading-wrapper .jin-managed-image { margin: var(--space-2) 0; }
+.cm-reading-wrapper .jin-managed-image img { display: block; max-inline-size: 100%; block-size: auto; border-radius: var(--radius-sm); }
+.cm-table-widget {
+  display: block;
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-x: auto;
+  margin-block: var(--space-1);
+  box-sizing: border-box;
+  cursor: text;
+}
+.cm-table-widget table { min-inline-size: 28rem; max-inline-size: none; border-collapse: collapse; }
+.cm-table-widget th, .cm-table-widget td { padding: var(--space-half) var(--space-1); border: 0.5px solid var(--separator); text-align: start; }
+.cm-table-widget th { background: var(--fill-tertiary); }
+.cm-link-card-label {
+  display: block;
+  padding: var(--space-2);
+  border-inline-start: 3px solid var(--agenda-indigo);
+  border-radius: var(--radius-sm);
+  background: var(--fill-tertiary);
+  color: var(--label);
+  text-decoration: none;
+}
+.cm-link-card-label::after {
+  content: attr(data-link-host);
+  display: block;
+  margin-block-start: var(--space-half);
+  color: var(--label-secondary);
+  font-size: var(--text-caption1-size);
+  font-weight: 400;
+  text-decoration: none;
+}
+.cm-managed-image-placeholder { display: block; max-inline-size: 100%; margin: var(--space-1) 0; cursor: text; }
+.cm-managed-image-placeholder .cm-managed-image { display: block; max-inline-size: min(100%, 46rem); block-size: auto; border-radius: var(--radius-sm); }
+
+.notes-link-composer {
+  inline-size: min(28rem, calc(100vw - 2rem));
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated-2);
+  color: var(--label);
+  box-shadow: var(--dialog-elevation);
+}
+.notes-link-composer::backdrop { background: color-mix(in srgb, var(--label) 30%, transparent); }
+.notes-link-composer form { display: grid; gap: var(--space-2); padding: var(--space-3); }
+.notes-link-composer h2 { margin: 0; font: 650 var(--text-title3-size)/1.2 var(--font-text); }
+.notes-link-composer label { display: grid; gap: var(--space-half); color: var(--label-secondary); font-size: var(--text-subheadline-size); }
+.notes-link-composer input, .notes-link-composer select { min-block-size: var(--control-height); padding-inline: var(--space-1); border: 1px solid var(--separator); border-radius: var(--radius-sm); background: var(--bg-elevated); color: var(--label); font: inherit; }
+.notes-link-composer__hint { margin: 0; color: var(--label-secondary); font-size: var(--text-caption1-size); }
+.notes-link-composer__error { min-block-size: 1.2em; margin: 0; color: var(--system-red); font-size: var(--text-caption1-size); }
+
+/* Final Notes writing-column authority. These follow legacy browse rules so
+ * the document title reads as the first line of writing, not a page poster. */
+.notes-detail-pane .browse-detail__title-row { margin-block: 0 var(--space-1) !important; }
+.notes-detail-pane .browse-detail__title--input.jin-title-field {
+  font-family: var(--font-text);
+  font-size: clamp(1.75rem, 3vw, 2rem) !important;
+  line-height: 1.18;
 }
 
 .notes-detail-pane .cm-toolbar,
@@ -4214,7 +4479,11 @@ figure.code-block {
 }
 
 .notes-detail-pane .cm-content {
-  padding: var(--space-3) var(--space-3) var(--space-8);
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  box-sizing: border-box;
+  padding: var(--space-1) 0 var(--space-8);
   font-size: var(--editor-text-size);
   line-height: var(--editor-text-line);
 }
@@ -4222,6 +4491,25 @@ figure.code-block {
 .notes-detail-pane .cm-reading-wrapper {
   font-size: var(--editor-text-size);
   line-height: var(--editor-text-line);
+}
+
+.notes-detail-pane .note-detail__body { min-height: 0; }
+.notes-detail-pane .browse-detail__title-row { margin-bottom: var(--space-1); }
+.notes-detail-pane .note-detail__tags { max-inline-size: 15rem; }
+.notes-detail-pane__actions { position: relative; }
+.notes-detail-pane__actions .note-detail__tags { display: none; }
+.notes-detail-pane__actions .browse-detail__meta.is-open .note-detail__tags {
+  display: flex;
+  position: absolute;
+  z-index: 2;
+  inset-inline-end: 0;
+  inset-block-start: calc(100% + var(--space-half));
+  min-inline-size: 13rem;
+  padding: var(--space-1);
+  background: var(--bg-elevated-2);
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--elevation-shadow);
 }
 
 @media (max-width: 900px) {
@@ -4250,7 +4538,18 @@ figure.code-block {
   .notes-detail-pane .cm-reading-wrapper,
   .notes-detail-pane .browse-detail__meta,
   .notes-detail-pane .browse-detail__links-section {
-    margin-inline: 0;
+    margin-inline: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .notes-detail-pane .browse-detail__title-row,
+  .notes-detail-pane .cm-editor-wrapper,
+  .notes-detail-pane .cm-reading-wrapper,
+  .notes-detail-pane .cm-toolbar,
+  .notes-detail-pane .cm-footer {
+    width: calc(100% - (var(--space-2) * 2));
+    margin-inline: var(--space-2);
   }
 }
 
@@ -4723,6 +5022,26 @@ figure.code-block {
 .cm-toolbar__status[data-save-state="failed"]::before { content: "!"; }
 .cm-toolbar__status[data-save-state="paused"] { color: var(--notes-save-paused); font-weight: 700; }
 .cm-toolbar__status[data-save-state="paused"]::before { content: "Ⅱ"; }
+
+/* The detail can be narrow while the app viewport is still tablet-sized (for
+ * example beside the folder rail). Wrap from the pane's real width so every
+ * formatting and reading action remains reachable. */
+.notes-detail-pane { container-type: inline-size; }
+
+@container (max-width: 42rem) {
+  .notes-detail-pane .cm-toolbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .notes-detail-pane .cm-toolbar__group {
+    max-inline-size: 100%;
+    flex-wrap: wrap;
+  }
+
+  .notes-detail-pane .cm-toolbar__spacer { display: none; }
+}
 
 @media (max-width: 640px) {
   .notes-detail-pane .browse-detail__title-row,

@@ -47,7 +47,7 @@ import {
   clearAllFormErrors,
 } from '../lib/capture/render';
 import { isJinErrorDto } from '../types/error';
-import { promoteTask, attachNote, linkObjects, newOperationId, listGoogleAccounts, listNotes } from '../invoke';
+import { promoteTask, attachNote, linkObjects, newOperationId, listGoogleAccounts, listNotes, listTasks, listEvents } from '../invoke';
 import { initIcons } from '../lib/icons';
 import { eventMessage, resolveEventLocale } from '../lib/events/locale';
 import type { NoteDto } from '../types/dto';
@@ -117,6 +117,8 @@ export default class ActionsController extends Controller {
   private currentTaskId = '';
   private attachContextual = false;
   private linkContextual = false;
+  private linkNoteConnect = false;
+  private linkRequestId = 0;
   private contextualNotes = new Map<string, string>();
   private contextualRelated = new Map<string, string>();
   private contextualRelatedEventId = '';
@@ -325,14 +327,29 @@ export default class ActionsController extends Controller {
    */
   openLink(event: Event): void {
     const ce = event as CustomEvent<{ sourceId?: string; targetId?: string; context?: string }>;
+    const requestId = ++this.linkRequestId;
     this.linkContextual = ce.detail?.context === 'event-related';
+    this.linkNoteConnect = ce.detail?.context === 'note-connect';
+
+    // Every mode starts from the production template's neutral copy. Contextual
+    // modes may then replace it without leaking labels into the next opening.
+    this.linkDialogTarget.querySelector('.action-dialog__title')!.textContent = 'Create Link';
+    this.linkDialogTarget.setAttribute('aria-label', 'Create typed link');
+    this.linkDialogTarget.querySelector<HTMLLabelElement>('label[for="link-context-title"]')!.textContent = 'Related item title';
+    this.linkSubmitTarget.textContent = 'Link';
+    this.linkSubmitTarget.setAttribute('aria-label', 'Create link');
+    this.linkContextSearchTarget.placeholder = 'Search by title';
 
     this.linkSourceIdTarget.value = ce.detail?.sourceId ?? '';
     this.linkTargetIdTarget.value = ce.detail?.targetId ?? '';
     this.linkEdgeTypeTarget.value = this.linkContextual ? 'references' : '';
-    this.linkContextGroupTarget.classList.toggle('hidden', !this.linkContextual);
-    this.linkLegacyGroupTargets.forEach(group => group.classList.toggle('hidden', this.linkContextual));
+    const contextual = this.linkContextual || this.linkNoteConnect;
+    this.linkContextGroupTarget.classList.toggle('hidden', !contextual);
+    this.linkLegacyGroupTargets.forEach(group => group.classList.toggle('hidden', contextual));
     this.linkContextSearchTarget.value = '';
+    this.contextualRelated.clear();
+    this.populateTitleOptions(this.linkContextOptionsTarget, []);
+    setFormBusy(this.linkSubmitTarget, false);
     clearFormError(this.linkErrorTarget);
 
     this.linkDialogTarget.showModal();
@@ -340,7 +357,21 @@ export default class ActionsController extends Controller {
       this.contextualRelatedEventId = ce.detail?.sourceId ?? '';
       this.localizeContextDialog(this.linkDialogTarget, 'addRelated', 'relatedTitle', this.linkContextSearchTarget);
       this.linkContextSearchTarget.focus();
-      void this.loadContextRelated();
+      void this.loadContextRelated(requestId);
+      initIcons();
+      return;
+    }
+    if (this.linkNoteConnect) {
+      this.linkEdgeTypeTarget.value = 'references';
+      this.localizeContextDialog(this.linkDialogTarget, 'addRelated', 'relatedTitle', this.linkContextSearchTarget);
+      this.linkDialogTarget.querySelector('.action-dialog__title')!.textContent = 'Connect this note';
+      this.linkDialogTarget.setAttribute('aria-label', 'Connect this note');
+      this.linkDialogTarget.querySelector<HTMLLabelElement>('label[for="link-context-title"]')!.textContent = 'Find a note, task, or event';
+      this.linkSubmitTarget.textContent = 'Connect';
+      this.linkSubmitTarget.setAttribute('aria-label', 'Connect this note');
+      this.linkContextSearchTarget.placeholder = 'Search notes, tasks, and events';
+      this.linkContextSearchTarget.focus();
+      void this.loadConnectCandidates(ce.detail?.sourceId ?? '', requestId);
       initIcons();
       return;
     }
@@ -355,6 +386,7 @@ export default class ActionsController extends Controller {
   }
 
   closeLink(): void {
+    this.linkRequestId += 1;
     this.linkDialogTarget.close();
   }
 
@@ -368,6 +400,15 @@ export default class ActionsController extends Controller {
       this.linkSourceIdTarget.value = selectedNoteId;
       this.linkTargetIdTarget.value = this.contextualRelatedEventId;
     }
+    if (this.linkNoteConnect) {
+      const targetId = this.contextualRelated.get(this.linkContextSearchTarget.value.trim().toLocaleLowerCase());
+      if (!targetId) {
+        renderFormError(this.linkErrorTarget, 'Choose an item from the matching results.');
+        return;
+      }
+      this.linkTargetIdTarget.value = targetId;
+      this.linkEdgeTypeTarget.value = 'references';
+    }
     const state: LinkFormState = {
       sourceId: this.linkSourceIdTarget.value,
       targetId: this.linkTargetIdTarget.value,
@@ -380,11 +421,13 @@ export default class ActionsController extends Controller {
       return;
     }
     clearAllFormErrors(this.linkDialogTarget);
+    const requestId = this.linkRequestId;
     setFormBusy(this.linkSubmitTarget, true);
     try {
       const payload = buildLinkPayload(state);
       await linkObjects(payload.source_id, payload.target_id, payload.edge_type);
-      this.linkDialogTarget.close();
+      if (requestId !== this.linkRequestId || !this.linkDialogTarget.open) return;
+      this.closeLink();
       window.dispatchEvent(new CustomEvent('jin:event-context-attached', {
         detail: { id: this.linkContextual ? state.targetId : state.sourceId },
       }));
@@ -395,6 +438,7 @@ export default class ActionsController extends Controller {
         detail: { sourceId: state.sourceId, targetId: state.targetId },
       });
     } catch (err: unknown) {
+      if (requestId !== this.linkRequestId || !this.linkDialogTarget.open) return;
       if (this.linkContextual) {
         renderFormError(this.linkErrorTarget, eventMessage('failedAddRelated'));
       } else if (isJinErrorDto(err)) {
@@ -404,7 +448,7 @@ export default class ActionsController extends Controller {
         renderFormError(this.linkErrorTarget, eventMessage('unexpectedError'));
       }
     } finally {
-      setFormBusy(this.linkSubmitTarget, false);
+      if (requestId === this.linkRequestId) setFormBusy(this.linkSubmitTarget, false);
     }
   }
 
@@ -434,13 +478,42 @@ export default class ActionsController extends Controller {
     }
   }
 
-  private async loadContextRelated(): Promise<void> {
+  private async loadContextRelated(requestId: number): Promise<void> {
     try {
       const choices = this.buildNoteChoices(await listNotes());
+      if (requestId !== this.linkRequestId || !this.linkDialogTarget.open || !this.linkContextual) return;
       this.contextualRelated = new Map(choices.map(choice => [choice.label.toLocaleLowerCase(), choice.id]));
       this.populateTitleOptions(this.linkContextOptionsTarget, choices.map(choice => choice.label));
     } catch {
+      if (requestId !== this.linkRequestId || !this.linkDialogTarget.open || !this.linkContextual) return;
       renderFormError(this.linkErrorTarget, eventMessage('noTitleMatch'));
+    }
+  }
+
+  /** Real, identity-backed choices for Note → entity connections. */
+  private async loadConnectCandidates(sourceId: string, requestId: number): Promise<void> {
+    try {
+      const [notes, tasks, events] = await Promise.all([listNotes(), listTasks(), listEvents()]);
+      if (requestId !== this.linkRequestId || !this.linkDialogTarget.open || !this.linkNoteConnect) return;
+      const rows: Array<{ id: string; label: string }> = [];
+      for (const note of notes) if (note.id !== sourceId) rows.push({ id: note.id, label: `Note · ${note.title || 'Untitled'}${note.folder_path ? ` — ${note.folder_path}` : ''}` });
+      for (const task of tasks) rows.push({ id: task.id, label: `Task · ${task.title}` });
+      for (const event of events) rows.push({ id: event.id, label: `Event · ${event.title}` });
+      const used = new Set<string>();
+      this.contextualRelated = new Map();
+      const labels: string[] = [];
+      for (const row of rows) {
+        let label = row.label;
+        let ordinal = 2;
+        while (used.has(label.toLocaleLowerCase())) label = `${row.label} (${ordinal++})`;
+        used.add(label.toLocaleLowerCase());
+        this.contextualRelated.set(label.toLocaleLowerCase(), row.id);
+        labels.push(label);
+      }
+      this.populateTitleOptions(this.linkContextOptionsTarget, labels);
+    } catch {
+      if (requestId !== this.linkRequestId || !this.linkDialogTarget.open || !this.linkNoteConnect) return;
+      renderFormError(this.linkErrorTarget, 'Could not load items to connect.');
     }
   }
 

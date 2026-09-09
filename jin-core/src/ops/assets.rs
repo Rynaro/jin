@@ -79,6 +79,17 @@ fn asset_path(root: &Path, hash: &str) -> Result<PathBuf> {
     Ok(assets_dir(root).join(hash))
 }
 
+fn read_regular_asset(path: &Path) -> Result<Vec<u8>> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(JinError::Integrity(format!(
+            "managed asset must be a regular non-symlink file: {}",
+            path.display()
+        )));
+    }
+    Ok(std::fs::read(path)?)
+}
+
 fn detect_mime(name: &str) -> &'static str {
     match name
         .rsplit('.')
@@ -105,6 +116,23 @@ pub fn is_safe_media_mime(mime: &str) -> bool {
         mime,
         "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "video/mp4" | "video/webm"
     )
+}
+
+/// Detect only the raster image signatures Jin is prepared to render. This is
+/// intentionally a narrow byte check, separate from filename-based import
+/// metadata: a `.png` suffix cannot turn arbitrary bytes into an image.
+pub fn detect_safe_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.len() >= 3 && bytes[..3] == [0xff, 0xd8, 0xff] {
+        Some("image/jpeg")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
 }
 
 pub fn load_manifest(root: &Path) -> Result<AssetManifest> {
@@ -156,7 +184,7 @@ pub fn import_attachment(root: &Path, source: &Path) -> Result<AssetEntry> {
     let mut manifest = load_manifest(root)?;
     let path = asset_path(root, &sha256)?;
     if path.exists() {
-        if digest(&std::fs::read(&path)?) != sha256 {
+        if digest(&read_regular_asset(&path)?) != sha256 {
             return Err(JinError::Integrity(format!(
                 "existing content-addressed asset has wrong bytes: {}",
                 path.display()
@@ -185,19 +213,26 @@ pub fn import_attachment(root: &Path, source: &Path) -> Result<AssetEntry> {
 
 /// Resolve a manifest entry only after confirming its immutable on-disk bytes.
 pub fn get_attachment(root: &Path, hash: &str) -> Result<AssetEntry> {
+    Ok(get_attachment_bytes(root, hash)?.0)
+}
+
+/// Read an attachment once and verify the exact bytes returned. Consumers that
+/// render or export content must use this rather than validating one read and
+/// exposing another one.
+pub fn get_attachment_bytes(root: &Path, hash: &str) -> Result<(AssetEntry, Vec<u8>)> {
     let manifest = load_manifest(root)?;
     let entry = manifest
         .assets
         .get(hash)
         .cloned()
         .ok_or_else(|| JinError::NotFound(format!("attachment/{hash}")))?;
-    let bytes = std::fs::read(asset_path(root, hash)?)?;
+    let bytes = read_regular_asset(&asset_path(root, hash)?)?;
     if digest(&bytes) != hash || bytes.len() as u64 != entry.size {
         return Err(JinError::Integrity(format!(
             "attachment {hash} does not match its manifest"
         )));
     }
-    Ok(entry)
+    Ok((entry, bytes))
 }
 
 /// Return the canonical inert Markdown reference for an attachment.
@@ -265,6 +300,24 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    fn detects_only_supported_raster_image_signatures() {
+        assert_eq!(
+            detect_safe_image_mime(b"\x89PNG\r\n\x1a\nrest"),
+            Some("image/png")
+        );
+        assert_eq!(
+            detect_safe_image_mime(b"\xff\xd8\xff\xe0"),
+            Some("image/jpeg")
+        );
+        assert_eq!(detect_safe_image_mime(b"GIF89arest"), Some("image/gif"));
+        assert_eq!(
+            detect_safe_image_mime(b"RIFF\0\0\0\0WEBPrest"),
+            Some("image/webp")
+        );
+        assert_eq!(detect_safe_image_mime(b"<html>not an image</html>"), None);
+    }
+
+    #[test]
     fn imports_deduplicates_and_repairs_content_addressed_assets() {
         let vault = TempDir::new().unwrap();
         let source_dir = TempDir::new().unwrap();
@@ -286,5 +339,42 @@ mod tests {
             get_attachment(vault.path(), &first.sha256).unwrap().size,
             first.size
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolver_refuses_symlink_even_when_target_bytes_match_manifest() {
+        use std::os::unix::fs::symlink;
+
+        let vault = TempDir::new().unwrap();
+        let source_dir = TempDir::new().unwrap();
+        ops::init(vault.path()).unwrap();
+        let source = source_dir.path().join("photo.png");
+        std::fs::write(&source, b"immutable bytes").unwrap();
+        let entry = import_attachment(vault.path(), &source).unwrap();
+        let stored = asset_path(vault.path(), &entry.sha256).unwrap();
+        std::fs::remove_file(&stored).unwrap();
+        symlink(&source, &stored).unwrap();
+
+        let error = get_attachment_bytes(vault.path(), &entry.sha256).unwrap_err();
+        assert!(error.to_string().contains("regular non-symlink"));
+    }
+
+    #[test]
+    fn resolver_rejects_changed_bytes_before_returning_them() {
+        let vault = TempDir::new().unwrap();
+        let source_dir = TempDir::new().unwrap();
+        ops::init(vault.path()).unwrap();
+        let source = source_dir.path().join("photo.png");
+        std::fs::write(&source, b"original bytes").unwrap();
+        let entry = import_attachment(vault.path(), &source).unwrap();
+        std::fs::write(
+            asset_path(vault.path(), &entry.sha256).unwrap(),
+            b"tampered bytes",
+        )
+        .unwrap();
+
+        let error = get_attachment_bytes(vault.path(), &entry.sha256).unwrap_err();
+        assert!(error.to_string().contains("does not match its manifest"));
     }
 }
