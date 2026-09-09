@@ -510,8 +510,8 @@ describe('CalendarViewController safety and mode invariants', () => {
     controller.selectDate('2026-08-20');
     const timeline = document.querySelector('.calendar-timegrid')!;
     const task = document.querySelector('.calendar-task-item')!;
-    expect(timeline.contains(task)).toBe(false);
-    expect(timeline.compareDocumentPosition(task) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(timeline.querySelector('.calendar-timegrid__surface')?.contains(task)).toBe(false);
+    expect(task.closest('.calendar-timegrid__scroller')).toBe(timeline.querySelector('.calendar-timegrid__scroller'));
   });
 
   it('preserves internal vertical/horizontal scroll and Event focus across detail Back', async () => {

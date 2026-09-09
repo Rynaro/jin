@@ -314,12 +314,12 @@ export default class CalendarViewController extends Controller {
         this.timeline.scroller.scrollLeft = savedTimelineScroll.left;
         return;
       }
-      const panel = this.viewMode === 'day' ? this.dayViewTarget : this.monthViewTarget;
-      panel.scrollTop = detail?.scrollTop ?? 0;
+      this.element.scrollTop = detail?.scrollTop ?? 0;
       if (detail?.focusEventId) {
+        const panel = this.viewMode === 'day' ? this.dayViewTarget : this.monthViewTarget;
         Array.from(panel.querySelectorAll<HTMLElement>('[data-event-id]'))
           .find(control => control.dataset.eventId === detail.focusEventId)
-          ?.focus();
+          ?.focus({ preventScroll: true });
       }
     });
   }
@@ -777,6 +777,7 @@ export default class CalendarViewController extends Controller {
   // ── Internal rendering methods ────────────────────────────────────────────
 
   private renderMonthView(): void {
+    this.monthViewTarget.classList.remove('calendar-month-view--timeline');
     const monthGrid = this.buildMonthGrid(this.currentYear, this.currentMonth);
     this.monthViewContentTarget.innerHTML = '';
 
@@ -872,6 +873,7 @@ export default class CalendarViewController extends Controller {
   private renderWeekView(): void {
     this.captureTimelineState();
     this.monthViewTarget.classList.remove('hidden');
+    this.monthViewTarget.classList.add('calendar-month-view--timeline');
     this.dayViewTarget.classList.add('hidden');
     this.monthViewContentTarget.innerHTML = '';
     const header = this.createMonthHeader();
@@ -889,6 +891,7 @@ export default class CalendarViewController extends Controller {
 
   private renderDayView(dateStr: string): void {
     this.captureTimelineState();
+    this.dayViewTarget.classList.add('calendar-day-view--timeline');
     this.dayViewContentTarget.innerHTML = '';
 
     // Render back button
@@ -913,10 +916,16 @@ export default class CalendarViewController extends Controller {
     });
     this.dayViewContentTarget.appendChild(dateHeading);
 
-    this.dayViewContentTarget.appendChild(this.createTimeline([dateStr], 'day'));
+    const timeline = this.createTimeline([dateStr], 'day');
+    this.dayViewContentTarget.appendChild(timeline);
 
-    // Render upcoming tasks for this date
-    this.renderDayTasks(dateStr);
+    // Due tasks follow the chronological surface inside its one scroll region.
+    // They remain outside the time grid itself, so their cards never imply a
+    // time they do not have.
+    this.renderDayTasks(
+      dateStr,
+      timeline.querySelector<HTMLElement>('.calendar-timegrid__scroller') ?? this.dayViewContentTarget,
+    );
 
     // Re-initialize lucide icons
     initIcons();
@@ -1093,7 +1102,7 @@ export default class CalendarViewController extends Controller {
     this.scheduleNowRefresh();
   };
 
-  private renderDayTasks(dateStr: string): void {
+  private renderDayTasks(dateStr: string, container: HTMLElement = this.dayViewContentTarget): void {
     // Find tasks that have a due date matching this day
     const dayTasks = this.allTasks.filter(task => {
       if (!task.due) return false;
@@ -1149,7 +1158,7 @@ export default class CalendarViewController extends Controller {
     });
 
     section.appendChild(tasksList);
-    this.dayViewContentTarget.appendChild(section);
+    container.appendChild(section);
   }
 
   private createMonthHeader(): HTMLElement {

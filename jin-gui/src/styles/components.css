@@ -58,6 +58,80 @@
   border-radius: 0;
 }
 
+/* Workspace list headers share an inset and a single transition into their
+ * ledger. A combined header owns its divider directly; paired identity and
+ * controls rows place it only after the controls row. This keeps route
+ * variants structurally repeatable without flattening editorial or detail
+ * headers into a generic toolbar. */
+.jin-workspace-header {
+  --workspace-header-inline: var(--workspace-pane-inline, var(--space-3));
+  background: var(--workspace-canvas);
+}
+
+.jin-workspace-header__identity,
+.jin-workspace-header__controls {
+  background: var(--workspace-canvas);
+}
+
+.jin-workspace-header--combined {
+  display: grid;
+  gap: 0;
+  width: auto;
+  margin: 0 calc(-1 * var(--workspace-header-inline, var(--space-3))) var(--space-2);
+  padding: 0 var(--workspace-header-inline, var(--space-3));
+  border-block-end: 0.5px solid var(--separator);
+}
+
+.jin-workspace-header__identity {
+  display: flex;
+  align-items: end;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+.jin-workspace-header__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+.jin-workspace-header--combined > .jin-workspace-header__identity {
+  min-block-size: 0;
+  margin: 0;
+  padding: var(--space-2) 0 var(--space-half);
+}
+
+.jin-workspace-header--combined > .jin-workspace-header__controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-half) var(--space-1);
+  min-block-size: var(--toolbar-height);
+  margin: 0;
+  padding: var(--space-half) 0;
+}
+
+/* A paired header stays structurally grouped while its controls remain sticky
+ * in the list panel that owns scrolling. `display: contents` avoids making
+ * the transient group a sticky containing block. */
+.jin-workspace-header--paired {
+  display: contents;
+}
+
+.jin-workspace-header--paired > .jin-workspace-header__identity {
+  min-block-size: 0;
+  margin-inline: calc(-1 * var(--workspace-header-inline, var(--space-3)));
+  padding: var(--space-2) var(--workspace-header-inline, var(--space-3)) var(--space-half);
+}
+
+.jin-workspace-header--paired > .jin-workspace-header__controls {
+  min-block-size: var(--toolbar-height);
+  margin: 0 calc(-1 * var(--workspace-header-inline, var(--space-3))) var(--space-2);
+  padding: var(--space-half) var(--workspace-header-inline, var(--space-3));
+  border-block-end: 0.5px solid var(--separator);
+}
+
 .jin-control {
   display: inline-flex;
   align-items: center;

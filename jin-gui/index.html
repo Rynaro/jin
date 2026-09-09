@@ -454,35 +454,39 @@
               <i data-lucide="panel-left-open" aria-hidden="true"></i>
             </button>
             <!-- NN-2: List pane header — compose button (K-NN-1) -->
-            <div class="notes-list-pane__header jin-toolbar-strip jin-chrome">
-              <h1 class="notes-workspace-title" data-notes-target="scopeTitle">All Notes</h1>
-              <div class="notes-search">
-                <label class="notes-search__label" for="notes-search-input">Search notes</label>
-                <input
-                  id="notes-search-input"
-                  type="search"
-                  class="notes-search__input"
-                  placeholder="Search notes"
-                  autocomplete="off"
-                  data-notes-target="searchInput"
-                  data-action="input->notes#onSearchInput keydown->notes#onSearchKeydown"
-                />
-                <span
-                  class="notes-search__count"
-                  data-notes-target="searchCount"
-                  role="status"
-                  aria-live="polite"
-                  aria-atomic="true"
-                ></span>
+            <div class="notes-list-pane__header jin-workspace-header jin-workspace-header--combined">
+              <div class="jin-workspace-header__identity">
+                <h1 class="notes-workspace-title" data-notes-target="scopeTitle">All Notes</h1>
               </div>
-              <button
-                type="button"
-                class="notes-new-note-btn jin-control jin-control--icon tap-target"
-                data-action="click->notes#newNote"
-                aria-label="New note"
-              >
-                <i data-lucide="square-pen" aria-hidden="true"></i>
-              </button>
+              <div class="jin-workspace-header__controls">
+                <div class="notes-search">
+                  <label class="notes-search__label" for="notes-search-input">Search notes</label>
+                  <input
+                    id="notes-search-input"
+                    type="search"
+                    class="notes-search__input"
+                    placeholder="Search notes"
+                    autocomplete="off"
+                    data-notes-target="searchInput"
+                    data-action="input->notes#onSearchInput keydown->notes#onSearchKeydown"
+                  />
+                  <span
+                    class="notes-search__count"
+                    data-notes-target="searchCount"
+                    role="status"
+                    aria-live="polite"
+                    aria-atomic="true"
+                  ></span>
+                </div>
+                <button
+                  type="button"
+                  class="notes-new-note-btn jin-control jin-control--icon tap-target"
+                  data-action="click->notes#newNote"
+                  aria-label="New note"
+                >
+                  <i data-lucide="square-pen" aria-hidden="true"></i>
+                </button>
+              </div>
             </div>
             <div
               data-notes-target="loadingState"
@@ -1265,19 +1269,20 @@
 
           <!-- ── List panel ─────────────────────────────────────────────────── -->
           <div data-tasks-target="listPanel">
-            <header class="tasks-workspace-header">
-              <h1 class="tasks-workspace-title" data-tasks-target="workspaceTitle">Inbox</h1>
-              <button
-                type="button"
-                class="tasks-rail-toggle jin-control jin-control--secondary"
-                data-tasks-target="railToggleBtn"
-                data-action="click->tasks#toggleRail"
-                aria-controls="tasks-lists-rail"
-                aria-expanded="false"
-              >Task lists</button>
-            </header>
-            <!-- Filter bar — selects are passed through to invoke list_tasks -->
-            <div class="tasks-filter-bar jin-toolbar-strip jin-chrome" role="group" aria-label="Filter tasks">
+            <div class="jin-workspace-header jin-workspace-header--paired">
+              <header class="tasks-workspace-header jin-workspace-header__identity">
+                <h1 class="tasks-workspace-title" data-tasks-target="workspaceTitle">Inbox</h1>
+                <button
+                  type="button"
+                  class="tasks-rail-toggle jin-control jin-control--secondary"
+                  data-tasks-target="railToggleBtn"
+                  data-action="click->tasks#toggleRail"
+                  aria-controls="tasks-lists-rail"
+                  aria-expanded="false"
+                >Task lists</button>
+              </header>
+              <!-- Filter bar — selects are passed through to invoke list_tasks -->
+              <div class="tasks-filter-bar jin-workspace-header__controls" role="group" aria-label="Filter tasks">
               <button
                 type="button"
                 class="tasks-filter-toggle jin-control jin-control--secondary"
@@ -1367,6 +1372,7 @@
                   data-view="board"
                   aria-pressed="false"
                 >Board</button>
+              </div>
               </div>
             </div>
 

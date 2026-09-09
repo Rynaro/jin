@@ -1570,14 +1570,6 @@ figure.code-block {
 
 /* ── List pane header + New Note compose button (NN-2 / K-NN-1, K-NN-2) ─── */
 
-.notes-list-pane__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-1) var(--space-1) var(--space-1);
-  margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-1)) var(--space-1);
-}
-
 .notes-search {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1615,6 +1607,10 @@ figure.code-block {
   min-height: var(--text-caption2-line);
   color: var(--label-tertiary);
   font-size: var(--text-caption2-size);
+}
+
+.notes-search__count:empty {
+  display: none;
 }
 
 .notes-new-note-btn {
@@ -2041,9 +2037,6 @@ figure.code-block {
   flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-1);
-  margin-bottom: var(--space-2);
-  padding-bottom: var(--space-2);
-  border-bottom: 0.5px solid var(--separator);
 }
 
 .tasks-filter-controls {
@@ -4027,25 +4020,25 @@ figure.code-block {
 }
 
 .notes-list-pane {
+  --workspace-pane-inline: var(--space-3);
   padding: 0 var(--space-3) var(--space-8);
   background: var(--workspace-canvas);
 }
 
-.notes-list-pane__header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  width: auto;
-  min-height: var(--toolbar-height);
-  margin: 0 calc(-1 * var(--space-3)) var(--space-2);
-  padding: 0 var(--space-3);
-  gap: var(--space-half) var(--space-1);
+/* Notes and Tasks keep their route identity and controls on one paper field.
+ * The separator carries the transition into the ledger; a cool chrome wash
+ * here split the two workspace headers into unrelated bands. */
+.notes-list-pane__header,
+.tasks-filter-bar {
+  background-color: var(--workspace-canvas);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+          backdrop-filter: none;
 }
 
 .notes-workspace-title {
-  grid-column: 1 / -1;
   min-width: 0;
-  margin: var(--space-2) 0 0;
+  margin: 0;
   color: var(--ink-primary);
   font-family: var(--font-display);
   font-size: var(--text-title2-size);
@@ -4057,6 +4050,17 @@ figure.code-block {
 
 .notes-list-pane__header .notes-search {
   margin-inline-end: 0;
+}
+
+/* The compose action shares the search field's 32px control line. The search
+ * count may add a second grid row, so align this button to the field rather
+ * than centering it across both rows. */
+.notes-list-pane__header .notes-new-note-btn {
+  align-self: start;
+  width: var(--control-height-prominent);
+  height: var(--control-height-prominent);
+  min-width: var(--control-height-prominent);
+  min-height: var(--control-height-prominent);
 }
 
 .notes-list-pane > .browse-list {
@@ -4222,6 +4226,7 @@ figure.code-block {
 
 @media (max-width: 900px) {
   .notes-list-pane {
+    --workspace-pane-inline: var(--space-2);
     padding: 0 var(--space-2) var(--space-8);
   }
 
@@ -4357,12 +4362,7 @@ figure.code-block {
 }
 
 .tasks-workspace-header {
-  display: flex;
-  align-items: end;
-  gap: var(--space-1);
-  min-height: 52px;
-  padding: var(--space-3) var(--space-3) var(--space-1);
-  border-bottom: 0.5px solid var(--separator);
+  background: var(--workspace-canvas);
 }
 
 .tasks-workspace-title {
@@ -4384,18 +4384,15 @@ figure.code-block {
 }
 
 [data-tasks-target="listPanel"] {
+  --workspace-pane-inline: var(--space-3);
   padding: 0 var(--space-3) var(--space-8);
   background: var(--workspace-canvas);
 }
 
-.tasks-filter-bar.jin-toolbar-strip {
+.tasks-filter-bar {
   position: sticky;
   z-index: 5;
   top: 0;
-  min-height: var(--toolbar-height);
-  margin: 0 calc(-1 * var(--space-3)) var(--space-3);
-  padding: var(--space-half) var(--space-3);
-  border-width: 0 0 0.5px;
 }
 
 .tasks-filter-bar select {
@@ -5109,14 +5106,8 @@ figure.code-block {
  * compact pass with clipped rows. The detail remains the existing overlay on
  * narrow screens, so list width is never sacrificed to the inspector. */
 @media (max-width: 640px) {
-  .tasks-workspace-header {
-    min-height: 0;
-    padding-inline: var(--space-2);
-  }
-
-  .tasks-filter-bar.jin-toolbar-strip {
+  .tasks-filter-bar {
     align-items: flex-start;
-    padding-inline: var(--space-2);
   }
 
   .tasks-view-segment {
@@ -5404,7 +5395,6 @@ figure.code-block {
   font-weight: 400;
 }
 
-.tasks-workspace-title,
 .tasks-detail-pane .browse-detail__title,
 .task-detail__title-editable {
   font-family: var(--font-text);

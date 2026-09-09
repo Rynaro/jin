@@ -845,7 +845,7 @@ describe('Event detail capability controller gates (AC-022–AC-028)', () => {
       </section>`;
   }
 
-  async function start(detail: EventDetailDto): Promise<void> {
+  async function start(detail: EventDetailDto, beforeOpen?: (host: HTMLElement) => void): Promise<void> {
     controllerFixture();
     invokeMocks.listEvents.mockReset().mockResolvedValue([detail.event]);
     invokeMocks.getEventDetailById.mockReset().mockResolvedValue(detail);
@@ -863,6 +863,7 @@ describe('Event detail capability controller gates (AC-022–AC-028)', () => {
     app.register('events', EventsController);
     await flushController();
     const host = document.querySelector<HTMLElement>('[data-controller="events"]')!;
+    beforeOpen?.(host);
     host.dispatchEvent(new CustomEvent('jin:open-detail', { bubbles: true, detail: { id: detail.event.id } }));
     await flushController();
   }
@@ -878,6 +879,26 @@ describe('Event detail capability controller gates (AC-022–AC-028)', () => {
     expect(add.hidden).toBe(true);
     expect(add.getAttribute('aria-hidden')).toBe('true');
     expect(add.disabled).toBe(true);
+  });
+
+  it('returns the calendar route scroll position after detail closes', async () => {
+    let route!: HTMLElement;
+    await start(makeDetail(), host => {
+      route = host;
+      host.scrollTop = 187;
+      const obsoletePanel = document.createElement('div');
+      obsoletePanel.className = 'calendar-month-view';
+      obsoletePanel.scrollTop = 23;
+      host.appendChild(obsoletePanel);
+    });
+    const returned = vi.fn();
+    route.addEventListener('jin:calendar-return', returned);
+    const controller = app.getControllerForElementAndIdentifier(route, 'events') as EventsController;
+
+    controller.showList();
+
+    expect(returned).toHaveBeenCalledOnce();
+    expect((returned.mock.calls[0][0] as CustomEvent<{ scrollTop: number }>).detail.scrollTop).toBe(187);
   });
 
   it('resets stale detail state when Events is activated without a detail id', async () => {
