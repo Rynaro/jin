@@ -1,6 +1,7 @@
 ---
 name: atlas
 description: ATLAS methodology agent; canonical content is installed under .eidolons/atlas.
+tools: [Read, Glob, Grep, mcp__atlas-aci__*, mcp__crystalium__*]
 generated_by: eidolons
 x-eidolons-mcp-wired: [atlas-aci, crystalium]
 ---
