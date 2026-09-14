@@ -1,6 +1,7 @@
 ---
 name: vigil
 description: VIGIL methodology agent; canonical content is installed under .eidolons/vigil.
+tools: [Read, Glob, Grep, mcp__crystalium__*, mcp__tonberry__*]
 generated_by: eidolons
 x-eidolons-mcp-wired: [crystalium, tonberry]
 ---
