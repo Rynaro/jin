@@ -47,6 +47,8 @@ import type {
   TagDto,
   TaskDto,
   TestNotificationResultDto,
+  FirstRunStateDto,
+  LaunchStateDto,
 } from './types/dto';
 
 /** Generate a bridge-safe idempotency key at the user-action boundary. */
@@ -826,4 +828,34 @@ export function setStoreRoot(path: string): Promise<void> {
  */
 export function getStoreRoot(): Promise<string> {
   return invoke<string>('get_store_root', {});
+}
+
+// ── First-run setup ───────────────────────────────────────────────────────────
+
+export function getLaunchState(): Promise<LaunchStateDto> {
+  return invoke<LaunchStateDto>('get_launch_state', {});
+}
+
+export function chooseFirstRunRoot(): Promise<string | null> {
+  return invoke<string | null>('choose_first_run_root', {});
+}
+
+export function selectFirstRunRoot(path: string): Promise<FirstRunStateDto> {
+  return invoke<FirstRunStateDto>('select_first_run_root', { path });
+}
+
+export function saveFirstRunStep(step: FirstRunStateDto['step']): Promise<FirstRunStateDto> {
+  return invoke<FirstRunStateDto>('save_first_run_step', { step });
+}
+
+export function completeFirstRun(): Promise<void> {
+  return invoke<void>('complete_first_run', {});
+}
+
+export function recoverStoreRoot(path: string): Promise<void> {
+  return invoke<void>('recover_store_root', { path });
+}
+
+export function retryRootUnavailable(): Promise<void> {
+  return invoke<void>('retry_root_unavailable', {});
 }

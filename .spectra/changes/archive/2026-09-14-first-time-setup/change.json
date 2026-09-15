@@ -1,0 +1,109 @@
+{
+  "esl_version": "1.1",
+  "change_id": "first-time-setup",
+  "status": "archived",
+  "tier": "full",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    {
+      "id": "AC-BOOT-1",
+      "given": "an initialized legacy Jin root has no onboarding record",
+      "then": "startup SHALL enter ready without presenting the guide",
+      "verify_method": "Rust launch-resolution tests"
+    },
+    {
+      "id": "AC-BOOT-2",
+      "given": "a fresh installation with no explicit or persisted root",
+      "then": "startup SHALL enter first_run without creating the default Jin root",
+      "verify_method": "Rust filesystem test"
+    },
+    {
+      "id": "AC-BOOT-3",
+      "given": "onboarding is in progress",
+      "then": "startup SHALL restore its persisted step and selected root",
+      "verify_method": "Rust state round-trip and crash-resume tests"
+    },
+    {
+      "id": "AC-BOOT-4",
+      "given": "the effective existing root is unavailable",
+      "then": "startup SHALL expose recovery without starting root-dependent services",
+      "verify_method": "Rust resolution/retry tests and native scheduler startup review"
+    },
+    {
+      "id": "AC-ROOT-1",
+      "given": "first-run setup is active",
+      "when": "the user selects an acceptable candidate",
+      "then": "Jin SHALL persist selection without initializing the candidate",
+      "verify_method": "Rust bootstrap helper tests"
+    },
+    {
+      "id": "AC-ROOT-2",
+      "given": "a candidate is a file or non-empty uninitialized directory",
+      "when": "the user selects it",
+      "then": "Jin SHALL return a validation error",
+      "verify_method": "Rust candidate validation tests"
+    },
+    {
+      "id": "AC-FINISH-1",
+      "given": "required guide steps are complete",
+      "when": "Finish runs",
+      "then": "Jin SHALL initialize the selected root before marking setup complete",
+      "verify_method": "Rust completion helper ordering tests"
+    },
+    {
+      "id": "AC-FINISH-2",
+      "given": "initialization or persistence fails",
+      "when": "completion runs",
+      "then": "Jin SHALL retain resumable in-progress state",
+      "verify_method": "Rust failure and retry tests"
+    },
+    {
+      "id": "AC-FINISH-3",
+      "given": "completion succeeds",
+      "then": "Jin SHALL request native restart after durable completion",
+      "verify_method": "testable restart outcome and native command wiring review"
+    },
+    {
+      "id": "AC-UI-1",
+      "given": "launch mode is not ready",
+      "then": "root-dependent frontend controllers SHALL remain disconnected",
+      "verify_method": "frontend boot registration and bridge-error retry tests"
+    },
+    {
+      "id": "AC-UI-2",
+      "when": "the guide changes step",
+      "then": "focus SHALL move to the active step heading",
+      "verify_method": "controller tests and browser walkthrough"
+    },
+    {
+      "id": "AC-UI-3",
+      "given": "the settings step is visible",
+      "then": "appearance controls SHALL use existing persisted preferences",
+      "verify_method": "controller tests and browser persistence review"
+    },
+    {
+      "id": "AC-UI-4",
+      "given": "320, 390, 760, or 1440 CSS pixel windows and enlarged text",
+      "then": "guide content SHALL remain reachable without horizontal clipping",
+      "verify_method": "Playwright snapshots, geometry, scrolling, keyboard focus and screenshots"
+    },
+    {
+      "id": "AC-RECOVERY-1",
+      "given": "a grandfathered root is unavailable",
+      "when": "the user selects a valid replacement",
+      "then": "Jin SHALL initialize and persist it and restart without replaying onboarding",
+      "verify_method": "Rust recovery tests, frontend recovery test and browser walkthrough"
+    },
+    {
+      "id": "AC-ENV-1",
+      "given": "JIN_ROOT is set",
+      "then": "Jin SHALL preserve the environment path as authoritative and locked",
+      "verify_method": "Rust resolver tests and recovery controller inspection"
+    }
+  ],
+  "spec_ref": "spec.yaml",
+  "drift_checked": true,
+  "archive_path": "archive/2026-09-14-first-time-setup",
+  "has_code": true
+}

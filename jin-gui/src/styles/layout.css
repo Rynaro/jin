@@ -772,3 +772,6 @@ body {
   font-weight: 600;
   letter-spacing: -0.01em;
 }
+/* The setup bootstrap keeps the product shell out of both layout and the
+   accessibility tree until native launch state is Ready. */
+.jin-shell[hidden] { display: none; }

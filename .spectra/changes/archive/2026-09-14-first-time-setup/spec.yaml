@@ -1,0 +1,37 @@
+change_id: first-time-setup
+title: First-time setup guide
+author: ramza
+status: ready_for_maker
+tier: full
+executor: vivi
+checker: vigil
+objective: Guide a new Jin installation through storage selection, core functions, basic appearance settings, review, and restart before the regular product starts.
+startup:
+  modes: [ready, first_run, root_unavailable]
+  root_invariant: AppState.root is immutable for one process
+  order: [JIN_ROOT, persisted_root, default_home_jin]
+  pending_state_location: OS config/jin-gui/first_run_state.json
+  pending_state_schema: 1
+steps: [welcome, storage, functions, settings, review]
+storage:
+  picker: native_folder_picker
+  accepts: [empty_directory, missing_candidate_directory, initialized_jin_root]
+  rejects: [file, nonempty_uninitialized_directory]
+  completion: [revalidate, initialize, persist_root_pointer, mark_completed, request_restart]
+invariants:
+  - JIN_ROOT is authoritative and never silently falls back.
+  - Pending non-environment setup resumes before Ready, including interruption windows.
+  - Normal controllers and scheduler do not start before Ready.
+  - Picker cancellation preserves current setup state.
+  - Basic settings use existing appearance persistence only.
+  - Missing persisted roots offer bounded replacement recovery without tutorial replay.
+out_of_scope: [data_migration, mutable_root_refactor, sync_setup, account_setup, permission_setup, settings_redesign]
+verification:
+  - cargo fmt -p jin-gui --check
+  - cargo clippy -p jin-gui --all-targets -- -D warnings
+  - cargo test -p jin-gui
+  - npm --prefix jin-gui run typecheck
+  - npm --prefix jin-gui test -- --run
+  - npm --prefix jin-gui run lint:css
+  - npm --prefix jin-gui run build
+  - node scripts/validate-playwright-mcp.mjs
