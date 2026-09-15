@@ -1,5 +1,7 @@
-.first-run { height: 100vh; height: 100dvh; overflow-y: auto; display: grid; grid-template-columns: minmax(0, 22rem) minmax(0, 1fr); background: var(--workspace-canvas); color: var(--ink-primary); }
+.first-run { position: relative; isolation: isolate; height: 100vh; height: 100dvh; overflow-x: hidden; overflow-y: auto; display: grid; grid-template-columns: minmax(0, 22rem) minmax(0, 1fr); background: var(--workspace-canvas); color: var(--ink-primary); }
 .first-run[hidden] { display: none; }
+.first-run__logo-accent { position: absolute; z-index: 0; inset-block-start: 50%; inset-inline-end: clamp(-34rem, -36vw, -22rem); width: clamp(44rem, 72vw, 68rem); max-width: none; height: auto; opacity: .075; pointer-events: none; user-select: none; transform: translateY(-50%); -webkit-mask-image: linear-gradient(to right, transparent, currentColor 18%, currentColor); -webkit-mask-repeat: no-repeat; -webkit-mask-size: 100% 100%; mask-image: linear-gradient(to right, transparent, currentColor 18%, currentColor); mask-repeat: no-repeat; mask-size: 100% 100%; }
+.first-run__rail, .first-run__content { position: relative; z-index: 1; }
 .first-run__rail { min-width: 0; padding: var(--space-8, 3rem) var(--space-5, 1.5rem); border-right: 1px solid var(--separator); background: var(--workspace-context); }
 .first-run__brand { font-family: var(--font-display); font-size: 1.6rem; margin: 0 0 var(--space-8, 3rem); color: var(--seal); }
 .first-run__rail ol { list-style: none; padding: 0; margin: 0; display: grid; gap: .55rem; align-content: start; }
@@ -36,3 +38,5 @@
 :root[data-text-scale="accessibility"] .first-run__rail li { border-left: 0; border-bottom: 2px solid transparent; text-align: center; }
 :root[data-text-scale="accessibility"] .first-run__rail li.is-current { border-bottom-color: var(--agenda-indigo); }
 @media (max-width: 420px) { :root[data-text-scale="accessibility"] .first-run__rail ol { grid-template-columns: minmax(0, 1fr); gap: .4rem; } }
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce), (forced-colors: active) { .first-run__logo-accent { display: none; } }
+:root[data-reduce-transparency="1"] .first-run__logo-accent, :root[data-increase-contrast="1"] .first-run__logo-accent { display: none; }
