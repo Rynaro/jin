@@ -785,6 +785,20 @@ export interface CaptureResultDto {
   data: NoteDto | TaskDto;
 }
 
+export type FirstRunStepDto = 'welcome' | 'storage' | 'functions' | 'settings' | 'review';
+
+export interface FirstRunStateDto {
+  schema_version: number;
+  status: 'in_progress' | 'completed';
+  step: FirstRunStepDto;
+  selected_root: string | null;
+}
+
+export type LaunchStateDto =
+  | { mode: 'ready'; root: string }
+  | { mode: 'first_run'; state: FirstRunStateDto; suggested_root: string }
+  | { mode: 'root_unavailable'; root: string; reason: string; env_locked: boolean };
+
 /** Mirrors jin-gui/src-tauri/src/commands/attach.rs LinkResultDto */
 export interface LinkResultDto {
   edge_type: string;

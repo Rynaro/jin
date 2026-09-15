@@ -1,0 +1,27 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "idg"
+  },
+  "performative": "INFORM",
+  "objective": "Record independent verification of the first-time setup guide.",
+  "context_delta": {
+    "verify_pass": true,
+    "evidence": "verification.md",
+    "maker": "vivi",
+    "checker": "vigil",
+    "summary": "All recorded acceptance checks pass through final Rust and frontend suites, focused filesystem and failure-order tests, source wiring review, and browser evidence.",
+    "limitations": [
+      "The standalone npm typecheck script is absent; the passing production build runs tsc --noEmit.",
+      "The Playwright MCP validator is blocked by the pre-existing .mcp.json shape assertion.",
+      "Browser fixtures do not prove native Tauri dialog/restart behavior or native Linux/macOS visual appearance."
+    ]
+  },
+  "integrity": {
+    "algorithm": "sha256",
+    "value": "90a29cd5d35ada59410b0399ecd22f625e33e8f687d7c1699d5510039bfe743f"
+  }
+}

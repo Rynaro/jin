@@ -44,31 +44,60 @@ import ListsController from './controllers/lists_controller';
 import CalendarController from './controllers/calendar_controller';
 import TemporalEditorController from './controllers/temporal_editor_controller';
 import NotificationsController from './controllers/notifications_controller';
+import FirstRunController from './controllers/first_run_controller';
+import { getLaunchState } from './invoke';
+import { applyLaunchMode } from './lib/launch_bootstrap';
 
 const stimulusApp = Application.start();
 
 stimulusApp.register('app', AppController);
 stimulusApp.register('error', ErrorController);
 stimulusApp.register('appearance', AppearanceController);
-stimulusApp.register('today', TodayController);
-stimulusApp.register('router', RouterController);
-stimulusApp.register('notes', NotesController);
-stimulusApp.register('tasks', TasksController);
-stimulusApp.register('events', EventsController);
-stimulusApp.register('calendar-view', CalendarViewController);
-stimulusApp.register('capture', CaptureController);
-stimulusApp.register('actions', ActionsController);
-stimulusApp.register('settings', SettingsController);
-stimulusApp.register('sidebar', SidebarController);
-stimulusApp.register('lists', ListsController);
-stimulusApp.register('calendar', CalendarController);
-stimulusApp.register('temporal-editor', TemporalEditorController);
-stimulusApp.register('notifications', NotificationsController);
+
+function startReadyApp(): void {
+  document.querySelector<HTMLElement>('.jin-shell')?.removeAttribute('hidden');
+  document.querySelector<HTMLElement>('[data-first-run-root]')?.setAttribute('hidden', '');
+  document.querySelector<HTMLElement>('.skip-to-content')?.removeAttribute('hidden');
+  stimulusApp.register('app', AppController);
+  stimulusApp.register('error', ErrorController);
+  stimulusApp.register('today', TodayController);
+  stimulusApp.register('router', RouterController);
+  stimulusApp.register('notes', NotesController);
+  stimulusApp.register('tasks', TasksController);
+  stimulusApp.register('events', EventsController);
+  stimulusApp.register('calendar-view', CalendarViewController);
+  stimulusApp.register('capture', CaptureController);
+  stimulusApp.register('actions', ActionsController);
+  stimulusApp.register('settings', SettingsController);
+  stimulusApp.register('sidebar', SidebarController);
+  stimulusApp.register('lists', ListsController);
+  stimulusApp.register('calendar', CalendarController);
+  stimulusApp.register('temporal-editor', TemporalEditorController);
+  stimulusApp.register('notifications', NotificationsController);
+  initIcons();
+}
+
+async function boot(): Promise<void> {
+  let launch = null;
+  try {
+    launch = await getLaunchState();
+  } catch {
+    // Register setup for the same inline recovery UI if the bridge is not yet
+    // available. It reports the retryable error instead of starting product UI.
+  }
+  applyLaunchMode(launch, { startReady: startReadyApp, startSetup });
+}
+
+function startSetup(): void {
+  document.querySelector<HTMLElement>('[data-first-run-root]')?.removeAttribute('hidden');
+  stimulusApp.register('first-run', FirstRunController);
+}
+
+void boot();
 
 // ── Lucide icons ──────────────────────────────────────────────────────────────
 // Replace <i data-lucide="name"> elements with actual SVGs after DOM is ready.
 import { initIcons } from './lib/icons';
-initIcons();
 
 // ── Dev debugging ─────────────────────────────────────────────────────────────
 if (import.meta.env.DEV) {

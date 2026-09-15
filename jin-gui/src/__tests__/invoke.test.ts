@@ -60,12 +60,51 @@ import {
   deleteList,
   listTags,
   setTagColor,
+  getLaunchState,
+  chooseFirstRunRoot,
+  selectFirstRunRoot,
+  saveFirstRunStep,
+  completeFirstRun,
+  recoverStoreRoot,
+  retryRootUnavailable,
 } from '../invoke';
 
 const mockInvoke = vi.mocked(invoke);
 
 beforeEach(() => {
   mockInvoke.mockReset();
+});
+
+describe('first-run setup bridge', () => {
+  it('uses the narrow setup command names and payloads', async () => {
+    mockInvoke.mockResolvedValueOnce({ mode: 'first_run', state: { step: 'welcome' } });
+    await getLaunchState();
+    expect(mockInvoke).toHaveBeenLastCalledWith('get_launch_state', {});
+
+    mockInvoke.mockResolvedValueOnce('/Users/fixture/Jin');
+    await chooseFirstRunRoot();
+    expect(mockInvoke).toHaveBeenLastCalledWith('choose_first_run_root', {});
+
+    mockInvoke.mockResolvedValueOnce({ step: 'storage' });
+    await selectFirstRunRoot('/Users/fixture/Jin');
+    expect(mockInvoke).toHaveBeenLastCalledWith('select_first_run_root', { path: '/Users/fixture/Jin' });
+
+    mockInvoke.mockResolvedValueOnce({ step: 'functions' });
+    await saveFirstRunStep('functions');
+    expect(mockInvoke).toHaveBeenLastCalledWith('save_first_run_step', { step: 'functions' });
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await completeFirstRun();
+    expect(mockInvoke).toHaveBeenLastCalledWith('complete_first_run', {});
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await recoverStoreRoot('/Users/fixture/Replacement');
+    expect(mockInvoke).toHaveBeenLastCalledWith('recover_store_root', { path: '/Users/fixture/Replacement' });
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await retryRootUnavailable();
+    expect(mockInvoke).toHaveBeenLastCalledWith('retry_root_unavailable', {});
+  });
 });
 
 // ── Agenda ───────────────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ pub mod state;
 /// `root` — path to the jin root directory (the one containing `.jin/config.toml`).
 /// The caller is responsible for calling `jin_core::ops::init(&root)` before `run()`
 /// so the root is guaranteed to exist and be initialized.
-pub fn run(root: std::path::PathBuf) {
+pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
     let notification_delegate = notifications::install_notification_center_delegate();
     match notification_delegate {
         notifications::NotificationDelegateInstallOutcome::PreservedExisting => eprintln!(
@@ -34,16 +34,18 @@ pub fn run(root: std::path::PathBuf) {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(state::AppState::new(root))
+        .manage(state::AppState::new(root, launch.clone()))
         .setup(|app| {
             use tauri::Manager;
 
             let state = app.state::<state::AppState>();
-            scheduler::spawn(
-                app.handle().clone(),
-                state.root.clone(),
-                state.reminder_wake.clone(),
-            );
+            if matches!(state.launch, root_resolver::LaunchState::Ready { .. }) {
+                scheduler::spawn(
+                    app.handle().clone(),
+                    state.root.clone(),
+                    state.reminder_wake.clone(),
+                );
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -154,6 +156,15 @@ pub fn run(root: std::path::PathBuf) {
             // Store root (P1 sovereignty — user controls store location)
             commands::store_root::set_store_root,
             commands::store_root::get_store_root,
+            // First-run setup. These commands are the only bridge surface used
+            // before an initialized root exists.
+            commands::first_run::get_launch_state,
+            commands::first_run::choose_first_run_root,
+            commands::first_run::select_first_run_root,
+            commands::first_run::save_first_run_step,
+            commands::first_run::complete_first_run,
+            commands::first_run::recover_store_root,
+            commands::first_run::retry_root_unavailable,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

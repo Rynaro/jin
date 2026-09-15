@@ -22,6 +22,7 @@ pub mod capture;
 pub mod collections;
 pub mod events;
 pub mod export;
+pub mod first_run;
 pub mod folders;
 pub mod google_accounts;
 pub mod link;

@@ -10,6 +10,74 @@
     -->
   </head>
   <body data-controller="appearance">
+    <section class="first-run" data-first-run-root data-controller="first-run" aria-label="Jin setup" hidden>
+      <div class="first-run__rail" aria-label="Setup progress">
+        <p class="first-run__brand">Jin</p>
+        <ol>
+          <li data-first-run-target="railItem" data-first-run-rail="welcome" aria-current="step">Welcome</li>
+          <li data-first-run-target="railItem" data-first-run-rail="storage">Storage</li>
+          <li data-first-run-target="railItem" data-first-run-rail="functions">Functions</li>
+          <li data-first-run-target="railItem" data-first-run-rail="settings">Settings</li>
+          <li data-first-run-target="railItem" data-first-run-rail="review">Review</li>
+        </ol>
+      </div>
+      <div class="first-run__content">
+        <p class="first-run__eyebrow" data-first-run-target="eyebrow">First-time setup</p>
+        <p class="first-run__error" data-first-run-target="error" role="alert" hidden></p>
+
+        <section data-first-run-target="step" data-first-run-step="welcome">
+          <h1 id="first-run-title" tabindex="-1" data-first-run-target="heading">Welcome to your Jin desk.</h1>
+          <p>Set up where Jin keeps your data, see the essentials, and choose a comfortable appearance before you begin.</p>
+          <div class="first-run__actions"><button type="button" class="btn-primary tap-target" data-action="click->first-run#next">Begin setup</button></div>
+        </section>
+
+        <section data-first-run-target="step" data-first-run-step="storage" hidden>
+          <h1 tabindex="-1" data-first-run-target="heading">Choose your Jin storage.</h1>
+          <p>Jin stores your notes, tasks, and settings in the folder you choose. Select an empty folder or one already initialized by Jin.</p>
+          <div class="first-run__path" data-first-run-target="selectedRoot" aria-live="polite">No folder selected yet</div>
+          <div class="first-run__actions">
+            <button type="button" class="btn-secondary tap-target" data-action="click->first-run#useSuggestedFolder">Use <span data-first-run-suggested>the suggested folder</span></button>
+            <button type="button" class="btn-primary tap-target" data-action="click->first-run#chooseFolder">Choose folder…</button>
+            <button type="button" class="btn-secondary tap-target" data-action="click->first-run#previous">Back</button>
+            <button type="button" class="btn-secondary tap-target" data-action="click->first-run#next">Continue</button>
+          </div>
+        </section>
+
+        <section data-first-run-target="step" data-first-run-step="functions" hidden>
+          <h1 tabindex="-1" data-first-run-target="heading">A calm place for daily work.</h1>
+          <ul class="first-run__tour">
+            <li><strong>Today</strong><span>See events, focused work, and what follows.</span></li>
+            <li><strong>Capture</strong><span>Quickly add a note or task with Capture. Use Command+N on macOS, or Ctrl+N elsewhere.</span></li>
+            <li><strong>Notes</strong><span>Keep connected writing in folders you control.</span></li>
+            <li><strong>Tasks</strong><span>Capture work, shape lists, and mark progress.</span></li>
+            <li><strong>Events</strong><span>Plan time without turning task due dates into schedules.</span></li>
+          </ul>
+          <div class="first-run__actions"><button type="button" class="btn-secondary tap-target" data-action="click->first-run#previous">Back</button><button type="button" class="btn-primary tap-target" data-action="click->first-run#next">Continue</button></div>
+        </section>
+
+        <section data-first-run-target="step" data-first-run-step="settings" hidden>
+          <h1 tabindex="-1" data-first-run-target="heading">Make Jin comfortable to read.</h1>
+          <fieldset class="first-run__fieldset"><legend>Appearance</legend><div class="first-run__choices" role="group" aria-label="Appearance"><button type="button" class="btn-secondary" data-first-run-target="appearanceButton" data-appearance="auto" data-action="click->first-run#setAppearance" aria-pressed="true">Automatic</button><button type="button" class="btn-secondary" data-first-run-target="appearanceButton" data-appearance="light" data-action="click->first-run#setAppearance">Light</button><button type="button" class="btn-secondary" data-first-run-target="appearanceButton" data-appearance="dark" data-action="click->first-run#setAppearance">Dark</button></div></fieldset>
+          <label class="first-run__range" for="first-run-text-size">Text size <input id="first-run-text-size" type="range" min="0.82" max="3.1" step="0.01" value="1" data-first-run-target="textSize" data-action="input->first-run#setTextSize" /></label>
+          <label class="first-run__toggle"><input type="checkbox" data-first-run-target="reduceMotion" data-action="change->first-run#setReduceMotion" /> Reduce motion</label>
+          <div class="first-run__actions"><button type="button" class="btn-secondary tap-target" data-action="click->first-run#previous">Back</button><button type="button" class="btn-primary tap-target" data-action="click->first-run#next">Review setup</button></div>
+        </section>
+
+        <section data-first-run-target="step" data-first-run-step="review" hidden>
+          <h1 tabindex="-1" data-first-run-target="heading">Ready to begin.</h1>
+          <p>Jin will prepare this folder, then restart into your new workspace.</p>
+          <dl class="first-run__review"><div><dt>Storage</dt><dd data-first-run-target="reviewRoot">No folder selected yet</dd></div><div><dt>Appearance</dt><dd data-first-run-target="reviewAppearance">Automatic</dd></div><div><dt>Text size</dt><dd data-first-run-target="reviewTextSize">100%</dd></div><div><dt>Motion</dt><dd data-first-run-target="reviewMotion">Standard motion</dd></div></dl>
+          <div class="first-run__actions"><button type="button" class="btn-secondary tap-target" data-action="click->first-run#previous">Back</button><button type="button" class="btn-primary tap-target" data-first-run-target="finish" data-action="click->first-run#finish">Finish setup</button></div>
+        </section>
+
+        <section data-first-run-target="recovery" class="first-run__recovery" hidden>
+          <h1 tabindex="-1" data-first-run-target="heading">Jin needs its storage folder.</h1>
+          <p data-first-run-recovery-message></p>
+          <button type="button" class="btn-primary tap-target" data-first-run-retry data-action="click->first-run#retry">Try again</button>
+          <button type="button" class="btn-secondary tap-target" data-first-run-replace data-action="click->first-run#chooseReplacement">Choose a replacement folder…</button>
+        </section>
+      </div>
+    </section>
     <!--
       GUI-S1 layout shell skeleton.
       Appearance controller (data-controller="appearance" on <body>) manages:
@@ -23,10 +91,11 @@
         - jin:navigate events  → router#handleNavigate
     -->
 
-    <a href="#main-content" class="skip-to-content">Skip to main content</a>
+    <a href="#main-content" class="skip-to-content" hidden>Skip to main content</a>
 
     <div
       class="jin-shell"
+      hidden
       data-controller="router capture actions"
       data-action="today:navigate->router#handleTodayNavigate jin:navigate->router#handleNavigate jin:open-promote->actions#openPromote jin:open-attach->actions#openAttach jin:open-link->actions#openLink"
     >

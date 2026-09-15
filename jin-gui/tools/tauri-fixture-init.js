@@ -18,6 +18,30 @@
   }
 
   var NOW = '2026-07-01T10:00:00Z';
+  // Set localStorage.jin.fixture.firstRun = 'true' and reload to exercise the
+  // deterministic onboarding path. complete_first_run clears the flag, which
+  // emulates the native restart into a ready root on the next reload.
+  // Optional deterministic controls: jin.fixture.firstRunPicker = 'cancel'
+  // leaves selection unchanged; jin.fixture.firstRunPicker = 'error' rejects
+  // selection; jin.fixture.rootUnavailable = 'true' opens replacement recovery.
+  function fixtureStorageGet(key) {
+    try { return window.localStorage && window.localStorage.getItem(key); } catch (_) { return null; }
+  }
+  function fixtureStorageSet(key, value) {
+    try { if (window.localStorage) window.localStorage.setItem(key, value); } catch (_) { /* fixture still works without storage */ }
+  }
+  function fixtureStorageRemove(key) {
+    try { if (window.localStorage) window.localStorage.removeItem(key); } catch (_) { /* fixture still works without storage */ }
+  }
+  function firstRunEnabled() { return fixtureStorageGet('jin.fixture.firstRun') === 'true'; }
+  function firstRunState() {
+    try {
+      var saved = JSON.parse(fixtureStorageGet('jin.fixture.firstRunState') || 'null');
+      if (saved && saved.status === 'in_progress') return saved;
+    } catch (_) { /* use deterministic default */ }
+    return { schema_version: 1, status: 'in_progress', step: 'welcome', selected_root: null };
+  }
+  function saveFirstRunState(state) { fixtureStorageSet('jin.fixture.firstRunState', JSON.stringify(state)); }
   var lists = [
     { id: 'inbox', name: 'Inbox', color: 'accent', icon: 'inbox', position: 'V', parent_id: null, view: 'list', sort_mode: 'manual', is_default: true, task_count: 4, sections: [] },
     { id: 'work', name: 'Work', color: 'blue', icon: 'briefcase', position: 'W', parent_id: null, view: 'list', sort_mode: 'manual', is_default: false, task_count: 3, sections: [
@@ -390,6 +414,52 @@
   window.__TAURI_INTERNALS__ = {
     invoke: function invoke(cmd, args) {
       var options = args || {};
+      if (cmd === 'get_launch_state') {
+        return Promise.resolve(fixtureStorageGet('jin.fixture.rootUnavailable') === 'true'
+          ? { mode: 'root_unavailable', root: '/Users/fixture/Missing', reason: 'Your previously selected Jin folder is unavailable.', env_locked: false }
+          : firstRunEnabled()
+          ? { mode: 'first_run', state: clone(firstRunState()), suggested_root: '/Users/fixture/Jin' }
+          : { mode: 'ready', root: '/Users/fixture/Jin' });
+      }
+      if (cmd === 'choose_first_run_root') {
+        var pickerMode = fixtureStorageGet('jin.fixture.firstRunPicker');
+        if (pickerMode === 'cancel') return Promise.resolve(null);
+        if (pickerMode === 'error') return Promise.reject({ code: 1, kind: 'other', message: 'Fixture picker error.', retriable: true });
+        return Promise.resolve('/Users/fixture/Jin');
+      }
+      if (cmd === 'select_first_run_root') {
+        var selectedFirstRun = firstRunState();
+        selectedFirstRun.selected_root = String(options.path || '/Users/fixture/Jin');
+        selectedFirstRun.step = 'storage';
+        saveFirstRunState(selectedFirstRun);
+        return Promise.resolve(clone(selectedFirstRun));
+      }
+      if (cmd === 'save_first_run_step') {
+        var movedFirstRun = firstRunState();
+        movedFirstRun.step = String(options.step || 'welcome');
+        saveFirstRunState(movedFirstRun);
+        return Promise.resolve(clone(movedFirstRun));
+      }
+      if (cmd === 'complete_first_run') {
+        var completedFirstRun = firstRunState();
+        if (!completedFirstRun.selected_root) return Promise.reject({ code: 2, kind: 'usage', message: 'Choose a storage folder before finishing setup.', retriable: false });
+        fixtureStorageSet('jin.fixture.firstRun', 'false');
+        fixtureStorageSet('jin.fixture.firstRunState', JSON.stringify(Object.assign({}, completedFirstRun, { status: 'completed' })));
+        return Promise.resolve();
+      }
+      if (cmd === 'recover_store_root') {
+        fixtureStorageRemove('jin.fixture.rootUnavailable');
+        fixtureStorageSet('jin.fixture.firstRun', 'false');
+        fixtureStorageSet('jin.fixture.firstRunState', JSON.stringify({ schema_version: 1, status: 'completed', step: 'review', selected_root: String(options.path || '/Users/fixture/Jin') }));
+        return Promise.resolve();
+      }
+      if (cmd === 'retry_root_unavailable') {
+        if (fixtureStorageGet('jin.fixture.rootUnavailable') !== 'restored') {
+          return Promise.reject({ code: 1, kind: 'other', message: 'Jin still cannot open the selected storage folder.', retriable: true });
+        }
+        fixtureStorageRemove('jin.fixture.rootUnavailable');
+        return Promise.resolve();
+      }
       if (cmd === 'plugin:dialog|open') {
         var dialogOptions = options.options || {};
         if (dialogOptions.multiple === true || dialogOptions.directory === true) {
