@@ -480,6 +480,7 @@ export function createEvent(input: {
   conference_data?: EventConferenceDataDto;
   reminders?: EventReminderSettingsDto;
   recurrence?: RecurrenceDraft;
+  guest_update_policy?: 'all' | 'external_only' | 'none';
 }): Promise<EventDto> {
   return invoke<EventDto>('create_event', { input });
 }
@@ -499,6 +500,8 @@ export function editEvent(input: {
   is_all_day?: boolean;
   description?: string;
   location?: string;
+  recurrence?: RecurrenceDraft;
+  clear_recurrence?: boolean;
   attendees?: EventAttendeeDto[];
   attendees_omitted?: boolean;
   conference_data?: EventConferenceDataDto;
@@ -553,6 +556,7 @@ export function createRoutedEvent(input: {
   conference_data?: EventConferenceDataDto;
   reminders?: EventReminderSettingsDto;
   recurrence?: RecurrenceDraft;
+  guest_update_policy?: 'all' | 'external_only' | 'none';
   account_id: string;
   calendar_id: string;
   operation_id: string;
@@ -571,6 +575,8 @@ export function editRoutedEvent(input: {
   is_all_day?: boolean;
   description?: string;
   location?: string;
+  recurrence?: RecurrenceDraft;
+  clear_recurrence?: boolean;
   attendees?: EventAttendeeDto[];
   attendees_omitted?: boolean;
   conference_data?: EventConferenceDataDto;
@@ -579,6 +585,7 @@ export function editRoutedEvent(input: {
   account_id: string;
   calendar_id: string;
   recurrence_scope?: RecurrenceMutationScope;
+  guest_update_policy?: 'all' | 'external_only' | 'none';
 }): Promise<EventDto> {
   return invoke<EventDto>('edit_routed_event', { input });
 }
@@ -589,6 +596,7 @@ export function deleteRoutedEvent(input: {
   calendar_id: string;
   recurrence_scope?: RecurrenceMutationScope;
   operation_id: string;
+  guest_update_policy?: 'all' | 'external_only' | 'none';
 }): Promise<EventDto> {
   return invoke<EventDto>('delete_routed_event', { input });
 }
@@ -649,6 +657,10 @@ export function runSync(): Promise<SyncSummary> {
   return invoke<SyncSummary>('run_sync', {});
 }
 
+export function syncCalendarEvent(eventId: string): Promise<number> {
+  return invoke<number>('sync_calendar_event', { event_id: eventId });
+}
+
 // ── Multi-account Google Calendar registry ───────────────────────────────────
 
 export function listGoogleAccounts(): Promise<GoogleAccountDto[]> {
@@ -673,6 +685,10 @@ export function disconnectGoogleAccount(accountId: string): Promise<GoogleAccoun
 
 export function refreshGoogleCalendars(accountId: string): Promise<GoogleAccountDto[]> {
   return invoke<GoogleAccountDto[]>('refresh_google_calendars', { account_id: accountId });
+}
+
+export function refreshGoogleEventDetails(input: { event_id: string; account_id: string; calendar_id: string }): Promise<void> {
+  return invoke<void>('refresh_google_event_details', input);
 }
 
 export function setGoogleCalendarEnabled(

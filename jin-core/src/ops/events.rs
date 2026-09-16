@@ -4,7 +4,9 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 
 use crate::dto::{
-    EventDetailCapabilitiesDto, EventDisplayKind, EventReadOnlyReason, OriginatingTaskRefDto,
+    EventCollaborationCapabilitiesDto, EventDetailCapabilitiesDto, EventDisplayKind,
+    EventInvitationCapabilitiesDto, EventReadOnlyReason, InvitationActionRefDto,
+    OriginatingTaskRefDto,
 };
 use crate::id::new_ulid;
 use crate::model::event::{EventAttendee, EventConferenceData, EventReminderSettings};
@@ -49,6 +51,10 @@ pub struct EditEventPatch {
     pub floating: bool,
     pub description: Option<String>,
     pub location: Option<String>,
+    /// `None` preserves the existing rule; `Some([])` removes recurrence.
+    /// The Tauri boundary compiles a typed draft before it reaches this lossless
+    /// provider representation.
+    pub recurrence: Option<Vec<String>>,
     /// `None` leaves attendees unchanged; `Some([])` explicitly clears them.
     pub attendees: Option<Vec<EventAttendee>>,
     /// Limited attendee-response mode. This is only emitted with an attendee
@@ -93,6 +99,21 @@ fn apply_patch(event: &mut Event, patch: EditEventPatch) {
     event.frontmatter.floating = patch.floating;
     event.frontmatter.description = patch.description;
     event.frontmatter.location = patch.location;
+    if let Some(recurrence) = patch.recurrence {
+        let exceptions = event
+            .frontmatter
+            .recurrence
+            .iter()
+            .filter(|line| {
+                line.starts_with("EXDATE:")
+                    || line.starts_with("EXDATE;")
+                    || line.starts_with("RDATE:")
+                    || line.starts_with("RDATE;")
+            })
+            .cloned();
+        event.frontmatter.recurrence = recurrence.into_iter().chain(exceptions).collect();
+        event.frontmatter.recurrence_unexpanded = !event.frontmatter.recurrence.is_empty();
+    }
     if let Some(attendees) = patch.attendees {
         event.frontmatter.attendees = Some(attendees);
     }
@@ -125,6 +146,8 @@ fn editable_fields_equal(left: &Event, right: &Event) -> bool {
         && a.floating == b.floating
         && a.description == b.description
         && a.location == b.location
+        && a.recurrence == b.recurrence
+        && a.recurrence_unexpanded == b.recurrence_unexpanded
         && a.attendees == b.attendees
         && a.attendees_omitted == b.attendees_omitted
         && a.conference_data == b.conference_data
@@ -319,11 +342,20 @@ pub fn mutation_policy(event: &Event) -> EventMutationPolicy {
         || fm.original_start.is_some()
         || fm.master_id.is_some()
         || fm.recurrence_unexpanded;
+    let google_organizer = fm.source == EventSource::Google
+        && fm.authority == EventSource::Google
+        && fm
+            .organizer
+            .as_ref()
+            .and_then(|organizer| organizer.is_self)
+            == Some(true);
     let read_only_reason = if fm.is_deleted() {
         Some(EventReadOnlyReason::Cancelled)
-    } else if recurring {
+    } else if recurring && !google_organizer {
         Some(EventReadOnlyReason::RecurringMilestone1)
-    } else if fm.source != EventSource::Jin || fm.authority != EventSource::Jin {
+    } else if (fm.source != EventSource::Jin || fm.authority != EventSource::Jin)
+        && !google_organizer
+    {
         Some(EventReadOnlyReason::ExternalAuthorityOrSource)
     } else {
         None
@@ -437,26 +469,234 @@ pub(crate) fn event_detail_capabilities_unrecovered(
     }
     if recurring && !recurrence_pattern_supported {
         policy.read_only_reason = Some(EventReadOnlyReason::UnsupportedRecurrence);
-    } else if !event.frontmatter.is_deleted() && writable_route {
+    } else if !event.frontmatter.is_deleted()
+        && writable_route
+        && event.frontmatter.source == EventSource::Jin
+    {
+        policy.read_only_reason = None;
+    }
+    let (can_return_task_to_flexible, originating_task) =
+        return_eligibility_unrecovered(root, event)?;
+    let collaboration = collaboration_capabilities(root, event)?;
+    if event.frontmatter.source == EventSource::Google
+        && collaboration.can_edit_schedule
+        && (!recurring || recurrence_pattern_supported)
+    {
         policy.read_only_reason = None;
     }
     let mutable = policy.is_mutable();
-    let (can_return_task_to_flexible, originating_task) =
-        return_eligibility_unrecovered(root, event)?;
+    let google_edit_authorized =
+        event.frontmatter.source != EventSource::Google || collaboration.can_edit_schedule;
+    let google_delete_authorized =
+        event.frontmatter.source != EventSource::Google || collaboration.can_cancel_meeting;
     Ok(EventDetailCapabilitiesDto {
         display_kind: policy.display_kind,
-        can_edit: mutable,
-        can_delete: mutable,
+        can_edit: mutable && google_edit_authorized,
+        can_delete: mutable && google_delete_authorized,
         read_only_reason: policy.read_only_reason,
         recurrence_pattern_supported,
-        recurrence_scopes: if mutable && recurring && recurrence_pattern_supported {
+        recurrence_scopes: if mutable
+            && google_edit_authorized
+            && recurring
+            && recurrence_pattern_supported
+        {
             vec!["this_occurrence".to_string(), "entire_series".to_string()]
         } else {
             Vec::new()
         },
         can_return_task_to_flexible,
         originating_task,
+        collaboration,
     })
+}
+
+/// Project the Notification Center RSVP ledger into Event detail.  The center
+/// remains the canonical owner of response attempts, versions, and pending
+/// state; this is deliberately a read-only projection.
+fn collaboration_capabilities(
+    root: &Path,
+    event: &Event,
+) -> Result<EventCollaborationCapabilitiesDto> {
+    let mut collaboration = EventCollaborationCapabilitiesDto::default();
+    if event.frontmatter.source != EventSource::Google {
+        return Ok(collaboration);
+    }
+    let cfg = crate::Config::load(root)?;
+    let organizer_self = event
+        .frontmatter
+        .organizer
+        .as_ref()
+        .and_then(|organizer| organizer.is_self)
+        == Some(true);
+    let route = crate::google::route_ownership::read(&cfg.events_dir(), event.id())?;
+    let calendar = route.as_ref().and_then(|route| {
+        cfg.google_registry.calendars.iter().find(|calendar| {
+            calendar.account_id == route.account_id && calendar.calendar_id == route.calendar_id
+        })
+    });
+    let writable_route = calendar.is_some_and(|calendar| {
+        calendar.enabled && calendar.available && calendar.access_role.can_write()
+    });
+    let organizer_is_route_calendar = event
+        .frontmatter
+        .organizer
+        .as_ref()
+        .and_then(|organizer| organizer.email.as_deref())
+        .zip(route.as_ref())
+        .is_some_and(|(email, route)| email.eq_ignore_ascii_case(&route.calendar_id));
+    let self_guest = event
+        .frontmatter
+        .attendees
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .any(|attendee| attendee.is_self == Some(true) && attendee.organizer != Some(true));
+    let unlocked = !event.frontmatter.locked;
+    let organizer_authority = (organizer_self || organizer_is_route_calendar)
+        && writable_route
+        && unlocked
+        && !event.frontmatter.is_deleted();
+    let guest_schedule_authority = self_guest
+        && writable_route
+        && unlocked
+        && !event.frontmatter.is_deleted()
+        && event.frontmatter.guests_can_modify;
+    if organizer_authority || guest_schedule_authority {
+        collaboration.can_edit_schedule = true;
+    }
+    if organizer_authority {
+        collaboration.can_cancel_meeting = true;
+        collaboration.can_append_attendees = true;
+        collaboration.can_remove_attendees = true;
+        collaboration.can_change_attendee_roles = true;
+        if let Some(calendar) = calendar {
+            collaboration.allowed_conference_solution_types =
+                calendar.allowed_conference_solution_types.clone();
+            let is_hangouts_meet = event
+                .frontmatter
+                .conference_data
+                .as_ref()
+                .and_then(|conference| conference.conference_solution.as_ref())
+                .and_then(|solution| solution.key.as_ref())
+                .and_then(|key| key.kind.as_deref())
+                == Some("hangoutsMeet");
+            collaboration.can_add_conference = !is_hangouts_meet
+                && calendar
+                    .allowed_conference_solution_types
+                    .iter()
+                    .any(|kind| kind == "hangoutsMeet");
+            collaboration.can_remove_conference = is_hangouts_meet;
+        }
+    } else {
+        let reason = if !organizer_self && !organizer_is_route_calendar {
+            "Only the organizer can change this meeting in Jin."
+        } else if !writable_route {
+            "This event's Google calendar is unavailable or read-only."
+        } else {
+            "Cancelled meetings cannot be changed."
+        };
+        collaboration
+            .disabled_reasons
+            .insert("schedule".to_string(), reason.to_string());
+        collaboration
+            .disabled_reasons
+            .insert("cancel".to_string(), reason.to_string());
+    }
+    if !collaboration.can_append_attendees
+        && self_guest
+        && writable_route
+        && unlocked
+        && !event.frontmatter.is_deleted()
+        && event.frontmatter.guests_can_invite_others
+    {
+        collaboration.can_append_attendees = true;
+    }
+    let mut center =
+        crate::notification_center::NotificationCenter::open(&cfg.notification_center_path())?;
+    // Event detail must be able to recover the one durable RSVP action even
+    // when the invitation has fallen off the first Notification Center page.
+    let mut cursor = None;
+    let item = loop {
+        let page = center
+            .list(
+                &crate::notification_center::NotificationListRequest {
+                    filter: crate::notification_center::NotificationFilter::Invitations,
+                    include_deferred: true,
+                    include_terminal: true,
+                    cursor: cursor.clone(),
+                    limit: Some(100),
+                },
+                chrono::Utc::now(),
+            )
+            .map_err(|error| JinError::Integrity(error.to_string()))?;
+        let next_cursor = page.next_cursor.clone();
+        if let Some(item) = page.items.into_iter().find(|item| match &item.payload {
+            crate::notification_center::NotificationPayload::CalendarInvitation(payload) => {
+                payload.canonical_event_id == event.id()
+            }
+            _ => false,
+        }) {
+            break Some(item);
+        }
+        let Some(next_cursor) = next_cursor else {
+            break None;
+        };
+        cursor = Some(next_cursor);
+    };
+    let Some(item) = item else {
+        return Ok(collaboration);
+    };
+    let crate::notification_center::NotificationPayload::CalendarInvitation(payload) = item.payload
+    else {
+        return Ok(collaboration);
+    };
+    let requested_response = item.requested_action.as_ref().map(|action| {
+        match action {
+            crate::notification_center::NotificationAction::Allow => "accepted",
+            crate::notification_center::NotificationAction::Maybe => "tentative",
+            crate::notification_center::NotificationAction::Refuse => "declined",
+            crate::notification_center::NotificationAction::CompleteTask => "complete_task",
+        }
+        .to_string()
+    });
+    let state = if item.status == crate::notification_center::NotificationStatus::ActionPending {
+        "queued"
+    } else if item.action_error.is_some() {
+        "failed"
+    } else if requested_response.is_some() {
+        "confirmed"
+    } else {
+        "idle"
+    }
+    .to_string();
+    collaboration.invitation = Some(EventInvitationCapabilitiesDto {
+        action_ref: InvitationActionRefDto {
+            notification_item_id: item.id,
+            expected_item_version: item.version,
+        },
+        provider_response: payload.provider_response_status,
+        requested_response,
+        state,
+        can_respond: payload.capabilities.can_respond,
+        recurrence_scopes: payload
+            .capabilities
+            .recurrence_scopes
+            .iter()
+            .map(|scope| {
+                match scope {
+                    crate::notification_center::InvitationRecurrenceScope::ThisOccurrence => {
+                        "this_occurrence"
+                    }
+                    crate::notification_center::InvitationRecurrenceScope::EntireSeries => {
+                        "entire_series"
+                    }
+                }
+                .to_string()
+            })
+            .collect(),
+        disabled_reason: payload.capabilities.disabled_reason,
+    });
+    Ok(collaboration)
 }
 
 /// Create a new Event, write to disk.
@@ -509,6 +749,10 @@ pub(crate) fn build_event(params: CreateEventParams, fixed_id: Option<String>) -
         conference_data: params.conference_data,
         hangout_link: None,
         reminders: params.reminders,
+        guests_can_modify: false,
+        guests_can_invite_others: false,
+        guests_can_see_other_guests: false,
+        locked: false,
         source: EventSource::Jin,
         authority: EventSource::Jin,
         calendar_id: "primary".to_string(),
@@ -592,6 +836,7 @@ mod tests {
             floating: true,
             description: Some("changed".to_string()),
             location: Some("Studio".to_string()),
+            recurrence: None,
             attendees: None,
             attendees_omitted: None,
             conference_data: None,
@@ -799,6 +1044,7 @@ mod tests {
             floating: event.frontmatter.floating,
             description: event.frontmatter.description.clone(),
             location: event.frontmatter.location.clone(),
+            recurrence: None,
             attendees: event.frontmatter.attendees.clone(),
             attendees_omitted: None,
             conference_data: event.frontmatter.conference_data.clone(),
@@ -1112,6 +1358,19 @@ mod tests {
             let mut event = create(tmp.path());
             event.frontmatter.authority = EventSource::Google;
             assert!(!mutation_policy(&event).is_mutable());
+        }
+
+        #[test]
+        fn self_organized_google_event_is_mutable_before_exact_route_gating() {
+            let tmp = TempDir::new().unwrap();
+            let mut event = create(tmp.path());
+            event.frontmatter.source = EventSource::Google;
+            event.frontmatter.authority = EventSource::Google;
+            event.frontmatter.organizer = Some(crate::model::event::EventOrganizer {
+                is_self: Some(true),
+                ..Default::default()
+            });
+            assert!(mutation_policy(&event).is_mutable());
         }
 
         #[test]

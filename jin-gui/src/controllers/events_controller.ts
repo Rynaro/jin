@@ -1,3 +1,4 @@
+import { saveSettingsPane } from '../lib/settings/navigation';
 /**
  * EventsController — Stimulus controller for the Events browse + detail view (GUI-S4).
  *
@@ -41,8 +42,11 @@ import {
   deleteRoutedEvent,
   removeTimeBlock,
   newOperationId,
+  respondCalendarInvitation,
+  refreshGoogleEventDetails,
+  syncCalendarEvent,
 } from '../invoke';
-import { isJinErrorDto } from '../types/error';
+import { isJinErrorDto, toSyntheticErrorDto } from '../types/error';
 import type { EventDetailDto } from '../types/dto';
 import type { JinErrorDetails } from '../types/error';
 import { sortEventsList } from '../lib/events/transform';
@@ -54,6 +58,7 @@ import {
   renderEventsList,
   renderEventDetail,
 } from '../lib/events/render';
+import type { InvitationResponseChoice } from '../lib/events/invitation';
 import { initIcons } from '../lib/icons';
 import { ConfirmDialog } from '../lib/ui/confirm_dialog';
 import { eventMessage, resolveEventLocale } from '../lib/events/locale';
@@ -185,7 +190,8 @@ export default class EventsController extends Controller {
     }
   }
 
-  handleMutation(): void {
+  handleMutation(event?: Event): void {
+    if ((event as CustomEvent<{ source?: string }> | undefined)?.detail?.source === 'events') return;
     if (this.currentDetail) void this.loadDetail(this.currentDetail.event.id);
     else void this.loadList();
   }
@@ -199,7 +205,7 @@ export default class EventsController extends Controller {
 
   // ── Internals ─────────────────────────────────────────────────────────────
 
-  private async loadDetail(id: string, successMessage?: string): Promise<void> {
+  private async loadDetail(id: string, successMessage?: string, background = false): Promise<void> {
     const el = this.viewElements;
 
     const active = document.activeElement as HTMLElement | null;
@@ -214,9 +220,9 @@ export default class EventsController extends Controller {
     this.detailPanelTarget.classList.remove('hidden');
     this.setGlobalAddHidden(true);
 
-    el.detailLoadingState.classList.remove('hidden');
+    el.detailLoadingState.classList.toggle('hidden', background);
     el.detailNotFoundState.classList.add('hidden');
-    el.detailContent.classList.add('hidden');
+    if (!background) el.detailContent.classList.add('hidden');
 
     try {
       const detail = await getEventDetailById(id);
@@ -259,9 +265,136 @@ export default class EventsController extends Controller {
         locale: resolveEventLocale(),
         onEdit: (current) => this.beginEdit(current),
         onRemove: (current) => this.confirmRemoval(current),
+        onRespondInvitation: (current, choice, control) => { void this.respondToInvitation(current, choice, control); },
+        onManageMeet: (current, action) => { void this.manageMeet(current, action); },
+        onRefreshGoogleDetails: (current) => { void this.refreshGoogleDetails(current); },
+        onSyncEvent: (current) => { void this.syncEvent(current); },
+        onReviewSync: () => {
+          saveSettingsPane('calendars');
+          this.dispatch('navigate', { prefix: 'jin', bubbles: true, detail: { kind: 'settings' } });
+        },
       },
     );
     initIcons();
+  }
+
+  private async respondToInvitation(
+    detail: EventDetailDto,
+    choice: InvitationResponseChoice,
+    _control: HTMLButtonElement,
+  ): Promise<void> {
+    const invitation = detail.capabilities.collaboration?.invitation;
+    if (!invitation || !invitation.can_respond) return;
+    const allControls = this.detailContentTarget.querySelectorAll<HTMLButtonElement>('[data-response]');
+    const submit = async (scope: 'this_occurrence' | 'entire_series' | null): Promise<void> => {
+      allControls.forEach(button => { button.disabled = true; });
+      try {
+        await respondCalendarInvitation({
+          item_id: invitation.action_ref.notification_item_id,
+          expected_item_version: invitation.action_ref.expected_item_version,
+          operation_id: newOperationId('calendar-rsvp'),
+          response: choice,
+          recurrence_scope: scope,
+        });
+        await this.loadDetail(detail.event.id);
+        this.dispatch('events-mutated', { prefix: 'jin', bubbles: true });
+        this.showOperationStatus('Response queued.');
+      } catch (error: unknown) {
+        this.showOperationStatus(isJinErrorDto(error) ? error.message || 'Response needs review.' : 'Could not queue your response.');
+        allControls.forEach(button => { button.disabled = false; });
+      }
+    };
+    if (invitation.recurrence_scopes.length > 1) {
+      const dialog = new ConfirmDialog({
+        title: 'Respond to recurring invitation',
+        message: 'Choose whether this response applies to this occurrence or the entire series.',
+        confirmLabel: 'Respond',
+        cancelLabel: eventMessage('cancel', resolveEventLocale()),
+        checkboxLabel: eventMessage('entireSeries', resolveEventLocale()),
+        onConfirm: (entireSeries) => { void submit(entireSeries ? 'entire_series' : 'this_occurrence'); },
+      });
+      dialog.open();
+      return;
+    }
+    await submit(invitation.recurrence_scopes[0] ?? null);
+  }
+
+  private async manageMeet(
+    detail: EventDetailDto,
+    action: 'add' | 'retry' | 'remove',
+  ): Promise<void> {
+    const route = detail.event.sync_context;
+    const capability = detail.capabilities.collaboration;
+    if (!route || !capability || (action === 'remove' ? !capability.can_remove_conference : !capability.can_add_conference)) return;
+    const conference_data = action === 'remove' ? undefined : {
+      pendingCreateRequest: {
+        // Core owns the durable request id. This sentinel is replaced before
+        // validation, persistence, and any provider write.
+        requestId: 'generated-by-jin-core',
+        conferenceSolutionKey: { type: 'hangoutsMeet' },
+      },
+    };
+    try {
+      await editRoutedEvent({
+        event_id: detail.event.id,
+        edit_token: detail.edit_token,
+        operation_id: newOperationId(`meet-${action}`),
+        title: detail.event.title,
+        start: detail.event.start,
+        end: detail.event.end,
+        tzid: detail.event.start_tzid ?? undefined,
+        is_all_day: detail.event.is_all_day,
+        description: detail.event.description ?? undefined,
+        location: detail.event.location ?? undefined,
+        conference_data,
+        clear_conference_data: action === 'remove',
+        account_id: route.account_id,
+        calendar_id: route.calendar_id,
+        guest_update_policy: 'all',
+      });
+      await this.loadDetail(detail.event.id);
+      this.dispatch('events-mutated', { prefix: 'jin', bubbles: true });
+      this.showOperationStatus(action === 'remove' ? 'Google Meet removal queued.' : 'Google Meet request queued.');
+    } catch (error: unknown) {
+      this.showOperationStatus(isJinErrorDto(error) ? error.message || 'Google Meet needs review.' : 'Could not update Google Meet.');
+    }
+  }
+
+  private async syncEvent(detail: EventDetailDto): Promise<void> {
+    this.showOperationStatus(eventMessage('syncingEvent'));
+    let message = eventMessage('syncEventDone');
+    try {
+      await syncCalendarEvent(detail.event.id);
+    } catch (error: unknown) {
+      message = isJinErrorDto(error) ? error.message || eventMessage('syncEventFailed')
+        : toSyntheticErrorDto(error, eventMessage('syncEventFailed')).message;
+      if (this.currentDetail?.event.id === detail.event.id) {
+        this.showOperationStatus(message);
+        const button = this.detailContentTarget.querySelector<HTMLButtonElement>('.event-detail__sync');
+        if (button) button.disabled = false;
+      }
+      return;
+    } finally {
+      window.dispatchEvent(new CustomEvent('jin:google-state-changed'));
+    }
+    // This controller refreshes the open detail once, including the result.
+    // Other views still need the mutation notification, but must not navigate.
+    if (this.currentDetail?.event.id === detail.event.id) {
+      await this.loadDetail(detail.event.id, message, true);
+    }
+    this.dispatch('events-mutated', { detail: { source: 'events' }, prefix: 'jin', bubbles: true });
+  }
+
+  private async refreshGoogleDetails(detail: EventDetailDto): Promise<void> {
+    const route = detail.event.sync_context;
+    if (!route) return;
+    try {
+      await refreshGoogleEventDetails({ event_id: detail.event.id, account_id: route.account_id, calendar_id: route.calendar_id });
+      await this.loadDetail(detail.event.id);
+      this.showOperationStatus('Google event details refreshed.');
+    } catch (error: unknown) {
+      this.showOperationStatus(isJinErrorDto(error) ? error.message || 'Could not refresh Google event details.' : 'Could not refresh Google event details.');
+    }
   }
 
   private beginEdit(detail: EventDetailDto): void {
@@ -347,6 +480,7 @@ export default class EventsController extends Controller {
           account_id: route.account_id,
           calendar_id: route.calendar_id,
           recurrence_scope: this.isRecurring(this.currentDetail.event) ? draft.recurrence_scope : undefined,
+          guest_update_policy: draft.guest_update_policy,
         }), no_op: false }
         : await editEvent({
           event_id: eventId,
@@ -407,24 +541,31 @@ export default class EventsController extends Controller {
     this.removalDialog?.destroy();
     const locale = resolveEventLocale();
     const isTimeBlock = detail.capabilities.display_kind === 'time-block';
+    const cancelsMeeting = detail.capabilities.collaboration?.can_cancel_meeting === true;
     const recurring = this.isRecurring(detail.event);
     this.removalDialog = new ConfirmDialog({
-      title: isTimeBlock ? eventMessage('removeTitle', locale) : eventMessage('delete', locale),
-      message: isTimeBlock ? eventMessage('removeBody', locale) : detail.event.title,
-      confirmLabel: isTimeBlock ? eventMessage('remove', locale) : eventMessage('delete', locale),
+      title: isTimeBlock ? eventMessage('removeTitle', locale) : cancelsMeeting ? eventMessage('cancelMeetingTitle', locale) : eventMessage('delete', locale),
+      message: isTimeBlock ? eventMessage('removeBody', locale) : cancelsMeeting ? eventMessage('cancelMeetingBody', locale) : detail.event.title,
+      confirmLabel: isTimeBlock ? eventMessage('remove', locale) : cancelsMeeting ? eventMessage('cancelMeeting', locale) : eventMessage('delete', locale),
       cancelLabel: eventMessage('cancel', locale),
       checkboxLabel: recurring
         ? eventMessage('deleteEntireSeries', locale)
         : isTimeBlock && detail.capabilities.can_return_task_to_flexible
           ? eventMessage('returnFlexible', locale)
           : undefined,
+      selectLabel: cancelsMeeting ? 'Notify guests' : undefined,
+      selectOptions: cancelsMeeting ? [
+        { value: 'all', label: 'All guests' },
+        { value: 'external_only', label: 'External guests only' },
+        { value: 'none', label: 'Do not notify guests' },
+      ] : undefined,
       variant: 'danger',
-      onConfirm: (checked) => { void this.performRemoval(detail, checked); },
+      onConfirm: (checked, guestUpdatePolicy) => { void this.performRemoval(detail, checked, guestUpdatePolicy); },
     });
     this.removalDialog.open();
   }
 
-  private async performRemoval(detail: EventDetailDto, checked: boolean): Promise<void> {
+  private async performRemoval(detail: EventDetailDto, checked: boolean, guestUpdatePolicy?: string): Promise<void> {
     try {
       if (detail.capabilities.display_kind === 'time-block') {
         await removeTimeBlock({
@@ -443,6 +584,7 @@ export default class EventsController extends Controller {
               ? (checked ? 'entire_series' : 'this_occurrence')
               : undefined,
             operation_id: newOperationId('delete'),
+            guest_update_policy: guestUpdatePolicy === 'external_only' || guestUpdatePolicy === 'none' ? guestUpdatePolicy : 'all',
           });
         } else {
           await deleteEvent(detail.event.id);
@@ -451,6 +593,11 @@ export default class EventsController extends Controller {
       await this.loadDetail(detail.event.id);
       this.dispatch('events-mutated', { prefix: 'jin', bubbles: true });
       this.dispatch('tasks-changed', { prefix: 'jin', bubbles: true });
+      // A successful delete leaves no useful detail projection to reload. Go
+      // back to the calendar list so the action has an immediate, visible
+      // result instead of rendering a cancelled stale entry.
+      this.showList();
+      await this.loadList();
     } catch (error: unknown) {
       const details: JinErrorDetails | undefined = isJinErrorDto(error) ? error.details : undefined;
       if (details?.type === 'operation_conflict') {

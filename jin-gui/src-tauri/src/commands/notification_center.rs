@@ -299,6 +299,7 @@ mod tests {
                     name: "Primary".to_string(),
                     primary: true,
                     access_role: GoogleAccessRole::Writer,
+                    allowed_conference_solution_types: Vec::new(),
                 }],
             )
             .unwrap();

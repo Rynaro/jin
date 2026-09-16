@@ -266,7 +266,7 @@ describe('NotificationsController', () => {
 
     expect(document.querySelector('[data-notifications-target="live"]')?.textContent)
       .toBe('Invitation allowed. Pending provider confirmation.');
-    expect(document.body.textContent).toContain('Pending sync: Allow');
+    expect(document.body.textContent).toContain('Queued: Accepted');
   });
 
   it('successful mutation refetches and applies the active filter', async () => {
@@ -494,6 +494,6 @@ describe('NotificationsController', () => {
     document.querySelector<HTMLButtonElement>('[data-notification-action="retry-rsvp"]')!.click();
     await settle();
     expect(mockInvoke.mock.calls.filter(([command]) => command === 'retry_calendar_invitation')).toHaveLength(1);
-    expect(document.body.textContent).toContain('Pending sync: Refuse');
+    expect(document.body.textContent).toContain('Queued: Declined');
   });
 });

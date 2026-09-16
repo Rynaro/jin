@@ -36,6 +36,7 @@ fn legacy_cli_add_and_remove_use_the_scoped_mutation_service() {
                 name: "Personal".into(),
                 primary: true,
                 access_role: GoogleAccessRole::Owner,
+                allowed_conference_solution_types: vec![],
             }],
         )
         .unwrap();

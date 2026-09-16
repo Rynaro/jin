@@ -39,6 +39,7 @@ import CalendarViewController from './controllers/calendar_view_controller';
 import CaptureController from './controllers/capture_controller';
 import ActionsController from './controllers/actions_controller';
 import SettingsController from './controllers/settings_controller';
+import GoogleStatusController from './controllers/google_status_controller';
 import SidebarController from './controllers/sidebar_controller';
 import ListsController from './controllers/lists_controller';
 import CalendarController from './controllers/calendar_controller';
@@ -69,6 +70,7 @@ function startReadyApp(): void {
   stimulusApp.register('capture', CaptureController);
   stimulusApp.register('actions', ActionsController);
   stimulusApp.register('settings', SettingsController);
+  stimulusApp.register('google-status', GoogleStatusController);
   stimulusApp.register('sidebar', SidebarController);
   stimulusApp.register('lists', ListsController);
   stimulusApp.register('calendar', CalendarController);

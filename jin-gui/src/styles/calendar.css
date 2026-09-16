@@ -383,14 +383,39 @@
   background: var(--bg-secondary);
 }
 
+/* The editor opens as a compact time-first sheet. The full calendar remains
+ * available as a real disclosure when a date needs changing. */
+.event-when__calendar-disclosure {
+  border: 0.5px solid var(--separator);
+  border-radius: var(--radius-md);
+  background: transparent;
+}
+
+.event-when__calendar-disclosure > summary {
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  color: var(--label);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+}
+
+.event-when__calendar-disclosure[open] > summary {
+  border-block-end: 0.5px solid var(--separator);
+  color: var(--label);
+}
+
+.event-when__calendar-disclosure .event-when__calendar {
+  border: 0;
+  border-radius: 0;
+}
+
 .event-when__all-day {
-  padding-block-start: var(--space-1);
-  border-block-start: 0.5px solid var(--separator);
+  padding: 0;
 }
 
 #jin-event-dialog {
-  inline-size: min(94vw, 460px);
-  max-block-size: calc(100dvh - var(--space-3));
+  inline-size: min(94vw, 480px);
+  max-block-size: calc(100dvh - var(--space-4));
 }
 
 #jin-event-dialog .action-dialog__inner {
@@ -398,8 +423,163 @@
 }
 
 #jin-event-dialog .action-dialog__form {
+  display: flex;
+  flex-flow: row wrap;
+  align-items: start;
+  gap: var(--space-2);
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+#jin-event-dialog .action-dialog__form > :not(.event-options),
+#jin-event-dialog .event-options[open] {
+  flex: 1 0 100%;
+  min-inline-size: 0;
+}
+
+#jin-event-dialog .form-group {
+  margin: 0;
+}
+
+#jin-event-dialog .event-destination-field .form-label,
+#jin-event-dialog label[for="event-title"] {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+#jin-event-dialog #calendar-event-destination {
+  border: 0;
+  background: transparent;
+  padding-inline: 0;
+  font-weight: 600;
+}
+
+#jin-event-dialog #event-title {
+  font-size: var(--text-title2-size);
+  font-weight: 600;
+  border: 0;
+  border-block-end: 1px solid var(--separator);
+  border-radius: 0;
+  background: transparent;
+  padding-inline: 0;
+}
+
+#jin-event-dialog .event-when {
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.event-when__natural-disclosure > summary {
+  cursor: pointer;
+  font-size: var(--text-footnote-size);
+  color: var(--label-secondary);
+}
+
+.event-when__natural-disclosure[open] > summary {
+  margin-block-end: var(--space-1);
+}
+
+.event-options {
+  min-inline-size: 0;
+  padding: 0;
+  border: 0;
+}
+
+.event-options > summary {
+  display: list-item;
+  cursor: pointer;
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-capsule);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-footnote-size);
+  color: var(--label-secondary);
+}
+
+.event-options[open] > summary {
+  margin-block-end: var(--space-2);
+  color: var(--agenda-indigo);
+}
+
+.event-options > .form-group + .form-group {
+  margin-block-start: var(--space-2);
+}
+
+#jin-event-dialog .form-actions {
+  position: sticky;
+  inset-block-end: calc(-1 * var(--space-3));
+  background: var(--dialog-paper);
+  padding-block: var(--space-2);
+  margin: 0;
+  border-block-start: 1px solid var(--separator);
+}
+
+#jin-event-dialog summary:focus-visible {
+  outline: 2px solid var(--agenda-indigo);
+  outline-offset: 2px;
+}
+
+.event-collaboration-field {
+  min-inline-size: 0;
+}
+
+.event-collaboration-field__check {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+}
+
+.event-timezone {
+  display: grid;
+  gap: var(--space-1);
+  margin-block-start: var(--space-2);
+}
+
+.event-edit__recurrence-options {
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: minmax(0, 7rem) minmax(0, 1fr);
+}
+
+.event-edit__recurrence-options > label:last-child {
+  grid-column: 1 / -1;
+}
+
+.event-edit__weekdays {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.event-edit__weekdays .jin-checkbox {
+  font-size: var(--text-caption1-size);
+}
+
+#jin-event-dialog .jin-checkbox {
+  align-items: center;
+  gap: var(--space-2);
+  flex-direction: row;
+}
+
+.invitation-response {
+  border-block-start: 0.5px solid var(--separator);
+  margin-block-start: var(--space-3);
+  padding-block-start: var(--space-3);
+}
+
+.invitation-response__title,
+.invitation-response__state {
+  margin: 0;
+}
+
+.invitation-response__state {
+  color: var(--label-secondary);
+  font-size: var(--text-caption2-size);
+  line-height: var(--text-caption2-line);
+  margin-block-start: var(--space-2);
 }
 
 @media (max-width: 420px) {

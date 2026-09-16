@@ -65,6 +65,12 @@ pub struct EditEventInput {
     pub is_all_day: bool,
     pub description: Option<String>,
     pub location: Option<String>,
+    /// A typed replacement for the event's RRULE set. Omit to preserve it.
+    #[serde(default)]
+    pub recurrence: Option<jin_core::recurrence::RecurrenceDraft>,
+    /// Explicitly remove recurrence when no replacement draft is supplied.
+    #[serde(default)]
+    pub clear_recurrence: bool,
     pub recurrence_scope: Option<jin_core::ops::event_mutation::RecurrenceMutationScope>,
     #[serde(default)]
     pub attendees: Option<Vec<EventAttendee>>,
@@ -85,6 +91,8 @@ pub struct RoutedEventInput {
     pub account_id: String,
     pub calendar_id: String,
     pub operation_id: String,
+    #[serde(default)]
+    pub guest_update_policy: jin_core::ops::event_mutation::GuestUpdatePolicy,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,6 +102,8 @@ pub struct RoutedEditEventInput {
     pub account_id: String,
     pub calendar_id: String,
     pub recurrence_scope: Option<jin_core::ops::event_mutation::RecurrenceMutationScope>,
+    #[serde(default)]
+    pub guest_update_policy: jin_core::ops::event_mutation::GuestUpdatePolicy,
 }
 
 #[derive(Debug, Deserialize)]
@@ -103,6 +113,8 @@ pub struct RoutedDeleteEventInput {
     pub calendar_id: String,
     pub recurrence_scope: Option<jin_core::ops::event_mutation::RecurrenceMutationScope>,
     pub operation_id: String,
+    #[serde(default)]
+    pub guest_update_policy: jin_core::ops::event_mutation::GuestUpdatePolicy,
 }
 
 #[derive(Debug, Deserialize)]
@@ -168,6 +180,7 @@ fn parse_input(input: EventInput) -> Result<events::EditEventPatch, JinErrorDto>
         floating,
         description: input.description,
         location: input.location,
+        recurrence: None,
         attendees: input.attendees,
         attendees_omitted: input.attendees_omitted,
         conference_data: input.conference_data,
@@ -301,7 +314,9 @@ pub fn edit_event_fn(
 ) -> Result<EditEventResultDto, JinErrorDto> {
     jin_core::ops::recoverable_operations::validate_operation_id(&input.operation_id)
         .map_err(JinErrorDto::from)?;
-    let patch = parse_input(EventInput {
+    let recurrence_draft = input.recurrence.clone();
+    let clear_recurrence = input.clear_recurrence;
+    let mut patch = parse_input(EventInput {
         title: input.title,
         start: input.start,
         end: input.end,
@@ -316,6 +331,14 @@ pub fn edit_event_fn(
         clear_conference_data: input.clear_conference_data,
         reminders: input.reminders,
     })?;
+    patch.recurrence = recurrence_draft
+        .as_ref()
+        .map(|draft| {
+            jin_core::recurrence::compile(draft, &patch.start, patch.start_tzid.as_deref())
+        })
+        .transpose()
+        .map_err(JinErrorDto::from)?
+        .or_else(|| clear_recurrence.then(Vec::new));
     let service = jin_core::ops::event_mutation::EventMutationService::new(root)
         .map_err(JinErrorDto::from)?;
     let result = service
@@ -338,6 +361,7 @@ pub fn create_routed_event_fn(
     input: RoutedEventInput,
 ) -> Result<EventDto, JinErrorDto> {
     let target = sync_target(input.account_id, input.calendar_id)?;
+    let guest_update_policy = input.guest_update_policy;
     let recurrence_draft = input.event.recurrence.clone();
     let patch = parse_input(input.event)?;
     let recurrence = recurrence_draft
@@ -351,7 +375,7 @@ pub fn create_routed_event_fn(
     let service = jin_core::ops::event_mutation::EventMutationService::new(root)
         .map_err(JinErrorDto::from)?;
     let event = service
-        .create_with_recurrence(
+        .create_with_recurrence_and_policy(
             events::CreateEventParams {
                 title: patch.title,
                 body: String::new(),
@@ -373,6 +397,7 @@ pub fn create_routed_event_fn(
             recurrence,
             Some(target),
             &input.operation_id,
+            guest_update_policy,
         )
         .map_err(JinErrorDto::from)?;
     Ok(EventDto::from_model(&event))
@@ -395,7 +420,9 @@ pub fn edit_routed_event_fn(
     input: RoutedEditEventInput,
 ) -> Result<EventDto, JinErrorDto> {
     let target = sync_target(input.account_id, input.calendar_id)?;
-    let patch = parse_input(EventInput {
+    let recurrence_draft = input.edit.recurrence.clone();
+    let clear_recurrence = input.edit.clear_recurrence;
+    let mut patch = parse_input(EventInput {
         title: input.edit.title,
         start: input.edit.start,
         end: input.edit.end,
@@ -410,16 +437,25 @@ pub fn edit_routed_event_fn(
         clear_conference_data: input.edit.clear_conference_data,
         reminders: input.edit.reminders,
     })?;
+    patch.recurrence = recurrence_draft
+        .as_ref()
+        .map(|draft| {
+            jin_core::recurrence::compile(draft, &patch.start, patch.start_tzid.as_deref())
+        })
+        .transpose()
+        .map_err(JinErrorDto::from)?
+        .or_else(|| clear_recurrence.then(Vec::new));
     let service = jin_core::ops::event_mutation::EventMutationService::new(root)
         .map_err(JinErrorDto::from)?;
     let event = service
-        .edit(
+        .edit_with_guest_update_policy(
             &input.edit.event_id,
             &input.edit.edit_token,
             patch,
             target,
             input.recurrence_scope,
             &input.edit.operation_id,
+            input.guest_update_policy,
         )
         .map_err(JinErrorDto::from)?;
     Ok(EventDto::from_model(&event))
@@ -433,11 +469,12 @@ pub fn delete_routed_event_fn(
     let service = jin_core::ops::event_mutation::EventMutationService::new(root)
         .map_err(JinErrorDto::from)?;
     let event = service
-        .delete(
+        .delete_with_guest_update_policy(
             &input.event_id,
             target,
             input.recurrence_scope,
             &input.operation_id,
+            input.guest_update_policy,
         )
         .map_err(JinErrorDto::from)?;
     Ok(EventDto::from_model(&event))

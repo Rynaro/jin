@@ -1062,7 +1062,16 @@ impl NotificationCenter {
                     tx.commit().map_err(JinError::Index)?;
                     return self.get_item(&id).map(Some);
                 }
-                let reopen = source.new_response_cycle && item.status.is_terminal();
+                // A future non-organizer invitation stays actionable after an
+                // accepted/tentative/declined response: Calendar permits a
+                // guest to change their RSVP. Reopen legacy externally-acted
+                // items when the current provider projection still permits it.
+                let invitation_still_actionable = matches!(
+                    &source.payload,
+                    NotificationPayload::CalendarInvitation(payload) if payload.capabilities.can_respond
+                );
+                let reopen = item.status.is_terminal()
+                    && (source.new_response_cycle || invitation_still_actionable);
                 let status = if reopen {
                     NotificationStatus::Active
                 } else {
@@ -3041,7 +3050,7 @@ pub fn reconcile_calendar_invitations(
         )?;
         let obsolete = event.frontmatter.status == crate::model::event::EventStatus::Cancelled
             || notification_event_has_ended(&event, now);
-        if existing.is_none() && (obsolete || response_status != "needsAction") {
+        if existing.is_none() && obsolete {
             center.clear_invitation_error_aliases(
                 event.id(),
                 &[&path_fallback_key, &fallback_key, &source_key],
@@ -3069,8 +3078,10 @@ pub fn reconcile_calendar_invitations(
             && calendar.available
             && calendar.access_role.can_write();
         let mut capabilities = NotificationCapabilities {
-            can_respond: response_status == "needsAction"
-                && route_writable
+            can_respond: matches!(
+                response_status,
+                "needsAction" | "accepted" | "tentative" | "declined"
+            ) && route_writable
                 && event.frontmatter.status != crate::model::event::EventStatus::Cancelled
                 && !notification_event_has_ended(&event, now),
             disabled_reason: (!route_writable).then(|| {
@@ -3160,6 +3171,9 @@ pub fn reconcile_calendar_invitations(
                 report.obsoleted += 1;
             }
         } else if response_status != "needsAction"
+            && existing
+                .as_ref()
+                .is_some_and(|item| item.status == NotificationStatus::ActionPending)
             && center
                 .resolve_external_invitation(&source_key, response_status, now)?
                 .is_some()

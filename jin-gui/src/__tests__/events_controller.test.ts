@@ -50,6 +50,7 @@ const invokeMocks = vi.hoisted(() => ({
   editEvent: vi.fn(),
   deleteEvent: vi.fn(),
   removeTimeBlock: vi.fn(),
+  syncCalendarEvent: vi.fn(),
   newOperationId: vi.fn((prefix: string) => `${prefix}-test-operation`),
 }));
 
@@ -528,7 +529,129 @@ describe('renderEventDetail — temporal display', () => {
   });
 });
 
+describe('renderEventDetail — invitation response', () => {
+  it('renders the shared RSVP control and dispatches its opaque event-detail action', () => {
+    const onRespondInvitation = vi.fn();
+    const detail = makeDetail({}, {
+      collaboration: {
+        invitation: {
+          action_ref: { notification_item_id: 'invitation-item-7', expected_item_version: 3 },
+          provider_response: 'needsAction',
+          requested_response: null,
+          state: 'idle',
+          can_respond: true,
+          recurrence_scopes: ['this_event'],
+          disabled_reason: null,
+        },
+        can_edit_schedule: false,
+        can_append_attendees: false,
+        can_remove_attendees: false,
+        can_change_attendee_roles: false,
+        can_cancel_meeting: false,
+        can_add_conference: false,
+        can_remove_conference: false,
+        allowed_conference_solution_types: [],
+        disabled_reasons: {},
+      },
+    });
+
+    renderEventDetail(el, templates, detail, noopNavigate, undefined, undefined, { onRespondInvitation });
+
+    const accept = el.detailContent.querySelector<HTMLButtonElement>('button[data-response="allow"]');
+    expect(accept?.textContent).toBe('Accept');
+    expect(accept?.getAttribute('aria-pressed')).toBe('false');
+    accept?.click();
+    expect(onRespondInvitation).toHaveBeenCalledWith(detail, 'allow', accept);
+  });
+});
+
+describe('renderEventDetail — organizer cancellation', () => {
+  it('names the destructive action as meeting cancellation only for the organizer capability', () => {
+    const detail = makeDetail({ source: 'google', authority: 'google' }, {
+      can_delete: true,
+      collaboration: {
+        invitation: null,
+        can_edit_schedule: true,
+        can_append_attendees: false,
+        can_remove_attendees: false,
+        can_change_attendee_roles: false,
+        can_cancel_meeting: true,
+        can_add_conference: false,
+        can_remove_conference: false,
+        allowed_conference_solution_types: [],
+        disabled_reasons: {},
+      },
+    });
+    renderEventDetail(el, templates, detail, noopNavigate, undefined, undefined, { onRemove: vi.fn() });
+    expect(el.detailContent.querySelector('.event-detail__destructive')?.textContent).toBe('Cancel meeting');
+  });
+});
+
+describe('renderEventDetail — Google Meet lifecycle', () => {
+  it('offers authorized Meet creation and blocks any join link while the request is pending', () => {
+    const onManageMeet = vi.fn();
+    const detail = makeDetail({ source: 'google', authority: 'google', conference_data: {
+      pendingCreateRequest: { requestId: 'old-request', conferenceSolutionKey: { type: 'hangoutsMeet' } },
+    } }, {
+      collaboration: {
+        invitation: null, can_edit_schedule: true, can_append_attendees: false, can_remove_attendees: false,
+        can_change_attendee_roles: false, can_cancel_meeting: true, can_add_conference: true,
+        can_remove_conference: false, allowed_conference_solution_types: ['hangoutsMeet'], disabled_reasons: {},
+      },
+    });
+    renderEventDetail(el, templates, detail, noopNavigate, undefined, undefined, { onManageMeet });
+    expect(el.detailContent.querySelector('.event-detail__join-link')).toBeNull();
+    expect([...el.detailContent.querySelectorAll<HTMLButtonElement>('button')]
+      .some(button => button.textContent === 'Retry Google Meet')).toBe(false);
+    expect(onManageMeet).not.toHaveBeenCalled();
+  });
+});
+
 describe('renderEventDetail — Google meeting metadata', () => {
+  it('shows the Google destination and unsent Meet state without changing Jin provenance', () => {
+    renderEventDetail(el, templates, makeEvent({
+      source: 'jin', authority: 'jin',
+      sync_context: { provider: 'google', account_id: 'account', account_alias: 'Personal',
+        calendar_id: 'calendar', calendar_name: 'Personal calendar', access_role: 'owner',
+        allowed_conference_solution_types: [], writable: true, state: 'pending' },
+      conference_data: { pendingCreateRequest: { requestId: 'request', conferenceSolutionKey: { type: 'hangoutsMeet' } } },
+    }), noopNavigate);
+    expect(el.detailContent.querySelector('.event-detail__source-label')?.textContent).toBe('Google Calendar · Personal calendar');
+    expect(el.detailContent.querySelector('.event-detail__destination')?.textContent).toContain('Personal — Personal calendar');
+    expect(el.detailContent.querySelector('.event-detail__sync-state')?.textContent).toContain('waiting to sync');
+    expect(el.detailContent.querySelector('.event-detail__conference-state')?.textContent).toContain('Sync this event');
+    expect(el.detailContent.textContent).not.toContain('Google Meet is being created');
+  });
+
+  it.each(['cancelled', 'paused'])('explains %s publication without offering a dead sync action', (state) => {
+    const onSyncEvent = vi.fn();
+    const onReviewSync = vi.fn();
+    renderEventDetail(el, templates, makeEvent({
+      source: 'jin', authority: 'jin',
+      sync_context: { provider: 'google', account_id: 'account', account_alias: 'Personal',
+        calendar_id: 'calendar', calendar_name: 'Personal calendar', access_role: 'owner',
+        allowed_conference_solution_types: [], writable: true, state },
+      conference_data: { pendingCreateRequest: { requestId: 'request', conferenceSolutionKey: { type: 'hangoutsMeet' } } },
+    }), noopNavigate, undefined, undefined, { onSyncEvent, onReviewSync });
+    expect(el.detailContent.querySelector('.event-detail__sync')).toBeNull();
+    expect(el.detailContent.textContent).not.toContain('Synced with Google');
+    expect(el.detailContent.querySelector('.event-detail__conference-state')?.textContent).not.toContain('Use “Sync this event”');
+    if (state === 'paused') {
+      el.detailContent.querySelector<HTMLButtonElement>('.event-detail__review-sync')!.click();
+      expect(onReviewSync).toHaveBeenCalledOnce();
+    } else {
+      expect(el.detailContent.querySelector('.event-detail__sync-state')?.textContent).toContain('no Google copy is confirmed');
+    }
+  });
+
+  it('distinguishes provider-pending Meet creation from an unsent request', () => {
+    renderEventDetail(el, templates, makeEvent({
+      source: 'google', conference_data: { createRequest: { requestId: 'request', status: { statusCode: 'pending' } } },
+    }), noopNavigate);
+    expect(el.detailContent.querySelector('.event-detail__conference-state')?.textContent).toContain('Google is creating');
+    expect(el.detailContent.querySelector('.event-detail__sync-state')).toBeNull();
+  });
+
   it('renders dedicated organizer, attendee, conference, and reminder sections', () => {
     renderEventDetail(el, templates, makeEvent({
       source: 'google',
@@ -879,6 +1002,37 @@ describe('Event detail capability controller gates (AC-022–AC-028)', () => {
     expect(add.hidden).toBe(true);
     expect(add.getAttribute('aria-hidden')).toBe('true');
     expect(add.disabled).toBe(true);
+  });
+
+  it.each(['success', 'error', 'bridge'])('keeps event visible and reports the actual sync outcome (%s)', async (outcome) => {
+    const failure = outcome !== 'success';
+    invokeMocks.syncCalendarEvent.mockReset();
+    if (failure) invokeMocks.syncCalendarEvent.mockRejectedValue(outcome === 'bridge' ? 'invalid args: missing required key eventId' : new Error('offline'));
+    else invokeMocks.syncCalendarEvent.mockResolvedValue(1);
+    await start(makeDetail({ sync_context: {
+      provider: 'google', account_id: 'account', account_alias: 'Personal',
+      calendar_id: 'calendar', calendar_name: 'Personal calendar', access_role: 'owner',
+      allowed_conference_solution_types: [], writable: true, state: 'pending',
+    } }), host => {
+      host.setAttribute('data-action', `${host.getAttribute('data-action')} jin:events-mutated@window->events#handleMutation`);
+    });
+    const refreshed = await invokeMocks.getEventDetailById.mock.results.at(-1)!.value;
+    let finishRefresh: ((detail: EventDetailDto) => void) | undefined;
+    if (!failure) invokeMocks.getEventDetailById.mockImplementationOnce(() => new Promise(resolve => { finishRefresh = resolve; }));
+    invokeMocks.getEventDetailById.mockClear();
+    document.querySelector<HTMLButtonElement>('.event-detail__sync')!.click();
+    await flushController();
+    expect(document.querySelector('[data-events-target="detailContent"]')?.classList.contains('hidden')).toBe(false);
+    expect(document.querySelector('[data-events-target="detailLoadingState"]')?.classList.contains('hidden')).toBe(true);
+    if (finishRefresh) finishRefresh(refreshed);
+    await flushController();
+    expect(invokeMocks.syncCalendarEvent).toHaveBeenCalledWith('evt-001');
+    expect(invokeMocks.getEventDetailById).toHaveBeenCalledTimes(failure ? 0 : 1);
+    expect(document.querySelector('[data-events-target="detailContent"]')?.classList.contains('hidden')).toBe(false);
+    expect(document.querySelector('[data-events-target="detailPanel"]')?.classList.contains('hidden')).toBe(false);
+    expect(document.body.textContent).toContain(outcome === 'bridge' ? 'missing required key eventId' : failure ? 'offline' : 'Event sync finished.');
+    expect(document.querySelector('.event-detail__sync')?.nextElementSibling?.classList.contains('event-detail__operation-status')).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>('.event-detail__sync')?.disabled).toBe(false);
   });
 
   it('returns the calendar route scroll position after detail closes', async () => {

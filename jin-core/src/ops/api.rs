@@ -252,15 +252,8 @@ fn with_event_sync_context(
     else {
         return dto;
     };
-    let state = crate::sync::state::list_route_outbox(conn, &destination, "pending")
-        .map(|items| {
-            if items.iter().any(|item| item.jin_id == event_id) {
-                "pending"
-            } else {
-                "synced"
-            }
-        })
-        .unwrap_or("unknown");
+    let state = crate::sync::state::event_delivery_state(conn, &destination, event_id)
+        .unwrap_or_else(|_| "unknown".to_string());
     crate::dto::google::event_context(
         &cfg.google_registry,
         &destination.account_id,

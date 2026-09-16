@@ -115,6 +115,22 @@ pub fn google_to_jin(
         .and_then(|value| value.as_str())
         .map(str::to_string);
     let reminders = parse_optional_object::<EventReminderSettings>(resource, "reminders")?;
+    let guests_can_modify = resource
+        .get("guestsCanModify")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let guests_can_invite_others = resource
+        .get("guestsCanInviteOthers")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let guests_can_see_other_guests = resource
+        .get("guestsCanSeeOtherGuests")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let locked = resource
+        .get("locked")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
 
     // ── Temporal core ──────────────────────────────────────────────────────────
     let (start, start_value_type, start_tzid, is_all_day) = parse_google_time(resource, "start")?;
@@ -186,6 +202,10 @@ pub fn google_to_jin(
         conference_data,
         hangout_link,
         reminders,
+        guests_can_modify,
+        guests_can_invite_others,
+        guests_can_see_other_guests,
+        locked,
         source: EventSource::Google,
         authority: EventSource::Google,
         calendar_id: calendar_id.to_string(),
@@ -247,7 +267,10 @@ pub fn jin_to_google(event: &EventFrontmatter) -> serde_json::Value {
 
     // ── Temporal ──────────────────────────────────────────────────────────────
     obj["start"] = render_google_time(&event.start, event.start_tzid.as_deref());
-    obj["end"] = render_google_time(&event.end, event.end_tzid.as_deref());
+    obj["end"] = render_google_time(
+        &event.end,
+        event.end_tzid.as_deref().or(event.start_tzid.as_deref()),
+    );
 
     // ── Recurrence ────────────────────────────────────────────────────────────
     if !event.recurrence.is_empty() {
@@ -471,8 +494,20 @@ fn parse_google_time_obj(
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        // Parse the dateTime. Google returns RFC 3339 with optional offset.
-        // We store wall-clock (un-normalized) NaiveDateTime, discarding the offset.
+        // An explicit offset identifies an instant even without an IANA zone.
+        // Normalize that case to UTC rather than silently making it floating.
+        if tzid.is_none() {
+            if let Ok(instant) = DateTime::parse_from_rfc3339(dt_str) {
+                return Ok((
+                    TemporalValue::DateTime(instant.naive_utc()),
+                    ValueType::DateTime,
+                    Some("UTC".to_string()),
+                    false,
+                ));
+            }
+        }
+        // A named zone preserves provider wall-clock time. Truly bare times
+        // remain floating locally and require a timezone before publication.
         let naive_dt = parse_google_datetime(dt_str)?;
         return Ok((
             TemporalValue::DateTime(naive_dt),
@@ -537,7 +572,7 @@ fn render_google_time(tv: &TemporalValue, tzid: Option<&str>) -> serde_json::Val
             if let Some(tz) = tzid {
                 serde_json::json!({ "dateTime": dt_str, "timeZone": tz })
             } else {
-                // Floating time (no tzid) — Google accepts bare dateTime
+                // Floating time stays lossless here; publication must require a timezone.
                 serde_json::json!({ "dateTime": dt_str })
             }
         }
@@ -990,6 +1025,25 @@ mod tests {
         assert_eq!(jin.calendar_id, "work_calendar");
     }
 
+    #[test]
+    fn offset_only_google_time_preserves_its_instant_and_end_inherits_start_zone() {
+        let mut resource = sample_google_event();
+        resource["start"] = serde_json::json!({"dateTime": "2026-09-17T14:00:00-03:00"});
+        resource["end"] = serde_json::json!({"dateTime": "2026-09-17T15:00:00-03:00"});
+        let mut event = google_to_jin(&resource, "offset-event", "primary").unwrap();
+        assert!(!event.floating);
+        assert_eq!(event.start_tzid.as_deref(), Some("UTC"));
+        assert_eq!(
+            jin_to_google(&event)["start"],
+            serde_json::json!({"dateTime":"2026-09-17T17:00:00", "timeZone":"UTC"})
+        );
+        event.end_tzid = None;
+        assert_eq!(
+            jin_to_google(&event)["end"],
+            serde_json::json!({"dateTime":"2026-09-17T18:00:00", "timeZone":"UTC"})
+        );
+    }
+
     // ── m8: floating timed event (dateTime, no timeZone) ─────────────────────
 
     #[test]
@@ -1069,6 +1123,10 @@ mod tests {
             conference_data: None,
             hangout_link: None,
             reminders: None,
+            guests_can_modify: false,
+            guests_can_invite_others: false,
+            guests_can_see_other_guests: false,
+            locked: false,
             source: EventSource::Jin,
             authority: EventSource::Jin,
             calendar_id: "primary".to_string(),
@@ -1119,6 +1177,10 @@ mod tests {
             conference_data: None,
             hangout_link: None,
             reminders: None,
+            guests_can_modify: false,
+            guests_can_invite_others: false,
+            guests_can_see_other_guests: false,
+            locked: false,
             source: EventSource::Jin,
             authority: EventSource::Jin,
             calendar_id: "primary".to_string(),

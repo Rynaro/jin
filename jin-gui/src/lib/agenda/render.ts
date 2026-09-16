@@ -316,12 +316,13 @@ function buildEventRow(
   const badgeLabelEl = row.querySelector('.today-event-row__source-label');
   const badgeIconEl = row.querySelector('.today-event-row__source-icon');
   if (badgeEl && badgeLabelEl && badgeIconEl) {
-    const label = sourceBadgeLabel(event.source);
+    const route = event.sync_context?.provider === 'google' ? event.sync_context : null;
+    const label = route ? `Google · ${route.calendar_name}` : sourceBadgeLabel(event.source);
     badgeLabelEl.textContent = label;
-    badgeIconEl.setAttribute('data-lucide', sourceBadgeIcon(event.source));
-    badgeEl.setAttribute('aria-label', `Source: ${label}`);
+    badgeIconEl.setAttribute('data-lucide', sourceBadgeIcon(route ? 'google' : event.source));
+    badgeEl.setAttribute('aria-label', route ? label : `Source: ${label}`);
     // data-source is a supplementary CSS hook for colour (NOT the primary identifier)
-    badgeEl.dataset.source = event.source.toLowerCase();
+    badgeEl.dataset.source = route ? 'google' : event.source.toLowerCase();
   }
 
   // ── Recurring flag ────────────────────────────────────────────────────────

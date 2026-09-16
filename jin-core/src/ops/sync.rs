@@ -54,6 +54,7 @@ pub struct QuarantinedOperationDto {
     pub calendar_id: String,
     pub calendar_name: String,
     pub jin_id: String,
+    pub event_title: String,
     pub recurrence_key: String,
     pub operation: String,
     pub pause_reason: String,
@@ -85,6 +86,11 @@ pub fn list_quarantined_operations(root: &Path) -> crate::Result<Vec<Quarantined
                 calendar_name: calendar
                     .map(|calendar| calendar.name.clone())
                     .unwrap_or_else(|| "Unknown calendar".to_string()),
+                event_title: crate::store::fs::read_event(
+                    &config.events_dir().join(format!("{}.md", operation.jin_id)),
+                )
+                .map(|event| event.frontmatter.title)
+                .unwrap_or_else(|_| "Calendar event".to_string()),
                 jin_id: operation.jin_id,
                 recurrence_key: operation.recurrence_key,
                 operation: format!("{:?}", operation.operation).to_lowercase(),
@@ -272,6 +278,8 @@ fn load_or_refresh_account_tokens<H: HttpClient>(
         &HttpPostAdapter(http),
     ) {
         Ok(refreshed) => tokens = refreshed,
+        // Network/provider outages do not revoke the user's credentials.
+        Err(error) if !matches!(&error, JinError::Auth(_)) => return Err(error),
         Err(error) => {
             let mut revoked = Config::load(root)?;
             let account = revoked.google_registry.account_mut(account_id)?;
@@ -333,6 +341,8 @@ fn load_or_refresh_account_tokens_default<H: HttpClient>(
         &HttpPostAdapter(http),
     ) {
         Ok(refreshed) => tokens = refreshed,
+        // Network/provider outages do not revoke the user's credentials.
+        Err(error) if !matches!(&error, JinError::Auth(_)) => return Err(error),
         Err(error) => {
             let mut revoked = Config::load(root)?;
             let account = revoked.google_registry.account_mut(account_id)?;
@@ -363,13 +373,94 @@ fn load_or_refresh_account_tokens_default<H: HttpClient>(
     Ok((tokens, generation))
 }
 
+/// Acquire a usable access token for a read-only provider operation.
+///
+/// This shares the credential generation checks used by sync, but performs no
+/// import, export, or outbox drain. Callers such as event-detail hydration can
+/// therefore repair provider facts after an ordinary one-hour token expiry.
+pub fn load_or_refresh_account_tokens_for_readonly<H: HttpClient>(
+    root: &Path,
+    account_id: &crate::google::account::GoogleAccountId,
+    http: &H,
+) -> crate::Result<crate::google::secrets::TokenSet> {
+    load_or_refresh_account_tokens_default(root, account_id, http).map(|(tokens, _)| tokens)
+}
+
+/// Deliver one already-saved routed event, without publishing unrelated work.
+pub fn sync_event_with_http<H: HttpClient>(
+    root: &Path,
+    event_id: &str,
+    http: &H,
+) -> crate::Result<u32> {
+    let cfg = Config::load(root)?;
+    let route =
+        crate::google::route_ownership::read(&cfg.events_dir(), event_id)?.ok_or_else(|| {
+            JinError::InvalidInput("Event has no Google calendar destination".to_string())
+        })?;
+    let target = crate::google::account::EventSyncTarget::new(route.account_id, route.calendar_id)?;
+    let (tokens, auth_generation) =
+        load_or_refresh_account_tokens_default(root, &target.account_id, http)?;
+    let cfg = Config::load(root)?;
+    let calendar = cfg
+        .google_registry
+        .calendars
+        .iter()
+        .find(|calendar| {
+            calendar.account_id == target.account_id
+                && calendar.calendar_id == target.calendar_id
+                && calendar.enabled
+                && calendar.available
+                && calendar.access_role.can_write()
+        })
+        .ok_or_else(|| {
+            JinError::InvalidInput("Google calendar is unavailable or read-only".to_string())
+        })?;
+    let conn = crate::sync::state::open_sync_db(&cfg.sync_dir())?;
+    let result = crate::google::multi_sync::drain_destination_event(
+        root,
+        &conn,
+        &target,
+        auth_generation,
+        calendar.route_generation,
+        &tokens,
+        http,
+        Some(event_id),
+    );
+    // Successful earlier operations must be visible even if a later one failed.
+    crate::ops::api::refresh(root)?;
+    let pushed = result?;
+    // Import the provider-confirmed conference response (also handles a later
+    // retry while Google is still preparing the link). This refuses to replace
+    // canonical data when unsent or paused changes remain.
+    crate::ops::google_accounts::refresh_event_details(
+        root,
+        event_id,
+        &target.account_id,
+        &target.calendar_id,
+        &tokens.access_token,
+        http,
+    )?;
+    Ok(pushed)
+}
+
 pub fn sync_all_with_http<H: HttpClient>(
     root: &Path,
     cfg: &Config,
     http: &H,
 ) -> crate::Result<AggregateSyncSummary> {
     let mut destinations = Vec::new();
-    let mut errors = Vec::new();
+    let mut errors: Vec<String> = cfg
+        .google_registry
+        .accounts
+        .iter()
+        .filter(|account| account.state == GoogleAccountState::NeedsReauth)
+        .map(|account| {
+            format!(
+                "{}: Google access expired. Reconnect this account in Settings.",
+                account.alias
+            )
+        })
+        .collect();
     let conn = crate::sync::state::open_sync_db(&cfg.sync_dir())?;
     let mut changed = false;
     for calendar in cfg.google_registry.calendars.iter().filter(|calendar| {
@@ -457,6 +548,11 @@ pub fn sync_all_with_http<H: HttpClient>(
     {
         errors.push(format!("notification center reconciliation: {error}"));
     }
+    errors.extend(
+        destinations
+            .iter()
+            .flat_map(|result| result.errors.iter().cloned()),
+    );
     let pulled = destinations.iter().map(|result| result.pulled).sum();
     let pushed = destinations.iter().map(|result| result.pushed).sum();
     Ok(AggregateSyncSummary {
@@ -482,7 +578,18 @@ pub fn sync_all_with_http_and_passphrase<H: HttpClient>(
     passphrase: &str,
 ) -> crate::Result<AggregateSyncSummary> {
     let mut destinations = Vec::new();
-    let mut errors = Vec::new();
+    let mut errors: Vec<String> = cfg
+        .google_registry
+        .accounts
+        .iter()
+        .filter(|account| account.state == GoogleAccountState::NeedsReauth)
+        .map(|account| {
+            format!(
+                "{}: Google access expired. Reconnect this account in Settings.",
+                account.alias
+            )
+        })
+        .collect();
     let conn = crate::sync::state::open_sync_db(&cfg.sync_dir())?;
     let mut changed = false;
     for calendar in cfg.google_registry.calendars.iter().filter(|calendar| {
@@ -567,6 +674,11 @@ pub fn sync_all_with_http_and_passphrase<H: HttpClient>(
     {
         errors.push(format!("notification center reconciliation: {error}"));
     }
+    errors.extend(
+        destinations
+            .iter()
+            .flat_map(|result| result.errors.iter().cloned()),
+    );
     let pulled = destinations.iter().map(|result| result.pulled).sum();
     let pushed = destinations.iter().map(|result| result.pushed).sum();
     Ok(AggregateSyncSummary {

@@ -15,7 +15,7 @@ import {
   type TimeGridModel,
   type TimedSegment,
 } from './time_grid';
-import { applyCalendarColor, calendarColorForEvent } from './colors';
+import { applyCalendarColor, calendarColorForEvent, calendarProviderForEvent } from './colors';
 
 export interface TimeGridRenderOptions {
   events: EventDto[];
@@ -45,8 +45,8 @@ function minuteLabel(minute: number, locale: EventLocaleKey): string {
   }).format(new Date(Date.UTC(2020, 0, 1, Math.floor(bounded / 60), bounded % 60)));
 }
 
-function sourceLabel(event: EventDto, locale: EventLocaleKey): string {
-  if (event.source.toLowerCase() !== 'google') return eventMessage('sourceJin', locale);
+export function calendarEventSourceLabel(event: EventDto, locale: EventLocaleKey): string {
+  if (calendarProviderForEvent(event) !== 'google') return eventMessage('sourceJin', locale);
   const context = event.sync_context;
   return context
     ? `${eventMessage('sourceGoogle', locale)}, ${context.account_alias}, ${context.calendar_name}`
@@ -54,7 +54,7 @@ function sourceLabel(event: EventDto, locale: EventLocaleKey): string {
 }
 
 function sourceShort(event: EventDto): string {
-  if (event.source.toLowerCase() !== 'google') return 'Jin';
+  if (calendarProviderForEvent(event) !== 'google') return 'Jin';
   return event.sync_context
     ? `${event.sync_context.account_alias} · ${event.sync_context.calendar_name}`
     : 'Google';
@@ -69,7 +69,7 @@ function eventRangeLabel(segment: TimedSegment, locale: EventLocaleKey): string 
 }
 
 function eventAccessibleName(event: EventDto, time: string, locale: EventLocaleKey): string {
-  const parts = [event.title, time, sourceLabel(event, locale)];
+  const parts = [event.title, time, calendarEventSourceLabel(event, locale)];
   if (event.derived_from) parts.push(eventMessage('timeBlock', locale));
   return parts.join(', ');
 }
@@ -77,7 +77,7 @@ function eventAccessibleName(event: EventDto, time: string, locale: EventLocaleK
 function addIdentity(target: HTMLElement, event: EventDto, locale: EventLocaleKey): void {
   const source = document.createElement('span');
   source.className = 'calendar-timegrid__source jin-badge';
-  source.dataset.source = event.source.toLowerCase();
+  source.dataset.source = calendarProviderForEvent(event);
   const text = document.createElement('span');
   text.textContent = sourceShort(event);
   source.appendChild(text);
@@ -120,7 +120,7 @@ function buildEventButton(
   button.type = 'button';
   button.className = 'calendar-timegrid__event';
   button.dataset.eventId = event.id;
-  button.dataset.source = event.source.toLowerCase();
+  button.dataset.source = calendarProviderForEvent(event);
   applyCalendarColor(button, calendarColorForEvent(event));
   button.setAttribute('aria-label', eventAccessibleName(event, time, locale));
   const title = document.createElement('span');
@@ -146,7 +146,7 @@ function buildAllDayButton(
   button.type = 'button';
   button.className = 'calendar-timegrid__all-day-event';
   button.dataset.eventId = span.event.id;
-  button.dataset.source = span.event.source.toLowerCase();
+  button.dataset.source = calendarProviderForEvent(span.event);
   applyCalendarColor(button, calendarColorForEvent(span.event));
   button.style.gridColumn = `${span.startDateIndex + 1} / ${span.endDateIndexExclusive + 1}`;
   button.style.gridRow = String(span.lane + 1);

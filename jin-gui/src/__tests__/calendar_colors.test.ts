@@ -234,6 +234,7 @@ describe('exact calendar color preferences', () => {
       },
     };
     expect(calendarColorForEvent(event)).toBe('pink');
+    expect(calendarColorForEvent({ ...event, source: 'jin' })).toBe('pink');
     expect(loadCalendarColors()).toEqual({ [key]: 'pink' });
   });
 

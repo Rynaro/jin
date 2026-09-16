@@ -25,6 +25,39 @@ export function recurrenceFromRepeatValue(value: string): RecurrenceDraft | unde
     : undefined;
 }
 
+/**
+ * Read the editable subset of Google's lossless recurrence field. Callers
+ * retain the original strings unless the user actually changes this draft.
+ */
+export function recurrenceDraftFromRrule(recurrence: string[]): RecurrenceDraft | undefined {
+  const line = recurrence.find(value => value.startsWith('RRULE:'));
+  if (!line) return undefined;
+  const values = new Map(line.slice('RRULE:'.length).split(';').map(part => {
+    const [key, value = ''] = part.split('=', 2); return [key, value];
+  }));
+  const frequency = values.get('FREQ')?.toLowerCase();
+  if (frequency !== 'daily' && frequency !== 'weekly' && frequency !== 'monthly' && frequency !== 'yearly') return undefined;
+  const interval = Math.max(1, Number(values.get('INTERVAL') ?? '1') || 1);
+  const weekly_days = frequency === 'weekly'
+    ? (values.get('BYDAY') ?? '').split(',').map(day => day.toLowerCase()).filter((day): day is RecurrenceWeekday => WEEKDAYS.includes(day as RecurrenceWeekday))
+    : [];
+  let monthly: MonthlyRecurrence | undefined;
+  if (frequency === 'monthly') {
+    const day = Number(values.get('BYMONTHDAY'));
+    if (Number.isInteger(day) && day >= 1 && day <= 31) monthly = { kind: 'day_of_month', day };
+    const ordinal = (values.get('BYDAY') ?? '').match(/^(-?\d)(MO|TU|WE|TH|FR|SA|SU)$/);
+    if (ordinal) monthly = { kind: 'nth_weekday', ordinal: Number(ordinal[1]), weekday: ordinal[2].toLowerCase() as RecurrenceWeekday };
+  }
+  const count = Number(values.get('COUNT'));
+  const until = values.get('UNTIL')?.slice(0, 8);
+  const end: RecurrenceEnd = Number.isInteger(count) && count > 0
+    ? { kind: 'count', count }
+    : until && /^\d{8}$/.test(until)
+      ? { kind: 'until', date: `${until.slice(0, 4)}-${until.slice(4, 6)}-${until.slice(6, 8)}` }
+      : { kind: 'never' };
+  return { frequency, interval, weekly_days, monthly, end };
+}
+
 export function normalizeRecurrenceDraft(draft: RecurrenceDraft): RecurrenceDraft {
   const weeklyDays = draft.frequency === 'weekly'
     ? [...new Set(draft.weekly_days)].filter(day => WEEKDAYS.includes(day))

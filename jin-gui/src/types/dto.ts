@@ -376,6 +376,7 @@ export interface EventSyncContextDto {
   calendar_id: string;
   calendar_name: string;
   access_role: 'owner' | 'writer' | 'reader' | 'freeBusyReader' | string;
+  allowed_conference_solution_types: string[];
   writable: boolean;
   state: string;
 }
@@ -390,6 +391,8 @@ export interface GoogleCalendarDto {
   enabled: boolean;
   available: boolean;
   route_generation: number;
+  /** Provider-advertised conference types for this exact destination. */
+  allowed_conference_solution_types: string[];
 }
 
 export interface GoogleAccountDto {
@@ -402,6 +405,7 @@ export interface GoogleAccountDto {
 }
 
 export interface QuarantinedSyncOperationDto {
+  event_title?: string;
   operation_id: string;
   provider: string;
   operation: 'insert' | 'patch' | 'delete';
@@ -437,6 +441,35 @@ export interface EventDetailCapabilitiesDto {
   recurrence_scopes?: Array<'this_occurrence' | 'entire_series'>;
   can_return_task_to_flexible: boolean;
   originating_task: OriginatingTaskRefDto | null;
+  collaboration?: EventCollaborationCapabilitiesDto;
+}
+
+export interface InvitationActionRefDto {
+  notification_item_id: string;
+  expected_item_version: number;
+}
+
+export interface EventInvitationCapabilitiesDto {
+  action_ref: InvitationActionRefDto;
+  provider_response: string;
+  requested_response: string | null;
+  state: 'idle' | 'queued' | 'sending' | 'confirmed' | 'failed' | 'obsolete' | string;
+  can_respond: boolean;
+  recurrence_scopes: InvitationRecurrenceScope[];
+  disabled_reason: string | null;
+}
+
+export interface EventCollaborationCapabilitiesDto {
+  invitation: EventInvitationCapabilitiesDto | null;
+  can_edit_schedule: boolean;
+  can_append_attendees: boolean;
+  can_remove_attendees: boolean;
+  can_change_attendee_roles: boolean;
+  can_cancel_meeting: boolean;
+  can_add_conference: boolean;
+  can_remove_conference: boolean;
+  allowed_conference_solution_types: string[];
+  disabled_reasons: Record<string, string>;
 }
 
 export interface EventDetailDto {

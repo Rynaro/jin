@@ -60,6 +60,14 @@ describe('detail-resident Event edit temporal helpers', () => {
     expect(inputFromDraft(draft)).toMatchObject({ title: 'Renamed', start: original.start, end: original.end });
   });
 
+  it('keeps wall clocks and emits a new TZID when only the timezone changes', () => {
+    const draft = draftFromEvent(event());
+    draft.timezone = 'Europe/London';
+    expect(inputFromDraft(draft)).toMatchObject({
+      start: '2026-08-20T23:30:00', end: '2026-08-22T01:15:00', tzid: 'Europe/London',
+    });
+  });
+
   it('Calendar selection literally resizes dates and leaves overnight clocks temporarily invalid', () => {
     const draft = draftFromEvent(event());
     applyCalendarSelection(draft, { mode: 'range', start: '2026-09-01', end: '2026-09-01', complete: false });

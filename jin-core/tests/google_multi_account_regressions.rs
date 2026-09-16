@@ -60,8 +60,8 @@ impl jin_core::google::client::HttpClient for RecordingHttp {
         unreachable!()
     }
 
-    fn post_form(&self, _: &str, _: &[(&str, &str)]) -> jin_core::Result<serde_json::Value> {
-        unreachable!()
+    fn post_form(&self, url: &str, _: &[(&str, &str)]) -> jin_core::Result<serde_json::Value> {
+        self.get(url, "").map(|response| response.body)
     }
 }
 
@@ -148,6 +148,7 @@ fn configured_root() -> (TempDir, jin_core::Config, EventSyncTarget) {
                 name: "Personal".to_string(),
                 primary: true,
                 access_role: GoogleAccessRole::Owner,
+                allowed_conference_solution_types: vec![],
             }],
         )
         .unwrap();
@@ -471,6 +472,7 @@ fn promotion_requires_typed_destination_and_publishes_exact_route() {
                 name: "Work".to_string(),
                 primary: true,
                 access_role: GoogleAccessRole::Writer,
+                allowed_conference_solution_types: vec![],
             }],
         )
         .unwrap();
@@ -577,6 +579,7 @@ fn google_sync_recurring_series_identity_and_jin_unpublish_are_reachable() {
         .unwrap();
     let account = config.google_registry.account(&target.account_id).unwrap();
     let mut master = google_event("remote-master", "Weekly");
+    master["organizer"] = serde_json::json!({"self": true, "email": "user@example.com"});
     master["recurrence"] = serde_json::json!(["RRULE:FREQ=WEEKLY"]);
     let mut occurrence = google_event("remote-occurrence", "Weekly instance");
     occurrence["recurringEventId"] = serde_json::json!("remote-master");
@@ -649,6 +652,7 @@ fn google_sync_recurring_series_identity_and_jin_unpublish_are_reachable() {
                 floating: master_before.frontmatter.floating,
                 description: master_before.frontmatter.description.clone(),
                 location: master_before.frontmatter.location.clone(),
+                recurrence: None,
                 attendees: master_before.frontmatter.attendees.clone(),
                 attendees_omitted: None,
                 conference_data: master_before.frontmatter.conference_data.clone(),
@@ -980,4 +984,76 @@ fn sync_orchestrator_reconnect_requires_outbox_review() {
     assert_eq!(resumed[0].auth_generation, 3);
     assert_eq!(resumed[0].route_generation, 4);
     assert!(resumed[0].reviewed);
+}
+
+#[test]
+fn expired_account_sync_reports_reconnect_instead_of_zero_success() {
+    use jin_core::google::account::GoogleAccountState;
+    let (tmp, mut config, target) = configured_root();
+    config
+        .google_registry
+        .account_mut(&target.account_id)
+        .unwrap()
+        .state = GoogleAccountState::NeedsReauth;
+    config.save().unwrap();
+    let http = CountingHttp::new();
+    let normal = jin_core::ops::sync::sync_with_http(tmp.path(), &config, &http).unwrap();
+    let encrypted =
+        jin_core::ops::sync::sync_with_http_and_passphrase(tmp.path(), &config, &http, "test")
+            .unwrap();
+    for result in [normal, encrypted] {
+        assert_eq!(result.status, "error");
+        assert_eq!(result.pulled + result.pushed, 0);
+        assert!(result
+            .errors
+            .iter()
+            .any(|error| error.contains("Personal") && error.contains("Reconnect")));
+    }
+    assert_eq!(http.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[test]
+fn token_refresh_distinguishes_offline_from_expired_authorization() {
+    use jin_core::google::account::GoogleAccountState;
+    for revoked in [false, true] {
+        let (tmp, mut config, target) = configured_root();
+        config.google.client_id = Some("test-client".into());
+        config.google.client_secret = Some("test-secret".into());
+        config.save().unwrap();
+        let mut expired = tokens();
+        expired.expires_at = 0;
+        jin_core::google::secrets::save_tokens_for_account_with_passphrase(
+            tmp.path(),
+            &config,
+            &target.account_id,
+            &expired,
+            "test",
+        )
+        .unwrap();
+        let response = if revoked {
+            Ok(HttpResponse {
+                status: 400,
+                body: serde_json::json!({"error": "invalid_grant"}),
+                etag: None,
+            })
+        } else {
+            Err(jin_core::JinError::Offline("network unavailable".into()))
+        };
+        let http = RecordingHttp::new(vec![response]);
+        let summary =
+            jin_core::ops::sync::sync_with_http_and_passphrase(tmp.path(), &config, &http, "test")
+                .unwrap();
+        assert_eq!(summary.status, "error");
+        let current = jin_core::Config::load(tmp.path()).unwrap();
+        let account = current.google_registry.account(&target.account_id).unwrap();
+        assert_eq!(
+            account.state,
+            if revoked {
+                GoogleAccountState::NeedsReauth
+            } else {
+                GoogleAccountState::Connected
+            }
+        );
+        assert_eq!(http.urls().len(), 1);
+    }
 }

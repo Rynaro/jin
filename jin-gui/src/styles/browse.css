@@ -1295,12 +1295,12 @@ figure.code-block {
 .event-edit__all-day {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  flex-direction: row-reverse;
+  justify-content: flex-start;
+  flex-direction: row;
   gap: var(--space-1);
   min-block-size: var(--hit-target);
   padding-block-start: var(--space-1);
-  border-block-start: 0.5px solid var(--separator);
+  border-block-start: 0;
 }
 
 .event-edit__calendar {

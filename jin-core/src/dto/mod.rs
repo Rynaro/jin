@@ -20,8 +20,10 @@ pub use agenda::{
 };
 pub use dangling::DanglingEdgeDto;
 pub use event::{
-    EditEventResultDto, EventDetailCapabilitiesDto, EventDetailDto, EventDisplayKind, EventDto,
-    EventReadOnlyReason, EventSyncContextDto, OriginatingTaskRefDto, RemoveTimeBlockResultDto,
+    EditEventResultDto, EventCollaborationCapabilitiesDto, EventDetailCapabilitiesDto,
+    EventDetailDto, EventDisplayKind, EventDto, EventInvitationCapabilitiesDto,
+    EventReadOnlyReason, EventSyncContextDto, InvitationActionRefDto, OriginatingTaskRefDto,
+    RemoveTimeBlockResultDto,
 };
 pub use folder::FolderDto;
 pub use google::{GoogleAccountDto, GoogleCalendarDto};

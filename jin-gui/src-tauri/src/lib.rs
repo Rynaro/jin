@@ -135,6 +135,7 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
             commands::capture::capture,
             // Sync / auth / export
             commands::sync_cmd::run_sync,
+            commands::sync_cmd::sync_calendar_event,
             commands::auth::auth_status,
             commands::auth::auth_login,
             commands::auth::auth_logout,
@@ -144,6 +145,7 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
             commands::google_accounts::rename_google_account,
             commands::google_accounts::disconnect_google_account,
             commands::google_accounts::refresh_google_calendars,
+            commands::google_accounts::refresh_google_event_details,
             commands::google_accounts::set_google_calendar_enabled,
             commands::google_accounts::list_quarantined_sync_operations,
             commands::google_accounts::review_quarantined_sync_operation,

@@ -4,12 +4,15 @@ import { Application } from '@hotwired/stimulus';
 import CalendarViewController, { eventIntersectsDate } from '../controllers/calendar_view_controller';
 import CalendarController from '../controllers/calendar_controller';
 import { initIcons } from '../lib/icons';
+import { googleCalendarKey, saveCalendarColor } from '../lib/calendar/colors';
 import type { EventDto } from '../types/dto';
 
 const mocks = vi.hoisted(() => ({
-  listEvents: vi.fn(), createEvent: vi.fn(),
+  listEvents: vi.fn(), createEvent: vi.fn(), createRoutedEvent: vi.fn(), listGoogleAccounts: vi.fn(),
+  newOperationId: vi.fn(() => 'create-test-operation'),
   deleteEvent: vi.fn(), promoteTask: vi.fn(), listTasks: vi.fn(),
   previewRecurrence: vi.fn(),
+  syncCalendarEvent: vi.fn(),
 }));
 
 vi.mock('../invoke', () => mocks);
@@ -38,6 +41,10 @@ function fixture(): string {
       <dialog data-calendar-view-target="eventModal" aria-labelledby="event-dialog-title">
         <h2 id="event-dialog-title">New Event</h2>
         <input data-calendar-view-target="eventTitle">
+        <select data-calendar-view-target="eventDestination"></select>
+        <input data-calendar-view-target="eventGuests" type="email" multiple>
+        <select data-calendar-view-target="eventGuestUpdates"><option value="all">All</option><option value="external_only">External</option><option value="none">None</option></select>
+        <input data-calendar-view-target="eventGoogleMeet" type="checkbox">
         <fieldset class="event-when">
           <legend data-event-copy="when">When *</legend>
           <label data-event-copy="dateTime">Date and time</label>
@@ -107,6 +114,9 @@ describe('CalendarViewController safety and mode invariants', () => {
     mocks.listEvents.mockReset().mockResolvedValue([event]);
     mocks.listTasks.mockReset().mockResolvedValue([]);
     mocks.createEvent.mockReset().mockResolvedValue(event);
+    mocks.createRoutedEvent.mockReset().mockResolvedValue(event);
+    mocks.syncCalendarEvent.mockReset().mockResolvedValue(1);
+    mocks.listGoogleAccounts.mockReset().mockResolvedValue([]);
     mocks.deleteEvent.mockReset().mockResolvedValue(event);
     mocks.promoteTask.mockReset().mockResolvedValue(event);
     mocks.previewRecurrence.mockReset().mockResolvedValue({
@@ -173,15 +183,47 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(mocks.listEvents).not.toHaveBeenCalled();
   });
 
-  it('keeps the calendar modal create-only; detail owns all edit behavior', () => {
+  it('refreshes calendar data after sync without revealing it over the open event detail', async () => {
+    const detail = document.querySelector<HTMLElement>('[data-events-target="detailPanel"]')!;
+    const month = document.querySelector<HTMLElement>('[data-calendar-view-target="monthView"]')!;
+    const day = document.querySelector<HTMLElement>('[data-calendar-view-target="dayView"]')!;
+    detail.classList.remove('hidden');
+    month.classList.add('hidden'); day.classList.add('hidden');
+    mocks.listEvents.mockResolvedValue([makeEvent({ title: 'Synced meeting' })]);
+    window.dispatchEvent(new CustomEvent('jin:events-mutated', { detail: { source: 'events' } }));
+    await flush();
+    expect(detail.classList.contains('hidden')).toBe(false);
+    expect(month.classList.contains('hidden')).toBe(true);
+    expect(day.classList.contains('hidden')).toBe(true);
+    controller.restoreActiveView();
+    expect(document.querySelector('[data-event-id="event-1"]')?.textContent).toContain('Synced meeting');
+  });
+
+  it('reloads destinations after reconnect without restarting the calendar controller', async () => {
+    await controller.openEventCreate();
+    const select = document.querySelector<HTMLSelectElement>('[data-calendar-view-target="eventDestination"]')!;
+    expect(Array.from(select.options, option => option.text)).toEqual(['Jin only']);
+    document.querySelector<HTMLDialogElement>('[data-calendar-view-target="eventModal"]')!.close();
+    mocks.listGoogleAccounts.mockResolvedValue([{
+      id: 'personal', alias: 'Personal', state: 'connected', calendars: [{
+        calendar_id: 'primary', name: 'Personal calendar', enabled: true, available: true,
+        writable: true, allowed_conference_solution_types: ['hangoutsMeet'],
+      }],
+    }]);
+    await controller.openEventCreate();
+    expect(Array.from(select.options, option => option.text)).toContain('Personal · Personal calendar');
+    expect(select.selectedOptions[0].dataset.accountId).toBe('personal');
+  });
+
+  it('keeps the calendar modal create-only; detail owns all edit behavior', async () => {
     expect((controller as unknown as { openEventEdit?: unknown }).openEventEdit).toBeUndefined();
-    controller.openEventCreate();
+    await controller.openEventCreate();
     expect(document.querySelector<HTMLButtonElement>('[data-calendar-view-target="eventSubmit"]')?.textContent).toBe('Create');
     expect(document.querySelector('#event-dialog-title')?.textContent).toBe('New Event');
   });
 
-  it('uses the shared range Calendar with no native date input and tranquil defaults', () => {
-    controller.openEventCreate();
+  it('uses the shared range Calendar with no native date input and tranquil defaults', async () => {
+    await controller.openEventCreate();
     expect(document.querySelector('[data-calendar-view-target="eventModal"] input[type="date"]')).toBeNull();
     expect(document.querySelector('[data-calendar-view-target="eventCalendar"] .calendar-widget')).not.toBeNull();
     expect(document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventAllDay"]')?.checked).toBe(true);
@@ -192,7 +234,7 @@ describe('CalendarViewController safety and mode invariants', () => {
   });
 
   it('serializes an inclusive all-day range to an exclusive canonical end', async () => {
-    controller.openEventCreate();
+    await controller.openEventCreate();
     document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')!.value = 'Quiet retreat';
     document.querySelector<HTMLButtonElement>('.calendar-widget__day-btn[data-iso="2026-08-22"]')!.click();
     await controller.submitEvent();
@@ -201,8 +243,57 @@ describe('CalendarViewController safety and mode invariants', () => {
     }));
   });
 
+  it.each([false, true])('creates once and attempts scoped delivery even when offline=%s', async (offline) => {
+    if (offline) mocks.syncCalendarEvent.mockRejectedValueOnce(new Error('offline'));
+    await controller.openEventCreate();
+    const destination = document.querySelector<HTMLSelectElement>('[data-calendar-view-target="eventDestination"]')!;
+    const option = new Option('Work · Team', 'work\u0000team');
+    option.dataset.accountId = 'work';
+    option.dataset.calendarId = 'team';
+    option.dataset.canMeet = 'true';
+    destination.replaceChildren(option);
+    option.selected = true;
+    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')!.value = 'Launch review';
+    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventGuests"]')!.value = 'Alex@example.com, alex@example.com, sam@example.com';
+    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventGoogleMeet"]')!.checked = true;
+    document.querySelector<HTMLSelectElement>('[data-calendar-view-target="eventGuestUpdates"]')!.value = 'external_only';
+
+    await controller.submitEvent();
+    expect(mocks.createRoutedEvent).toHaveBeenCalledTimes(1);
+    expect(mocks.syncCalendarEvent).toHaveBeenCalledWith('event-1');
+    expect(document.querySelector('dialog')?.hasAttribute('open')).toBe(false);
+
+    expect(document.querySelector('[data-calendar-view-target="eventError"]')?.textContent).toBe('');
+    expect(mocks.createRoutedEvent).toHaveBeenCalledWith(expect.objectContaining({
+      account_id: 'work', calendar_id: 'team',
+      guest_update_policy: 'external_only',
+      attendees: [
+        { email: 'Alex@example.com', responseStatus: 'needsAction' },
+        { email: 'sam@example.com', responseStatus: 'needsAction' },
+      ],
+      conference_data: expect.objectContaining({
+        pendingCreateRequest: expect.objectContaining({
+          requestId: 'generated-by-jin-core',
+          conferenceSolutionKey: { type: 'hangoutsMeet' },
+        }),
+      }),
+    }));
+  });
+
+  it('does not create an invitation with invalid guest email', async () => {
+    await controller.openEventCreate();
+    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')!.value = 'Launch review';
+    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventGuests"]')!.value = 'not-an-email';
+
+    await controller.submitEvent();
+
+    expect(mocks.createEvent).not.toHaveBeenCalled();
+    expect(mocks.createRoutedEvent).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-calendar-view-target="eventError"]')?.textContent).toContain('valid guest email');
+  });
+
   it('builds a custom monthly recurrence and renders a next-three preview', async () => {
-    controller.openEventCreate();
+    await controller.openEventCreate();
     document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')!.value = 'Monthly review';
     const repeat = document.querySelector<HTMLSelectElement>('[data-calendar-view-target="eventRepeat"]')!;
     repeat.value = 'custom';
@@ -223,8 +314,8 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(document.querySelector('[data-calendar-view-target="eventError"]')?.textContent).toContain('Google Calendar');
   });
 
-  it('applies relative time with overnight rollover and preserves date-only time intent', () => {
-    controller.openEventCreate();
+  it('applies relative time with overnight rollover and preserves date-only time intent', async () => {
+    await controller.openEventCreate();
     const input = document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventWhenInput"]')!;
     input.value = 'tomorrow at 11:30 pm';
     controller.applyWhen();
@@ -238,8 +329,8 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventStartTime"]')?.value).toBe('23:30');
   });
 
-  it('keeps invalid natural input from mutating the last valid range', () => {
-    controller.openEventCreate();
+  it('keeps invalid natural input from mutating the last valid range', async () => {
+    await controller.openEventCreate();
     const input = document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventWhenInput"]')!;
     input.value = 'tomorrow';
     controller.applyWhen();
@@ -252,8 +343,8 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(document.querySelector<HTMLElement>('[data-calendar-view-target="eventWhenPreview"]')?.dataset.state).toBe('error');
   });
 
-  it('reformats a cached valid preview on locale change without reparsing or losing the draft', () => {
-    controller.openEventCreate();
+  it('reformats a cached valid preview on locale change without reparsing or losing the draft', async () => {
+    await controller.openEventCreate();
     const input = document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventWhenInput"]')!;
     input.value = 'tomorrow at noon';
     controller.previewWhen();
@@ -270,7 +361,7 @@ describe('CalendarViewController safety and mode invariants', () => {
   });
 
   it('rejects malformed or backwards timed intervals locally and keeps the draft', async () => {
-    controller.openEventCreate();
+    await controller.openEventCreate();
     document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')!.value = 'Still here';
     const allDay = document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventAllDay"]')!;
     allDay.checked = false;
@@ -286,7 +377,7 @@ describe('CalendarViewController safety and mode invariants', () => {
   });
 
   it('normalizes compact clocks before creating a timed event', async () => {
-    controller.openEventCreate();
+    await controller.openEventCreate();
     document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')!.value = 'Afternoon review';
     const allDay = document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventAllDay"]')!;
     allDay.checked = false;
@@ -304,7 +395,7 @@ describe('CalendarViewController safety and mode invariants', () => {
   });
 
   it('allows at most one Create in flight and preserves the complete draft on failure', async () => {
-    controller.openEventCreate();
+    await controller.openEventCreate();
     const title = document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')!;
     const location = document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventLocation"]')!;
     title.value = 'Slow morning';
@@ -344,7 +435,7 @@ describe('CalendarViewController safety and mode invariants', () => {
     controller.localeChanged();
 
     expect(document.querySelector<HTMLButtonElement>('[data-date="2026-08-20"]')?.getAttribute('aria-label')).toBe('20 (1 evento)');
-    expect(document.querySelector<HTMLButtonElement>('.calendar-event-chip')?.getAttribute('aria-label')).toBe('Ver Overnight workshop');
+    expect(document.querySelector<HTMLButtonElement>('.calendar-event-chip')?.getAttribute('aria-label')).toBe('Ver Overnight workshop, Source: Jin');
   });
 
   it('keeps month dates on the existing Day-view activation path', () => {
@@ -472,6 +563,34 @@ describe('CalendarViewController safety and mode invariants', () => {
     document.querySelector('section')?.addEventListener('jin:navigate', event => navigations.push((event as CustomEvent).detail));
     controls[0].click();
     expect(navigations).toEqual([{ kind: 'events', id: 'earlier' }]);
+  });
+
+  it.each([false, true])('uses the assigned Google calendar in all periods for Jin-origin events (all-day=%s)', async (allDay) => {
+    saveCalendarColor('jin', 'purple');
+    saveCalendarColor(googleCalendarKey('personal', 'primary'), 'success');
+    const event = makeEvent({
+      source: 'jin', authority: 'jin', is_all_day: allDay,
+      start: allDay ? '2026-08-20' : '2026-08-20T14:00:00',
+      end: allDay ? '2026-08-21' : '2026-08-20T15:00:00',
+      sync_context: { provider: 'google', account_id: 'personal', account_alias: 'Pessoal',
+        calendar_id: 'primary', calendar_name: 'Agenda Pessoal', access_role: 'owner', writable: true, state: 'synced' },
+    });
+    mocks.listEvents.mockResolvedValue([event]);
+    await controller.loadCalendar();
+    const check = (selector: string) => {
+      const tile = document.querySelector<HTMLElement>(selector)!;
+      expect(tile.dataset.calendarColor).toBe('success');
+      expect(tile.dataset.source).toBe('google');
+      expect(tile.getAttribute('aria-label')).toContain('Agenda Pessoal');
+      expect(tile.getAttribute('aria-label')).toContain('Pessoal');
+      return tile;
+    };
+    check('.calendar-event-chip');
+    controller.selectDate('2026-08-20');
+    expect(check('.calendar-timegrid [data-event-id="event-1"]').textContent).toContain('Pessoal · Agenda Pessoal');
+    document.querySelectorAll<HTMLButtonElement>('.calendar-view-switch__button')
+      .forEach(button => { if (button.textContent === 'Week') button.click(); });
+    expect(check('.calendar-timegrid--week [data-event-id="event-1"]').textContent).toContain('Pessoal · Agenda Pessoal');
   });
 
   it('renders exact source and Time block meaning beyond color in visible and accessible text', async () => {

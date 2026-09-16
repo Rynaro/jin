@@ -1,0 +1,23 @@
+from: ramza
+from_version: 0.1.0
+to: idg
+performative: INFORM
+tier: standard
+status: awaiting-implementation-greenlight
+objective: Synthesize and present the verified Google Calendar stable-release specification without starting implementation.
+spec: .spectra/plans/google-calendar-stable-release.md
+criteria: .spectra/plans/google-calendar-stable-release.criteria.md
+audit: .spectra/plans/google-calendar-stable-release.audit.md
+implementation_authorized: false
+decisions_for_greenlight:
+  - Confirm the baseline Google Meet interpretation or activate the separate physical Workspace-room track.
+deferred_backlog:
+  - id: B1-time-suggestion
+    preferred_approach: Optional narrow gmail.send ordinary email to the organizer.
+    stable_release_boundary: No Gmail scope, mail outbox, time-suggestion action, or delivery claim.
+constraints:
+  - Preserve exact multi-account and calendar route identity.
+  - Reuse the Notification Center RSVP ledger and command from Event detail.
+  - Never represent attendee comments as native Google proposed-time state.
+  - Preserve Backlog B1 as research only; require a separate frozen spec before any Gmail work.
+  - Stop after specification synthesis until explicit user implementation greenlight.

@@ -180,6 +180,7 @@ impl Config {
             name: "Google Calendar".to_string(),
             primary: true,
             access_role: crate::google::account::GoogleAccessRole::Writer,
+            allowed_conference_solution_types: Vec::new(),
             enabled: true,
             available: true,
             route_generation: 0,

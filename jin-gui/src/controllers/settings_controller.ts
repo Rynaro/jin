@@ -43,14 +43,14 @@ import {
   runSync, exportFiles, appConfig, setStoreRoot,
   listGoogleAccounts, addGoogleAccount, renameGoogleAccount,
   connectGoogleAccount, disconnectGoogleAccount, refreshGoogleCalendars, setGoogleCalendarEnabled,
-  listQuarantinedSyncOperations, reviewQuarantinedSyncOperation,
+  listQuarantinedSyncOperations, reviewQuarantinedSyncOperation, syncCalendarEvent,
   notificationStatus, requestNotificationPermission,
   openNotificationSettings, sendTestNotification,
 } from '../invoke';
 import type { GoogleAccountDto, NotificationStatusDto, QuarantinedSyncOperationDto } from '../types/dto';
-import { isJinErrorDto } from '../types/error';
+import { isJinErrorDto, toSyntheticErrorDto } from '../types/error';
 import {
-  formatSyncResult,
+  formatSyncResult, formatCalendarPauseReason,
   formatSyncError,
   formatExportResult,
   formatExportError,
@@ -226,6 +226,14 @@ export default class SettingsController extends Controller {
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
+  private readonly refreshGoogleState = (): void => { if (this.hasGoogleAccountsListTarget) void this.loadGoogleAccounts(); };
+
+  activateSection(): void {
+    applySettingsPane(this.settingsNavItemTargets, this.settingsPaneTargets, loadSettingsPane());
+    this.refreshGoogleState();
+    if (this.hasQuarantinedOperationsListTarget) void this.loadQuarantinedOperations();
+  }
+
   connect(): void {
     applySettingsPane(
       this.settingsNavItemTargets,
@@ -238,6 +246,8 @@ export default class SettingsController extends Controller {
     if (this.hasQuarantinedOperationsListTarget) void this.loadQuarantinedOperations();
     void this.loadNotificationStatus();
     window.addEventListener('focus', this.refreshNotificationsOnFocus);
+    window.addEventListener('focus', this.refreshGoogleState);
+    window.addEventListener('jin:google-state-changed', this.refreshGoogleState);
 
     // Initialize appearance controls from persisted prefs
     const prefs = loadPrefs();
@@ -260,6 +270,8 @@ export default class SettingsController extends Controller {
 
   disconnect(): void {
     window.removeEventListener('focus', this.refreshNotificationsOnFocus);
+    window.removeEventListener('focus', this.refreshGoogleState);
+    window.removeEventListener('jin:google-state-changed', this.refreshGoogleState);
     this.colorPickers.forEach(picker => picker.destroy());
     this.colorPickers.clear();
   }
@@ -483,7 +495,7 @@ export default class SettingsController extends Controller {
       this.googleAccountAliasInputTarget.value = '';
       await this.loadGoogleAccounts();
     } catch (error: unknown) {
-      this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : 'Could not add account.');
+      this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not add account.').message);
     }
   }
 
@@ -492,7 +504,7 @@ export default class SettingsController extends Controller {
       this.renderGoogleAccounts(await listGoogleAccounts());
       this.showGoogleAccountsError('');
     } catch (error: unknown) {
-      this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : 'Could not load accounts.');
+      this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not load accounts.').message);
     }
   }
 
@@ -503,6 +515,7 @@ export default class SettingsController extends Controller {
   }
 
   private renderGoogleAccounts(accounts: GoogleAccountDto[]): void {
+    window.dispatchEvent(new CustomEvent('jin:google-accounts-loaded', { detail: accounts }));
     if (!this.hasGoogleAccountsListTarget) return;
     const list = this.googleAccountsListTarget;
     for (const [key, picker] of this.colorPickers) {
@@ -531,7 +544,8 @@ export default class SettingsController extends Controller {
       heading.appendChild(alias);
       const state = document.createElement('span');
       state.className = 'auth-status-pill jin-badge';
-      state.textContent = account.state.replace('_', ' ');
+      state.textContent = account.state === 'needs_reauth' ? 'Access expired · reconnect required' : account.state.replace('_', ' ');
+      state.dataset.state = account.state;
       heading.appendChild(state);
       card.appendChild(heading);
 
@@ -539,6 +553,13 @@ export default class SettingsController extends Controller {
       principal.className = 'color-secondary text-footnote';
       principal.textContent = account.principal ?? 'Authentication pending';
       card.appendChild(principal);
+
+      if (account.state === 'needs_reauth') {
+        const recovery = document.createElement('p');
+        recovery.className = 'text-callout';
+        recovery.textContent = 'Calendar sync is paused. Reconnect your Google account, then review any changes awaiting approval below.';
+        card.appendChild(recovery);
+      }
 
       const calendars = document.createElement('div');
       calendars.className = 'google-calendar-list';
@@ -579,9 +600,8 @@ export default class SettingsController extends Controller {
       const connect = document.createElement('button');
       connect.type = 'button';
       connect.className = 'btn-primary tap-target';
-      connect.textContent = account.state === 'needs_reauth' ? 'Reconnect' : 'Connect';
-      connect.hidden = account.state === 'connected';
-      connect.addEventListener('click', () => void this.connectGoogleAccount(account.id));
+      connect.textContent = account.state === 'connected' || account.state === 'needs_reauth' ? 'Reconnect' : 'Connect';
+      connect.addEventListener('click', () => { connect.disabled = true; void this.connectGoogleAccount(account.id); });
       const disconnect = document.createElement('button');
       disconnect.type = 'button';
       disconnect.className = 'btn-secondary tap-target';
@@ -613,12 +633,12 @@ export default class SettingsController extends Controller {
 
   private async updateGoogleAlias(accountId: string, alias: string): Promise<void> {
     try { this.renderGoogleAccounts(await renameGoogleAccount(accountId, alias)); }
-    catch (error: unknown) { this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : 'Could not rename account.'); }
+    catch (error: unknown) { this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not rename account.').message); }
   }
 
   private async refreshGoogleAccount(accountId: string): Promise<void> {
     try { this.renderGoogleAccounts(await refreshGoogleCalendars(accountId)); }
-    catch (error: unknown) { this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : 'Could not refresh calendars.'); }
+    catch (error: unknown) { await this.loadGoogleAccounts(); this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not refresh calendars.').message); }
   }
 
   private async connectGoogleAccount(accountId: string): Promise<void> {
@@ -629,13 +649,13 @@ export default class SettingsController extends Controller {
       // Core persists successful auth before CalendarList discovery. Reload so
       // that a partial discovery failure still displays the connected account.
       await this.loadGoogleAccounts();
-      this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : 'Could not connect account.');
+      this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not connect account.').message);
     }
   }
 
   private async toggleGoogleCalendar(accountId: string, calendarId: string, enabled: boolean): Promise<void> {
     try { this.renderGoogleAccounts(await setGoogleCalendarEnabled(accountId, calendarId, enabled)); }
-    catch (error: unknown) { this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : 'Could not update calendar.'); }
+    catch (error: unknown) { this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not update calendar.').message); }
   }
 
   private async disconnectGoogleAccount(accountId: string): Promise<void> {
@@ -643,7 +663,7 @@ export default class SettingsController extends Controller {
       this.renderGoogleAccounts(await disconnectGoogleAccount(accountId));
       await this.loadQuarantinedOperations();
     }
-    catch (error: unknown) { this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : 'Could not disconnect account.'); }
+    catch (error: unknown) { this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not disconnect account.').message); }
   }
 
   private async loadQuarantinedOperations(): Promise<void> {
@@ -652,7 +672,7 @@ export default class SettingsController extends Controller {
       this.renderQuarantinedOperations(await listQuarantinedSyncOperations());
       this.showQuarantinedOperationsError('');
     } catch (error: unknown) {
-      this.showQuarantinedOperationsError(isJinErrorDto(error) ? error.message : 'Could not load changes awaiting review.');
+      this.showQuarantinedOperationsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not load changes awaiting review.').message);
     }
   }
 
@@ -670,32 +690,46 @@ export default class SettingsController extends Controller {
     for (const operation of operations) {
       const card = document.createElement('article');
       card.className = 'quarantined-operation-card';
-      card.setAttribute('aria-label', `${operation.operation} ${operation.jin_id} awaiting review`);
+      card.setAttribute('aria-label', `${operation.event_title ?? 'Calendar event'} awaiting review`);
       const title = document.createElement('strong');
-      title.textContent = `${operation.operation} · ${operation.jin_id}`;
+      title.textContent = operation.event_title ?? 'Calendar event';
       const route = document.createElement('p');
       route.className = 'color-secondary text-footnote';
-      route.textContent = `${operation.account_alias} · ${operation.calendar_name} · ${operation.pause_reason}`;
+      route.textContent = `${operation.account_alias} · ${operation.calendar_name}`;
+      const reason = document.createElement('p');
+      reason.className = 'text-callout';
+      reason.textContent = formatCalendarPauseReason(operation.pause_reason);
+      const actionLabel = document.createElement('p');
+      actionLabel.className = 'color-secondary text-footnote';
+      const action = { insert: 'Create event', patch: 'Update event', delete: 'Delete event' }[operation.operation] ?? 'Sync event';
+      actionLabel.textContent = `${action} on this Google calendar.`;
       const actions = document.createElement('div');
       actions.className = 'settings-section__actions';
       const resume = document.createElement('button');
-      resume.type = 'button'; resume.className = 'btn-primary tap-target'; resume.textContent = 'Resume original destination';
-      resume.addEventListener('click', () => void this.reviewQuarantinedOperation(operation, true));
+      resume.type = 'button'; resume.className = 'btn-primary tap-target'; resume.textContent = 'Retry sync';
+      resume.addEventListener('click', () => { resume.disabled = true; cancel.disabled = true; resume.textContent = 'Syncing…'; void this.reviewQuarantinedOperation(operation, true); });
       const cancel = document.createElement('button');
       cancel.type = 'button'; cancel.className = 'btn-secondary tap-target'; cancel.textContent = 'Cancel change';
       cancel.addEventListener('click', () => void this.reviewQuarantinedOperation(operation, false));
       actions.append(resume, cancel);
-      card.append(title, route, actions);
+      card.append(title, route, reason, actionLabel, actions);
       list.appendChild(card);
     }
   }
 
   private async reviewQuarantinedOperation(operation: QuarantinedSyncOperationDto, resume: boolean): Promise<void> {
     try {
-      this.renderQuarantinedOperations(await reviewQuarantinedSyncOperation(operation, resume));
+      await reviewQuarantinedSyncOperation(operation, resume);
+      if (resume) await syncCalendarEvent(operation.jin_id);
+      await this.loadQuarantinedOperations();
       this.showQuarantinedOperationsError('');
+      this.dispatch('events-mutated', { prefix: 'jin', bubbles: true });
+      if (resume) this.dispatch('navigate', { prefix: 'jin', bubbles: true, detail: { kind: 'events', id: operation.jin_id } });
     } catch (error: unknown) {
-      this.showQuarantinedOperationsError(isJinErrorDto(error) ? error.message : 'Could not review this change.');
+      await this.loadQuarantinedOperations();
+      this.showQuarantinedOperationsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not review this change.').message);
+    } finally {
+      window.dispatchEvent(new CustomEvent('jin:google-state-changed'));
     }
   }
 
@@ -745,8 +779,12 @@ export default class SettingsController extends Controller {
       if (isJinErrorDto(err)) {
         renderSyncError(el, formatSyncError(err));
       } else {
-        renderSyncError(el, 'Unexpected error during sync.');
+        renderSyncError(el, toSyntheticErrorDto(err, 'Calendar sync').message);
       }
+    } finally {
+      await this.loadGoogleAccounts();
+      if (this.hasQuarantinedOperationsListTarget) await this.loadQuarantinedOperations();
+      window.dispatchEvent(new CustomEvent('jin:google-state-changed'));
     }
   }
 

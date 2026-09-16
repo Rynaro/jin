@@ -252,7 +252,7 @@
       <main
         id="main-content"
         class="jin-content"
-        data-controller="error"
+        data-controller="error google-status"
         role="main"
       >
         <!-- Error banner (ErrorController renders into this) -->
@@ -263,6 +263,11 @@
           aria-live="polite"
           aria-atomic="true"
         ></div>
+
+        <aside class="google-auth-notice" data-google-status-target="banner" hidden role="status">
+          <p class="text-callout" data-google-status-target="message"></p>
+          <button type="button" class="btn-secondary tap-target" data-action="google-status#openSettings">Reconnect Google</button>
+        </aside>
 
         <!--
           GUI-S3 — Today / Agenda hero view.
@@ -1694,6 +1699,20 @@
               </div>
 
               <div class="action-dialog__form">
+                <div class="form-group event-destination-field">
+                  <label class="form-label" for="calendar-event-destination">Calendar</label>
+                  <select
+                    id="calendar-event-destination"
+                    class="form-input"
+                    data-calendar-view-target="eventDestination"
+                    aria-describedby="calendar-event-destination-help"
+                  ></select>
+                  <p id="calendar-event-destination-help" class="sr-only">
+                    Choose Jin only or an exact Google account and calendar.
+                  </p>
+                </div>
+
+
                 <div class="form-group">
                   <label class="form-label" for="event-title">
                     Title <span aria-hidden="true">*</span>
@@ -1710,7 +1729,21 @@
 
                 <fieldset class="event-when">
                   <legend class="form-label" data-event-copy="when">When <span aria-hidden="true">*</span></legend>
-                  <label class="form-label" for="event-when-natural" data-event-copy="dateTime">Date and time</label>
+
+                  <details class="event-when__calendar-disclosure">
+                    <summary aria-label="Choose dates"><span id="event-when-summary" class="event-when__summary" aria-live="polite" data-calendar-view-target="eventWhenSummary"></span></summary>
+                    <div
+                      class="event-when__calendar"
+                      data-controller="calendar"
+                      data-calendar-mode-value="range"
+                      data-calendar-view-target="eventCalendar"
+                      data-action="calendar:change->calendar-view#calendarSelectionChanged"
+                    ></div>
+                  </details>
+
+                  <details class="event-when__natural-disclosure">
+                  <summary data-event-copy="dateTime">Date and time</summary>
+                  <label class="sr-only" for="event-when-natural">Date and time</label>
                   <div class="event-when__quick-row">
                     <input
                       id="event-when-natural"
@@ -1725,30 +1758,60 @@
                     <button type="button" class="btn-secondary event-when__use" data-event-copy="use" data-action="click->calendar-view#applyWhen">Use</button>
                   </div>
                   <p id="event-when-preview" class="event-when__preview" aria-live="polite" data-calendar-view-target="eventWhenPreview"></p>
-                  <div
-                    class="event-when__calendar"
-                    data-controller="calendar"
-                    data-calendar-mode-value="range"
-                    data-calendar-view-target="eventCalendar"
-                    data-action="calendar:change->calendar-view#calendarSelectionChanged"
-                  ></div>
-                  <p id="event-when-summary" class="event-when__summary" aria-live="polite" data-calendar-view-target="eventWhenSummary"></p>
+                  </details>
                 </fieldset>
 
+                <div class="form-group" data-calendar-view-target="timeGroup">
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label class="form-label" for="event-start-time">Start time</label>
+                      <input
+                        id="event-start-time"
+                        type="text"
+                        inputmode="numeric"
+                        autocomplete="off"
+                        placeholder="09:00"
+                        class="form-input"
+                        data-calendar-view-target="eventStartTime"
+                        data-action="input->calendar-view#repeatChanged blur->calendar-view#normalizeEventTime"
+                      />
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label" for="event-end-time">End time</label>
+                      <input
+                        id="event-end-time"
+                        type="text"
+                        inputmode="numeric"
+                        autocomplete="off"
+                        placeholder="10:00"
+                        class="form-input"
+                        data-calendar-view-target="eventEndTime"
+                        data-action="input->calendar-view#repeatChanged blur->calendar-view#normalizeEventTime"
+                      />
+                    </div>
+                  </div>
+                  <label class="form-label event-timezone" for="event-timezone">Time zone
+                    <input id="event-timezone" type="text" class="form-input" autocomplete="off" spellcheck="false" data-calendar-view-target="eventTimezone" aria-describedby="event-timezone-help" />
+                  </label>
+                  <p id="event-timezone-help" class="text-footnote color-secondary">Use an IANA zone, for example America/Sao_Paulo.</p>
+                </div>
+
                 <div class="form-group event-when__all-day">
-                  <label class="form-label">
+                  <label class="form-label jin-checkbox">
                     <input
                       type="checkbox"
                       id="event-all-day"
-                      class="form-checkbox"
                       data-calendar-view-target="eventAllDay"
                       data-action="change->calendar-view#toggleAllDay"
                     />
+                    <span class="jin-checkbox__mark" aria-hidden="true"></span>
                     <span>All day</span>
                   </label>
                 </div>
 
-                <div class="form-group event-repeat-row">
+                <details class="event-options event-repeat-row">
+                  <summary data-recurrence-copy="repeat">Repeat</summary>
+                  <div class="form-group">
                   <label class="form-label" for="event-repeat" data-recurrence-copy="repeat">Repeat</label>
                   <select id="event-repeat" class="form-input event-repeat-row__select" data-calendar-view-target="eventRepeat" data-action="change->calendar-view#repeatChanged">
                     <option value="none">Does not repeat</option>
@@ -1791,53 +1854,48 @@
                     </fieldset>
                   </div>
                   <p class="event-repeat-preview hidden" aria-live="polite" data-calendar-view-target="eventRepeatPreview"></p>
-                </div>
-
-                <div class="form-group" data-calendar-view-target="timeGroup">
-                  <div class="form-row">
-                    <div class="form-group">
-                      <label class="form-label" for="event-start-time">Start time</label>
-                      <input
-                        id="event-start-time"
-                        type="text"
-                        inputmode="numeric"
-                        autocomplete="off"
-                        placeholder="09:00"
-                        class="form-input"
-                        data-calendar-view-target="eventStartTime"
-                        data-action="input->calendar-view#repeatChanged blur->calendar-view#normalizeEventTime"
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label class="form-label" for="event-end-time">End time</label>
-                      <input
-                        id="event-end-time"
-                        type="text"
-                        inputmode="numeric"
-                        autocomplete="off"
-                        placeholder="10:00"
-                        class="form-input"
-                        data-calendar-view-target="eventEndTime"
-                        data-action="input->calendar-view#repeatChanged blur->calendar-view#normalizeEventTime"
-                      />
-                    </div>
                   </div>
-                </div>
+                </details>
 
-                <div class="form-group">
-                  <label class="form-label" for="calendar-event-destination">Calendar</label>
-                  <select
-                    id="calendar-event-destination"
+                <details class="event-options event-collaboration-field">
+                  <summary>Guests & video</summary>
+                  <div class="form-group">
+                  <label class="form-label" for="event-guests">Guests</label>
+                  <input
+                    id="event-guests"
+                    type="email"
+                    multiple
                     class="form-input"
-                    data-calendar-view-target="eventDestination"
-                    aria-describedby="calendar-event-destination-help"
-                  ></select>
-                  <p id="calendar-event-destination-help" class="text-footnote color-secondary">
-                    Choose Jin only or an exact Google account and calendar.
-                  </p>
-                </div>
+                    placeholder="name@example.com, colleague@example.com"
+                    aria-describedby="event-guests-help"
+                    data-calendar-view-target="eventGuests"
+                    data-action="input->calendar-view#guestsChanged"
+                  />
+                  <p id="event-guests-help" class="text-footnote color-secondary">Separate email addresses with commas. Invitations notify guests from Google Calendar.</p>
+                  </div>
 
-                <div class="form-group">
+                  <div class="form-group event-collaboration-field">
+                  <label class="form-label" for="event-guest-updates">Notify guests</label>
+                  <select id="event-guest-updates" class="form-select" data-calendar-view-target="eventGuestUpdates">
+                    <option value="all">All guests</option>
+                    <option value="external_only">External guests only</option>
+                    <option value="none">Do not notify guests</option>
+                  </select>
+                  </div>
+
+                  <div class="form-group event-collaboration-field">
+                  <label class="form-label jin-checkbox event-collaboration-field__check">
+                    <input type="checkbox" data-calendar-view-target="eventGoogleMeet" />
+                    <span class="jin-checkbox__mark" aria-hidden="true"></span>
+                    <span>Add Google Meet</span>
+                  </label>
+                  <p class="text-footnote color-secondary">A Meet link is created by Google after the event is saved.</p>
+                  </div>
+                </details>
+
+                <details class="event-options">
+                  <summary>Location & notes</summary>
+                  <div class="form-group">
                   <label class="form-label" for="event-location">Location</label>
                   <input
                     id="event-location"
@@ -1846,9 +1904,9 @@
                     placeholder="Location"
                     data-calendar-view-target="eventLocation"
                   />
-                </div>
+                  </div>
 
-                <div class="form-group">
+                  <div class="form-group">
                   <label class="form-label" for="event-description">Description</label>
                   <textarea
                     id="event-description"
@@ -1857,7 +1915,8 @@
                     rows="4"
                     data-calendar-view-target="eventDescription"
                   ></textarea>
-                </div>
+                  </div>
+                </details>
 
                 <p
                   class="form-error hidden"
@@ -1974,7 +2033,7 @@
         <section
           class="jin-content-body hidden"
           aria-label="Settings"
-          data-controller="settings"
+          data-controller="settings" data-action="jin:section-activated->settings#activateSection"
           data-router-target="section"
           data-section-name="settings"
         >

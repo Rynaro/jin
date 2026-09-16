@@ -12,6 +12,7 @@ pub struct GoogleCalendarDto {
     pub name: String,
     pub primary: bool,
     pub access_role: String,
+    pub allowed_conference_solution_types: Vec<String>,
     pub writable: bool,
     pub enabled: bool,
     pub available: bool,
@@ -39,6 +40,7 @@ impl GoogleCalendarDto {
                 .ok()
                 .and_then(|value| value.as_str().map(str::to_string))
                 .unwrap_or_else(|| "reader".to_string()),
+            allowed_conference_solution_types: calendar.allowed_conference_solution_types.clone(),
             writable: calendar.access_role.can_write(),
             enabled: calendar.enabled,
             available: calendar.available,

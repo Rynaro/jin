@@ -1,0 +1,186 @@
+{
+  "schema": "ramza/plan-state.v1",
+  "plan": "google-calendar-stable-release",
+  "created_at": "2026-09-15T22:01:39Z",
+  "tier": "full",
+  "phase": "DONE",
+  "phases_done": [
+    "RS",
+    "S",
+    "P",
+    "E",
+    "C",
+    "T",
+    "R",
+    "T",
+    "A",
+    "DONE"
+  ],
+  "rightsize": {
+    "score": 8,
+    "computed_tier": "full",
+    "inputs": {
+      "files_est": 34,
+      "new_dep": false,
+      "public_api": true,
+      "migration": true,
+      "security": true,
+      "novel": true,
+      "stakes": "high"
+    }
+  },
+  "refine_cycles": 1,
+  "skips": [],
+  "gates": [
+    {
+      "rubric": "complexity",
+      "total": 11,
+      "dims": {
+        "scope": 3,
+        "ambiguity": 2,
+        "dependencies": 3,
+        "risk": 3
+      },
+      "verdict": "human_loop",
+      "at": "2026-09-15T22:01:51Z"
+    },
+    {
+      "rubric": "explore",
+      "total": 89.5,
+      "dims": {
+        "alignment": 10,
+        "correctness": 9,
+        "maintainability": 9,
+        "performance": 8,
+        "simplicity": 8,
+        "risk": 9,
+        "innovation": 8
+      },
+      "verdict": "elite",
+      "at": "2026-09-15T22:02:52Z",
+      "label": "unified-core-owned-capability"
+    },
+    {
+      "rubric": "explore",
+      "total": 67,
+      "dims": {
+        "alignment": 7,
+        "correctness": 6,
+        "maintainability": 6,
+        "performance": 8,
+        "simplicity": 10,
+        "risk": 5,
+        "innovation": 3
+      },
+      "verdict": "weak",
+      "at": "2026-09-15T22:02:57Z",
+      "label": "gui-direct-provider-patch"
+    },
+    {
+      "rubric": "explore",
+      "total": 73,
+      "dims": {
+        "alignment": 8,
+        "correctness": 7,
+        "maintainability": 7,
+        "performance": 8,
+        "simplicity": 8,
+        "risk": 6,
+        "innovation": 5
+      },
+      "verdict": "solid",
+      "at": "2026-09-15T22:03:05Z",
+      "label": "notification-ledger-primary"
+    },
+    {
+      "rubric": "explore",
+      "total": 72.5,
+      "dims": {
+        "alignment": 8,
+        "correctness": 8,
+        "maintainability": 7,
+        "performance": 6,
+        "simplicity": 5,
+        "risk": 7,
+        "innovation": 10
+      },
+      "verdict": "solid",
+      "at": "2026-09-15T22:03:05Z",
+      "label": "generic-calendar-collaboration-engine"
+    },
+    {
+      "rubric": "refine",
+      "cycle": 1,
+      "total": 4.8,
+      "min": 4,
+      "dims": {
+        "clarity": 5,
+        "completeness": 5,
+        "actionability": 5,
+        "efficiency": 4,
+        "testability": 5
+      },
+      "verdict": "pass",
+      "at": "2026-09-15T22:15:52Z"
+    },
+    {
+      "rubric": "confidence",
+      "total": 93.75,
+      "dims": {
+        "pattern_match": 94,
+        "requirement_clarity": 90,
+        "decomposition_stability": 93,
+        "constraint_compliance": 98
+      },
+      "verdict": "AUTO_PROCEED",
+      "at": "2026-09-15T22:16:55Z"
+    }
+  ],
+  "amendments": [
+    {
+      "prev": "0346fdc52e7b894f338c8fb2de082b67e6e47c371a40d481eae92d8e8055f9c1",
+      "new": "7e964657275635023d2f6fbb496add132579e0e22b66cde322a2e5d87fd932d0",
+      "reason": "User decision: defer time suggestions from the stable release; preserve optional narrow gmail.send organizer email as backlog-only research, remove Gmail OAuth/outbox/UI dependencies, and renumber the stable criteria and story graph.",
+      "at": "2026-09-15T22:33:30Z"
+    }
+  ],
+  "declared_scope": [
+    ".spectra/plans/google-calendar-stable-release*",
+    "jin-core/src/config.rs",
+    "jin-core/src/model/event.rs",
+    "jin-core/src/dto/event.rs",
+    "jin-core/src/dto/google.rs",
+    "jin-core/src/google/**",
+    "jin-core/src/sync/**",
+    "jin-core/src/ops/event_mutation.rs",
+    "jin-core/src/ops/events.rs",
+    "jin-core/src/notification_center.rs",
+    "jin-core/tests/**",
+    "jin-gui/index.html",
+    "jin-gui/src-tauri/src/commands/**",
+    "jin-gui/src-tauri/src/scheduler.rs",
+    "jin-gui/src-tauri/src/lib.rs",
+    "jin-gui/src-tauri/tests/**",
+    "jin-gui/src/types/dto.ts",
+    "jin-gui/src/invoke.ts",
+    "jin-gui/src/controllers/calendar_view_controller.ts",
+    "jin-gui/src/controllers/events_controller.ts",
+    "jin-gui/src/controllers/notifications_controller.ts",
+    "jin-gui/src/lib/events/**",
+    "jin-gui/src/lib/notifications/**",
+    "jin-gui/src/styles/calendar.css",
+    "jin-gui/src/styles/notifications.css",
+    "jin-gui/src/__tests__/**",
+    "docs/google-smoke-test.md",
+    "docs/testing.md",
+    "docs/adr/**"
+  ],
+  "criteria_sha256": "7e964657275635023d2f6fbb496add132579e0e22b66cde322a2e5d87fd932d0",
+  "critic": {
+    "author": "calendar_spec",
+    "checker": "calendar_spec_critic",
+    "at": "2026-09-15T22:16:41Z"
+  },
+  "scope_declared_at": "2026-09-15T22:17:14Z",
+  "criteria_frozen_at": "2026-09-15T22:17:18Z"
+}

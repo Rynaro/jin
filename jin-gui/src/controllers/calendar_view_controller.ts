@@ -31,12 +31,12 @@
 
 import { Controller } from '@hotwired/stimulus';
 import {
-  listEvents, createEvent, createRoutedEvent, deleteEvent, promoteTask,
+  listEvents, createEvent, createRoutedEvent, deleteEvent, promoteTask, syncCalendarEvent,
   listGoogleAccounts, listTasks, newOperationId, previewRecurrence,
 } from '../invoke';
 import type { MonthlyRecurrence, RecurrenceDraft, RecurrenceEnd, RecurrenceWeekday } from '../invoke';
 import { isJinErrorDto } from '../types/error';
-import type { EventDto, TaskDto } from '../types/dto';
+import type { EventAttendeeDto, EventConferenceDataDto, EventDto, TaskDto } from '../types/dto';
 import { initIcons } from '../lib/icons';
 import { eventMessage, resolveEventLocale } from '../lib/events/locale';
 import { normalizeClockInput } from '../lib/calendar/clock';
@@ -57,9 +57,9 @@ import {
   type NightBand,
   type NightExpansion,
 } from '../lib/calendar/time_grid';
-import { renderTimeGrid, type RenderedTimeGrid } from '../lib/calendar/time_grid_render';
+import { calendarEventSourceLabel, renderTimeGrid, type RenderedTimeGrid } from '../lib/calendar/time_grid_render';
 import { normalizeRecurrenceDraft, recurrenceFromRepeatValue, recurrenceUiCopy } from '../lib/events/recurrence';
-import { applyCalendarColor, calendarColorForEvent } from '../lib/calendar/colors';
+import { applyCalendarColor, calendarColorForEvent, calendarProviderForEvent } from '../lib/calendar/colors';
 
 /** Half-open projection of an event interval onto one local calendar day. */
 export function eventIntersectsDate(event: EventDto, dateStr: string): boolean {
@@ -96,6 +96,9 @@ export default class CalendarViewController extends Controller {
     'eventModal',
     'eventTitle',
     'eventDestination',
+    'eventGuests',
+    'eventGuestUpdates',
+    'eventGoogleMeet',
     'eventCalendar',
     'eventWhenInput',
     'eventWhenPreview',
@@ -103,6 +106,7 @@ export default class CalendarViewController extends Controller {
     'eventAllDay',
     'eventStartTime',
     'eventEndTime',
+    'eventTimezone',
     'eventLocation',
     'eventDescription',
     'eventRepeat',
@@ -132,6 +136,12 @@ export default class CalendarViewController extends Controller {
   declare eventTitleTarget: HTMLInputElement;
   declare eventDestinationTarget: HTMLSelectElement;
   declare readonly hasEventDestinationTarget: boolean;
+  declare eventGuestsTarget: HTMLInputElement;
+  declare eventGoogleMeetTarget: HTMLInputElement;
+  declare readonly hasEventGuestsTarget: boolean;
+  declare eventGuestUpdatesTarget: HTMLSelectElement;
+  declare readonly hasEventGuestUpdatesTarget: boolean;
+  declare readonly hasEventGoogleMeetTarget: boolean;
   declare eventCalendarTarget: HTMLElement;
   declare eventWhenInputTarget: HTMLInputElement;
   declare eventWhenPreviewTarget: HTMLElement;
@@ -139,6 +149,8 @@ export default class CalendarViewController extends Controller {
   declare eventAllDayTarget: HTMLInputElement;
   declare eventStartTimeTarget: HTMLInputElement;
   declare eventEndTimeTarget: HTMLInputElement;
+  declare eventTimezoneTarget: HTMLInputElement;
+  declare readonly hasEventTimezoneTarget: boolean;
   declare eventLocationTarget: HTMLInputElement;
   declare eventDescriptionTarget: HTMLTextAreaElement;
   declare eventRepeatTarget: HTMLSelectElement;
@@ -181,6 +193,8 @@ export default class CalendarViewController extends Controller {
   private cachedNaturalResult: Extract<NaturalDateResult, { ok: true }> | null = null;
   private cachedNaturalError: NaturalDateErrorCode | null = null;
   private writableDestinationCount = 0;
+  private destinationRefresh: Promise<void> | null = null;
+  private destinationRevision = 0;
   private recurrencePreviewRevision = 0;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -231,7 +245,11 @@ export default class CalendarViewController extends Controller {
       if (!this.connected) return;
       this.allTasks = await listTasks();
       if (!this.connected) return;
-      this.renderCurrentView();
+      // Refresh cached calendar data without navigating away from an event.
+      // Check after the requests settle: detail may have opened in the meantime.
+      if (!this.element.querySelector('[data-events-target="detailPanel"]:not(.hidden)')) {
+        this.renderCurrentView();
+      }
     } catch (err: unknown) {
       if (isJinErrorDto(err)) {
         this.dispatch('error', { detail: err, prefix: 'app', bubbles: true });
@@ -352,11 +370,15 @@ export default class CalendarViewController extends Controller {
     this.createEventBtnTarget.setAttribute('aria-label', eventMessage('addEvent', locale));
   }
 
-  openEventCreate(): void {
+  async openEventCreate(): Promise<void> {
     if (this.submitPending) return;
     this.resetEventForm();
     this.eventModalTarget.showModal();
     this.eventTitleTarget.focus();
+    const refresh = this.populateEventDestinations();
+    this.destinationRefresh = refresh;
+    await refresh;
+    if (this.destinationRefresh === refresh) this.destinationRefresh = null;
   }
 
   toggleAllDay(): void {
@@ -367,6 +389,13 @@ export default class CalendarViewController extends Controller {
       this.timeGroupTarget.classList.remove('hidden');
     }
     void this.updateRecurrencePreview();
+  }
+
+  guestsChanged(): void {
+    const hasGuests = this.hasEventGuestsTarget && this.eventGuestsTarget.value.trim().length > 0;
+    const label = eventMessage(hasGuests ? 'createInvitation' : 'create', resolveEventLocale());
+    this.eventSubmitTarget.textContent = label;
+    this.eventSubmitTarget.setAttribute('aria-label', label);
   }
 
   closeEventDialog(): void {
@@ -449,6 +478,7 @@ export default class CalendarViewController extends Controller {
   }
 
   async submitEvent(): Promise<void> {
+    if (this.destinationRefresh) await this.destinationRefresh;
     if (this.submitPending) return;
     const title = this.eventTitleTarget.value.trim();
     const { start: dateStr, end: endDateStr } = this.getEventSelection();
@@ -475,6 +505,7 @@ export default class CalendarViewController extends Controller {
     }
 
     try {
+      const attendees = this.parseGuestDraft(this.hasEventGuestsTarget ? this.eventGuestsTarget.value : '');
       this.submitPending = true;
       this.eventSubmitTarget.disabled = true;
       let start = dateStr;
@@ -494,6 +525,17 @@ export default class CalendarViewController extends Controller {
 
       const recurrence = this.buildRecurrenceDraft();
       const destination = this.selectedEventDestination();
+      const wantsMeet = this.hasEventGoogleMeetTarget && this.eventGoogleMeetTarget.checked;
+      if ((attendees.length > 0 || wantsMeet) && !destination) {
+        this.showEventError('Guests and Google Meet require an exact Google calendar.');
+        this.eventDestinationTarget.focus();
+        return;
+      }
+      if (wantsMeet && destination?.meetUnavailable) {
+        this.showEventError('Google Meet is unavailable for this calendar.');
+        this.eventGoogleMeetTarget.focus();
+        return;
+      }
       if (recurrence && !destination) {
         this.showEventError(recurrenceUiCopy(resolveEventLocale()).googleRequired);
         if (this.hasEventDestinationTarget) this.eventDestinationTarget.focus();
@@ -501,9 +543,12 @@ export default class CalendarViewController extends Controller {
       }
       const input = {
         title, start, end, is_all_day: isAllDay,
-        tzid: !isAllDay && recurrence ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined,
+        tzid: !isAllDay ? this.eventTimezone() : undefined,
         location: location || undefined, description: description || undefined,
         recurrence,
+        attendees: attendees.length ? attendees : undefined,
+        conference_data: wantsMeet ? this.newGoogleMeetRequest() : undefined,
+        guest_update_policy: this.guestUpdatePolicy(),
       };
       if (this.hasEventDestinationTarget && this.eventDestinationTarget.value === '') {
         this.showEventError('ambiguous_destination: Choose an exact account and calendar.');
@@ -511,12 +556,21 @@ export default class CalendarViewController extends Controller {
         return;
       }
       if (destination) {
-        await createRoutedEvent({
+        const created = await createRoutedEvent({
           ...input,
           account_id: destination.accountId,
           calendar_id: destination.calendarId,
           operation_id: newOperationId('create'),
         });
+        // The durable create already succeeded. A delivery failure must never
+        // return to a submit flow that could create a duplicate event.
+        try {
+          await syncCalendarEvent(created.id);
+        } catch {
+          // The outbox retains the request; detail exposes its state and retry.
+        } finally {
+          window.dispatchEvent(new CustomEvent('jin:google-state-changed'));
+        }
       } else {
         await createEvent(input);
       }
@@ -558,8 +612,12 @@ export default class CalendarViewController extends Controller {
     this.eventAllDayTarget.checked = true;
     this.eventStartTimeTarget.value = '09:00';
     this.eventEndTimeTarget.value = '10:00';
+    if (this.hasEventTimezoneTarget) this.eventTimezoneTarget.value = Intl.DateTimeFormat().resolvedOptions().timeZone;
     this.eventLocationTarget.value = '';
     this.eventDescriptionTarget.value = '';
+    if (this.hasEventGuestsTarget) this.eventGuestsTarget.value = '';
+    if (this.hasEventGuestUpdatesTarget) this.eventGuestUpdatesTarget.value = 'all';
+    if (this.hasEventGoogleMeetTarget) this.eventGoogleMeetTarget.checked = false;
     if (this.hasEventRepeatTarget) {
       this.eventRepeatTarget.value = 'none';
       this.eventRepeatIntervalTarget.value = '1';
@@ -593,8 +651,10 @@ export default class CalendarViewController extends Controller {
   private async populateEventDestinations(): Promise<void> {
     if (!this.hasEventDestinationTarget) return;
     const select = this.eventDestinationTarget;
+    const revision = ++this.destinationRevision;
+    select.disabled = true;
     select.replaceChildren();
-    let destinations: Array<{ accountId: string; calendarId: string; label: string }> = [];
+    let destinations: Array<{ accountId: string; calendarId: string; label: string; canMeet: boolean; meetUnavailable: boolean }> = [];
     try {
       const accounts = await listGoogleAccounts();
       destinations = accounts.flatMap(account => account.calendars
@@ -603,10 +663,19 @@ export default class CalendarViewController extends Controller {
           accountId: account.id,
           calendarId: calendar.calendar_id,
           label: `${account.alias} · ${calendar.name}`,
+          // An empty list is an unknown capability on older cached CalendarList
+          // data. Do not reject a valid Google calendar before Google has had a
+          // chance to accept its conference request; only an explicit list that
+          // excludes Meet is a negative capability.
+          canMeet: calendar.allowed_conference_solution_types.includes('hangoutsMeet'),
+          meetUnavailable: calendar.allowed_conference_solution_types.length > 0
+            && !calendar.allowed_conference_solution_types.includes('hangoutsMeet'),
         })));
     } catch {
       // Account discovery errors must not make local-only event creation unavailable.
     }
+    if (revision !== this.destinationRevision) return;
+    select.disabled = false;
     this.writableDestinationCount = destinations.length;
     if (destinations.length > 1) select.append(new Option('Choose a destination', '', true, true));
     select.append(new Option('Jin only', 'local', destinations.length === 0, destinations.length === 0));
@@ -614,6 +683,8 @@ export default class CalendarViewController extends Controller {
       const option = new Option(destination.label, `${destination.accountId}\u0000${destination.calendarId}`);
       option.dataset.accountId = destination.accountId;
       option.dataset.calendarId = destination.calendarId;
+      option.dataset.canMeet = String(destination.canMeet);
+      option.dataset.meetUnavailable = String(destination.meetUnavailable);
       if (destinations.length === 1) option.selected = true;
       select.append(option);
     }
@@ -681,13 +752,58 @@ export default class CalendarViewController extends Controller {
     }
   }
 
-  private selectedEventDestination(): { accountId: string; calendarId: string } | null {
+  private selectedEventDestination(): { accountId: string; calendarId: string; canMeet: boolean; meetUnavailable: boolean } | null {
     if (!this.hasEventDestinationTarget) return null;
     const option = this.eventDestinationTarget.selectedOptions[0];
     if (!option || option.value === '' || option.value === 'local') return null;
     const accountId = option.dataset.accountId;
     const calendarId = option.dataset.calendarId;
-    return accountId && calendarId ? { accountId, calendarId } : null;
+    return accountId && calendarId ? {
+      accountId,
+      calendarId,
+      canMeet: option.dataset.canMeet === 'true',
+      meetUnavailable: option.dataset.meetUnavailable === 'true',
+    } : null;
+  }
+
+  private eventTimezone(): string {
+    return this.hasEventTimezoneTarget
+      ? this.eventTimezoneTarget.value.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone
+      : Intl.DateTimeFormat().resolvedOptions().timeZone;
+  }
+
+  private parseGuestDraft(value: string): EventAttendeeDto[] {
+    const seen = new Set<string>();
+    const guests: EventAttendeeDto[] = [];
+    for (const raw of value.split(',')) {
+      const email = raw.trim();
+      if (!email) continue;
+      const key = email.toLocaleLowerCase();
+      if (seen.has(key)) continue;
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error(`Enter a valid guest email: ${email}`);
+      }
+      seen.add(key);
+      guests.push({ email, responseStatus: 'needsAction' });
+    }
+    if (guests.length > 200) throw new Error('Google Calendar invitations support at most 200 guests in Jin.');
+    return guests;
+  }
+
+  private newGoogleMeetRequest(): EventConferenceDataDto {
+    return {
+      pendingCreateRequest: {
+        // EventMutationService replaces this sentinel at the mutation
+        // boundary and persists the resulting id for transport retries.
+        requestId: 'generated-by-jin-core',
+        conferenceSolutionKey: { type: 'hangoutsMeet' },
+      },
+    };
+  }
+
+  private guestUpdatePolicy(): 'all' | 'external_only' | 'none' {
+    const value = this.hasEventGuestUpdatesTarget ? this.eventGuestUpdatesTarget.value : 'all';
+    return value === 'external_only' || value === 'none' ? value : 'all';
   }
 
   private showEventError(message: string): void {
@@ -714,7 +830,7 @@ export default class CalendarViewController extends Controller {
     if (dialogTitle) dialogTitle.textContent = eventMessage('newEvent', locale);
     this.eventSubmitTarget.textContent = eventMessage('create', locale);
     this.eventSubmitTarget.setAttribute('aria-label', eventMessage('createEvent', locale));
-    const allDay = this.eventAllDayTarget.closest('label')?.querySelector<HTMLSpanElement>('span');
+    const allDay = this.eventAllDayTarget.closest('label')?.querySelector<HTMLSpanElement>('span:not(.jin-checkbox__mark)');
     if (allDay) allDay.textContent = eventMessage('allDay', locale);
     if (this.hasEventRepeatTarget) {
       const copy = recurrenceUiCopy(locale);
@@ -1268,10 +1384,12 @@ export default class CalendarViewController extends Controller {
           eventButton.type = 'button';
           eventButton.className = 'calendar-event-chip';
           eventButton.dataset.eventId = event.id;
-          eventButton.dataset.source = event.source.toLowerCase();
+          eventButton.dataset.source = calendarProviderForEvent(event);
           applyCalendarColor(eventButton, calendarColorForEvent(event));
           eventButton.textContent = event.title;
-          eventButton.setAttribute('aria-label', `${eventMessage('view')} ${event.title}`);
+          const calendarLabel = calendarEventSourceLabel(event, resolveEventLocale());
+          eventButton.title = `${event.title} · ${calendarLabel}`;
+          eventButton.setAttribute('aria-label', `${eventMessage('view')} ${event.title}, ${calendarLabel}`);
           eventButton.addEventListener('click', click => {
             click.stopPropagation();
             this.openEventDetail(event.id);

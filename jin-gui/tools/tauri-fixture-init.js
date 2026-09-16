@@ -106,15 +106,15 @@
     {
       id: 'acct-personal', alias: 'Personal', principal: 'personal@example.com', state: 'connected', auth_generation: 2,
       calendars: [
-        { account_id: 'acct-personal', calendar_id: 'personal-primary', name: 'Personal', primary: true, access_role: 'owner', writable: true, enabled: true, available: true, route_generation: 3 },
-        { account_id: 'acct-personal', calendar_id: 'family-shared', name: 'Family', primary: false, access_role: 'reader', writable: false, enabled: true, available: true, route_generation: 1 }
+        { account_id: 'acct-personal', calendar_id: 'personal-primary', name: 'Personal', primary: true, access_role: 'owner', writable: true, enabled: true, available: true, allowed_conference_solution_types: ['hangoutsMeet'], route_generation: 3 },
+        { account_id: 'acct-personal', calendar_id: 'family-shared', name: 'Family', primary: false, access_role: 'reader', writable: false, enabled: true, available: true, allowed_conference_solution_types: [], route_generation: 1 }
       ]
     },
     {
       id: 'acct-work', alias: 'Work', principal: 'work@example.com', state: 'connected', auth_generation: 4,
       calendars: [
-        { account_id: 'acct-work', calendar_id: 'work-primary', name: 'Team Calendar', primary: true, access_role: 'writer', writable: true, enabled: true, available: true, route_generation: 5 },
-        { account_id: 'acct-work', calendar_id: 'focus-room', name: 'Focus Room', primary: false, access_role: 'owner', writable: true, enabled: false, available: true, route_generation: 2 }
+        { account_id: 'acct-work', calendar_id: 'work-primary', name: 'Team Calendar', primary: true, access_role: 'writer', writable: true, enabled: true, available: true, allowed_conference_solution_types: ['hangoutsMeet'], route_generation: 5 },
+        { account_id: 'acct-work', calendar_id: 'focus-room', name: 'Focus Room', primary: false, access_role: 'owner', writable: true, enabled: false, available: true, allowed_conference_solution_types: ['hangoutsMeet'], route_generation: 2 }
       ]
     }
   ];

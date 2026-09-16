@@ -90,6 +90,42 @@ pub struct OriginatingTaskRefDto {
     pub status: String,
 }
 
+/// Opaque reference to the one durable RSVP attempt owned by Notification
+/// Center.  It intentionally contains no provider credentials or route data.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct InvitationActionRefDto {
+    pub notification_item_id: String,
+    pub expected_item_version: u64,
+}
+
+/// The Event-detail projection of the existing invitation ledger.  The event
+/// surface renders this state and dispatches the same bridge command as
+/// Notification Center; it never creates a parallel RSVP outbox.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EventInvitationCapabilitiesDto {
+    pub action_ref: InvitationActionRefDto,
+    pub provider_response: String,
+    pub requested_response: Option<String>,
+    pub state: String,
+    pub can_respond: bool,
+    pub recurrence_scopes: Vec<String>,
+    pub disabled_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct EventCollaborationCapabilitiesDto {
+    pub invitation: Option<EventInvitationCapabilitiesDto>,
+    pub can_edit_schedule: bool,
+    pub can_append_attendees: bool,
+    pub can_remove_attendees: bool,
+    pub can_change_attendee_roles: bool,
+    pub can_cancel_meeting: bool,
+    pub can_add_conference: bool,
+    pub can_remove_conference: bool,
+    pub allowed_conference_solution_types: Vec<String>,
+    pub disabled_reasons: std::collections::BTreeMap<String, String>,
+}
+
 /// Detail-only capabilities. List rows deliberately do not carry join-derived policy.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EventDetailCapabilitiesDto {
@@ -101,6 +137,8 @@ pub struct EventDetailCapabilitiesDto {
     pub recurrence_scopes: Vec<String>,
     pub can_return_task_to_flexible: bool,
     pub originating_task: Option<OriginatingTaskRefDto>,
+    #[serde(default)]
+    pub collaboration: EventCollaborationCapabilitiesDto,
 }
 
 /// Detail-only response. Event list rows remain the lean `EventDto` projection.
