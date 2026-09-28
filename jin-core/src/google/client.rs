@@ -79,6 +79,17 @@ pub fn list_calendars<H: HttpClient>(
                     .and_then(|value| value.as_bool())
                     .unwrap_or(false),
                 access_role: GoogleAccessRole::from_provider(role)?,
+                allowed_conference_solution_types: item
+                    .get("conferenceProperties")
+                    .and_then(|properties| properties.get("allowedConferenceSolutionTypes"))
+                    .and_then(|types| types.as_array())
+                    .map(|types| {
+                        types
+                            .iter()
+                            .filter_map(|value| value.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             });
         }
         page_token = response
@@ -282,6 +293,7 @@ pub struct MockHttpClient {
     cassette: std::sync::Mutex<std::collections::VecDeque<HttpResponse>>,
     requested_urls: std::sync::Mutex<Vec<String>>,
     requested_patches: std::sync::Mutex<Vec<RecordedPatch>>,
+    requested_posts: std::sync::Mutex<Vec<(String, serde_json::Value)>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -298,6 +310,7 @@ impl MockHttpClient {
             cassette: std::sync::Mutex::new(responses.into()),
             requested_urls: std::sync::Mutex::new(Vec::new()),
             requested_patches: std::sync::Mutex::new(Vec::new()),
+            requested_posts: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -307,6 +320,10 @@ impl MockHttpClient {
 
     pub fn requested_patches(&self) -> Vec<RecordedPatch> {
         self.requested_patches.lock().unwrap().clone()
+    }
+
+    pub fn requested_posts(&self) -> Vec<(String, serde_json::Value)> {
+        self.requested_posts.lock().unwrap().clone()
     }
 
     fn record_url(&self, url: &str) {
@@ -332,9 +349,13 @@ impl HttpClient for MockHttpClient {
         &self,
         url: &str,
         _bearer: &str,
-        _body: &serde_json::Value,
+        body: &serde_json::Value,
     ) -> crate::Result<HttpResponse> {
         self.record_url(url);
+        self.requested_posts
+            .lock()
+            .unwrap()
+            .push((url.to_string(), body.clone()));
         self.next_response()
     }
 
@@ -368,6 +389,33 @@ impl HttpClient for MockHttpClient {
         let resp = self.next_response()?;
         Ok(resp.body)
     }
+}
+
+/// Google has no floating-time event representation. Validate only fields
+/// present so sparse, non-time edits remain possible.
+pub(crate) fn validate_event_write_times(body: &serde_json::Value) -> crate::Result<()> {
+    for field in ["start", "end"] {
+        let Some(time) = body.get(field) else {
+            continue;
+        };
+        let Some(date_time) = time.get("dateTime").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        if let Some(zone) = time.get("timeZone").and_then(|value| value.as_str()) {
+            if zone.parse::<chrono_tz::Tz>().is_ok() {
+                continue;
+            }
+            return Err(JinError::InvalidInput(format!(
+                "Choose a valid timezone for the event {field} before syncing to Google Calendar."
+            )));
+        }
+        if chrono::DateTime::parse_from_rfc3339(date_time).is_err() {
+            return Err(JinError::InvalidInput(
+                "Choose a timezone before syncing this timed event to Google Calendar.".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 // ── Calendar REST client ──────────────────────────────────────────────────────
@@ -478,14 +526,30 @@ impl<'a, H: HttpClient> CalendarClient<'a, H> {
         event_id: &str,
         body: serde_json::Value,
     ) -> crate::Result<HttpResponse> {
+        self.insert_event_with_updates(event_id, body, "all")
+    }
+
+    pub fn insert_event_with_updates(
+        &self,
+        event_id: &str,
+        body: serde_json::Value,
+        send_updates: &str,
+    ) -> crate::Result<HttpResponse> {
+        validate_event_write_times(&body)?;
         let encoded_cal = url_encode(self.calendar_id);
         // Inject the client-specified id into the request body
         let mut body = body;
+        // events.insert permits id OR iCalUID, never both. Keep our stable id
+        // for duplicate-safe retries, including payloads queued by older Jin.
+        if let Some(object) = body.as_object_mut() {
+            object.remove("iCalUID");
+        }
         body["id"] = serde_json::Value::String(event_id.to_string());
 
         // Version 1 is required or Google ignores conferenceData in writes.
-        let url =
-            format!("{CALENDAR_API_BASE}/calendars/{encoded_cal}/events?conferenceDataVersion=1");
+        let url = format!(
+            "{CALENDAR_API_BASE}/calendars/{encoded_cal}/events?conferenceDataVersion=1&sendUpdates={send_updates}"
+        );
         self.http.post_json(&url, self.access_token, &body)
     }
 
@@ -498,12 +562,30 @@ impl<'a, H: HttpClient> CalendarClient<'a, H> {
         etag: &str,
         body: serde_json::Value,
     ) -> crate::Result<HttpResponse> {
+        self.patch_event_with_updates(event_id, etag, body, "all")
+    }
+
+    pub fn patch_event_with_updates(
+        &self,
+        event_id: &str,
+        etag: &str,
+        body: serde_json::Value,
+        send_updates: &str,
+    ) -> crate::Result<HttpResponse> {
+        validate_event_write_times(&body)?;
+        // Identity is selected by the URL, never changed by an event patch.
+        let mut body = body;
+        if let Some(object) = body.as_object_mut() {
+            for field in ["id", "iCalUID", "recurringEventId", "originalStartTime"] {
+                object.remove(field);
+            }
+        }
         let encoded_cal = url_encode(self.calendar_id);
         let encoded_id = url_encode(event_id);
         // Version 1 is required both for conference createRequest and for
         // preserving existing conference details during a modification.
         let url = format!(
-            "{CALENDAR_API_BASE}/calendars/{encoded_cal}/events/{encoded_id}?conferenceDataVersion=1"
+            "{CALENDAR_API_BASE}/calendars/{encoded_cal}/events/{encoded_id}?conferenceDataVersion=1&sendUpdates={send_updates}"
         );
         self.http
             .patch_json(&url, self.access_token, Some(etag), &body)
@@ -529,9 +611,18 @@ impl<'a, H: HttpClient> CalendarClient<'a, H> {
 
     /// Delete an event with `If-Match: <etag>`.
     pub fn delete_event(&self, event_id: &str, etag: &str) -> crate::Result<HttpResponse> {
+        self.delete_event_with_updates(event_id, etag, "all")
+    }
+
+    pub fn delete_event_with_updates(
+        &self,
+        event_id: &str,
+        etag: &str,
+        send_updates: &str,
+    ) -> crate::Result<HttpResponse> {
         let encoded_cal = url_encode(self.calendar_id);
         let encoded_id = url_encode(event_id);
-        let url = format!("{CALENDAR_API_BASE}/calendars/{encoded_cal}/events/{encoded_id}");
+        let url = format!("{CALENDAR_API_BASE}/calendars/{encoded_cal}/events/{encoded_id}?sendUpdates={send_updates}");
         self.http.delete(&url, self.access_token, Some(etag))
     }
 
@@ -818,6 +909,30 @@ mod tests {
         assert!(error.to_string().contains("Calendar permission"));
     }
 
+    #[test]
+    fn calendar_list_reads_advertised_conference_solution_types() {
+        let mock = MockHttpClient::new(vec![HttpResponse {
+            status: 200,
+            body: serde_json::json!({
+                "items": [{
+                    "id": "team@example.com",
+                    "summary": "Team",
+                    "accessRole": "writer",
+                    "conferenceProperties": {
+                        "allowedConferenceSolutionTypes": ["hangoutsMeet"]
+                    }
+                }]
+            }),
+            etag: None,
+        }]);
+
+        let calendars = list_calendars(&mock, "valid-token").unwrap();
+        assert_eq!(
+            calendars[0].allowed_conference_solution_types,
+            vec!["hangoutsMeet"]
+        );
+    }
+
     // ── CalendarClient URL building ────────────────────────────────────────────
 
     #[test]
@@ -902,12 +1017,113 @@ mod tests {
             mock.requested_urls(),
             vec![
                 format!(
-                    "{CALENDAR_API_BASE}/calendars/team%40example.com/events?conferenceDataVersion=1"
+                    "{CALENDAR_API_BASE}/calendars/team%40example.com/events?conferenceDataVersion=1&sendUpdates=all"
                 ),
                 format!(
-                    "{CALENDAR_API_BASE}/calendars/team%40example.com/events/event%2Fone?conferenceDataVersion=1"
+                    "{CALENDAR_API_BASE}/calendars/team%40example.com/events/event%2Fone?conferenceDataVersion=1&sendUpdates=all"
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn floating_writes_fail_before_http_but_sparse_edits_are_valid() {
+        let mock = MockHttpClient::new(vec![]);
+        let client = CalendarClient {
+            http: &mock,
+            calendar_id: "primary",
+            access_token: "fake",
+        };
+        for time in [
+            serde_json::json!({"dateTime": "2026-09-17T14:00:00"}),
+            serde_json::json!({"dateTime": "2026-09-17T14:00:00", "timeZone": "not-a-zone"}),
+        ] {
+            let body = serde_json::json!({"start": time});
+            assert!(client
+                .insert_event("abcde", body.clone())
+                .unwrap_err()
+                .to_string()
+                .contains("timezone"));
+            assert!(client
+                .patch_event("abcde", "etag", body)
+                .unwrap_err()
+                .to_string()
+                .contains("timezone"));
+        }
+        assert!(mock.requested_urls().is_empty());
+        assert!(validate_event_write_times(&serde_json::json!({"summary": "Title only"})).is_ok());
+        assert!(validate_event_write_times(
+            &serde_json::json!({"start": {"dateTime": "2026-09-17T14:00:00-03:00"}})
+        )
+        .is_ok());
+        assert!(
+            validate_event_write_times(&serde_json::json!({"start": {"date": "2026-09-17"}}))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn write_contract_uses_stable_insert_id_and_never_patches_provider_identity() {
+        let mock = MockHttpClient::new(vec![
+            HttpResponse {
+                status: 200,
+                body: serde_json::json!({}),
+                etag: None
+            };
+            2
+        ]);
+        let client = CalendarClient {
+            http: &mock,
+            calendar_id: "primary",
+            access_token: "fake",
+        };
+        let payload = serde_json::json!({
+            "id": "old-id", "iCalUID": "local@jin", "recurringEventId": "series-id",
+            "originalStartTime": {"dateTime": "2026-09-17T14:00:00", "timeZone": "America/Sao_Paulo"},
+            "start": {"dateTime": "2026-09-17T14:00:00", "timeZone": "America/Sao_Paulo"},
+            "end": {"dateTime": "2026-09-17T15:00:00", "timeZone": "America/Sao_Paulo"},
+            "summary": "Meeting", "conferenceData": {"createRequest": {"requestId": "stable-request", "conferenceSolutionKey": {"type": "hangoutsMeet"}}}
+        });
+        client.insert_event("abcde12345", payload.clone()).unwrap();
+        client
+            .patch_event("existing-event", "etag-original", payload.clone())
+            .unwrap();
+        let post = &mock.requested_posts()[0].1;
+        assert_eq!(post["id"], "abcde12345");
+        assert!(post.get("iCalUID").is_none());
+        let patch = &mock.requested_patches()[0];
+        for field in ["id", "iCalUID", "recurringEventId", "originalStartTime"] {
+            assert!(patch.body.get(field).is_none(), "PATCH must omit {field}");
+        }
+        assert_eq!(patch.if_match_etag.as_deref(), Some("etag-original"));
+        for body in [post, &patch.body] {
+            assert_eq!(body["start"], payload["start"]);
+            assert_eq!(body["end"], payload["end"]);
+            assert_eq!(body["conferenceData"], payload["conferenceData"]);
+        }
+    }
+
+    #[test]
+    fn organizer_writes_preserve_immutable_guest_update_policy() {
+        let mock = MockHttpClient::new(vec![HttpResponse {
+            status: 200,
+            body: serde_json::json!({}),
+            etag: None,
+        }]);
+        let client = CalendarClient {
+            http: &mock,
+            calendar_id: "team@example.com",
+            access_token: "fake_token",
+        };
+        client
+            .insert_event_with_updates(
+                "abcde",
+                serde_json::json!({"summary": "Planning"}),
+                "externalOnly",
+            )
+            .unwrap();
+        assert!(
+            mock.requested_urls()[0].ends_with("conferenceDataVersion=1&sendUpdates=externalOnly")
         );
     }
 

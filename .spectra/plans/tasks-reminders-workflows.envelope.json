@@ -1,0 +1,65 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "ceba370b-da67-4bbb-b9cc-7965a6c9f46c",
+  "thread_id": "eee3d0ff-58af-4b2d-9806-2dfec222ed63",
+  "parent_id": null,
+  "from": {
+    "eidolon": "ramza",
+    "version": "0.1.0"
+  },
+  "to": {
+    "eidolon": "vivi",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Implement separate checklist and typed board workflows with safe legacy conversion and modern task workspace.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/tasks-reminders-workflows.md",
+    "sha256": "06704651427ac30c6f5b873f983a1785fadc0a80f78d8e78565930b80da5e0c4",
+    "size_bytes": 22160
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 4400,
+    "input_handles": [],
+    "summary": "Persist additive workflow kinds and exact typed column identity; reuse recoverable canonical operations; preserve legacy records and all mutation entry points; modernize checklist, board and adaptive inspector."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "ise": {
+    "assertion_grade": "self-attested",
+    "provenance": {
+      "methodology_version": "ramza-0.1.0",
+      "tool_surface": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "lateral_consults": []
+    },
+    "receiver_authorization": {
+      "auto_route": true,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "confidence": 0.9225,
+  "integrity": {
+    "method": "sha256",
+    "value": "06704651427ac30c6f5b873f983a1785fadc0a80f78d8e78565930b80da5e0c4"
+  },
+  "trace": {
+    "ts": "2026-09-24T22:57:21.646702+00:00",
+    "host": "codex",
+    "model": "gpt-6-astra",
+    "tier": "standard"
+  },
+  "x_ramza_acceptance_criteria": {
+    "path": ".spectra/plans/tasks-reminders-workflows.md",
+    "sha256": "06704651427ac30c6f5b873f983a1785fadc0a80f78d8e78565930b80da5e0c4"
+  }
+}

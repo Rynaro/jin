@@ -5,6 +5,7 @@ import {
   completeNotificationTask,
   deferNotificationItem,
   dismissNotificationItem,
+  getEventDetailById,
   listNotificationItems,
   newOperationId,
   notificationCenterSummary,
@@ -12,6 +13,8 @@ import {
   retryCalendarInvitation,
   setNotificationRead,
 } from '../invoke';
+import { EventCompanion } from '../lib/ui/companion';
+import { resolveEventLocale } from '../lib/events/locale';
 import { initIcons } from '../lib/icons';
 import {
   notificationSourceErrorSummary,
@@ -29,6 +32,7 @@ import type {
   NotificationFilter,
   NotificationItemDto,
 } from '../types/dto';
+import { renderRecurrenceScope } from '../lib/events/recurrence_scope';
 import type TemporalEditorController from './temporal_editor_controller';
 import type { TemporalEditorCommit } from './temporal_editor_controller';
 
@@ -97,6 +101,7 @@ export default class NotificationsController extends Controller {
   private items: NotificationItemDto[] = [];
   private selectedId: string | null = null;
   private busyItemId: string | null = null;
+  private eventCompanion: EventCompanion | null = null;
   private filter: NotificationFilter = 'all';
   private loadGeneration = 0;
   private listScrollTop = 0;
@@ -110,6 +115,8 @@ export default class NotificationsController extends Controller {
 
   disconnect(): void {
     this.loadGeneration += 1;
+    this.eventCompanion?.close(true);
+    this.eventCompanion = null;
     this.closeScopeDialog(false);
   }
 
@@ -245,7 +252,7 @@ export default class NotificationsController extends Controller {
     if (!item || this.busyItemId) return;
 
     if (action === 'open-event' && item.kind === 'calendar_invitation') {
-      this.navigateToSource('events', item.canonical_event_id);
+      void this.openEventPreview(item.canonical_event_id);
       return;
     }
     if (action === 'open-task' && item.kind === 'task_reminder') {
@@ -262,7 +269,7 @@ export default class NotificationsController extends Controller {
       if (!['allow', 'maybe', 'refuse'].includes(response)) return;
       const button = control as HTMLButtonElement;
       if (item.capabilities.recurrence_scopes.length > 1) {
-        this.openScopeDialog(response, button);
+        this.openScopeDialog(response, button, item.capabilities.recurrence_scopes);
       } else {
         const scope = item.capabilities.recurrence_scopes[0] ?? null;
         await this.submitInvitationResponse(response, scope, button);
@@ -550,15 +557,83 @@ export default class NotificationsController extends Controller {
     ) ?? this.filterTargets[0] ?? null;
   }
 
-  private openScopeDialog(response: InvitationChoice, button: HTMLButtonElement): void {
+  private openScopeDialog(
+    response: InvitationChoice,
+    button: HTMLButtonElement,
+    scopes: InvitationRecurrenceScope[],
+  ): void {
     this.pendingResponse = response;
     this.pendingResponseButton = button;
     this.scopeTitleTarget.textContent = `Apply ${response === 'allow' ? 'Allow' : response === 'maybe' ? 'Maybe' : 'Refuse'} to`;
-    this.scopeThisTarget.checked = true;
-    this.scopeSeriesTarget.checked = false;
+
+    const supported = scopes.filter(
+      (scope): scope is 'this_occurrence' | 'entire_series' =>
+        scope === 'this_occurrence' || scope === 'entire_series',
+    );
+    const fieldset = renderRecurrenceScope({
+      scopes: supported,
+      value: 'this_occurrence',
+      name: 'notification-recurrence-scope',
+      legend: 'Recurring invitation scope',
+      className: 'notification-scope-dialog__choices',
+      inputAttributes: (scope) =>
+        scope === 'this_occurrence'
+          ? { 'data-notifications-target': 'scopeThis' }
+          : { 'data-notifications-target': 'scopeSeries' },
+    });
+    // Keep legend visually hidden for the existing dialog chrome.
+    const legend = fieldset.querySelector('legend');
+    if (legend) legend.classList.add('sr-only');
+
+    const existing =
+      this.scopeDialogTarget.querySelector('.notification-scope-dialog__choices')
+      ?? this.scopeDialogTarget.querySelector('fieldset');
+    if (existing) existing.replaceWith(fieldset);
+    else this.scopeTitleTarget.insertAdjacentElement('afterend', fieldset);
+
     if (typeof this.scopeDialogTarget.showModal === 'function') this.scopeDialogTarget.showModal();
     else this.scopeDialogTarget.setAttribute('open', '');
-    this.scopeThisTarget.focus();
+    const focusInput =
+      fieldset.querySelector<HTMLInputElement>('input[value="this_occurrence"]')
+      ?? this.scopeThisTarget;
+    focusInput.focus();
+  }
+
+
+  private async openEventPreview(eventId: string): Promise<void> {
+    try {
+      const detail = await getEventDetailById(eventId);
+      this.ensureEventCompanion();
+      this.eventCompanion?.setContentBox(
+        Math.min(this.workspaceTarget.getBoundingClientRect().width || 720, 900),
+      );
+      this.eventCompanion?.openPreview(detail, {
+        recurrenceScopes: (detail.capabilities.recurrence_scopes ?? []).filter(
+          (scope): scope is 'this_occurrence' | 'entire_series' =>
+            scope === 'this_occurrence' || scope === 'entire_series',
+        ),
+      });
+    } catch {
+      announceNotification(this.liveTarget, 'Could not open this event.');
+    }
+  }
+
+  private ensureEventCompanion(): void {
+    if (this.eventCompanion) return;
+    this.eventCompanion = new EventCompanion({
+      workspace: this.workspaceTarget,
+      presentation: 'modal',
+      field: this.detailTarget,
+      locale: resolveEventLocale(),
+      onOpenFullDetails: (id) => {
+        this.eventCompanion?.close(true);
+        this.eventCompanion = null;
+        this.navigateToSource('events', id);
+      },
+      onClose: () => {
+        this.eventCompanion = null;
+      },
+    });
   }
 
   private closeScopeDialog(restoreFocus: boolean): void {

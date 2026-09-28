@@ -72,6 +72,9 @@ vi.mock('../invoke', () => ({
   appConfig: vi.fn(),
   getStoreRoot: vi.fn(),
   reorderList: vi.fn(),
+  previewWorkflowSetup: vi.fn(),
+  applyWorkflowSetup: vi.fn(),
+  createBoardColumn: vi.fn(),
 }));
 
 // Lucide mutates the DOM in ways jsdom doesn't support — no-op is sufficient.
@@ -83,12 +86,15 @@ import {
   listTags,
   deleteTask,
   createTask,
+  createList,
   createSection,
   deleteSection,
   editList,
   editTask,
   getTaskById,
   createEvent,
+  previewWorkflowSetup,
+  applyWorkflowSetup,
 } from '../invoke';
 
 // ── Load real index.html body ─────────────────────────────────────────────────
@@ -646,9 +652,9 @@ describe('real-index modal wiring (RISK-1 gate)', () => {
       document.querySelector<HTMLInputElement>('[data-capture-target="eventTitle"]')!.value = 'Timed event';
       await controller.submitEvent();
       expect(createEvent).toHaveBeenCalledWith(expect.objectContaining({
-        start: '2026-10-14T09:30',
-        end: '2026-10-14T10:30',
-        is_all_day: undefined,
+        start: '2026-10-14T09:30:00',
+        end: '2026-10-14T10:30:00',
+        is_all_day: false,
         tzid: expect.any(String),
       }));
     });
@@ -690,6 +696,51 @@ describe('real-index modal wiring (RISK-1 gate)', () => {
   // ── S4: New List (+) button → create-list modal ───────────────────────────
 
   describe('S4: lists create/edit/delete modal structure', () => {
+    it('shows a raw native setup rejection in the existing dialog', async () => {
+      vi.mocked(previewWorkflowSetup).mockResolvedValue({
+        list_id: 'inbox', target: 'checklist', snapshot: 'snapshot',
+        todo: 10, doing: 0, done: 3, cancelled: 0, subtasks: 4,
+      });
+      vi.mocked(applyWorkflowSetup).mockRejectedValue('missing required key `operationId`');
+      document.querySelector<HTMLButtonElement>('.lists-rail__setup-btn')!.click();
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+      const dialog = document.querySelector<HTMLDialogElement>('.action-dialog:has(.tasks-workflow-setup)')!;
+      expect(dialog.open).toBe(true);
+      dialog.querySelector<HTMLButtonElement>('.tasks-workflow-setup__actions .btn-primary')!.click();
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+      expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('missing required key `operationId`');
+      expect(dialog.open).toBe(true);
+      expect(vi.mocked(applyWorkflowSetup)).toHaveBeenCalledWith('inbox', 'checklist', 'snapshot', expect.any(String));
+    });
+
+    it('workspace New list or board opens and selects the created container while navigation is hidden', async () => {
+      const rail = document.getElementById('tasks-lists-rail')!;
+      rail.setAttribute('inert', '');
+      rail.classList.add('hidden');
+      const created = makeList({ id: 'personal', name: 'Personal reminders', is_default: false, workflow_kind: 'checklist' });
+      vi.mocked(createList).mockResolvedValue(created);
+      vi.mocked(listLists).mockResolvedValue([makeList(), created]);
+      const selected: string[] = [];
+      document.addEventListener('jin:scope-changed', (event) => {
+        selected.push((event as CustomEvent<{ scope: { id: string } }>).detail.scope.id);
+      });
+      // The global content-toolbar action was retired; the shared sidebar
+      // event still opens creation when that sidebar is collapsed or inert.
+      window.dispatchEvent(new Event('jin:open-task-container'));
+
+      const createDialog = document.querySelector<HTMLDialogElement>('[data-lists-target="createDialog"]')!;
+      expect(createDialog.parentElement?.id).toBe('jin-modal-root');
+      expect(createDialog.open).toBe(true);
+      expect(createDialog.closest('[inert]')).toBeNull();
+      const name = createDialog.querySelector<HTMLInputElement>('[data-lists-target="createNameInput"]')!;
+      name.value = 'Personal reminders';
+      createDialog.querySelector<HTMLButtonElement>('.btn-primary')!.click();
+      await new Promise<void>(resolve => setTimeout(resolve, 30));
+      expect(createList).toHaveBeenCalledWith(expect.objectContaining({ name: 'Personal reminders', workflow_kind: 'checklist' }));
+      expect(selected).toContain('personal');
+      expect(createDialog.open).toBe(false);
+    });
+
     it('New List (+) button opens the create-list dialog', () => {
       const newListBtn = document.querySelector<HTMLButtonElement>(
         '[data-action="click->lists#openCreate"]',
@@ -1151,6 +1202,19 @@ describe('S8: section dialogs are JinModal-hosted (AC-S8-03)', () => {
 
     expect(vi.mocked(createSection)).toHaveBeenCalledWith('inbox', 'Groceries');
     expect(dialog.open).toBe(false);
+  });
+
+  it('keeps Add Section open with a precise inline native bridge error', async () => {
+    vi.mocked(createSection).mockRejectedValue('missing required key `listId`');
+    document.querySelector<HTMLButtonElement>('.tasks-section-group__add-section-btn')!.click();
+    const dialog = document.getElementById('tasks-add-section-dialog') as HTMLDialogElement;
+    dialog.querySelector<HTMLInputElement>('[data-tasks-target="addSectionNameInput"]')!.value = 'Waiting';
+    dialog.querySelector<HTMLButtonElement>('.btn-primary')!.click();
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+
+    expect(dialog.open).toBe(true);
+    expect(dialog.querySelector('[data-tasks-target="addSectionError"]')?.textContent)
+      .toContain('missing required key `listId`');
   });
 
   it('Cancel closes the add-section dialog WITHOUT calling createSection', () => {

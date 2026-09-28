@@ -98,6 +98,11 @@ export function decorateCodeBlocks(root: ParentNode): void {
     copyIcon.setAttribute('data-lucide', 'copy');
     copyBtn.appendChild(copyIcon);
     header.appendChild(copyBtn);
+    const copyStatus = document.createElement('span');
+    copyStatus.className = 'code-block__copy-status';
+    copyStatus.setAttribute('role', 'status');
+    copyStatus.setAttribute('aria-live', 'polite');
+    header.appendChild(copyStatus);
 
     // ── Assemble: insert figure before <pre>, move <pre> inside ────────────
     // pre.parentNode is guaranteed non-null here (it is a child of root or a
@@ -115,17 +120,31 @@ export function decorateCodeBlocks(root: ParentNode): void {
     });
 
     // Copy: writes captured code text to clipboard (user-gesture → OK for writeText)
-    copyBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(codeText).catch(() => {
-        // Clipboard unavailable; surface a transient accessible label + tooltip.
-        const originalLabel = copyBtn.getAttribute('aria-label') ?? 'Copy code';
+    let copySequence = 0;
+    let resetTimer: ReturnType<typeof setTimeout> | null = null;
+    copyBtn.addEventListener('click', async () => {
+      const sequence = ++copySequence;
+      if (resetTimer !== null) clearTimeout(resetTimer);
+      try {
+        if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+        await navigator.clipboard.writeText(codeText);
+        if (sequence !== copySequence || !figure.isConnected) return;
+        copyStatus.textContent = 'Copied';
+        copyBtn.setAttribute('aria-label', 'Copied');
+        copyBtn.setAttribute('title', 'Copied');
+      } catch {
+        if (sequence !== copySequence || !figure.isConnected) return;
+        copyStatus.textContent = 'Copy unavailable';
         copyBtn.setAttribute('aria-label', 'Copy unavailable');
         copyBtn.setAttribute('title', 'Copy unavailable');
-        setTimeout(() => {
-          copyBtn.setAttribute('aria-label', originalLabel);
-          copyBtn.setAttribute('title', originalLabel);
-        }, 2000);
-      });
+      }
+      resetTimer = setTimeout(() => {
+        resetTimer = null;
+        if (sequence !== copySequence || !figure.isConnected) return;
+        copyStatus.textContent = '';
+        copyBtn.setAttribute('aria-label', 'Copy code');
+        copyBtn.setAttribute('title', 'Copy code');
+      }, 2200);
     });
   }
 }

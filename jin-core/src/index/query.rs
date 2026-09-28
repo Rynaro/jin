@@ -43,6 +43,7 @@ pub(crate) struct TaskRow {
     /// S6 — parent task id (subtasks); `None` = top-level task.
     pub(crate) parent: Option<String>,
     pub(crate) agenda_bucket: Option<String>,
+    pub(crate) board_column_id: Option<String>,
 }
 
 /// A summary row for lists (P2 — used by rebuild; full query surface in P3).
@@ -57,6 +58,9 @@ pub(crate) struct ListRow {
     pub(crate) parent_id: Option<String>,
     pub(crate) view: String,
     pub(crate) sort_mode: String,
+    pub(crate) workflow_kind: Option<String>,
+    pub(crate) columns: String,
+    pub(crate) initial_column_id: Option<String>,
     pub(crate) archived_at: Option<String>,
     pub(crate) created: String,
     pub(crate) updated: String,
@@ -287,7 +291,7 @@ pub(crate) fn list_tasks(
     };
     let sql = format!(
         "SELECT id, title, status, priority, due, list_name, completed_at, deleted_at, \
-         created, updated, file_path, section_id, tags, position, reminders, parent, agenda_bucket \
+         created, updated, file_path, section_id, tags, position, reminders, parent, agenda_bucket, board_column_id \
          FROM tasks {} ORDER BY id ASC",
         where_clause
     );
@@ -315,6 +319,7 @@ pub(crate) fn list_tasks(
                 .unwrap_or_else(|| "[]".to_string()),
             parent: row.get(15)?,
             agenda_bucket: row.get(16)?,
+            board_column_id: row.get(17)?,
         })
     })?;
     rows.collect()
@@ -323,7 +328,7 @@ pub(crate) fn list_tasks(
 pub(crate) fn get_task(conn: &Connection, id: &str) -> SqlResult<Option<TaskRow>> {
     let mut stmt = conn.prepare(
         "SELECT id, title, status, priority, due, list_name, completed_at, deleted_at, \
-         created, updated, file_path, section_id, tags, position, reminders, parent, agenda_bucket \
+         created, updated, file_path, section_id, tags, position, reminders, parent, agenda_bucket, board_column_id \
          FROM tasks WHERE id = ?1",
     )?;
     let mut rows = stmt.query_map(params![id], |row| {
@@ -349,6 +354,7 @@ pub(crate) fn get_task(conn: &Connection, id: &str) -> SqlResult<Option<TaskRow>
                 .unwrap_or_else(|| "[]".to_string()),
             parent: row.get(15)?,
             agenda_bucket: row.get(16)?,
+            board_column_id: row.get(17)?,
         })
     })?;
     rows.next().transpose()
@@ -372,7 +378,7 @@ pub(crate) fn list_flexible_tasks(conn: &Connection) -> SqlResult<Vec<TaskRow>> 
 pub(crate) fn list_lists(conn: &Connection) -> SqlResult<Vec<ListRow>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, color, icon, position, parent_id, view, sort_mode, \
-         archived_at, created, updated, file_path FROM lists ORDER BY position ASC",
+         workflow_kind, columns, initial_column_id, archived_at, created, updated, file_path FROM lists ORDER BY position ASC",
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(ListRow {
@@ -384,10 +390,13 @@ pub(crate) fn list_lists(conn: &Connection) -> SqlResult<Vec<ListRow>> {
             parent_id: row.get(5)?,
             view: row.get(6)?,
             sort_mode: row.get(7)?,
-            archived_at: row.get(8)?,
-            created: row.get(9)?,
-            updated: row.get(10)?,
-            file_path: row.get(11)?,
+            workflow_kind: row.get(8)?,
+            columns: row.get(9)?,
+            initial_column_id: row.get(10)?,
+            archived_at: row.get(11)?,
+            created: row.get(12)?,
+            updated: row.get(13)?,
+            file_path: row.get(14)?,
         })
     })?;
     rows.collect()

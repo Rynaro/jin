@@ -1,165 +1,170 @@
 // @vitest-environment jsdom
-/**
- * sidebar_controller.test.ts — Stimulus wiring integration test for the
- * collapsible app sidebar.
- *
- * Loads the ACTUAL index.html body into jsdom, starts a real Stimulus
- * Application, registers SidebarController, and asserts the full contract:
- *   - the toggle target resolves
- *   - connect() restores the persisted collapsed state
- *   - clicking the toggle collapses/expands, flips aria, and persists
- *   - the collapsed-mode tooltip markup (data-tooltip) is present on every item
- *
- * Mirrors router_controller_wiring.test.ts. SidebarController imports no Tauri
- * APIs, so no invoke/dialog/icon mocks are needed.
- */
-
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { Application, defaultSchema } from '@hotwired/stimulus';
 import SidebarController from '../controllers/sidebar_controller';
 import { SIDEBAR_STORAGE_KEY } from '../lib/sidebar/state';
 
-const INDEX_HTML = readFileSync(resolve(process.cwd(), 'index.html'), 'utf-8');
+const INDEX_HTML = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
+const BODY = INDEX_HTML.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? '';
+const originalWidth = window.innerWidth;
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+const shell = () => document.querySelector<HTMLElement>('.jin-shell')!;
+const sidebar = () => document.querySelector<HTMLElement>('[data-sidebar-target="root"]')!;
+const switcher = () => document.querySelector<HTMLButtonElement>('[data-sidebar-target="switcher"]')!;
+const reveal = () => document.querySelector<HTMLButtonElement>('[data-sidebar-target="reveal"]')!;
+const toggle = () => document.querySelector<HTMLButtonElement>('[data-sidebar-target="toggle"]')!;
 
-function extractBodyInnerHTML(html: string): string {
-  const match = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-  if (!match) throw new Error('Could not extract <body> from index.html');
-  return match[1];
-}
-
-const BODY_CONTENT = extractBodyInnerHTML(INDEX_HTML);
-
-function aside(): HTMLElement {
-  return document.querySelector('[data-controller~="sidebar"]') as HTMLElement;
-}
-
-function toggleBtn(): HTMLButtonElement {
-  return document.querySelector('[data-sidebar-target="toggle"]') as HTMLButtonElement;
-}
-
-describe('SidebarController Stimulus wiring — integration', () => {
+describe('one adaptive SidebarController', () => {
   let app: Application;
 
-  /**
-   * Mount Stimulus + register the controller, then yield a macrotask so the
-   * async Stimulus connect() runs before assertions (start() connects on a
-   * tick after domReady, not synchronously).
-   */
-  async function mount(): Promise<void> {
+  async function mount(width = 1280): Promise<void> {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
     app = Application.start(document.documentElement, defaultSchema);
     app.register('sidebar', SidebarController);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
   }
 
   beforeEach(() => {
     localStorage.clear();
-    document.body.innerHTML = BODY_CONTENT;
+    document.body.innerHTML = BODY;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     app?.stop();
+    await tick();
     document.body.innerHTML = '';
     localStorage.clear();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
   });
 
-  // ── Markup wiring ───────────────────────────────────────────────────────────
-
-  it('the sidebar <aside> hosts the controller and a resolvable toggle target', async () => {
+  it('keeps one shared host while contextual navigation remains under route owners', async () => {
     await mount();
-    expect(aside()).toBeTruthy();
-    expect(toggleBtn()).toBeTruthy();
-    const ctrl = app.getControllerForElementAndIdentifier(aside(), 'sidebar');
-    expect(ctrl, 'SidebarController must be connected').toBeTruthy();
+    expect(app.getControllerForElementAndIdentifier(shell(), 'sidebar')).toBeTruthy();
+    for (const route of ['notes', 'tasks', 'settings']) {
+      const context = document.querySelector(`[data-sidebar-context="${route}"]`)!;
+      expect(context.closest(`[data-section-name="${route}"]`)).toBeTruthy();
+    }
+    expect(sidebar().contains(document.querySelector('[data-sidebar-context="notes"]'))).toBe(false);
+    expect(shell().dataset.navPresentation).toBe('desktop');
+    expect(shell().dataset.navVisible).toBe('true');
   });
 
-  it('every collapsible item carries a data-tooltip for icon-rail mode', async () => {
+  it('exposes all six routes through one switcher without duplicating links', async () => {
     await mount();
-    const tips = Array.from(
-      document.querySelectorAll('[data-tooltip]'),
-      (el) => el.getAttribute('data-tooltip'),
-    );
-    expect(tips).toEqual(
-      expect.arrayContaining(['Today', 'Notes', 'Tasks', 'Events', 'Settings', 'Capture']),
-    );
+    expect(Array.from(document.querySelectorAll('.jin-nav-list [data-section]'),
+      item => item.getAttribute('data-section'))).toEqual([
+      'notifications', 'today', 'notes', 'tasks', 'events', 'settings',
+    ]);
+    switcher().click();
+    expect(switcher().getAttribute('aria-expanded')).toBe('true');
+    expect(document.querySelector('[data-section="today"]')).toBe(document.activeElement);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(switcher().getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(switcher());
   });
 
-  // ── Layout reorg (Capture-to-top, Settings-as-gear) ─────────────────────────
-  // These read the static markup (no mount needed; beforeEach injects the body).
-
-  it('pins the cozy Capture action at the top, above the nav (not in the foot)', () => {
-    const capture = document.querySelector('.jin-capture-btn') as HTMLElement;
-    expect(capture).toBeTruthy();
-    expect(capture.closest('.jin-sidebar-actions')).toBeTruthy();
-    expect(capture.closest('.jin-sidebar-foot')).toBeNull();
-    // Capture's actions block precedes the nav in document order.
-    const actions = document.querySelector('.jin-sidebar-actions') as HTMLElement;
-    const nav = document.querySelector('.jin-nav') as HTMLElement;
-    expect(actions.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it('keeps Settings as a labeled rail row in the foot (out of the nav list)', () => {
-    const settings = document.querySelector('[data-section="settings"]') as HTMLElement;
-    expect(settings).toBeTruthy();
-    expect(settings.closest('.jin-sidebar-foot')).toBeTruthy();
-    expect(settings.closest('.jin-nav-list')).toBeNull();
-    expect(settings.classList.contains('jin-settings-btn')).toBe(true);
-    // Expanded rail keeps the label visible; collapsed CSS hides it and uses the tooltip.
-    expect(settings.querySelector('span')?.textContent).toBe('Settings');
-    expect(settings.getAttribute('data-tooltip')).toBe('Settings');
-    expect(settings.getAttribute('aria-label')).toBe('Settings');
-    // Still a router target so navigation + active state keep working.
-    expect(settings.getAttribute('data-router-target')).toBe('navItem');
-  });
-
-  it('places Notifications first below Capture, before the primary sections', () => {
-    const navSections = Array.from(
-      document.querySelectorAll('.jin-nav-list [data-section]'),
-      (el) => el.getAttribute('data-section'),
-    );
-    expect(navSections).toEqual(['notifications', 'today', 'notes', 'tasks', 'events']);
-  });
-
-  // ── Default state (nothing persisted) ───────────────────────────────────────
-
-  it('starts expanded when no preference is stored', async () => {
+  it('changes context only when the router publishes an accepted commit', async () => {
     await mount();
-    expect(aside().classList.contains('is-collapsed')).toBe(false);
-    expect(toggleBtn().getAttribute('aria-expanded')).toBe('true');
+    document.querySelector<HTMLElement>('[data-section="notes"]')!.click();
+    expect(shell().dataset.activeSection).toBe('today');
+    window.dispatchEvent(new CustomEvent('jin:route-committed', { detail: { section: 'notes' } }));
+    expect(shell().dataset.activeSection).toBe('notes');
+    expect(switcher().textContent).toContain('Notes');
+    expect(document.querySelector('[data-sidebar-context="notes"]')?.hasAttribute('inert')).toBe(false);
+    expect(document.querySelector('.jin-nav')?.hasAttribute('inert')).toBe(true);
   });
 
-  // ── Toggle behaviour ────────────────────────────────────────────────────────
-
-  it('clicking the toggle collapses the sidebar, flips aria, and persists', async () => {
+  it('fully releases desktop width, persists v2 state, and leaves a reachable reopen', async () => {
     await mount();
-    toggleBtn().click();
-
-    expect(aside().classList.contains('is-collapsed')).toBe(true);
-    expect(toggleBtn().getAttribute('aria-expanded')).toBe('false');
-    expect(toggleBtn().getAttribute('aria-label')).toBe('Expand sidebar');
-    expect(localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBe('{"collapsed":true}');
+    toggle().click();
+    expect(shell().dataset.navVisible).toBe('false');
+    expect(sidebar().hasAttribute('inert')).toBe(true);
+    expect(localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBe('{"version":2,"expanded":false}');
+    expect(reveal().getAttribute('aria-expanded')).toBe('false');
+    reveal().click();
+    expect(shell().dataset.navVisible).toBe('true');
+    expect(localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBe('{"version":2,"expanded":true}');
   });
 
-  it('clicking the toggle twice returns to expanded and persists false', async () => {
+  it('imports the old collapsed preference without restoring an icon strip', async () => {
+    localStorage.setItem(SIDEBAR_STORAGE_KEY, '{"collapsed":true}');
     await mount();
-    toggleBtn().click();
-    toggleBtn().click();
-
-    expect(aside().classList.contains('is-collapsed')).toBe(false);
-    expect(toggleBtn().getAttribute('aria-expanded')).toBe('true');
-    expect(toggleBtn().getAttribute('aria-label')).toBe('Collapse sidebar');
-    expect(localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBe('{"collapsed":false}');
+    expect(shell().dataset.navVisible).toBe('false');
+    expect(sidebar().classList.contains('is-collapsed')).toBe(false);
+    expect(sidebar().hasAttribute('inert')).toBe(true);
+    reveal().click();
+    expect(shell().dataset.navVisible).toBe('true');
   });
 
-  // ── Persistence restore on connect ──────────────────────────────────────────
+  it('uses one transient drawer below 960px and returns focus after selection', async () => {
+    await mount(760);
+    expect(shell().dataset.navPresentation).toBe('drawer');
+    expect(shell().dataset.navVisible).toBe('false');
+    reveal().focus();
+    reveal().click();
+    expect(shell().dataset.navVisible).toBe('true');
+    expect(document.activeElement).toBe(switcher());
+    window.dispatchEvent(new CustomEvent('jin:sidebar-selection'));
+    expect(shell().dataset.navVisible).toBe('false');
+    expect(document.activeElement).toBe(reveal());
+    expect(localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBeNull();
+  });
 
-  it('restores the collapsed state from localStorage on connect', async () => {
-    localStorage.setItem(SIDEBAR_STORAGE_KEY, JSON.stringify({ collapsed: true }));
-    await mount();
+  it('does not close the drawer for a folder chevron or a rejected route intent', async () => {
+    await mount(760);
+    reveal().click();
+    document.querySelector<HTMLElement>('[data-section="tasks"]')!.click();
+    expect(shell().dataset.activeSection).toBe('today');
+    expect(shell().dataset.navVisible).toBe('true');
+    document.querySelector<HTMLElement>('.folder-row__chevron')?.click();
+    expect(shell().dataset.navVisible).toBe('true');
+  });
 
-    expect(aside().classList.contains('is-collapsed')).toBe(true);
-    expect(toggleBtn().getAttribute('aria-expanded')).toBe('false');
-    expect(toggleBtn().getAttribute('aria-label')).toBe('Expand sidebar');
+  it('lets an open folder action menu handle the first Escape before closing the drawer', async () => {
+    await mount(760);
+    window.dispatchEvent(new CustomEvent('jin:route-committed', { detail: { section: 'notes' } }));
+    reveal().focus();
+    reveal().click();
+    const menu = document.createElement('div');
+    menu.className = 'folder-row__menu';
+    document.querySelector('[data-sidebar-context="notes"]')!.append(menu);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(shell().dataset.navVisible).toBe('true');
+    menu.hidden = true;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(shell().dataset.navVisible).toBe('false');
+    expect(document.activeElement).toBe(reveal());
+  });
+
+  it('skips past route context into working content and dismisses an open drawer', async () => {
+    await mount(760);
+    window.dispatchEvent(new CustomEvent('jin:route-committed', { detail: { section: 'notes' } }));
+    reveal().focus();
+    reveal().click();
+    expect(document.querySelector('[data-sidebar-workspace]')?.hasAttribute('inert')).toBe(true);
+    document.querySelector<HTMLAnchorElement>('.skip-to-content')!.click();
+    expect(shell().dataset.navVisible).toBe('false');
+    expect(document.activeElement).toBe(document.querySelector('[data-section-name="notes"] [data-sidebar-workspace]'));
+    expect(document.activeElement?.closest('[data-sidebar-context]')).toBeNull();
+  });
+
+  it('keeps the first rapid Tab in the reopened drawer while context visibility settles', async () => {
+    await mount(760);
+    shell().hidden = false; // App boot normally reveals the shell.
+    window.dispatchEvent(new CustomEvent('jin:route-committed', { detail: { section: 'settings' } }));
+    document.querySelector<HTMLElement>('[data-section-name="settings"]')!.hidden = false;
+    reveal().focus();
+    reveal().click();
+    const context = document.querySelector<HTMLElement>('[data-sidebar-context="settings"]')!;
+    context.style.visibility = 'hidden';
+    switcher().focus();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+    expect(sidebar().contains(document.activeElement)).toBe(true);
+    document.body.tabIndex = -1;
+    document.body.focus();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+    expect(document.activeElement).toBe(switcher());
   });
 });

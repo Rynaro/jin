@@ -27,6 +27,9 @@
   function fixtureStorageGet(key) {
     try { return window.localStorage && window.localStorage.getItem(key); } catch (_) { return null; }
   }
+  // Opt in to native-invoke simulation for opener QA without changing normal
+  // browser layout tests, which intentionally keep isTauri() false.
+  if (fixtureStorageGet('jin.fixture.simulateTauri') === 'true') window.isTauri = true;
   function fixtureStorageSet(key, value) {
     try { if (window.localStorage) window.localStorage.setItem(key, value); } catch (_) { /* fixture still works without storage */ }
   }
@@ -43,18 +46,26 @@
   }
   function saveFirstRunState(state) { fixtureStorageSet('jin.fixture.firstRunState', JSON.stringify(state)); }
   var lists = [
-    { id: 'inbox', name: 'Inbox', color: 'accent', icon: 'inbox', position: 'V', parent_id: null, view: 'list', sort_mode: 'manual', is_default: true, task_count: 4, sections: [] },
-    { id: 'work', name: 'Work', color: 'blue', icon: 'briefcase', position: 'W', parent_id: null, view: 'list', sort_mode: 'manual', is_default: false, task_count: 3, sections: [
+    { id: 'inbox', name: 'Inbox', color: 'accent', icon: 'inbox', position: 'V', parent_id: null, view: 'list', sort_mode: 'manual', workflow_kind: 'checklist', columns: [], initial_column_id: null, is_default: true, task_count: 4, sections: [] },
+    { id: 'work', name: 'Work', color: 'blue', icon: 'briefcase', position: 'W', parent_id: null, view: 'list', sort_mode: 'manual', workflow_kind: null, columns: [], initial_column_id: null, is_default: false, task_count: 3, sections: [
       { id: 's1', list_id: 'work', name: 'Todo', position: 'V', task_count: 2 },
       { id: 's2', list_id: 'work', name: 'In Progress', position: 'W', task_count: 1 }
     ] },
-    { id: 'home', name: 'Home', color: 'green', icon: 'house', position: 'X', parent_id: null, view: 'list', sort_mode: 'manual', is_default: false, task_count: 2, sections: [] }
+    { id: 'home', name: 'Home', color: 'green', icon: 'house', position: 'X', parent_id: null, view: 'list', sort_mode: 'manual', workflow_kind: 'checklist', columns: [], initial_column_id: null, is_default: false, task_count: 2, sections: [] },
+    { id: 'project', name: 'Project', color: 'purple', icon: 'layout-grid', position: 'Y', parent_id: null, view: 'board', sort_mode: 'manual', workflow_kind: 'board', columns: [
+      { id: 'project-queue', name: 'Queue', position: 'V', type: 'queue' },
+      { id: 'project-backlog', name: 'Backlog', position: 'Vb', type: 'none' },
+      { id: 'project-progress', name: 'In Progress', position: 'W', type: 'in_progress' },
+      { id: 'project-review', name: 'Review', position: 'X', type: 'none' },
+      { id: 'project-done', name: 'Done', position: 'Y', type: 'done' }
+    ], initial_column_id: 'project-queue', is_default: false, task_count: 3, sections: [] }
   ];
+  var nextSectionSequence = 3;
   var tags = [
     { slug: 'email', name: 'email', color: 'blue', task_count: 2 },
     { slug: 'urgent', name: 'urgent', color: 'red', task_count: 1 }
   ];
-  var taskBase = { status: 'todo', priority: 'none', due: null, list: 'inbox', completed_at: null, deleted_at: null, created: NOW, updated: NOW, backlinks: [], body: '', section_id: null, parent: null, tags: [], position: 'V', reminders: [], agenda_bucket: null };
+  var taskBase = { status: 'todo', priority: 'none', due: null, list: 'inbox', board_column_id: null, completed_at: null, deleted_at: null, created: NOW, updated: NOW, backlinks: [], body: '', section_id: null, parent: null, tags: [], position: 'V', reminders: [], agenda_bucket: null };
   function task(fields) { return Object.assign({}, taskBase, fields); }
   var tasks = [
     task({ id: 't1', title: 'Reply to the design review email with the complete workspace rationale', body: 'Document the continuous workspace rationale and verify the interaction details.', list: 'work', section_id: 's1', priority: 'high', due: '2026-08-19', tags: ['email', 'urgent'], position: 'V' }),
@@ -62,9 +73,12 @@
     task({ id: 't3', title: 'Prepare stakeholder notes', list: 'work', section_id: 's2', status: 'doing', priority: 'low', position: 'X' }),
     task({ id: 't4', title: 'Water the plants', list: 'home', priority: 'low', position: 'Y' }),
     task({ id: 't5', title: 'Renew library books', list: 'home', status: 'done', completed_at: NOW, position: 'Z' }),
-    task({ id: 't6', title: 'Book dentist appointment', list: 'inbox', position: 'a0', agenda_bucket: 'flexible' })
+    task({ id: 't6', title: 'Book dentist appointment', list: 'inbox', position: 'a0', agenda_bucket: 'flexible' }),
+    task({ id: 't7', title: 'Sketch the release plan', list: 'project', board_column_id: 'project-queue', position: 'V' }),
+    task({ id: 't8', title: 'Review interaction details', list: 'project', board_column_id: 'project-review', status: 'doing', position: 'W' }),
+    task({ id: 't9', title: 'Approve navigation flow', list: 'project', board_column_id: 'project-done', status: 'done', completed_at: NOW, position: 'X' })
   ];
-  var nextTaskSequence = 7;
+  var nextTaskSequence = 10;
   var folders = [
     { path: 'Field Notes', name: 'Field Notes', note_count: 2 },
     { path: 'Field Notes/Water', name: 'Water', note_count: 0 },
@@ -81,7 +95,7 @@
   var nextNoteSequence = 5;
   var createdNoteIds = {};
   var collections = [];
-  var eventBase = { description: null, location: null, is_all_day: false, start_tzid: null, end_tzid: null, floating: false, status: 'confirmed', source: 'jin', authority: 'jin', ical_uid: null, derived_from: null, recurrence: [], recurring_event_id: null, original_start: null, master_id: null, recurrence_unexpanded: false, sequence: 0, organizer: null, attendees: null, attendees_omitted: null, conference_data: null, hangout_link: null, reminders: null, created: NOW, updated: NOW, backlinks: [], sync_context: null };
+  var eventBase = { description: null, location: null, is_all_day: false, start_tzid: 'UTC', end_tzid: 'UTC', floating: false, status: 'confirmed', source: 'jin', authority: 'jin', ical_uid: null, derived_from: null, recurrence: [], recurring_event_id: null, original_start: null, master_id: null, recurrence_unexpanded: false, sequence: 0, organizer: null, attendees: null, attendees_omitted: null, conference_data: null, hangout_link: null, reminders: null, created: NOW, updated: NOW, backlinks: [], sync_context: null };
   function event(fields) {
     var item = Object.assign({}, eventBase, fields);
     item.recurrence = (item.recurrence || []).slice();
@@ -106,15 +120,15 @@
     {
       id: 'acct-personal', alias: 'Personal', principal: 'personal@example.com', state: 'connected', auth_generation: 2,
       calendars: [
-        { account_id: 'acct-personal', calendar_id: 'personal-primary', name: 'Personal', primary: true, access_role: 'owner', writable: true, enabled: true, available: true, route_generation: 3 },
-        { account_id: 'acct-personal', calendar_id: 'family-shared', name: 'Family', primary: false, access_role: 'reader', writable: false, enabled: true, available: true, route_generation: 1 }
+        { account_id: 'acct-personal', calendar_id: 'personal-primary', name: 'Personal', primary: true, access_role: 'owner', writable: true, enabled: true, available: true, allowed_conference_solution_types: ['hangoutsMeet'], route_generation: 3 },
+        { account_id: 'acct-personal', calendar_id: 'family-shared', name: 'Family', primary: false, access_role: 'reader', writable: false, enabled: true, available: true, allowed_conference_solution_types: [], route_generation: 1 }
       ]
     },
     {
       id: 'acct-work', alias: 'Work', principal: 'work@example.com', state: 'connected', auth_generation: 4,
       calendars: [
-        { account_id: 'acct-work', calendar_id: 'work-primary', name: 'Team Calendar', primary: true, access_role: 'writer', writable: true, enabled: true, available: true, route_generation: 5 },
-        { account_id: 'acct-work', calendar_id: 'focus-room', name: 'Focus Room', primary: false, access_role: 'owner', writable: true, enabled: false, available: true, route_generation: 2 }
+        { account_id: 'acct-work', calendar_id: 'work-primary', name: 'Team Calendar', primary: true, access_role: 'writer', writable: true, enabled: true, available: true, allowed_conference_solution_types: ['hangoutsMeet'], route_generation: 5 },
+        { account_id: 'acct-work', calendar_id: 'focus-room', name: 'Focus Room', primary: false, access_role: 'owner', writable: true, enabled: false, available: true, allowed_conference_solution_types: ['hangoutsMeet'], route_generation: 2 }
       ]
     }
   ];
@@ -411,9 +425,64 @@
     return JSON.parse(JSON.stringify(value));
   }
 
+  function fixtureCalendarProjection(input) {
+    if (!input || !/^\d{4}-\d{2}-\d{2}$/.test(input.from || '') || !/^\d{4}-\d{2}-\d{2}$/.test(input.to || '') || input.to < input.from) {
+      throw new Error('calendar_range_projection requires an inclusive from/to date window');
+    }
+    function previousDate(date) { return new Date(Date.parse(date + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10); }
+    function continuations(start, end) {
+      var dates = [];
+      var cursor = new Date(Date.parse(start + 'T00:00:00Z') + 86400000);
+      var last = Date.parse(end + 'T00:00:00Z');
+      while (cursor.getTime() <= last) {
+        var date = cursor.toISOString().slice(0, 10);
+        if (date >= input.from && date <= input.to) dates.push(date);
+        cursor = new Date(cursor.getTime() + 86400000);
+      }
+      return dates;
+    }
+    var entries = events.filter(function active(item) { return item.status !== 'cancelled'; }).map(function project(item) {
+      var allDay = Boolean(item.is_all_day);
+      var floating = Boolean(item.floating);
+      var startDisplay = allDay ? item.start.slice(0, 10) : item.start.length === 16 ? item.start + ':00' : item.start;
+      var endDisplay = allDay ? previousDate(item.end.slice(0, 10)) : item.end.length === 16 ? item.end + ':00' : item.end;
+      var startDate = startDisplay.slice(0, 10);
+      var endDate = endDisplay.slice(0, 10);
+      if (endDate < startDate) endDate = startDate;
+      if (startDate > input.to || endDate < input.from) return null;
+      var startUtc = allDay || floating ? null : new Date(startDisplay + 'Z').toISOString().replace('.000', '');
+      var endUtc = allDay || floating ? null : new Date(endDisplay + 'Z').toISOString().replace('.000', '');
+      return {
+        event_id: item.id, title: item.title,
+        slot_state: allDay ? 'all_day' : floating ? 'floating' : 'anchored',
+        start_date: startDate, end_date: endDate,
+        start_display: startDisplay, end_display: endDisplay,
+        start_utc: startUtc, end_utc: endUtc,
+        continuation_dates: continuations(startDate, endDate),
+        elapsed_minutes: Math.max(0, (Date.parse(item.end + (allDay ? 'T00:00:00Z' : 'Z')) - Date.parse(item.start + (allDay ? 'T00:00:00Z' : 'Z'))) / 60000),
+        start_tzid: item.start_tzid, end_tzid: item.end_tzid,
+        is_all_day: allDay, floating: floating,
+        start_resolution: allDay || floating ? null : 'exact',
+        end_resolution: allDay || floating ? null : 'exact',
+        temporal_editable: true, temporal_disabled_reason: null
+      };
+    }).filter(Boolean);
+    entries.sort(function sortProjection(a, b) {
+      return a.start_date.localeCompare(b.start_date) || a.start_display.localeCompare(b.start_display) || a.event_id.localeCompare(b.event_id);
+    });
+    return { from: input.from, to: input.to, display_tz: 'UTC', entries: entries };
+  }
+
   window.__TAURI_INTERNALS__ = {
     invoke: function invoke(cmd, args) {
       var options = args || {};
+      if (cmd === 'open_external_url') {
+        window.__JIN_EXTERNAL_OPEN_CALLS__ = window.__JIN_EXTERNAL_OPEN_CALLS__ || [];
+        window.__JIN_EXTERNAL_OPEN_CALLS__.push(String(options.url || ''));
+        return fixtureStorageGet('jin.fixture.externalOpenError') === 'true'
+          ? Promise.reject({ code: 1, kind: 'other', message: 'Fixture browser opening failed.', retriable: false })
+          : Promise.resolve();
+      }
       if (cmd === 'get_launch_state') {
         return Promise.resolve(fixtureStorageGet('jin.fixture.rootUnavailable') === 'true'
           ? { mode: 'root_unavailable', root: '/Users/fixture/Missing', reason: 'Your previously selected Jin folder is unavailable.', env_locked: false }
@@ -470,6 +539,108 @@
       if (cmd === 'list_lists') {
         return Promise.resolve(clone(lists));
       }
+      if (cmd === 'create_list') {
+        var listInput = options.input || {};
+        var kind = listInput.workflow_kind === 'board' ? 'board' : 'checklist';
+        var listId = 'fixture-list-' + String(lists.length + 1);
+        var newList = { id: listId, name: String(listInput.name || 'New list'), color: listInput.color || 'accent', icon: listInput.icon || 'list', position: 'z' + String(lists.length), parent_id: null, view: 'list', sort_mode: 'manual', workflow_kind: kind, columns: kind === 'board' ? [
+          { id: listId + '-queue', name: 'Queue', position: 'V', type: 'queue' },
+          { id: listId + '-progress', name: 'In Progress', position: 'W', type: 'in_progress' },
+          { id: listId + '-done', name: 'Done', position: 'X', type: 'done' }
+        ] : [], initial_column_id: kind === 'board' ? listId + '-queue' : null, is_default: false, task_count: 0, sections: [] };
+        lists.push(newList);
+        return Promise.resolve(clone(newList));
+      }
+      if (cmd === 'edit_list') {
+        var editableList = lists.find(function findEditable(item) { return item.id === options.id; });
+        if (!editableList) return Promise.reject(new Error('List not found: ' + options.id));
+        ['name', 'color', 'icon', 'view', 'sort_mode'].forEach(function updateList(key) {
+          if (Object.prototype.hasOwnProperty.call(options.input || {}, key)) editableList[key] = options.input[key];
+        });
+        return Promise.resolve(clone(editableList));
+      }
+      if (cmd === 'create_section' || cmd === 'rename_section' || cmd === 'reorder_section' || cmd === 'delete_section') {
+        var sectionList = lists.find(function findSectionList(item) { return item.id === options.list_id; });
+        if (!sectionList) return Promise.reject({ code: 3, kind: 'not_found', message: 'List not found: ' + options.list_id, retriable: false });
+        var sections = sectionList.sections || (sectionList.sections = []);
+        var selectedSection = sections.find(function findSection(item) { return item.id === options.section_id; });
+        if (cmd === 'create_section') {
+          var sectionName = String((options.input || {}).name || '').trim();
+          if (!sectionName) return Promise.reject({ code: 2, kind: 'usage', message: 'Section name cannot be empty.', retriable: false });
+          if (sections.some(function duplicate(item) { return item.name.toLocaleLowerCase() === sectionName.toLocaleLowerCase(); })) return Promise.reject({ code: 2, kind: 'usage', message: 'A section with that name already exists.', retriable: false });
+          var createdSection = { id: 'fixture-section-' + nextSectionSequence++, list_id: sectionList.id, name: sectionName, position: 'z' + sections.length, task_count: 0 };
+          sections.push(createdSection);
+          return Promise.resolve(clone(createdSection));
+        }
+        if (!selectedSection) return Promise.reject({ code: 3, kind: 'not_found', message: 'Section not found: ' + options.section_id, retriable: false });
+        if (cmd === 'rename_section') {
+          var renamedSection = String((options.input || {}).name || '').trim();
+          if (!renamedSection) return Promise.reject({ code: 2, kind: 'usage', message: 'Section name cannot be empty.', retriable: false });
+          selectedSection.name = renamedSection;
+          return Promise.resolve(clone(selectedSection));
+        }
+        if (cmd === 'reorder_section') {
+          selectedSection.position = String((options.input || {}).position || selectedSection.position);
+          return Promise.resolve(clone(selectedSection));
+        }
+        tasks.forEach(function clearSection(item) { if (item.list === sectionList.id && item.section_id === selectedSection.id) item.section_id = null; });
+        sectionList.sections = sections.filter(function retainSection(item) { return item.id !== selectedSection.id; });
+        return Promise.resolve();
+      }
+      if (cmd === 'preview_workflow_setup') {
+        var setupList = lists.find(function findSetup(item) { return item.id === options.id; });
+        if (!setupList || setupList.workflow_kind) return Promise.reject(new Error('Workflow already set up'));
+        var members = tasks.filter(function member(item) { return item.list === options.id && item.deleted_at === null; });
+        return Promise.resolve({ list_id: options.id, target: options.target, snapshot: 'fixture:' + options.id + ':' + members.length, todo: members.filter(function countTodo(item) { return item.status === 'todo'; }).length, doing: members.filter(function countDoing(item) { return item.status === 'doing'; }).length, done: members.filter(function countDone(item) { return item.status === 'done'; }).length, cancelled: members.filter(function countCancelled(item) { return item.status === 'cancelled'; }).length, subtasks: members.filter(function countChild(item) { return item.parent !== null; }).length });
+      }
+      if (cmd === 'apply_workflow_setup') {
+        var applyList = lists.find(function findApply(item) { return item.id === options.id; });
+        if (!applyList || applyList.workflow_kind) return Promise.reject(new Error('Workflow already set up'));
+        var applyMembers = tasks.filter(function member(item) { return item.list === options.id && item.deleted_at === null; });
+        if (options.snapshot !== 'fixture:' + options.id + ':' + applyMembers.length) return Promise.reject(new Error('The list changed. Review it again.'));
+        applyList.workflow_kind = options.target;
+        applyList.columns = options.target === 'board' ? [
+          { id: applyList.id + '-queue', name: 'Queue', position: 'V', type: 'queue' },
+          { id: applyList.id + '-progress', name: 'In Progress', position: 'W', type: 'in_progress' },
+          { id: applyList.id + '-done', name: 'Done', position: 'X', type: 'done' }
+        ] : [];
+        applyList.initial_column_id = options.target === 'board' ? applyList.id + '-queue' : null;
+        applyMembers.forEach(function assign(item) {
+          if (options.target === 'board' && item.status !== 'cancelled') item.board_column_id = applyList.id + '-' + (item.status === 'doing' ? 'progress' : item.status === 'done' ? 'done' : 'queue');
+          if (options.target === 'checklist' && item.status === 'doing') item.status = 'todo';
+        });
+        return Promise.resolve(clone(applyList));
+      }
+      if (cmd === 'create_board_column' || cmd === 'rename_board_column' || cmd === 'reorder_board_column' || cmd === 'change_board_column_type' || cmd === 'delete_board_column' || cmd === 'set_initial_board_column') {
+        var boardList = lists.find(function findBoard(item) { return item.id === options.id; });
+        if (!boardList || boardList.workflow_kind !== 'board') return Promise.reject(new Error('Board not found'));
+        var boardColumn = boardList.columns.find(function findColumn(item) { return item.id === options.column_id; });
+        if (cmd === 'set_initial_board_column') {
+          if (!boardColumn || (boardColumn.type !== 'queue' && boardColumn.type !== 'none')) return Promise.reject(new Error('Initial column must be Queue or No status change'));
+          boardList.initial_column_id = boardColumn.id;
+        }
+        if (cmd === 'create_board_column') boardList.columns.push({ id: boardList.id + '-column-' + (boardList.columns.length + 1), name: options.name, position: 'z' + boardList.columns.length, type: options.column_type });
+        if (cmd === 'rename_board_column' && boardColumn) boardColumn.name = options.name;
+        if (cmd === 'reorder_board_column' && boardColumn) boardColumn.position = options.position;
+        if (cmd === 'change_board_column_type' && boardColumn) {
+          if (tasks.some(function occupied(item) { return item.board_column_id === boardColumn.id; })) return Promise.reject(new Error('Move tasks before changing this column type'));
+          if (boardList.initial_column_id === boardColumn.id && options.column_type !== 'queue' && options.column_type !== 'none') return Promise.reject(new Error('Initial column must be Queue or No status change'));
+          if (boardColumn.type === 'done' && options.column_type !== 'done' && boardList.columns.filter(function done(item) { return item.type === 'done'; }).length === 1) return Promise.reject(new Error('Keep at least one Done column'));
+          boardColumn.type = options.column_type;
+        }
+        if (cmd === 'delete_board_column' && boardColumn) {
+          var occupied = tasks.filter(function inColumn(item) { return item.board_column_id === boardColumn.id; });
+          var replacement = boardList.columns.find(function findReplacement(item) { return item.id === options.replacement_id && item.id !== boardColumn.id; });
+          if (boardColumn.type === 'done' && boardList.columns.filter(function done(item) { return item.type === 'done'; }).length === 1) return Promise.reject(new Error('Keep at least one Done column'));
+          if (boardList.initial_column_id === boardColumn.id && (!replacement || (replacement.type !== 'queue' && replacement.type !== 'none'))) return Promise.reject(new Error('Choose a new initial column'));
+          if (occupied.length && !replacement) return Promise.reject(new Error('Choose a destination for tasks in this column'));
+          if (occupied.some(function incompatible(item) { return !((item.status === 'todo' && (replacement.type === 'queue' || replacement.type === 'none')) || (item.status === 'doing' && (replacement.type === 'in_progress' || replacement.type === 'none')) || (item.status === 'done' && replacement.type === 'done')); })) return Promise.reject(new Error('Replacement cannot hold every task'));
+          occupied.forEach(function moveOut(item) { item.board_column_id = replacement.id; });
+          if (boardList.initial_column_id === boardColumn.id) boardList.initial_column_id = replacement.id;
+          boardList.columns = boardList.columns.filter(function retain(item) { return item.id !== boardColumn.id; });
+        }
+        return Promise.resolve(clone(boardList));
+      }
       if (cmd === 'reorder_list') {
         var listIndex = lists.findIndex(function findList(item) { return item.id === options.id; });
         if (listIndex === -1) return Promise.reject(new Error('List not found: ' + options.id));
@@ -504,6 +675,10 @@
           if (!parentTask) return Promise.reject(new Error('Parent task not found: ' + parentId));
           if (parentTask.parent !== null) return Promise.reject(new Error('A subtask cannot have its own subtasks'));
         }
+        var destination = lists.find(function findDestination(item) { return item.id === (createInput.list || 'inbox'); });
+        var chosenColumn = destination && destination.workflow_kind === 'board'
+          ? destination.columns.find(function exactColumn(item) { return item.id === (createInput.board_column_id || destination.initial_column_id); }) || destination.columns.find(function queueColumn(item) { return item.type === 'queue'; }) || destination.columns.find(function neutralColumn(item) { return item.type === 'none'; })
+          : null;
         var createdTask = task({
           id: 'fixture-task-' + String(nextTaskSequence++).padStart(3, '0'),
           title: title,
@@ -511,6 +686,9 @@
           priority: String(createInput.priority || 'none'),
           due: createInput.due === undefined ? null : createInput.due,
           list: String(createInput.list || 'inbox'),
+          board_column_id: chosenColumn ? chosenColumn.id : null,
+          status: chosenColumn ? chosenColumn.type === 'done' ? 'done' : chosenColumn.type === 'in_progress' ? 'doing' : 'todo' : 'todo',
+          completed_at: chosenColumn && chosenColumn.type === 'done' ? NOW : null,
           tags: clone(createInput.tags || []),
           reminders: clone(createInput.reminders || []),
           parent: parentId,
@@ -536,8 +714,20 @@
       if (cmd === 'set_task_status') {
         var statusTask = tasks.find(function findStatusTask(item) { return item.id === options.id; });
         if (!statusTask) return Promise.reject(new Error('Task not found: ' + options.id));
-        statusTask.status = String(options.status || 'todo');
-        statusTask.completed_at = statusTask.status === 'done' ? NOW : null;
+        var requestedStatus = String(options.status || 'todo');
+        var statusList = lists.find(function findStatusList(item) { return item.id === statusTask.list; });
+        if (statusList && statusList.workflow_kind === 'board' && requestedStatus !== 'cancelled') {
+          var currentColumn = statusList.columns.find(function exactCurrent(item) { return item.id === statusTask.board_column_id; });
+          var targetColumn = requestedStatus === 'todo'
+            ? currentColumn && (currentColumn.type === 'queue' || currentColumn.type === 'none') ? currentColumn : statusList.columns.find(function initial(item) { return item.id === statusList.initial_column_id; })
+            : requestedStatus === 'doing'
+              ? currentColumn && (currentColumn.type === 'in_progress' || currentColumn.type === 'none') ? currentColumn : statusList.columns.find(function progress(item) { return item.type === 'in_progress'; }) || statusList.columns.find(function neutral(item) { return item.type === 'none'; })
+              : currentColumn && currentColumn.type === 'done' ? currentColumn : statusList.columns.find(function done(item) { return item.type === 'done'; });
+          if (!targetColumn) return Promise.reject(new Error('No compatible Board column'));
+          statusTask.board_column_id = targetColumn ? targetColumn.id : null;
+        }
+        statusTask.status = requestedStatus;
+        statusTask.completed_at = requestedStatus === 'done' ? statusTask.completed_at || NOW : null;
         statusTask.updated = NOW;
         return Promise.resolve(clone(statusTask));
       }
@@ -545,8 +735,44 @@
         var moveTask = tasks.find(function findMoveTask(item) { return item.id === options.id; });
         if (!moveTask) return Promise.reject(new Error('Task not found: ' + options.id));
         var moveInput = options.input || {};
-        if (moveInput.list_id !== undefined) moveTask.list = moveInput.list_id;
+        var targetListId = moveInput.list_id === undefined ? moveTask.list : moveInput.list_id;
+        var targetList = lists.find(function findTarget(item) { return item.id === targetListId; });
+        if (!targetList) return Promise.reject(new Error('List not found: ' + targetListId));
+        if (moveInput.section_id && !targetList.sections.some(function findSection(item) { return item.id === moveInput.section_id; })) {
+          return Promise.reject(new Error('Section not found'));
+        }
+        var nextStatus = moveTask.status;
+        var nextColumn = null;
+        if (targetList.workflow_kind === 'board') {
+          if (moveInput.board_column_id) {
+            var explicitColumn = targetList.columns.find(function findTargetColumn(item) { return item.id === moveInput.board_column_id; });
+            if (!explicitColumn) return Promise.reject(new Error('Column not found'));
+            if (nextStatus === 'cancelled') return Promise.reject(new Error('Restore Cancelled work before moving it into a column'));
+            nextColumn = explicitColumn;
+            nextStatus = explicitColumn.type === 'done' ? 'done' : explicitColumn.type === 'in_progress' ? 'doing' : explicitColumn.type === 'none' && nextStatus === 'doing' ? 'doing' : 'todo';
+          } else if (nextStatus !== 'cancelled') {
+            nextColumn = targetList.columns.find(function matchingCurrent(item) { return item.id === moveTask.board_column_id && ((nextStatus === 'todo' && (item.type === 'queue' || item.type === 'none')) || (nextStatus === 'doing' && (item.type === 'in_progress' || item.type === 'none')) || (nextStatus === 'done' && item.type === 'done')); })
+              || (nextStatus === 'todo' ? targetList.columns.find(function initial(item) { return item.id === targetList.initial_column_id; }) : null)
+              || targetList.columns.find(function matchingType(item) { return item.type === (nextStatus === 'done' ? 'done' : nextStatus === 'doing' ? 'in_progress' : 'queue'); })
+              || (nextStatus === 'doing' ? targetList.columns.find(function neutral(item) { return item.type === 'none'; }) : null);
+            if (!nextColumn && nextStatus === 'doing' && moveInput.confirm_doing_to_checklist) {
+              nextStatus = 'todo';
+              nextColumn = targetList.columns.find(function initial(item) { return item.id === targetList.initial_column_id; });
+            }
+            if (!nextColumn) return Promise.reject(new Error('Board has no matching column'));
+          }
+        } else {
+          if (moveInput.board_column_id) return Promise.reject(new Error('A List has no board columns'));
+          if (targetList.workflow_kind === 'checklist' && nextStatus === 'doing') {
+            if (!moveInput.confirm_doing_to_checklist) return Promise.reject(new Error('Confirm resetting In Progress work to unchecked'));
+            nextStatus = 'todo';
+          }
+        }
+        moveTask.list = targetListId;
         if (moveInput.section_id !== undefined) moveTask.section_id = moveInput.section_id;
+        moveTask.board_column_id = nextColumn ? nextColumn.id : null;
+        moveTask.status = nextStatus;
+        moveTask.completed_at = nextStatus === 'done' ? moveTask.completed_at || NOW : null;
         if (moveInput.position !== undefined) moveTask.position = moveInput.position;
         moveTask.updated = NOW;
         return Promise.resolve(clone(moveTask));
@@ -697,6 +923,7 @@
         });
         return Promise.resolve(clone(matchingEvents));
       }
+      if (cmd === 'calendar_range_projection') return Promise.resolve(clone(fixtureCalendarProjection(options.input)));
       if (cmd === 'list_google_accounts') return Promise.resolve(clone(googleAccounts));
       if (cmd === 'add_google_account') {
         var alias = String(options.alias || '').trim();

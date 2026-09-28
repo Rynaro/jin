@@ -65,6 +65,12 @@ pub struct EditEventInput {
     pub is_all_day: bool,
     pub description: Option<String>,
     pub location: Option<String>,
+    /// A typed replacement for the event's RRULE set. Omit to preserve it.
+    #[serde(default)]
+    pub recurrence: Option<jin_core::recurrence::RecurrenceDraft>,
+    /// Explicitly remove recurrence when no replacement draft is supplied.
+    #[serde(default)]
+    pub clear_recurrence: bool,
     pub recurrence_scope: Option<jin_core::ops::event_mutation::RecurrenceMutationScope>,
     #[serde(default)]
     pub attendees: Option<Vec<EventAttendee>>,
@@ -85,6 +91,8 @@ pub struct RoutedEventInput {
     pub account_id: String,
     pub calendar_id: String,
     pub operation_id: String,
+    #[serde(default)]
+    pub guest_update_policy: jin_core::ops::event_mutation::GuestUpdatePolicy,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,6 +102,8 @@ pub struct RoutedEditEventInput {
     pub account_id: String,
     pub calendar_id: String,
     pub recurrence_scope: Option<jin_core::ops::event_mutation::RecurrenceMutationScope>,
+    #[serde(default)]
+    pub guest_update_policy: jin_core::ops::event_mutation::GuestUpdatePolicy,
 }
 
 #[derive(Debug, Deserialize)]
@@ -103,6 +113,8 @@ pub struct RoutedDeleteEventInput {
     pub calendar_id: String,
     pub recurrence_scope: Option<jin_core::ops::event_mutation::RecurrenceMutationScope>,
     pub operation_id: String,
+    #[serde(default)]
+    pub guest_update_policy: jin_core::ops::event_mutation::GuestUpdatePolicy,
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,6 +124,33 @@ pub struct RecurrencePreviewInput {
     #[serde(default)]
     pub is_all_day: bool,
     pub recurrence: jin_core::recurrence::RecurrenceDraft,
+}
+
+// ── S2: sparse edit inputs ────────────────────────────────────────────────────
+
+/// Sparse sibling of [`EditEventInput`]: carries only the fields the user
+/// actually touched, with time travelling as one atomic bundle or not at all.
+#[derive(Debug, Deserialize)]
+pub struct EditEventDeltaInput {
+    pub event_id: String,
+    pub edit_token: String,
+    pub operation_id: String,
+    /// Absent fields preserve the canonical value. A partial temporal bundle
+    /// is rejected while deserializing this field, before it reaches core.
+    pub delta: jin_core::ops::event_mutation::EventEditDelta,
+    #[serde(default)]
+    pub recurrence_scope: Option<jin_core::ops::event_mutation::RecurrenceMutationScope>,
+}
+
+/// Named for its `RoutedEditEventInput` sibling (open question 3).
+#[derive(Debug, Deserialize)]
+pub struct RoutedEditEventDeltaInput {
+    #[serde(flatten)]
+    pub edit: EditEventDeltaInput,
+    pub account_id: String,
+    pub calendar_id: String,
+    #[serde(default)]
+    pub guest_update_policy: jin_core::ops::event_mutation::GuestUpdatePolicy,
 }
 
 fn sync_target(
@@ -168,6 +207,7 @@ fn parse_input(input: EventInput) -> Result<events::EditEventPatch, JinErrorDto>
         floating,
         description: input.description,
         location: input.location,
+        recurrence: None,
         attendees: input.attendees,
         attendees_omitted: input.attendees_omitted,
         conference_data: input.conference_data,
@@ -295,34 +335,104 @@ pub fn delete_event_scoped_fn(
     Ok(EventDto::from_model(&event))
 }
 
+/// Translate the legacy full-edit shape into a sparse delta.
+///
+/// `EditEventInput` is retained for callers not yet migrated to the sparse
+/// command. It always carries a complete temporal bundle, so it is expressible
+/// as a delta without the browser ever synthesizing a value it was not given.
+///
+/// The one place the legacy shape is lossy is its single `tzid`, which pre-S2
+/// was cloned onto *both* endpoints. When that `tzid` is simply the event's
+/// existing start zone the caller is expressing no zone change at all, so
+/// cloning it would silently destroy a distinct baseline end zone — the
+/// baseline end zone is kept instead. When the caller genuinely changes the
+/// zone, both endpoints move, exactly as before.
+fn delta_from_legacy_edit(
+    root: &Path,
+    input: &EditEventInput,
+) -> Result<jin_core::ops::event_mutation::EventEditDelta, JinErrorDto> {
+    use jin_core::ops::event_mutation::{EventEditDelta, EventTemporalDelta};
+
+    if input.title.trim().is_empty() {
+        return Err(JinErrorDto::from(jin_core::JinError::Validation {
+            field: "title".to_string(),
+            reason: "required".to_string(),
+        }));
+    }
+    if let Some(ref tzid) = input.tzid {
+        jin_core::time::validate_tzid(tzid).map_err(|reason| {
+            JinErrorDto::from(jin_core::JinError::Validation {
+                field: "tzid".to_string(),
+                reason,
+            })
+        })?;
+    }
+
+    let (start_tzid, end_tzid) = if input.is_all_day {
+        (None, None)
+    } else {
+        let requested = input.tzid.clone();
+        let baseline = api::get_event(root, &input.event_id).ok();
+        let end = match (&requested, &baseline) {
+            (Some(tzid), Some(baseline))
+                if baseline.start_tzid.as_deref() == Some(tzid.as_str())
+                    && baseline.end_tzid.is_some()
+                    && baseline.end_tzid != baseline.start_tzid =>
+            {
+                baseline.end_tzid.clone()
+            }
+            _ => requested.clone(),
+        };
+        (requested, end)
+    };
+    let floating = !input.is_all_day && start_tzid.is_none();
+
+    let temporal = EventTemporalDelta::new(
+        input.start.clone(),
+        input.end.clone(),
+        input.is_all_day,
+        floating,
+        start_tzid,
+        end_tzid,
+    )
+    .map_err(|reason| {
+        JinErrorDto::from(jin_core::JinError::Validation {
+            field: "temporal".to_string(),
+            reason,
+        })
+    })?;
+
+    Ok(EventEditDelta {
+        title: Some(input.title.trim().to_string()),
+        // The legacy shape is a total replacement, so an omitted description or
+        // location genuinely means "clear it" — `Some(None)`, not `None`.
+        description: Some(input.description.clone()),
+        location: Some(input.location.clone()),
+        temporal: Some(temporal),
+        recurrence: input.recurrence.clone(),
+        clear_recurrence: input.clear_recurrence,
+        attendees: input.attendees.clone(),
+        attendees_omitted: input.attendees_omitted,
+        conference_data: input.conference_data.clone(),
+        clear_conference_data: input.clear_conference_data,
+        reminders: input.reminders.clone(),
+    })
+}
+
 pub fn edit_event_fn(
     root: &Path,
     input: EditEventInput,
 ) -> Result<EditEventResultDto, JinErrorDto> {
     jin_core::ops::recoverable_operations::validate_operation_id(&input.operation_id)
         .map_err(JinErrorDto::from)?;
-    let patch = parse_input(EventInput {
-        title: input.title,
-        start: input.start,
-        end: input.end,
-        tzid: input.tzid,
-        is_all_day: input.is_all_day,
-        description: input.description,
-        location: input.location,
-        recurrence: None,
-        attendees: input.attendees,
-        attendees_omitted: input.attendees_omitted,
-        conference_data: input.conference_data,
-        clear_conference_data: input.clear_conference_data,
-        reminders: input.reminders,
-    })?;
+    let delta = delta_from_legacy_edit(root, &input)?;
     let service = jin_core::ops::event_mutation::EventMutationService::new(root)
         .map_err(JinErrorDto::from)?;
     let result = service
-        .edit_local_scoped(
+        .edit_sparse(
             &input.event_id,
             &input.edit_token,
-            patch,
+            delta,
             input.recurrence_scope,
             &input.operation_id,
         )
@@ -333,11 +443,72 @@ pub fn edit_event_fn(
     })
 }
 
+pub fn edit_event_delta_fn(
+    root: &Path,
+    input: EditEventDeltaInput,
+) -> Result<EditEventResultDto, JinErrorDto> {
+    jin_core::ops::recoverable_operations::validate_operation_id(&input.operation_id)
+        .map_err(JinErrorDto::from)?;
+    let service = jin_core::ops::event_mutation::EventMutationService::new(root)
+        .map_err(JinErrorDto::from)?;
+    let result = service
+        .edit_sparse(
+            &input.event_id,
+            &input.edit_token,
+            input.delta,
+            input.recurrence_scope,
+            &input.operation_id,
+        )
+        .map_err(JinErrorDto::from)?;
+    Ok(EditEventResultDto {
+        event: EventDto::from_model(&result.event),
+        no_op: result.no_op,
+    })
+}
+
+pub fn edit_routed_event_delta_fn(
+    root: &Path,
+    input: RoutedEditEventDeltaInput,
+) -> Result<EventDto, JinErrorDto> {
+    jin_core::ops::recoverable_operations::validate_operation_id(&input.edit.operation_id)
+        .map_err(JinErrorDto::from)?;
+    let target = sync_target(input.account_id, input.calendar_id)?;
+    let service = jin_core::ops::event_mutation::EventMutationService::new(root)
+        .map_err(JinErrorDto::from)?;
+    let event = service
+        .edit_sparse_with_guest_update_policy(
+            &input.edit.event_id,
+            &input.edit.edit_token,
+            input.edit.delta,
+            target,
+            input.edit.recurrence_scope,
+            &input.edit.operation_id,
+            input.guest_update_policy,
+        )
+        .map_err(JinErrorDto::from)?;
+    Ok(EventDto::from_model(&event))
+}
+
+pub fn calendar_range_projection_fn(
+    root: &Path,
+    input: jin_core::dto::CalendarRangeProjectionInput,
+) -> Result<jin_core::dto::CalendarRangeProjectionDto, JinErrorDto> {
+    jin_core::ops::calendar_projection::calendar_range_projection(root, &input)
+        .map_err(JinErrorDto::from)
+}
+
+pub fn event_temporal_preview_fn(
+    input: jin_core::dto::EventTemporalPreviewInput,
+) -> jin_core::dto::EventTemporalPreviewDto {
+    jin_core::ops::calendar_projection::event_temporal_preview(&input)
+}
+
 pub fn create_routed_event_fn(
     root: &Path,
     input: RoutedEventInput,
 ) -> Result<EventDto, JinErrorDto> {
     let target = sync_target(input.account_id, input.calendar_id)?;
+    let guest_update_policy = input.guest_update_policy;
     let recurrence_draft = input.event.recurrence.clone();
     let patch = parse_input(input.event)?;
     let recurrence = recurrence_draft
@@ -351,7 +522,7 @@ pub fn create_routed_event_fn(
     let service = jin_core::ops::event_mutation::EventMutationService::new(root)
         .map_err(JinErrorDto::from)?;
     let event = service
-        .create_with_recurrence(
+        .create_with_recurrence_and_policy(
             events::CreateEventParams {
                 title: patch.title,
                 body: String::new(),
@@ -373,6 +544,7 @@ pub fn create_routed_event_fn(
             recurrence,
             Some(target),
             &input.operation_id,
+            guest_update_policy,
         )
         .map_err(JinErrorDto::from)?;
     Ok(EventDto::from_model(&event))
@@ -395,31 +567,18 @@ pub fn edit_routed_event_fn(
     input: RoutedEditEventInput,
 ) -> Result<EventDto, JinErrorDto> {
     let target = sync_target(input.account_id, input.calendar_id)?;
-    let patch = parse_input(EventInput {
-        title: input.edit.title,
-        start: input.edit.start,
-        end: input.edit.end,
-        tzid: input.edit.tzid,
-        is_all_day: input.edit.is_all_day,
-        description: input.edit.description,
-        location: input.edit.location,
-        recurrence: None,
-        attendees: input.edit.attendees,
-        attendees_omitted: input.edit.attendees_omitted,
-        conference_data: input.edit.conference_data,
-        clear_conference_data: input.edit.clear_conference_data,
-        reminders: input.edit.reminders,
-    })?;
+    let delta = delta_from_legacy_edit(root, &input.edit)?;
     let service = jin_core::ops::event_mutation::EventMutationService::new(root)
         .map_err(JinErrorDto::from)?;
     let event = service
-        .edit(
+        .edit_sparse_with_guest_update_policy(
             &input.edit.event_id,
             &input.edit.edit_token,
-            patch,
+            delta,
             target,
             input.recurrence_scope,
             &input.edit.operation_id,
+            input.guest_update_policy,
         )
         .map_err(JinErrorDto::from)?;
     Ok(EventDto::from_model(&event))
@@ -433,11 +592,12 @@ pub fn delete_routed_event_fn(
     let service = jin_core::ops::event_mutation::EventMutationService::new(root)
         .map_err(JinErrorDto::from)?;
     let event = service
-        .delete(
+        .delete_with_guest_update_policy(
             &input.event_id,
             target,
             input.recurrence_scope,
             &input.operation_id,
+            input.guest_update_policy,
         )
         .map_err(JinErrorDto::from)?;
     Ok(EventDto::from_model(&event))
@@ -531,4 +691,35 @@ pub async fn delete_routed_event(
     input: RoutedDeleteEventInput,
 ) -> Result<EventDto, JinErrorDto> {
     delete_routed_event_fn(&state.root, input)
+}
+
+#[tauri::command]
+pub async fn edit_event_delta(
+    state: tauri::State<'_, AppState>,
+    input: EditEventDeltaInput,
+) -> Result<EditEventResultDto, JinErrorDto> {
+    edit_event_delta_fn(&state.root, input)
+}
+
+#[tauri::command]
+pub async fn edit_routed_event_delta(
+    state: tauri::State<'_, AppState>,
+    input: RoutedEditEventDeltaInput,
+) -> Result<EventDto, JinErrorDto> {
+    edit_routed_event_delta_fn(&state.root, input)
+}
+
+#[tauri::command]
+pub async fn calendar_range_projection(
+    state: tauri::State<'_, AppState>,
+    input: jin_core::dto::CalendarRangeProjectionInput,
+) -> Result<jin_core::dto::CalendarRangeProjectionDto, JinErrorDto> {
+    calendar_range_projection_fn(&state.root, input)
+}
+
+#[tauri::command]
+pub async fn event_temporal_preview(
+    input: jin_core::dto::EventTemporalPreviewInput,
+) -> Result<jin_core::dto::EventTemporalPreviewDto, JinErrorDto> {
+    Ok(event_temporal_preview_fn(input))
 }

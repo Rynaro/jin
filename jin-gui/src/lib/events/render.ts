@@ -1,3 +1,8 @@
+import {
+  calendarMembershipIdentity,
+  calendarProvenanceLabel,
+  calendarProviderForEvent,
+} from '../calendar/colors';
 /**
  * events/render.ts — DOM rendering functions for the Events browse + detail view.
  *
@@ -24,6 +29,7 @@ import {
 } from './transform';
 import type { BrowseNavigateCallback } from '../notes/render';
 import { eventMessage, resolveEventLocale, type EventLocaleKey } from './locale';
+import { renderInvitationResponseControls, type InvitationResponseChoice } from './invitation';
 
 // ── Interface types ───────────────────────────────────────────────────────────
 
@@ -43,6 +49,11 @@ export interface EventDetailRenderOptions {
   locale?: EventLocaleKey;
   onEdit?: (detail: EventDetailDto) => void;
   onRemove?: (detail: EventDetailDto) => void;
+  onRespondInvitation?: (detail: EventDetailDto, choice: InvitationResponseChoice, control: HTMLButtonElement) => void;
+  onManageMeet?: (detail: EventDetailDto, action: 'add' | 'retry' | 'remove') => void;
+  onRefreshGoogleDetails?: (detail: EventDetailDto) => void;
+  onSyncEvent?: (detail: EventDetailDto) => void;
+  onReviewSync?: () => void;
 }
 
 /** References to the <template> elements used for dynamic rows. */
@@ -167,25 +178,16 @@ export function renderEventDetail(
     headerActions.appendChild(edit);
   }
   if (detail.capabilities.can_delete && options.onRemove) {
-    const overflow = document.createElement('details');
-    overflow.className = 'event-detail__overflow';
-    const summary = document.createElement('summary');
-    summary.className = 'btn-icon tap-target';
-    summary.setAttribute('aria-label', eventMessage('more', locale));
-    const icon = document.createElement('i');
-    icon.setAttribute('data-lucide', 'ellipsis-vertical');
-    icon.setAttribute('aria-hidden', 'true');
-    summary.appendChild(icon);
     const destructive = document.createElement('button');
     destructive.type = 'button';
-    destructive.className = 'event-detail__destructive';
+    destructive.className = 'btn-danger event-detail__destructive';
     destructive.textContent = detail.capabilities.display_kind === 'time-block'
       ? eventMessage('remove', locale)
+      : detail.capabilities.collaboration?.can_cancel_meeting
+        ? eventMessage('cancelMeeting', locale)
       : eventMessage('delete', locale);
     destructive.addEventListener('click', () => options.onRemove?.(detail));
-    overflow.appendChild(summary);
-    overflow.appendChild(destructive);
-    headerActions.appendChild(overflow);
+    headerActions.appendChild(destructive);
   }
   header.appendChild(headerActions);
   article.appendChild(header);
@@ -196,15 +198,19 @@ export function renderEventDetail(
   const sourceBadgeEl = document.createElement('span');
   sourceBadgeEl.className = 'event-detail__source-badge jin-badge';
   sourceBadgeEl.setAttribute('role', 'img');
-  const srcLabel = event.source.toLowerCase() === 'google'
+  const membership = calendarMembershipIdentity(event, eventMessage('jinCalendarName', locale));
+  const routedGoogle = event.sync_context?.provider === 'google';
+  const srcLabel = routedGoogle
+    ? `${eventMessage('googleDestination', locale)} · ${membership.label}`
+    : membership.provider === 'google'
     ? eventMessage('sourceGoogle', locale)
     : eventMessage('sourceJin', locale);
   sourceBadgeEl.setAttribute('aria-label', srcLabel);
-  sourceBadgeEl.dataset.source = event.source.toLowerCase();
+  sourceBadgeEl.dataset.source = membership.provider;
 
   const sourceIconEl = document.createElement('i');
   sourceIconEl.className = 'event-detail__source-icon';
-  sourceIconEl.setAttribute('data-lucide', sourceBadgeIcon(event.source));
+  sourceIconEl.setAttribute('data-lucide', sourceBadgeIcon(routedGoogle ? 'google' : event.source));
   sourceIconEl.setAttribute('aria-hidden', 'true');
 
   const sourceLabelEl = document.createElement('span');
@@ -243,6 +249,58 @@ export function renderEventDetail(
 
   article.appendChild(metaEl);
 
+  if (event.sync_context?.provider === 'google') {
+    const route = event.sync_context;
+    const membership = calendarMembershipIdentity(event, eventMessage('jinCalendarName', locale));
+    const destination = document.createElement('p');
+    destination.className = 'event-detail__destination text-footnote';
+    const provenance = calendarProvenanceLabel(event, {
+      createdInJin: eventMessage('createdInJin', locale),
+      sourceGoogle: eventMessage('sourceGoogle', locale),
+      sourceJin: eventMessage('sourceJin', locale),
+    });
+    const membershipLine = `${membership.accountAlias} — ${membership.label}`;
+    destination.textContent = event.source === 'jin'
+      ? `${membershipLine} · ${provenance}`
+      : membershipLine;
+    article.appendChild(destination);
+    if (route.state === 'pending' || route.state === 'synced') {
+      const syncState = document.createElement('p');
+      syncState.className = 'event-detail__sync-state text-footnote';
+      syncState.setAttribute('role', 'status');
+      syncState.textContent = eventMessage(route.state === 'synced' ? 'googleSynced' : 'awaitingGoogleSync', locale);
+      article.appendChild(syncState);
+    }
+    if (route.state === 'paused' || route.state === 'sending') {
+      const review = document.createElement('p');
+      review.className = 'event-detail__sync-state text-footnote';
+      review.setAttribute('role', 'status');
+      review.textContent = eventMessage('syncReview', locale);
+      article.appendChild(review);
+    }
+    if (route.state === 'cancelled' || route.state === 'unpublished') {
+      const state = document.createElement('p');
+      state.className = 'event-detail__sync-state text-footnote';
+      state.setAttribute('role', 'status');
+      state.textContent = eventMessage(route.state === 'cancelled' ? 'publicationCancelled' : 'googleUnpublished', locale);
+      article.appendChild(state);
+    }
+    if (options.onReviewSync && (route.state === 'paused' || route.state === 'sending')) {
+      const review = document.createElement('button');
+      review.type = 'button'; review.className = 'btn-secondary event-detail__review-sync';
+      review.textContent = eventMessage('reviewCalendarSync', locale);
+      review.addEventListener('click', options.onReviewSync);
+      article.appendChild(review);
+    }
+    if (options.onSyncEvent && route.writable && (route.state === 'pending' || route.state === 'synced')) {
+      const sync = document.createElement('button');
+      sync.type = 'button'; sync.className = 'btn-secondary event-detail__sync';
+      sync.textContent = eventMessage('syncEvent', locale);
+      sync.addEventListener('click', () => { sync.disabled = true; options.onSyncEvent?.(detail); });
+      article.appendChild(sync);
+    }
+  }
+
   if (detail.capabilities.read_only_reason) {
     const notice = document.createElement('p');
     notice.className = 'event-detail__read-only';
@@ -256,6 +314,13 @@ export function renderEventDetail(
       locale,
     );
     article.appendChild(notice);
+    if (event.source.toLowerCase() === 'google' && !event.organizer && event.sync_context?.writable && options.onRefreshGoogleDetails) {
+      const refresh = document.createElement('button');
+      refresh.type = 'button'; refresh.className = 'btn-secondary event-detail__refresh-provider';
+      refresh.textContent = 'Refresh event details';
+      refresh.addEventListener('click', () => options.onRefreshGoogleDetails?.(detail));
+      article.appendChild(refresh);
+    }
   }
 
   // ── Temporal display (tz-aware) ───────────────────────────────────────────
@@ -290,6 +355,21 @@ export function renderEventDetail(
 
   article.appendChild(timeSection);
 
+  const invitation = detail.capabilities.collaboration?.invitation;
+  if (invitation) {
+    const rsvp = renderInvitationResponseControls({
+      confirmedResponse: invitation.provider_response,
+      requestedResponse: invitation.requested_response,
+      pending: invitation.state === 'queued' || invitation.state === 'sending',
+      available: invitation.can_respond,
+      disabledReason: invitation.disabled_reason,
+    }, {
+      onRespond: (choice, control) => options.onRespondInvitation?.(detail, choice, control),
+    });
+    rsvp.classList.add('event-detail__rsvp');
+    article.appendChild(rsvp);
+  }
+
   if (event.location) {
     const locEl = document.createElement('p');
     locEl.className = 'event-detail__location text-callout';
@@ -306,7 +386,7 @@ export function renderEventDetail(
     article.appendChild(descEl);
   }
 
-  const meetingMetadata = buildGoogleMeetingMetadata(event, locale);
+  const meetingMetadata = buildGoogleMeetingMetadata(event, locale, detail, options.onManageMeet);
   if (meetingMetadata) article.appendChild(meetingMetadata);
 
   if (detail.capabilities.originating_task) {
@@ -380,18 +460,25 @@ export function renderEventDetail(
   status.className = 'event-detail__operation-status hidden';
   status.setAttribute('role', 'status');
   status.setAttribute('aria-live', 'polite');
-  article.appendChild(status);
+  const syncButton = article.querySelector('.event-detail__sync');
+  if (syncButton) syncButton.insertAdjacentElement('afterend', status);
+  else article.appendChild(status);
 
   el.detailContent.appendChild(article);
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-function buildGoogleMeetingMetadata(event: EventDto, locale: EventLocaleKey): HTMLElement | null {
+function buildGoogleMeetingMetadata(
+  event: EventDto,
+  locale: EventLocaleKey,
+  detail: EventDetailDto,
+  onManageMeet?: (detail: EventDetailDto, action: 'add' | 'retry' | 'remove') => void,
+): HTMLElement | null {
   const sections = [
     buildOrganizerSection(event, locale),
     buildAttendeesSection(event.attendees, event.attendees_omitted, locale),
-    buildConferenceSection(event, locale),
+    buildConferenceSection(event, locale, detail, onManageMeet),
     buildEventRemindersSection(event.reminders, locale),
   ].filter((section): section is HTMLElement => section !== null);
   if (sections.length === 0) return null;
@@ -547,7 +634,12 @@ function entryPointCredentials(
   });
 }
 
-function buildConferenceSection(event: EventDto, locale: EventLocaleKey): HTMLElement | null {
+function buildConferenceSection(
+  event: EventDto,
+  locale: EventLocaleKey,
+  detail: EventDetailDto,
+  onManageMeet?: (detail: EventDetailDto, action: 'add' | 'retry' | 'remove') => void,
+): HTMLElement | null {
   const data = event.conference_data;
   const entryPoints = data?.entryPoints ?? [];
   const joinHref = safeExternalHref(event.hangout_link)
@@ -562,13 +654,50 @@ function buildConferenceSection(event: EventDto, locale: EventLocaleKey): HTMLEl
   const hasDetails = Boolean(
     data?.conferenceSolution?.name || data?.conferenceId || data?.notes || details.length,
   );
-  if (!joinHref && !hasDetails) return null;
+  const pending = Boolean(data?.pendingCreateRequest)
+    || data?.createRequest?.status?.statusCode === 'pending';
+  const failed = data?.createRequest?.status?.statusCode === 'failure';
+  const canManage = detail.capabilities.collaboration?.can_add_conference
+    || detail.capabilities.collaboration?.can_remove_conference;
+  if (!joinHref && !hasDetails && !pending && !failed && !canManage) return null;
 
   const section = metadataSection(eventMessage('conferencing', locale), 'event-detail__conference', 'video');
   if (joinHref) {
     const join = externalLink(eventMessage('joinMeeting', locale), joinHref, 'event-detail__join-link btn-primary');
     join.setAttribute('aria-label', eventMessage('joinMeeting', locale));
     section.appendChild(join);
+  }
+  if (pending) {
+    const state = document.createElement('p');
+    state.className = 'event-detail__conference-state text-footnote';
+    state.setAttribute('role', 'status');
+    const delivery = event.sync_context?.state;
+    state.textContent = eventMessage(delivery === 'cancelled' ? 'publicationCancelled'
+      : delivery === 'unpublished' ? 'googleUnpublished'
+      : delivery === 'paused' || delivery === 'sending' ? 'syncReview'
+      : data?.pendingCreateRequest ? 'meetAwaitingSync' : 'meetProviderPending', locale);
+    section.appendChild(state);
+  }
+  if (failed) {
+    const state = document.createElement('p');
+    state.className = 'event-detail__conference-state text-footnote';
+    state.setAttribute('role', 'status');
+    state.textContent = 'Google could not create this Meet.';
+    section.appendChild(state);
+  }
+  // A pending provider request is not safe to replay: a fresh request id while
+  // Google is still processing can create a second conference.  Retry is only
+  // offered after Google's terminal failure state.
+  const action = detail.capabilities.collaboration?.can_remove_conference
+    ? 'remove'
+    : failed ? 'retry' : !pending && detail.capabilities.collaboration?.can_add_conference ? 'add' : null;
+  if (action && onManageMeet) {
+    const manage = document.createElement('button');
+    manage.type = 'button';
+    manage.className = action === 'remove' ? 'btn-secondary' : 'btn-primary';
+    manage.textContent = action === 'remove' ? 'Remove Google Meet' : action === 'retry' ? 'Retry Google Meet' : 'Add Google Meet';
+    manage.addEventListener('click', () => onManageMeet(detail, action));
+    section.appendChild(manage);
   }
   if (data?.conferenceSolution?.name) {
     const solution = document.createElement('p');
@@ -702,12 +831,15 @@ function buildEventBrowseRow(
   if (titleEl) titleEl.textContent = event.title;
 
   // Source badge: text label (primary) + icon (supplementary) — NEVER color-only
-  const srcLabel = sourceBadgeLabel(event.source);
+  const membership = calendarMembershipIdentity(event, eventMessage('jinCalendarName'));
+  const srcLabel = event.sync_context?.provider === 'google'
+    ? `${eventMessage('googleDestination')} · ${membership.label}`
+    : sourceBadgeLabel(event.source);
   if (sourceBadgeEl) {
     sourceBadgeEl.setAttribute('aria-label', `Source: ${srcLabel}`);
-    sourceBadgeEl.dataset.source = event.source.toLowerCase();
+    sourceBadgeEl.dataset.source = calendarProviderForEvent(event);
   }
-  if (sourceIconEl) sourceIconEl.setAttribute('data-lucide', sourceBadgeIcon(event.source));
+  if (sourceIconEl) sourceIconEl.setAttribute('data-lucide', sourceBadgeIcon(calendarProviderForEvent(event)));
   if (sourceLabelEl) sourceLabelEl.textContent = srcLabel;
 
   return row;

@@ -41,6 +41,7 @@ pub struct TaskDto {
     pub body: String,
     // P2 fields
     pub section_id: Option<String>,
+    pub board_column_id: Option<String>,
     pub tags: Vec<String>,
     pub position: String,
     /// Canonical reminder definitions; delivery state is intentionally local-only.
@@ -88,6 +89,7 @@ impl TaskDto {
             backlinks: vec![],
             body: task.body.clone(),
             section_id: task.frontmatter.section_id.clone(),
+            board_column_id: task.frontmatter.board_column_id.clone(),
             tags: task.frontmatter.tags.clone(),
             position: task.frontmatter.position.clone(),
             reminders,
@@ -117,6 +119,7 @@ impl TaskDto {
             backlinks: vec![],
             body: String::new(), // list_tasks path: body not populated (kept light)
             section_id: row.section_id.clone(),
+            board_column_id: row.board_column_id.clone(),
             tags,
             position: row.position.clone(),
             reminders,

@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import type { EventDto } from '../types/dto';
 import {
   buildTimeGrid,
+  buildDisplayDaySlots,
+  classifyDisplaySlot,
   deriveNightExpansion,
   formatStoredStartTime,
   initialScrollMinute,
@@ -171,5 +173,26 @@ describe('shared calendar wall-time geometry', () => {
     expect(identityRule).toContain('grid-row: 3');
     expect(identityRule).toContain('overflow: hidden');
     expect(gutterRule.match(/background:/g)).toHaveLength(1);
+  });
+});
+
+describe('display-time DST slots (AC-CALX-022/023)', () => {
+  it('spring_gap_slots: nonexistent America/New_York wall times are unselectable', () => {
+    // 2026-03-08 spring forward: 02:00–02:59 do not exist.
+    expect(classifyDisplaySlot('2026-03-08', 2 * 60, 'America/New_York')).toBe('nonexistent');
+    expect(classifyDisplaySlot('2026-03-08', 2 * 60 + 30, 'America/New_York')).toBe('nonexistent');
+    const slots = buildDisplayDaySlots('2026-03-08', 'America/New_York');
+    const gap = slots.filter(slot => slot.minute >= 2 * 60 && slot.minute < 3 * 60);
+    expect(gap.length).toBeGreaterThan(0);
+    expect(gap.every(slot => !slot.selectable && slot.state === 'nonexistent')).toBe(true);
+    expect(classifyDisplaySlot('2026-03-08', 3 * 60, 'America/New_York')).toBe('exact');
+  });
+
+  it('fallback_earlier_only: ambiguous fall-back slots are earlier-only and selectable once', () => {
+    // 2026-11-01 fall back: 01:00–01:59 occur twice; create targets earlier only.
+    expect(classifyDisplaySlot('2026-11-01', 1 * 60 + 30, 'America/New_York')).toBe('ambiguous_earlier');
+    const slots = buildDisplayDaySlots('2026-11-01', 'America/New_York');
+    const ambiguous = slots.filter(slot => slot.minute >= 1 * 60 && slot.minute < 2 * 60);
+    expect(ambiguous.every(slot => slot.state === 'ambiguous_earlier' && slot.selectable)).toBe(true);
   });
 });

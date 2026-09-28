@@ -1,0 +1,65 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "b6b432db-3e29-4bf8-82ff-f68e64ce7774",
+  "thread_id": "0ba034ad-d871-4952-bcba-d8737d175c70",
+  "parent_id": null,
+  "from": {
+    "eidolon": "ramza",
+    "version": "0.1.0"
+  },
+  "to": {
+    "eidolon": "vivi",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Implement bounded Notes usability repairs using existing frontend and backend contracts.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/notes-usability.md",
+    "sha256": "6b36006ce1ec9afab29392363658fbaa52fd179017a8e64db41b8ab7cbb55031",
+    "size_bytes": 14272
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 0,
+    "input_handles": [],
+    "summary": "Six stories with exact owners, implementation order and twelve acceptance criteria. Receiver is Vivi under current root routing."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "ise": {
+    "assertion_grade": "self-attested",
+    "provenance": {
+      "methodology_version": "ramza-0.1.0",
+      "tool_surface": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "lateral_consults": []
+    },
+    "receiver_authorization": {
+      "auto_route": true,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "confidence": 0.9375,
+  "integrity": {
+    "method": "sha256",
+    "value": "6b36006ce1ec9afab29392363658fbaa52fd179017a8e64db41b8ab7cbb55031"
+  },
+  "trace": {
+    "ts": "2026-09-23T23:29:56Z",
+    "host": "codex",
+    "model": "gpt-6-astra",
+    "tier": "standard"
+  },
+  "x_ramza_acceptance_criteria": {
+    "path": ".spectra/plans/notes-usability.md",
+    "sha256": "6b36006ce1ec9afab29392363658fbaa52fd179017a8e64db41b8ab7cbb55031"
+  }
+}

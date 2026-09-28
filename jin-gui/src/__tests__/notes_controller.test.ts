@@ -68,6 +68,8 @@ vi.mock('../invoke', () => ({
   searchNotes: vi.fn(),
   listCollections: vi.fn(),
   createCollection: vi.fn(),
+  updateCollectionQuery: vi.fn(),
+  listTags: vi.fn(),
   renameCollection: vi.fn(),
   deleteCollection: vi.fn(),
   evaluateCollection: vi.fn(),
@@ -94,6 +96,8 @@ import {
   searchNotes,
   listCollections,
   createCollection,
+  updateCollectionQuery,
+  listTags,
   renameCollection as renameCollectionInvoke,
   deleteCollection as deleteCollectionInvoke,
   evaluateCollection,
@@ -210,24 +214,23 @@ function makeNotesViewElements(): NotesViewElements {
 
 function makeNotesTemplates(): NotesTemplates {
   const noteRowTmpl = document.createElement('template');
-  // R2/K2: keep in lock-step with the production #tmpl-note-row in index.html.
-  // #2c: date moved from .note-row__header into .note-row__preview (Apple-Notes layout).
+  // Keep the focused renderer fixture in lock-step with the production row.
   noteRowTmpl.innerHTML = `
     <li class="browse-row note-row">
       <button class="browse-row__inner tap-target" aria-label="" data-note-id="">
-        <div class="note-row__header">
+        <span class="note-row__glyph" aria-hidden="true"><i data-lucide="file-text"></i></span>
+        <div class="note-row__main">
           <span class="browse-row__title text-headline"></span>
-        </div>
-        <div class="note-row__preview">
-          <span class="note-row__date text-caption1"></span>
           <span class="note-row__snippet text-subheadline"></span>
         </div>
-        <div class="browse-row__meta">
+        <div class="note-row__aside browse-row__meta">
+          <time class="note-row__date text-caption1"></time>
+          <span class="note-row__folder text-caption1"></span>
+          <span class="note-row__tags text-caption1"></span>
           <span class="note-row__status browse-status-badge" role="img" aria-label="">
             <i class="note-row__status-icon" aria-hidden="true"></i>
             <span class="note-row__status-label"></span>
           </span>
-          <span class="note-row__tags text-caption1"></span>
         </div>
       </button>
     </li>
@@ -489,6 +492,16 @@ describe('renderNotesList — row rendering', () => {
     const tagsEl = el.list.querySelector('.note-row__tags');
     expect(tagsEl?.textContent).toBe('');
   });
+
+  it('shows truthful folder metadata only when the current scope benefits from it', () => {
+    const note = makeNote({ folder_path: 'Work/Planning', excerpt: null });
+    renderNotesList(el, templates, [note], noopNavigate, { showFolder: true });
+    expect(el.list.querySelector('.note-row__folder')?.textContent).toBe('Work/Planning');
+    expect(el.list.querySelector('.note-row__snippet')?.textContent).toBe('No preview');
+    expect(el.list.querySelector('time.note-row__date')?.getAttribute('datetime')).toBe(note.updated);
+    renderNotesList(el, templates, [note], noopNavigate, { showFolder: false });
+    expect(el.list.querySelector('.note-row__folder')?.hasAttribute('hidden')).toBe(true);
+  });
 });
 
 describe('renderNotesList — navigation (reachability gate)', () => {
@@ -521,6 +534,35 @@ describe('renderNotesList — navigation (reachability gate)', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('renderNoteDetail — title and meta', () => {
+  it('keeps one live formatting toolbar in document chrome across note switches', () => {
+    const slot = document.createElement('div');
+    slot.className = 'notes-detail-pane__formatting';
+    el.detailPanel.append(slot, el.detailContent);
+    const first = renderNoteDetail(el, templates, makeNote({ id: 'first' }), noopNavigate);
+    expect(slot.querySelectorAll('.cm-toolbar')).toHaveLength(1);
+    expect(el.detailContent.querySelector('.cm-toolbar')).toBeNull();
+    first.destroy();
+    expect(slot.querySelector('.cm-toolbar')).toBeNull();
+    const second = renderNoteDetail(el, templates, makeNote({ id: 'second' }), noopNavigate);
+    expect(slot.querySelectorAll('.cm-toolbar')).toHaveLength(1);
+    second.destroy();
+  });
+
+  it('remeasures a wrapped title when accessibility text scale changes', async () => {
+    const handle = renderNoteDetail(el, templates, makeNote({ title: 'A long note title' }), noopNavigate);
+    const title = el.detailContent.querySelector<HTMLTextAreaElement>('.browse-detail__title')!;
+    let measuredHeight = 62;
+    Object.defineProperty(title, 'scrollHeight', { configurable: true, get: () => measuredHeight });
+    title.dispatchEvent(new Event('input'));
+    expect(title.style.height).toBe('62px');
+    measuredHeight = 155;
+    document.documentElement.dataset.textScale = 'accessibility';
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    expect(title.style.height).toBe('155px');
+    handle.destroy();
+    delete document.documentElement.dataset.textScale;
+  });
+
   it('renders the note title in the detail panel', () => {
     // NN-1 migration: .browse-detail__title is now an <input> — assert .value not .textContent.
     renderNoteDetail(el, templates, makeNote({ title: 'Detailed Note' }), noopNavigate);
@@ -858,11 +900,11 @@ describe('VG2.4 — renderNotesList populates snippet and date on each row', () 
     expect((window as Record<string, unknown>)['__xss_row']).toBeUndefined();
   });
 
-  it('null/undefined excerpt renders as empty string', () => {
+  it('null/undefined excerpt reports that no preview is available', () => {
     const note = makeNote({ excerpt: null });
     renderNotesList(el, templates, [note], noopNavigate);
     const snippetEl = el.list.querySelector('.note-row__snippet');
-    expect(snippetEl?.textContent).toBe('');
+    expect(snippetEl?.textContent).toBe('No preview');
   });
 });
 
@@ -2244,6 +2286,14 @@ describe('G-TREE-KEYBOARD — controller-driven: real keydown events on tree', (
     li.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
   }
 
+  it('provides a Tab entry into the folder tree when All Notes is active', () => {
+    const visible = Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"]'))
+      .filter((item) => !item.closest('.folder-row__group[hidden]'));
+    expect(visible.length).toBeGreaterThan(0);
+    expect(visible.filter((item) => item.tabIndex === 0)).toHaveLength(1);
+    expect(visible[0].tabIndex).toBe(0);
+  });
+
   it('ArrowDown moves document.activeElement to the next visible node', async () => {
     const notesLi = getLi('');
     notesLi.focus();
@@ -2405,17 +2455,14 @@ describe('G-TREE-SELECT — folder select (Enter key) → listNotes + aria-selec
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// G-TREE-COLLAPSE-PANE — toggle adds/removes .rail-collapsed
+// Shared sidebar owns visibility; Notes only requests a shell toggle.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('G-TREE-COLLAPSE-PANE — pane collapse/reveal works in list AND detail modes', () => {
+describe('Notes delegates sidebar toggles in list and detail modes', () => {
   let cpApp: Application;
 
   beforeEach(async () => {
-    // Clear persisted prefs so each collapse/pane test starts with
-    // paneCollapsed=false. Without this, the first test (which saves
-    // paneCollapsed=true) leaks into the second test, making the collapse
-    // button's click REMOVE .rail-collapsed instead of adding it.
+    // The old paneCollapsed preference must not control route geometry.
     localStorage.removeItem('jin_notes_folder_tree');
 
     vi.mocked(listFolders).mockResolvedValue([{ path: '', name: 'Notes', note_count: 0 }]);
@@ -2433,32 +2480,32 @@ describe('G-TREE-COLLAPSE-PANE — pane collapse/reveal works in list AND detail
     vi.resetAllMocks();
   });
 
-  it('collapse toggle adds .rail-collapsed to the notes section', () => {
+  it('collapse control requests the shared sidebar toggle', () => {
+    const request = vi.fn();
+    window.addEventListener('jin:sidebar-toggle', request, { once: true });
     const collapseBtn = document.querySelector<HTMLElement>('.notes-folder-rail__collapse-btn')!;
     expect(collapseBtn, 'collapse button must exist in the DOM').toBeTruthy();
     collapseBtn.click();
+    expect(request).toHaveBeenCalledOnce();
     const section = document.querySelector('.notes-paned') as HTMLElement;
-    expect(section.classList.contains('rail-collapsed')).toBe(true);
+    expect(section.classList.contains('rail-collapsed')).toBe(false);
   });
 
-  it('reveal button removes .rail-collapsed', () => {
-    const collapseBtn = document.querySelector<HTMLElement>('.notes-folder-rail__collapse-btn')!;
-    collapseBtn.click();
+  it('legacy reveal control also delegates to the shared sidebar', () => {
+    const request = vi.fn();
+    window.addEventListener('jin:sidebar-toggle', request, { once: true });
     const section = document.querySelector('.notes-paned') as HTMLElement;
-    expect(section.classList.contains('rail-collapsed')).toBe(true);
-
-    // Click the first reveal button (in list pane)
     const revealBtn = document.querySelector<HTMLElement>('.notes-rail-reveal')!;
     expect(revealBtn, 'reveal button must exist').toBeTruthy();
     revealBtn.click();
+    expect(request).toHaveBeenCalledOnce();
     expect(section.classList.contains('rail-collapsed')).toBe(false);
-    expect(document.activeElement).toBe(document.querySelector('.notes-folder-rail__collapse-btn'));
   });
 
-  it('returns focus to the visible reveal control when the rail closes', () => {
+  it('leaves focus ownership to the shared sidebar coordinator', () => {
     const collapseBtn = document.querySelector<HTMLElement>('.notes-folder-rail__collapse-btn')!;
     collapseBtn.click();
-    expect(document.activeElement).toBe(document.querySelector('.notes-list-pane .notes-rail-reveal'));
+    expect(document.querySelector('.notes-paned')?.classList.contains('rail-collapsed')).toBe(false);
   });
 
   it('togglePane works when detail-open is also set (open note state)', async () => {
@@ -2472,30 +2519,22 @@ describe('G-TREE-COLLAPSE-PANE — pane collapse/reveal works in list AND detail
     await new Promise<void>((res) => setTimeout(res, 80));
     expect(notesSection.classList.contains('detail-open')).toBe(true);
 
-    // Collapse while in detail mode
+    // Request the shared collapse while in detail mode.
+    const request = vi.fn();
+    window.addEventListener('jin:sidebar-toggle', request, { once: true });
     const collapseBtn = document.querySelector<HTMLElement>('.notes-folder-rail__collapse-btn')!;
     collapseBtn.click();
-    expect(notesSection.classList.contains('rail-collapsed')).toBe(true);
-    // detail-open should still be present
+    expect(request).toHaveBeenCalledOnce();
+    expect(notesSection.classList.contains('rail-collapsed')).toBe(false);
     expect(notesSection.classList.contains('detail-open')).toBe(true);
-
-    // Reveal from the detail pane's reveal button
-    const revealBtns = document.querySelectorAll<HTMLElement>('.notes-rail-reveal');
-    const detailReveal = Array.from(revealBtns).find((b) => {
-      return b.closest('.notes-detail-pane') !== null;
-    });
-    if (detailReveal) {
-      detailReveal.click();
-      expect(notesSection.classList.contains('rail-collapsed')).toBe(false);
-    }
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// G-TREE-PERSIST — expanded Set + paneCollapsed survive a remount
+// Folder expansion persists while the obsolete paneCollapsed bit is ignored.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('G-TREE-PERSIST — expanded + paneCollapsed survive controller remount', () => {
+describe('G-TREE-PERSIST — expansion survives controller remount', () => {
   // Use an in-memory localStorage mock (shared with folderTreePrefs.test.ts pattern).
   const store: Record<string, string> = {};
   const lsMock = {
@@ -2571,8 +2610,8 @@ describe('G-TREE-PERSIST — expanded + paneCollapsed survive controller remount
     app2.stop();
   });
 
-  it('paneCollapsed=true survives a remount: .rail-collapsed set on first paint', async () => {
-    // Collapse the pane
+  it('old paneCollapsed state does not change Notes geometry on remount', async () => {
+    store['jin_notes_folder_tree'] = '{"paneCollapsed":true,"expanded":[]}';
     const collapseBtn = document.querySelector<HTMLElement>('.notes-folder-rail__collapse-btn')!;
     collapseBtn.click();
     const stored = JSON.parse(store['jin_notes_folder_tree'] ?? '{}');
@@ -2586,7 +2625,7 @@ describe('G-TREE-PERSIST — expanded + paneCollapsed survive controller remount
     await new Promise<void>((res) => setTimeout(res, 80));
 
     const section = document.querySelector('.notes-paned') as HTMLElement;
-    expect(section.classList.contains('rail-collapsed')).toBe(true);
+    expect(section.classList.contains('rail-collapsed')).toBe(false);
 
     app2.stop();
   });
@@ -3820,6 +3859,7 @@ describe('VG-A11Y-KEBAB — kebab button accessibility invariants', () => {
       vi.mocked(listFolders).mockResolvedValue([]);
       vi.mocked(listNotes).mockResolvedValue([makeNote({ id: NOTE_ID, revision: 3 })]);
       vi.mocked(listCollections).mockResolvedValue([]);
+      vi.mocked(listTags).mockResolvedValue([]);
       vi.mocked(evaluateCollection).mockResolvedValue([]);
       vi.mocked(getNoteById).mockResolvedValue(
         makeNote({ id: NOTE_ID, revision: 3, body_markdown: 'base body' }),
@@ -3863,12 +3903,49 @@ describe('VG-A11Y-KEBAB — kebab button accessibility invariants', () => {
       await Promise.resolve();
       await Promise.resolve();
       expect(document.querySelector('.browse-row__inner')?.getAttribute('data-note-id')).toBe('fresh');
-      expect(document.querySelector('[data-notes-target="searchCount"]')?.textContent).toBe('1 note found');
+      expect(document.querySelector('[data-notes-target="resultCount"]')?.textContent).toBe('1 note');
 
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       await Promise.resolve();
       expect(input.value).toBe('');
       expect(listNotes).toHaveBeenLastCalledWith({ tag: undefined, folder: undefined });
+    });
+
+    it('switches List and Cards without changing ordered IDs or fetching again', async () => {
+      const list = document.querySelector<HTMLElement>('[data-notes-target="list"]')!;
+      const ids = () => Array.from(list.querySelectorAll<HTMLElement>('[data-note-id]')).map(row => row.dataset.noteId);
+      expect(ids()).toEqual([NOTE_ID]);
+      const calls = vi.mocked(listNotes).mock.calls.length;
+      document.querySelector<HTMLButtonElement>('[data-notes-target="cardsViewButton"]')!.click();
+      expect(list.classList.contains('notes-explorer__cards')).toBe(true);
+      expect(ids()).toEqual([NOTE_ID]);
+      expect(document.querySelector('[data-notes-target="cardsViewButton"]')?.getAttribute('aria-pressed')).toBe('true');
+      document.querySelector<HTMLButtonElement>('[data-notes-target="listViewButton"]')!.click();
+      expect(list.classList.contains('notes-explorer__cards')).toBe(false);
+      expect(ids()).toEqual([NOTE_ID]);
+      expect(listNotes).toHaveBeenCalledTimes(calls);
+    });
+
+    it('keeps search identity and rejects an older All Notes response during debounce', async () => {
+      let resolveList!: (notes: NoteDto[]) => void;
+      vi.mocked(listNotes).mockImplementationOnce(() => new Promise(resolve => { resolveList = resolve; }));
+      const allNotes = document.querySelector<HTMLButtonElement>('[data-notes-target="allNotesButton"]')!;
+      allNotes.click();
+      await Promise.resolve();
+      vi.useFakeTimers();
+      const input = document.querySelector<HTMLInputElement>('#notes-search-input')!;
+      input.value = 'needle';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(document.querySelector('[data-notes-target="scopeTitle"]')?.textContent).toBe('Search results');
+      expect(document.querySelector('[data-notes-target="resultCount"]')?.textContent).toBe('Searching…');
+      resolveList([makeNote({ id: 'old-scope' })]);
+      await Promise.resolve();
+      expect(document.querySelector('[data-note-id="old-scope"]')).toBeNull();
+      vi.mocked(searchNotes).mockResolvedValue([makeNote({ id: 'found' })]);
+      await vi.advanceTimersByTimeAsync(250);
+      expect(document.querySelector('[data-note-id="found"]')).toBeTruthy();
+      expect(document.querySelector('[data-notes-target="scopeDescription"]')?.textContent).toBe('Across all notes');
+      expect(document.querySelector('[data-notes-target="resultCount"]')?.textContent).toBe('1 note');
     });
 
     it('creates only declarative filter/sort data and keeps deletion visibly non-destructive', async () => {
@@ -3929,6 +4006,85 @@ describe('VG-A11Y-KEBAB — kebab button accessibility invariants', () => {
       });
       expect(document.querySelector('#collection-filter-value')?.getAttribute('type')).toBe('text');
       expect(document.querySelector('#jin-collection-modal')?.textContent).not.toMatch(/sql|query expression/i);
+    });
+
+    it('edits a simple collection through its menu without changing its identity or selecting it', async () => {
+      const collection = {
+        id: 'collection-stable', name: 'Reading',
+        query: { version: 1, filter: { op: 'tag' as const, value: 'reading' }, sort: [{ field: 'updated' as const, direction: 'desc' as const }], limit: null },
+        view: { layout: 'list' },
+      };
+      vi.mocked(listCollections).mockResolvedValue([collection]);
+      vi.mocked(updateCollectionQuery).mockResolvedValue({ ...collection, query: { ...collection.query, filter: { op: 'status', value: 'archived' } } });
+      const section = document.querySelector('[data-section-name="notes"]')!;
+      const controller = surfacesApp.getControllerForElementAndIdentifier(section, 'notes') as NotesController;
+      await (controller as unknown as { loadCollections: () => Promise<void> }).loadCollections();
+      document.querySelector<HTMLButtonElement>('[aria-label="More options for Reading"]')!.click();
+      expect(document.querySelector('.notes-collection-menu button')?.textContent).toBe('Edit rules');
+      expect(document.querySelector('[data-notes-target="allNotesButton"]')?.getAttribute('aria-current')).toBe('page');
+      document.querySelector<HTMLButtonElement>('.notes-collection-menu button')!.click();
+      expect(document.querySelector<HTMLDialogElement>('#jin-collection-modal')!.open).toBe(true);
+      document.querySelector<HTMLSelectElement>('#collection-filter')!.value = 'status';
+      document.querySelector<HTMLInputElement>('#collection-filter-value')!.value = 'archived';
+      document.querySelector('#jin-collection-modal form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await waitForController();
+      expect(updateCollectionQuery).toHaveBeenCalledWith('collection-stable', {
+        version: 1, filter: { op: 'status', value: 'archived' }, sort: [{ field: 'updated', direction: 'desc' }], limit: null,
+      });
+      expect(createCollection).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-notes-target="allNotesButton"]')?.getAttribute('aria-current')).toBe('page');
+    });
+
+    it('Escape closes the collection menu and returns focus to its trigger', async () => {
+      const collection = { id: 'menu', name: 'Writing', query: { version: 1, filter: { op: 'all' as const, clauses: [] }, sort: [{ field: 'updated' as const, direction: 'desc' as const }], limit: null } };
+      vi.mocked(listCollections).mockResolvedValue([collection]);
+      const controller = surfacesApp.getControllerForElementAndIdentifier(document.querySelector('[data-section-name="notes"]')!, 'notes') as NotesController;
+      await (controller as unknown as { loadCollections: () => Promise<void> }).loadCollections();
+      const trigger = document.querySelector<HTMLButtonElement>('[aria-label="More options for Writing"]')!;
+      trigger.click();
+      const menu = document.querySelector<HTMLElement>('.notes-collection-menu')!;
+      expect(menu.hidden).toBe(false);
+      menu.querySelector('button')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      expect(menu.hidden).toBe(true);
+      expect(document.activeElement).toBe(trigger);
+      expect(document.querySelector('[data-notes-target="allNotesButton"]')?.getAttribute('aria-current')).toBe('page');
+    });
+
+    it('locks advanced imported collection queries instead of flattening them', async () => {
+      const collection = {
+        id: 'advanced', name: 'Imported',
+        query: { version: 1, filter: { op: 'any' as const, clauses: [{ op: 'tag' as const, value: 'a' }, { op: 'tag' as const, value: 'b' }] }, sort: [{ field: 'id' as const, direction: 'asc' as const }], limit: 5 },
+        view: { imported: true },
+      };
+      vi.mocked(listCollections).mockResolvedValue([collection]);
+      const section = document.querySelector('[data-section-name="notes"]')!;
+      const controller = surfacesApp.getControllerForElementAndIdentifier(section, 'notes') as NotesController;
+      await (controller as unknown as { loadCollections: () => Promise<void> }).loadCollections();
+      controller.editCollection('advanced');
+      expect(document.querySelector('[data-notes-target="collectionRuleSummary"]')?.textContent).toContain('advanced rules');
+      expect(document.querySelector<HTMLButtonElement>('#jin-collection-modal button[type="submit"]')?.disabled).toBe(true);
+      document.querySelector('#jin-collection-modal form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      expect(updateCollectionQuery).not.toHaveBeenCalled();
+      expect(renameCollectionInvoke).not.toHaveBeenCalled();
+    });
+
+    it('does not let an old collection save close a newly opened dialog after native Escape', async () => {
+      let resolveCreate!: (value: unknown) => void;
+      vi.mocked(createCollection).mockReturnValue(new Promise(resolve => { resolveCreate = resolve; }) as ReturnType<typeof createCollection>);
+      const section = document.querySelector('[data-section-name="notes"]')!;
+      const controller = surfacesApp.getControllerForElementAndIdentifier(section, 'notes') as NotesController;
+      controller.newCollection();
+      document.querySelector<HTMLInputElement>('#collection-name')!.value = 'Old';
+      document.querySelector('#jin-collection-modal form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      const dialog = document.querySelector<HTMLDialogElement>('#jin-collection-modal')!;
+      dialog.dispatchEvent(new Event('cancel', { bubbles: false, cancelable: true }));
+      controller.newCollection();
+      document.querySelector<HTMLInputElement>('#collection-name')!.value = 'New';
+      resolveCreate({ id: 'old', name: 'Old', query: { version: 1, filter: { op: 'all', clauses: [] }, sort: [{ field: 'updated', direction: 'desc' }], limit: null } });
+      await waitForController();
+      expect(dialog.open).toBe(true);
+      expect(document.querySelector<HTMLInputElement>('#collection-name')!.value).toBe('New');
+      expect(document.querySelector('[data-notes-target="scopeTitle"]')?.textContent).toBe('All Notes');
     });
 
     it('imports a selected attachment as an inert managed-asset reference at the editor selection', async () => {

@@ -37,7 +37,7 @@
 }
 
 .settings-view__heading {
-  font-family: var(--font-display);
+  font-family: var(--font-text);
   font-size: var(--document-title-size);
   line-height: var(--document-title-line);
   font-weight: var(--display-title-weight);
@@ -79,7 +79,7 @@
 }
 
 .settings-pane__title {
-  font-family: var(--font-display);
+  font-family: var(--font-text);
   font-size: var(--document-title-size);
   line-height: var(--document-title-line);
   font-weight: var(--display-title-weight);
@@ -575,7 +575,7 @@
 .appearance-mode-group {
   display: flex;
   gap: 2px;
-  background: var(--fill-primary);
+  background: var(--control-track);
   border-radius: var(--radius-capsule);
   padding: 2px;
 }
@@ -601,9 +601,9 @@
 }
 
 .appearance-mode-btn[aria-pressed="true"] {
-  background: var(--bg-elevated);
+  background: var(--control-surface);
   color: var(--label);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--control-shadow);
 }
 
 [data-reduce-motion="1"] .appearance-mode-btn {

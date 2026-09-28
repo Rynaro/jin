@@ -45,6 +45,27 @@ fn recurrence_key(item: &serde_json::Value) -> String {
         .unwrap_or_else(|| MASTER_RECURRENCE_KEY.to_string())
 }
 
+/// Outbox metadata stays local and must never be sent as a Google Event field.
+/// Older rows predate the immutable policy and retain the stable `all` default.
+fn organizer_payload_and_updates(
+    payload: Option<serde_json::Value>,
+) -> crate::Result<(serde_json::Value, String)> {
+    let mut payload = payload.unwrap_or_else(|| serde_json::json!({}));
+    let object = payload.as_object_mut().ok_or_else(|| {
+        crate::JinError::Integrity("organizer outbox payload must be an object".to_string())
+    })?;
+    let policy = object
+        .remove("_jinGuestUpdatePolicy")
+        .and_then(|value| value.as_str().map(str::to_string))
+        .unwrap_or_else(|| "all".to_string());
+    if !matches!(policy.as_str(), "all" | "externalOnly" | "none") {
+        return Err(crate::JinError::Integrity(
+            "invalid immutable guest update policy in outbox".to_string(),
+        ));
+    }
+    Ok((payload, policy))
+}
+
 pub fn pull_destination<H: HttpClient>(
     root: &Path,
     conn: &Connection,
@@ -533,6 +554,31 @@ pub fn drain_destination<H: HttpClient>(
     tokens: &TokenSet,
     http: &H,
 ) -> crate::Result<u32> {
+    drain_destination_event(
+        root,
+        conn,
+        target,
+        auth_generation,
+        route_generation,
+        tokens,
+        http,
+        None,
+    )
+}
+
+/// Drain only the selected canonical event when invoked from its detail view.
+/// All claiming, generation, ETag and interrupted-write guards remain shared.
+#[allow(clippy::too_many_arguments)] // Provider routing and selection are independent call-site inputs.
+pub fn drain_destination_event<H: HttpClient>(
+    root: &Path,
+    conn: &Connection,
+    target: &EventSyncTarget,
+    auth_generation: u64,
+    route_generation: u64,
+    tokens: &TokenSet,
+    http: &H,
+    event_id: Option<&str>,
+) -> crate::Result<u32> {
     let destination = SyncDestination::google(
         target.account_id.as_str().to_string(),
         target.calendar_id.clone(),
@@ -543,7 +589,26 @@ pub fn drain_destination<H: HttpClient>(
         access_token: &tokens.access_token,
     };
     let mut pushed = 0;
-    for operation in state::list_route_outbox_for_drain(conn, &destination)? {
+    for listed_operation in state::list_route_outbox_for_drain(conn, &destination)? {
+        if event_id.is_some_and(|id| listed_operation.jin_id != id) {
+            continue;
+        }
+        let operation = listed_operation;
+        // Organizer mutations can notify guests. Once a process has claimed a
+        // row, a crash leaves the provider outcome unknowable. Keep the row
+        // visible and recoverable, but require a refresh/review instead of
+        // replaying a write that may already have sent an update.
+        if operation.state == "sending"
+            && operation.operation != OutboxOperationKind::RespondInvitation
+        {
+            state::pause_outbox_operation(
+                conn,
+                &destination,
+                &operation.operation_id,
+                "interrupted_provider_write_requires_review",
+            )?;
+            continue;
+        }
         if operation.auth_generation != auth_generation
             || operation.route_generation != route_generation
         {
@@ -613,6 +678,23 @@ pub fn drain_destination<H: HttpClient>(
             )?;
             continue;
         }
+        if operation.operation != OutboxOperationKind::Delete {
+            let (payload, _) = organizer_payload_and_updates(operation.payload.clone())?;
+            if let Err(error) = crate::google::client::validate_event_write_times(&payload) {
+                state::pause_outbox_operation(
+                    conn,
+                    &destination,
+                    &operation.operation_id,
+                    "timezone_required",
+                )?;
+                return Err(error);
+            }
+        }
+        let Some(operation) =
+            state::claim_outbox_operation(conn, &destination, &operation.operation_id)?
+        else {
+            continue;
+        };
         if current_revision != operation.canonical_revision {
             state::pause_outbox_operation(
                 conn,
@@ -633,7 +715,7 @@ pub fn drain_destination<H: HttpClient>(
             )?;
             continue;
         }
-        let response = {
+        let mut response = {
             let _request_guard = crate::ops::sync::acquire_provider_request_guard(
                 root,
                 target,
@@ -641,36 +723,40 @@ pub fn drain_destination<H: HttpClient>(
                 operation.route_generation,
                 true,
             )?;
+            let (payload, send_updates) = organizer_payload_and_updates(operation.payload.clone())?;
             match operation.operation {
-                OutboxOperationKind::Insert => client.insert_event(
+                OutboxOperationKind::Insert => client.insert_event_with_updates(
                     &crate::google::client::ulid_to_google_event_id(&operation.jin_id)?,
-                    operation
-                        .payload
-                        .clone()
-                        .unwrap_or_else(|| serde_json::json!({})),
+                    payload,
+                    &send_updates,
                 )?,
-                OutboxOperationKind::Patch => client.patch_event(
+                OutboxOperationKind::Patch => client.patch_event_with_updates(
                     operation.google_event_id.as_deref().ok_or_else(|| {
                         crate::JinError::Integrity("patch outbox row missing event id".to_string())
                     })?,
                     operation.base_etag.as_deref().ok_or_else(|| {
                         crate::JinError::Integrity("patch outbox row missing base etag".to_string())
                     })?,
-                    operation
-                        .payload
-                        .clone()
-                        .unwrap_or_else(|| serde_json::json!({})),
+                    payload,
+                    &send_updates,
                 )?,
-                OutboxOperationKind::Delete => client.delete_event(
+                OutboxOperationKind::Delete => client.delete_event_with_updates(
                     operation.google_event_id.as_deref().ok_or_else(|| {
                         crate::JinError::Integrity("delete outbox row missing event id".to_string())
                     })?,
                     operation.base_etag.as_deref().unwrap_or("*"),
+                    &send_updates,
                 )?,
                 OutboxOperationKind::RespondInvitation => unreachable!(),
             }
         };
         if matches!(response.status, 401 | 403) {
+            state::pause_outbox_operation(
+                conn,
+                &destination,
+                &operation.operation_id,
+                "provider_permission_changed",
+            )?;
             return Err(crate::JinError::Auth(
                 "Google credentials or calendar authorization were revoked".to_string(),
             ));
@@ -690,6 +776,12 @@ pub fn drain_destination<H: HttpClient>(
                 client.get_event(remote_id)?
             };
             if matches!(remote_response.status, 401 | 403) {
+                state::pause_outbox_operation(
+                    conn,
+                    &destination,
+                    &operation.operation_id,
+                    "provider_permission_changed",
+                )?;
                 return Err(crate::JinError::Auth(
                     "Google credentials or calendar authorization were revoked".to_string(),
                 ));
@@ -758,16 +850,48 @@ pub fn drain_destination<H: HttpClient>(
             state::complete_outbox_operation(conn, &destination, &operation.operation_id)?;
             continue;
         }
-        let successful = (200..300).contains(&response.status)
-            || (operation.operation == OutboxOperationKind::Insert && response.status == 409);
+        if operation.operation == OutboxOperationKind::Insert && response.status == 409 {
+            let deterministic_id =
+                crate::google::client::ulid_to_google_event_id(&operation.jin_id)?;
+            response = client.get_event(&deterministic_id)?;
+            if response.status != 200
+                || response.body.get("id").and_then(|value| value.as_str())
+                    != Some(deterministic_id.as_str())
+            {
+                state::pause_outbox_operation(
+                    conn,
+                    &destination,
+                    &operation.operation_id,
+                    "insert_conflict_unresolved",
+                )?;
+                continue;
+            }
+        }
+        let successful = (200..300).contains(&response.status);
         if !successful {
+            let message = response
+                .body
+                .pointer("/error/message")
+                .and_then(|value| value.as_str())
+                .map(|message| {
+                    message
+                        .chars()
+                        .filter(|character| !character.is_control())
+                        .take(500)
+                        .collect::<String>()
+                })
+                .filter(|message| !message.is_empty())
+                .unwrap_or_else(|| "Google rejected the calendar change".to_string());
             state::pause_outbox_operation(
                 conn,
                 &destination,
                 &operation.operation_id,
-                &format!("provider_http_{}", response.status),
+                &format!("provider_http_{}: {message}", response.status),
             )?;
-            continue;
+            return Err(crate::JinError::InvalidInput(format!(
+                "Google could not save '{}': {message} (HTTP {}). The change is saved in Jin; review it in Settings > Calendars & Sync.",
+                event.frontmatter.title, response.status,
+            )));
         }
         if operation.operation != OutboxOperationKind::Delete {
             state::upsert_scoped_entry(

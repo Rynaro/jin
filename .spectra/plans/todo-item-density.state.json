@@ -1,0 +1,134 @@
+{
+  "schema": "ramza/plan-state.v1",
+  "plan": "todo-item-density",
+  "created_at": "2026-09-28T11:18:05Z",
+  "tier": "lite",
+  "phase": "DONE",
+  "phases_done": [
+    "RS",
+    "S",
+    "P",
+    "E",
+    "C",
+    "T",
+    "A",
+    "DONE"
+  ],
+  "rightsize": {
+    "score": 3,
+    "computed_tier": "lite",
+    "inputs": {
+      "files_est": 12,
+      "new_dep": false,
+      "public_api": false,
+      "migration": false,
+      "security": false,
+      "novel": false,
+      "stakes": "med"
+    }
+  },
+  "refine_cycles": 0,
+  "skips": [],
+  "gates": [
+    {
+      "rubric": "complexity",
+      "total": 7,
+      "dims": {
+        "scope": 2,
+        "ambiguity": 1,
+        "dependencies": 2,
+        "risk": 2
+      },
+      "verdict": "extended",
+      "at": "2026-09-28T11:18:28Z",
+      "label": "scope"
+    },
+    {
+      "rubric": "explore",
+      "total": 89,
+      "dims": {
+        "alignment": 9,
+        "correctness": 9,
+        "maintainability": 9,
+        "performance": 9,
+        "simplicity": 9,
+        "risk": 9,
+        "innovation": 7
+      },
+      "verdict": "elite",
+      "at": "2026-09-28T11:18:41Z",
+      "label": "adaptive-compact"
+    },
+    {
+      "rubric": "explore",
+      "total": 80.5,
+      "dims": {
+        "alignment": 6,
+        "correctness": 9,
+        "maintainability": 9,
+        "performance": 9,
+        "simplicity": 10,
+        "risk": 9,
+        "innovation": 3
+      },
+      "verdict": "solid",
+      "at": "2026-09-28T11:18:42Z",
+      "label": "conservative-two-lines"
+    },
+    {
+      "rubric": "explore",
+      "total": 76,
+      "dims": {
+        "alignment": 8,
+        "correctness": 8,
+        "maintainability": 7,
+        "performance": 8,
+        "simplicity": 6,
+        "risk": 7,
+        "innovation": 9
+      },
+      "verdict": "solid",
+      "at": "2026-09-28T11:18:42Z",
+      "label": "progressive-row-expansion"
+    },
+    {
+      "rubric": "confidence",
+      "total": 93,
+      "dims": {
+        "pattern_match": 90,
+        "requirement_clarity": 96,
+        "decomposition_stability": 90,
+        "constraint_compliance": 96
+      },
+      "verdict": "AUTO_PROCEED",
+      "at": "2026-09-28T11:20:54Z",
+      "label": "handoff"
+    }
+  ],
+  "amendments": [],
+  "declared_scope": [
+    "jin-gui/src/lib/tasks/*",
+    "jin-gui/src/lib/ui/*",
+    "jin-gui/src/lib/lists/*",
+    "jin-gui/src/lib/notes/*",
+    "jin-gui/src/controllers/tasks_controller.ts",
+    "jin-gui/src/styles/browse.css",
+    "jin-gui/src/styles/components.css",
+    "jin-gui/src/styles/tokens.css",
+    "jin-gui/src/styles/a11y.css",
+    "jin-gui/src/templates/*",
+    "jin-gui/src/lib/*/*drag*",
+    "jin-gui/src/lib/*/*resize*",
+    "jin-gui/tests/*",
+    "jin-gui/tools/tauri-fixture-init.js",
+    ".artifacts/playwright-mcp/*",
+    ".spectra/plans/todo-item-density*"
+  ],
+  "criteria_sha256": "240c2e26c6d3b9b8976a989754713d7af4fd4ce0801bd101ad6a4ead81d6f5c0",
+  "critic": {
+    "author": null,
+    "checker": null
+  },
+  "scope_declared_at": "2026-09-28T11:20:54Z",
+  "criteria_frozen_at": "2026-09-28T11:20:55Z"
+}

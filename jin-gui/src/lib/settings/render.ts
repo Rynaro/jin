@@ -249,7 +249,8 @@ export function renderSyncResult(
   }
 
   el.syncResultDisplay.classList.remove('hidden');
-  el.syncError.classList.add('hidden');
+  el.syncError.textContent = (view.errors ?? []).join('\n');
+  el.syncError.classList.toggle('hidden', !view.errors?.length);
 }
 
 /**

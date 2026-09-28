@@ -7,6 +7,7 @@ import type {
   NotificationSourceErrorDto,
   TaskReminderNotificationDto,
 } from '../../types/dto';
+import { renderInvitationResponseControls } from '../events/invitation';
 
 export interface NotificationSourceErrorSummary {
   heading: string;
@@ -86,9 +87,9 @@ export function formatInstant(value: string, allDay = false): string {
 
 function requestedActionLabel(action: NotificationAction | null): string {
   switch (action) {
-    case 'allow': return 'Allow';
+    case 'allow': return 'Accept';
     case 'maybe': return 'Maybe';
-    case 'refuse': return 'Refuse';
+    case 'refuse': return 'Decline';
     case 'complete_task': return 'Mark done';
     default: return 'Action';
   }
@@ -195,35 +196,18 @@ function renderInvitationActions(
   item: CalendarInvitationNotificationDto,
   busy: boolean,
 ): HTMLElement {
-  const section = element('section', 'notifications-detail__section');
-  const heading = element('h3', 'notifications-detail__section-title', 'Respond');
-  section.append(heading);
-
-  const group = element('div', 'notifications-rsvp-actions');
-  group.setAttribute('role', 'group');
-  group.setAttribute('aria-label', 'Invitation response');
-  group.setAttribute('aria-busy', String(busy || item.status === 'action_pending'));
-
-  const available = item.status === 'active' && item.capabilities.can_respond && !busy;
-  for (const response of ['allow', 'maybe', 'refuse'] as const) {
-    const label = response === 'allow' ? 'Allow' : response === 'maybe' ? 'Maybe' : 'Refuse';
-    const button = actionButton(label, `respond-${response}`, response === 'allow' ? 'btn-primary' : 'btn-secondary');
-    button.dataset.response = response;
-    button.disabled = !available;
-    if (item.capabilities.recurrence_scopes.length > 1) button.dataset.requiresScope = 'true';
-    group.append(button);
-  }
-  section.append(group);
-
-  if (item.status === 'action_pending') {
-    section.append(element(
-      'p',
-      'notifications-pending-copy',
-      `Pending sync: ${requestedActionLabel(item.requested_action)}. Google’s confirmed response remains ${providerResponseLabel(item.provider_response_status) ?? 'unknown'}.`,
-    ));
-  }
-  if (item.capabilities.disabled_reason) {
-    section.append(element('p', 'notifications-disabled-copy', `Response disabled: ${item.capabilities.disabled_reason}`));
+  const section = renderInvitationResponseControls({
+    confirmedResponse: item.provider_response_status,
+    requestedResponse: item.requested_action === 'allow' ? 'accepted'
+      : item.requested_action === 'maybe' ? 'tentative'
+        : item.requested_action === 'refuse' ? 'declined' : null,
+    pending: busy || item.status === 'action_pending',
+    available: (item.status === 'active' || item.status === 'acted') && item.capabilities.can_respond,
+    disabledReason: item.capabilities.disabled_reason,
+  });
+  section.classList.add('notifications-detail__section');
+  if (item.capabilities.recurrence_scopes.length > 1) {
+    section.querySelectorAll<HTMLButtonElement>('[data-notification-action]').forEach(button => { button.dataset.requiresScope = 'true'; });
   }
   if (item.status === 'active' && item.action_error?.retryable) {
     const retry = actionButton('Retry', 'retry-rsvp', 'btn-primary');

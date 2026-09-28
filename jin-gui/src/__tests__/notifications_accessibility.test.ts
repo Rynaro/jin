@@ -34,9 +34,9 @@ describe('Notification Center accessibility', () => {
     expect(actionOrder).toEqual([
       'Back to notifications',
       'View event',
-      'Allow',
+      'Accept',
       'Maybe',
-      'Refuse',
+      'Decline',
       'Mark read',
       'Defer 1 hour',
       'Defer until tomorrow morning',

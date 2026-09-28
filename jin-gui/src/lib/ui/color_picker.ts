@@ -1,4 +1,5 @@
 import { JinModal } from './modal';
+import { beginMovementSelection } from './movement';
 
 export const JIN_PALETTE = [
   'accent', 'sky', 'danger', 'warning', 'success', 'purple', 'pink', 'orange',
@@ -89,14 +90,19 @@ class JinChromaDialog {
   private hsv: Hsv = rgbToHsv(hexToRgb(this.color));
   private draftSource: HTMLInputElement | null = null;
   private callback: ((color: JinColor) => void) | null = null;
+  private mapPointer: { id: number; x: number; y: number; releaseSelection: (() => void) | null } | null = null;
+  private readonly onMapBlur = () => this.finishMapGesture();
 
   constructor() {
     this.modal = new JinModal({ title: 'Custom Color', ariaLabel: 'Choose a custom color' });
     this.modal.setBody(this.buildBody());
     this.modal.setFooter(this.buildFooter());
+    this.map.closest('dialog')?.addEventListener('close', this.onMapBlur);
+    window.addEventListener('blur', this.onMapBlur);
   }
 
   open(initial: string, callback: (color: JinColor) => void): void {
+    this.finishMapGesture();
     this.callback = callback;
     const normalized = normalizeJinColor(initial);
     if (normalized && !isJinPaletteColor(normalized)) this.setRgb(hexToRgb(normalized));
@@ -104,7 +110,21 @@ class JinChromaDialog {
     this.modal.open();
   }
 
-  destroy(): void { this.callback = null; this.modal.destroy(); }
+  destroy(): void {
+    this.finishMapGesture();
+    window.removeEventListener('blur', this.onMapBlur);
+    this.map.closest('dialog')?.removeEventListener('close', this.onMapBlur);
+    this.callback = null;
+    this.modal.destroy();
+  }
+
+  private finishMapGesture(): void {
+    const gesture = this.mapPointer;
+    if (!gesture) return;
+    this.mapPointer = null;
+    gesture.releaseSelection?.();
+    if (this.map.hasPointerCapture?.(gesture.id)) this.map.releasePointerCapture(gesture.id);
+  }
 
   private buildBody(): HTMLElement {
     const body = document.createElement('div'); body.className = 'jin-chroma-dialog';
@@ -113,10 +133,25 @@ class JinChromaDialog {
     this.map.setAttribute('role', 'slider'); this.map.setAttribute('aria-label', 'Saturation and brightness map');
     this.mapThumb.className = 'jin-chroma-dialog__sv-thumb'; this.map.appendChild(this.mapThumb);
     this.map.addEventListener('pointerdown', event => {
+      this.finishMapGesture();
+      this.mapPointer = { id: event.pointerId, x: event.clientX, y: event.clientY, releaseSelection: null };
       this.map.setPointerCapture?.(event.pointerId);
       this.pickMap(event);
     });
-    this.map.addEventListener('pointermove', event => { if (event.buttons === 1) this.pickMap(event); });
+    this.map.addEventListener('pointermove', event => {
+      const gesture = this.mapPointer;
+      if (!gesture || event.pointerId !== gesture.id || event.buttons !== 1) return;
+      if (!gesture.releaseSelection && (event.clientX !== gesture.x || event.clientY !== gesture.y)) {
+        gesture.releaseSelection = beginMovementSelection(this.map);
+      }
+      this.pickMap(event);
+    });
+    const finishPointer = (event: PointerEvent) => {
+      if (event.pointerId === this.mapPointer?.id) this.finishMapGesture();
+    };
+    this.map.addEventListener('pointerup', finishPointer);
+    this.map.addEventListener('pointercancel', finishPointer);
+    this.map.addEventListener('lostpointercapture', finishPointer);
     this.map.addEventListener('keydown', event => this.keyMap(event));
     this.configureRange(this.hue, 'Hue', 0, 360); this.configureRange(this.saturation, 'Saturation', 0, 100); this.configureRange(this.value, 'Brightness', 0, 100);
     this.hue.classList.add('jin-chroma-dialog__hue');
@@ -144,13 +179,13 @@ class JinChromaDialog {
   private buildFooter(): HTMLElement {
     const footer = document.createElement('div'); footer.className = 'jin-chroma-dialog__actions';
     const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'btn-secondary'; cancel.textContent = 'Cancel';
-    cancel.addEventListener('click', () => { this.callback = null; this.modal.close(); });
+    cancel.addEventListener('click', () => { this.finishMapGesture(); this.callback = null; this.modal.close(); });
     this.apply.type = 'button'; this.apply.className = 'btn-primary'; this.apply.textContent = 'Apply';
     this.apply.addEventListener('click', () => {
       if (this.apply.disabled || !this.callback) return;
       if (!this.commitDraft()) return;
       const callback = this.callback; const color = this.color; this.callback = null;
-      this.modal.close(); callback(color);
+      this.finishMapGesture(); this.modal.close(); callback(color);
     });
     footer.append(cancel, this.apply); return footer;
   }

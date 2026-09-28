@@ -622,6 +622,32 @@ describe('G-CODE-COPY — copy button writes the raw code text to the clipboard'
 
     document.body.removeChild(div);
   });
+
+  it('reports clipboard success and failure visibly, without stale completion after removal', async () => {
+    const writeText = vi.fn<[string], Promise<void>>().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('blocked'));
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const host = document.createElement('div');
+    host.append(renderMarkdownFragment('```js\nlet x = 1;\n```'));
+    document.body.append(host);
+    const copy = host.querySelector<HTMLButtonElement>('.code-block__copy')!;
+    const status = host.querySelector<HTMLElement>('.code-block__copy-status')!;
+    copy.click();
+    await Promise.resolve();
+    expect(status.textContent).toBe('Copied');
+    expect(copy.getAttribute('aria-label')).toBe('Copied');
+    copy.click();
+    await Promise.resolve();
+    expect(status.textContent).toBe('Copy unavailable');
+    host.remove();
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+    const noClipboardHost = document.createElement('div');
+    noClipboardHost.append(renderMarkdownFragment('```\nno api\n```'));
+    document.body.append(noClipboardHost);
+    noClipboardHost.querySelector<HTMLButtonElement>('.code-block__copy')!.click();
+    await Promise.resolve();
+    expect(noClipboardHost.querySelector('.code-block__copy-status')?.textContent).toBe('Copy unavailable');
+    noClipboardHost.remove();
+  });
 });
 
 describe('G-CODE-BADGE — language badge displays the fence language', () => {

@@ -28,9 +28,9 @@ describe('Notification Center rendering', () => {
     expect(container.textContent).toContain('Work · Primary calendar');
     expect(container.textContent).toContain('Studio 4');
     expect(container.querySelector('[data-notification-action="open-event"]')?.textContent).toBe('View event');
-    expect(container.querySelector('[data-notification-action="respond-allow"]')?.textContent).toBe('Allow');
+    expect(container.querySelector('[data-notification-action="respond-allow"]')?.textContent).toBe('Accept');
     expect(container.querySelector('[data-notification-action="respond-maybe"]')?.textContent).toBe('Maybe');
-    expect(container.querySelector('[data-notification-action="respond-refuse"]')?.textContent).toBe('Refuse');
+    expect(container.querySelector('[data-notification-action="respond-refuse"]')?.textContent).toBe('Decline');
     expect(container.querySelector('[aria-label="Invitation response"]')).not.toBeNull();
   });
 
@@ -128,8 +128,8 @@ describe('Notification Center rendering', () => {
     });
     renderNotificationDetail(container, pending);
 
-    expect(container.textContent).toContain('Pending sync: Allow');
-    expect(container.textContent).toContain('Google’s confirmed response remains Awaiting your response');
+    expect(container.textContent).toContain('Pending sync: Accept');
+    expect(container.textContent).toContain('Queued: Accepted. Google confirms Awaiting your response.');
     expect(container.querySelector('[aria-label="Invitation response"]')?.getAttribute('aria-busy')).toBe('true');
     expect(container.querySelector<HTMLButtonElement>('[data-notification-action="defer"]')?.disabled).toBe(true);
     expect(container.querySelector<HTMLButtonElement>('[data-notification-action="dismiss"]')?.disabled).toBe(true);

@@ -48,8 +48,11 @@ const invokeMocks = vi.hoisted(() => ({
   listEvents: vi.fn(),
   getEventDetailById: vi.fn(),
   editEvent: vi.fn(),
+  editEventDelta: vi.fn(),
+  editRoutedEventDelta: vi.fn(),
   deleteEvent: vi.fn(),
   removeTimeBlock: vi.fn(),
+  syncCalendarEvent: vi.fn(),
   newOperationId: vi.fn((prefix: string) => `${prefix}-test-operation`),
 }));
 
@@ -528,7 +531,129 @@ describe('renderEventDetail — temporal display', () => {
   });
 });
 
+describe('renderEventDetail — invitation response', () => {
+  it('renders the shared RSVP control and dispatches its opaque event-detail action', () => {
+    const onRespondInvitation = vi.fn();
+    const detail = makeDetail({}, {
+      collaboration: {
+        invitation: {
+          action_ref: { notification_item_id: 'invitation-item-7', expected_item_version: 3 },
+          provider_response: 'needsAction',
+          requested_response: null,
+          state: 'idle',
+          can_respond: true,
+          recurrence_scopes: ['this_event'],
+          disabled_reason: null,
+        },
+        can_edit_schedule: false,
+        can_append_attendees: false,
+        can_remove_attendees: false,
+        can_change_attendee_roles: false,
+        can_cancel_meeting: false,
+        can_add_conference: false,
+        can_remove_conference: false,
+        allowed_conference_solution_types: [],
+        disabled_reasons: {},
+      },
+    });
+
+    renderEventDetail(el, templates, detail, noopNavigate, undefined, undefined, { onRespondInvitation });
+
+    const accept = el.detailContent.querySelector<HTMLButtonElement>('button[data-response="allow"]');
+    expect(accept?.textContent).toBe('Accept');
+    expect(accept?.getAttribute('aria-pressed')).toBe('false');
+    accept?.click();
+    expect(onRespondInvitation).toHaveBeenCalledWith(detail, 'allow', accept);
+  });
+});
+
+describe('renderEventDetail — organizer cancellation', () => {
+  it('names the destructive action as meeting cancellation only for the organizer capability', () => {
+    const detail = makeDetail({ source: 'google', authority: 'google' }, {
+      can_delete: true,
+      collaboration: {
+        invitation: null,
+        can_edit_schedule: true,
+        can_append_attendees: false,
+        can_remove_attendees: false,
+        can_change_attendee_roles: false,
+        can_cancel_meeting: true,
+        can_add_conference: false,
+        can_remove_conference: false,
+        allowed_conference_solution_types: [],
+        disabled_reasons: {},
+      },
+    });
+    renderEventDetail(el, templates, detail, noopNavigate, undefined, undefined, { onRemove: vi.fn() });
+    expect(el.detailContent.querySelector('.event-detail__destructive')?.textContent).toBe('Cancel meeting');
+  });
+});
+
+describe('renderEventDetail — Google Meet lifecycle', () => {
+  it('offers authorized Meet creation and blocks any join link while the request is pending', () => {
+    const onManageMeet = vi.fn();
+    const detail = makeDetail({ source: 'google', authority: 'google', conference_data: {
+      pendingCreateRequest: { requestId: 'old-request', conferenceSolutionKey: { type: 'hangoutsMeet' } },
+    } }, {
+      collaboration: {
+        invitation: null, can_edit_schedule: true, can_append_attendees: false, can_remove_attendees: false,
+        can_change_attendee_roles: false, can_cancel_meeting: true, can_add_conference: true,
+        can_remove_conference: false, allowed_conference_solution_types: ['hangoutsMeet'], disabled_reasons: {},
+      },
+    });
+    renderEventDetail(el, templates, detail, noopNavigate, undefined, undefined, { onManageMeet });
+    expect(el.detailContent.querySelector('.event-detail__join-link')).toBeNull();
+    expect([...el.detailContent.querySelectorAll<HTMLButtonElement>('button')]
+      .some(button => button.textContent === 'Retry Google Meet')).toBe(false);
+    expect(onManageMeet).not.toHaveBeenCalled();
+  });
+});
+
 describe('renderEventDetail — Google meeting metadata', () => {
+  it('shows the Google destination and unsent Meet state without changing Jin provenance', () => {
+    renderEventDetail(el, templates, makeEvent({
+      source: 'jin', authority: 'jin',
+      sync_context: { provider: 'google', account_id: 'account', account_alias: 'Personal',
+        calendar_id: 'calendar', calendar_name: 'Personal calendar', access_role: 'owner',
+        allowed_conference_solution_types: [], writable: true, state: 'pending' },
+      conference_data: { pendingCreateRequest: { requestId: 'request', conferenceSolutionKey: { type: 'hangoutsMeet' } } },
+    }), noopNavigate);
+    expect(el.detailContent.querySelector('.event-detail__source-label')?.textContent).toBe('Google Calendar · Personal calendar');
+    expect(el.detailContent.querySelector('.event-detail__destination')?.textContent).toContain('Personal — Personal calendar');
+    expect(el.detailContent.querySelector('.event-detail__sync-state')?.textContent).toContain('waiting to sync');
+    expect(el.detailContent.querySelector('.event-detail__conference-state')?.textContent).toContain('Sync this event');
+    expect(el.detailContent.textContent).not.toContain('Google Meet is being created');
+  });
+
+  it.each(['cancelled', 'paused'])('explains %s publication without offering a dead sync action', (state) => {
+    const onSyncEvent = vi.fn();
+    const onReviewSync = vi.fn();
+    renderEventDetail(el, templates, makeEvent({
+      source: 'jin', authority: 'jin',
+      sync_context: { provider: 'google', account_id: 'account', account_alias: 'Personal',
+        calendar_id: 'calendar', calendar_name: 'Personal calendar', access_role: 'owner',
+        allowed_conference_solution_types: [], writable: true, state },
+      conference_data: { pendingCreateRequest: { requestId: 'request', conferenceSolutionKey: { type: 'hangoutsMeet' } } },
+    }), noopNavigate, undefined, undefined, { onSyncEvent, onReviewSync });
+    expect(el.detailContent.querySelector('.event-detail__sync')).toBeNull();
+    expect(el.detailContent.textContent).not.toContain('Synced with Google');
+    expect(el.detailContent.querySelector('.event-detail__conference-state')?.textContent).not.toContain('Use “Sync this event”');
+    if (state === 'paused') {
+      el.detailContent.querySelector<HTMLButtonElement>('.event-detail__review-sync')!.click();
+      expect(onReviewSync).toHaveBeenCalledOnce();
+    } else {
+      expect(el.detailContent.querySelector('.event-detail__sync-state')?.textContent).toContain('no Google copy is confirmed');
+    }
+  });
+
+  it('distinguishes provider-pending Meet creation from an unsent request', () => {
+    renderEventDetail(el, templates, makeEvent({
+      source: 'google', conference_data: { createRequest: { requestId: 'request', status: { statusCode: 'pending' } } },
+    }), noopNavigate);
+    expect(el.detailContent.querySelector('.event-detail__conference-state')?.textContent).toContain('Google is creating');
+    expect(el.detailContent.querySelector('.event-detail__sync-state')).toBeNull();
+  });
+
   it('renders dedicated organizer, attendee, conference, and reminder sections', () => {
     renderEventDetail(el, templates, makeEvent({
       source: 'google',
@@ -849,7 +974,7 @@ describe('Event detail capability controller gates (AC-022–AC-028)', () => {
     controllerFixture();
     invokeMocks.listEvents.mockReset().mockResolvedValue([detail.event]);
     invokeMocks.getEventDetailById.mockReset().mockResolvedValue(detail);
-    invokeMocks.editEvent.mockReset().mockResolvedValue({ event: detail.event, no_op: false });
+    invokeMocks.editEventDelta.mockReset().mockResolvedValue({ event: detail.event, no_op: false });
     invokeMocks.deleteEvent.mockReset().mockResolvedValue(detail.event);
     invokeMocks.removeTimeBlock.mockReset().mockResolvedValue({ event: detail.event, originating_task: null });
     Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
@@ -879,6 +1004,37 @@ describe('Event detail capability controller gates (AC-022–AC-028)', () => {
     expect(add.hidden).toBe(true);
     expect(add.getAttribute('aria-hidden')).toBe('true');
     expect(add.disabled).toBe(true);
+  });
+
+  it.each(['success', 'error', 'bridge'])('keeps event visible and reports the actual sync outcome (%s)', async (outcome) => {
+    const failure = outcome !== 'success';
+    invokeMocks.syncCalendarEvent.mockReset();
+    if (failure) invokeMocks.syncCalendarEvent.mockRejectedValue(outcome === 'bridge' ? 'invalid args: missing required key eventId' : new Error('offline'));
+    else invokeMocks.syncCalendarEvent.mockResolvedValue(1);
+    await start(makeDetail({ sync_context: {
+      provider: 'google', account_id: 'account', account_alias: 'Personal',
+      calendar_id: 'calendar', calendar_name: 'Personal calendar', access_role: 'owner',
+      allowed_conference_solution_types: [], writable: true, state: 'pending',
+    } }), host => {
+      host.setAttribute('data-action', `${host.getAttribute('data-action')} jin:events-mutated@window->events#handleMutation`);
+    });
+    const refreshed = await invokeMocks.getEventDetailById.mock.results.at(-1)!.value;
+    let finishRefresh: ((detail: EventDetailDto) => void) | undefined;
+    if (!failure) invokeMocks.getEventDetailById.mockImplementationOnce(() => new Promise(resolve => { finishRefresh = resolve; }));
+    invokeMocks.getEventDetailById.mockClear();
+    document.querySelector<HTMLButtonElement>('.event-detail__sync')!.click();
+    await flushController();
+    expect(document.querySelector('[data-events-target="detailContent"]')?.classList.contains('hidden')).toBe(false);
+    expect(document.querySelector('[data-events-target="detailLoadingState"]')?.classList.contains('hidden')).toBe(true);
+    if (finishRefresh) finishRefresh(refreshed);
+    await flushController();
+    expect(invokeMocks.syncCalendarEvent).toHaveBeenCalledWith('evt-001');
+    expect(invokeMocks.getEventDetailById).toHaveBeenCalledTimes(failure ? 0 : 1);
+    expect(document.querySelector('[data-events-target="detailContent"]')?.classList.contains('hidden')).toBe(false);
+    expect(document.querySelector('[data-events-target="detailPanel"]')?.classList.contains('hidden')).toBe(false);
+    expect(document.body.textContent).toContain(outcome === 'bridge' ? 'missing required key eventId' : failure ? 'offline' : 'Event sync finished.');
+    expect(document.querySelector('.event-detail__sync')?.nextElementSibling?.classList.contains('event-detail__operation-status')).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>('.event-detail__sync')?.disabled).toBe(false);
   });
 
   it('returns the calendar route scroll position after detail closes', async () => {
@@ -1039,243 +1195,83 @@ describe('Event detail capability controller gates (AC-022–AC-028)', () => {
     expect(status.textContent).not.toContain('English delete detail');
   });
 
-  it('edits in the same bounded detail surface and preserves source and Time block identity', async () => {
+  it('opens shared Composer modal for Edit and keeps full detail context visible', async () => {
     await start(makeDetail({ derived_from: 'task-1' }));
     document.querySelector<HTMLButtonElement>('.event-detail__edit')!.click();
     await flushController();
 
-    expect(document.querySelector('.event-detail--editing')).not.toBeNull();
+    expect(document.querySelector('.event-composer')).not.toBeNull();
     expect(document.querySelector('.events-detail-pane')).not.toBeNull();
     expect(document.body.textContent).toContain('Source: Jin');
     expect(document.body.textContent).toContain('Time block');
-    expect(document.body.textContent).toContain('Originating task: Plan quarterly review');
-    expect(document.querySelector<HTMLDialogElement>('dialog[open]')).toBeNull();
-    expect(document.activeElement).toBe(document.querySelector('.event-edit__title'));
+    expect(document.body.textContent).toContain('Plan quarterly review');
+    expect(document.querySelector('#event-composer-title')).toBeTruthy();
   });
 
-  it('uses the shared compound When surface with exact timed endpoints and no native date picker', async () => {
-    await start(makeDetail({ start: '2026-06-27T23:30:17', end: '2026-06-29T01:15:17' }));
+  it('saves through editPayloadFromDraft / sparse delta and returns updated full detail', async () => {
+    const initial = makeDetail();
+    await start(initial);
     document.querySelector<HTMLButtonElement>('.event-detail__edit')!.click();
     await flushController();
-    expect(document.querySelector('.event-edit input[type="date"]')).toBeNull();
-    expect(document.querySelector('.event-edit [data-controller="calendar"] .calendar-widget')).not.toBeNull();
-    expect(document.querySelector<HTMLInputElement>('[name="start_time"]')?.value).toBe('23:30');
-    expect(document.querySelector<HTMLInputElement>('[name="end_time"]')?.value).toBe('01:15');
-    expect(document.querySelector('.event-edit .calendar-widget__commit-btn')?.hasAttribute('hidden')).toBe(true);
-    expect(document.querySelector('[role="grid"]')?.getAttribute('aria-multiselectable')).toBe('true');
-  });
+    const title = document.querySelector<HTMLInputElement>('#event-composer-title')!;
+    title.value = 'Renamed via companion';
+    title.dispatchEvent(new Event('input', { bubbles: true }));
 
-  it('projects all-day exclusive end to an inclusive Calendar range', async () => {
-    await start(makeDetail({ start: '2026-06-27', end: '2026-06-30', is_all_day: true, start_tzid: null, end_tzid: null }));
-    document.querySelector<HTMLButtonElement>('.event-detail__edit')!.click();
-    await flushController();
-    expect(document.querySelector('[role="gridcell"][data-iso="2026-06-27"]')?.getAttribute('aria-selected')).toBe('true');
-    expect(document.querySelector('[role="gridcell"][data-iso="2026-06-29"]')?.getAttribute('aria-selected')).toBe('true');
-    expect(document.querySelector('[role="gridcell"][data-iso="2026-06-30"]')?.getAttribute('aria-selected')).toBe('false');
-    expect(document.querySelector('.event-when__summary')?.textContent).toContain('Jun 29');
-  });
+    const edited = { ...makeDetail({ title: 'Renamed via companion' }), edit_token: 'sha256:next' };
+    invokeMocks.editEventDelta.mockResolvedValueOnce({ event: edited.event, no_op: false });
+    invokeMocks.getEventDetailById.mockResolvedValueOnce(edited);
 
-  it('localizes the complete edit When surface without losing unsubmitted DOM state', async () => {
-    await start(makeDetail());
-    document.querySelector<HTMLButtonElement>('.event-detail__edit')!.click();
-    await flushController();
-    const title = document.querySelector<HTMLInputElement>('.event-edit__title')!;
-    const relative = document.querySelector<HTMLInputElement>('[name="relative_when"]')!;
-    title.value = 'Meu rascunho'; title.dispatchEvent(new Event('input'));
-    relative.value = 'tomorrow at noon'; relative.dispatchEvent(new Event('input'));
-    localStorage.setItem('jin:event-locale', 'pt-BR');
+    const editedEvt = vi.fn();
     const host = document.querySelector<HTMLElement>('[data-controller="events"]')!;
-    const controller = app.getControllerForElementAndIdentifier(host, 'events') as EventsController;
-    controller.localeChanged();
+    host.addEventListener('jin:event-edited', editedEvt);
+    document.querySelector<HTMLButtonElement>('.event-composer__save')!.click();
     await flushController();
-    expect(document.querySelector<HTMLInputElement>('.event-edit__title')?.value).toBe('Meu rascunho');
-    expect(document.querySelector<HTMLInputElement>('[name="relative_when"]')?.value).toBe('tomorrow at noon');
-    expect(document.querySelector('.event-edit__when legend')?.textContent).toBe('Quando');
-    expect(document.querySelector('.calendar-widget__today-btn')?.textContent).toBe('Hoje');
-    expect(document.querySelector('.event-when__preview')?.textContent).toContain('às');
-    expect(document.querySelector('.event-edit__header')?.textContent).toContain('Salvar');
+    await flushController();
+
+    expect(invokeMocks.editEventDelta).toHaveBeenCalledOnce();
+    const payload = invokeMocks.editEventDelta.mock.calls[0][0];
+    expect(payload).toMatchObject({
+      event_id: 'evt-001',
+      edit_token: 'sha256:test-token',
+      operation_id: 'edit-test-operation',
+      delta: { title: 'Renamed via companion' },
+    });
+    expect(payload.delta.temporal).toBeUndefined();
+    expect(document.querySelector('.event-composer')).toBeNull();
+    expect(document.querySelector('.browse-detail__title')?.textContent).toBe('Renamed via companion');
+    expect(editedEvt).toHaveBeenCalled();
   });
 
-  it('Cancel and Escape discard only the draft and restore focus to Edit', async () => {
+  it('Cancel restores full detail and focus to Edit without mutating', async () => {
     await start(makeDetail());
     document.querySelector<HTMLButtonElement>('.event-detail__edit')!.click();
-    const title = document.querySelector<HTMLInputElement>('.event-edit__title')!;
-    title.value = 'Unsaved';
-    document.querySelector<HTMLButtonElement>('.event-edit__header .btn-secondary')!.click();
     await flushController();
-    expect(invokeMocks.editEvent).not.toHaveBeenCalled();
+    const title = document.querySelector<HTMLInputElement>('#event-composer-title')!;
+    title.value = 'Unsaved';
+    title.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector<HTMLButtonElement>('.event-composer__cancel')!.click();
+    // Dirty cancel prompts Keep editing / Discard — discard to close.
+    const discard = document.querySelector<HTMLButtonElement>('.event-companion__discard .btn-danger');
+    if (discard) discard.click();
+    await flushController();
+    expect(invokeMocks.editEventDelta).not.toHaveBeenCalled();
     expect(document.querySelector('.browse-detail__title')?.textContent).toBe('Test Event');
     expect(document.activeElement).toBe(document.querySelector('.event-detail__edit'));
-
-    document.querySelector<HTMLButtonElement>('.event-detail__edit')!.click();
-    document.querySelector<HTMLFormElement>('.event-edit')!.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Escape', bubbles: true, cancelable: true,
-    }));
-    await flushController();
-    expect(document.querySelector('.event-detail--editing')).toBeNull();
-    expect(invokeMocks.editEvent).not.toHaveBeenCalled();
   });
 
-  it('Description Enter inserts text without saving while Mod+Enter saves once under the pending guard', async () => {
+  it('provider recovery refreshes open companion token without duplicate submit', async () => {
     await start(makeDetail());
-    let resolveEdit!: (value: unknown) => void;
-    invokeMocks.editEvent.mockImplementationOnce(() => new Promise(resolve => { resolveEdit = resolve; }));
     document.querySelector<HTMLButtonElement>('.event-detail__edit')!.click();
-    const description = document.querySelector<HTMLTextAreaElement>('[name="description"]')!;
-    description.value = 'First\nSecond';
-    description.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    expect(invokeMocks.editEvent).not.toHaveBeenCalled();
-
-    const form = document.querySelector<HTMLFormElement>('.event-edit')!;
-    form.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
-    form.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
-    expect(invokeMocks.editEvent).toHaveBeenCalledOnce();
-    expect(document.querySelector<HTMLButtonElement>('.event-edit__save')?.disabled).toBe(true);
-    resolveEdit({ event: makeEvent({ description: 'First\nSecond' }), no_op: false });
     await flushController();
-    expect(invokeMocks.getEventDetailById.mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(document.querySelector('.event-detail--editing')).toBeNull();
-  });
-
-  it('keeps exact canonical strings on unchanged Save and emits no mutation refresh for a no-op', async () => {
-    const initial = makeDetail({ start: '2026-06-27T09:00:17Z', end: '2026-06-27T10:00:17Z' });
-    await start(initial);
-    invokeMocks.editEvent.mockResolvedValueOnce({ event: initial.event, no_op: true });
-    invokeMocks.getEventDetailById.mockResolvedValueOnce(initial);
     const host = document.querySelector<HTMLElement>('[data-controller="events"]')!;
-    const edited = vi.fn(); const refreshed = vi.fn();
-    host.addEventListener('jin:event-edited', edited); host.addEventListener('jin:refresh-today', refreshed);
-    document.querySelector<HTMLButtonElement>('.event-detail__edit')!.click();
-    document.querySelector<HTMLFormElement>('.event-edit')!.requestSubmit();
-    await flushController();
-    expect(invokeMocks.editEvent.mock.calls[0][0]).toMatchObject({ start: initial.event.start, end: initial.event.end, tzid: 'UTC' });
-    expect(edited).not.toHaveBeenCalled(); expect(refreshed).not.toHaveBeenCalled();
-  });
-
-  it('preserves a stale draft, refetches latest for comparison, and conflict choices never write', async () => {
-    const initial = makeDetail();
-    const latest = makeDetail({ title: 'Changed elsewhere', location: 'Room B' });
-    await start(initial);
-    invokeMocks.editEvent.mockRejectedValueOnce({
-      code: 4, kind: 'sync_conflict', message: 'opaque core text', retriable: false,
-      details: { type: 'stale_event', event_id: initial.event.id },
-    });
-    invokeMocks.getEventDetailById.mockResolvedValueOnce(latest);
-    document.querySelector<HTMLButtonElement>('.event-detail__edit')!.click();
-    document.querySelector<HTMLInputElement>('.event-edit__title')!.value = 'My careful draft';
-    document.querySelector<HTMLFormElement>('.event-edit')!.requestSubmit();
-    await flushController();
-
-    expect(document.querySelector<HTMLInputElement>('.event-edit__title')?.value).toBe('My careful draft');
-    expect(document.querySelector('.event-edit__conflict')?.textContent).toContain('This event changed');
-    expect(document.querySelector('.event-edit__conflict')?.textContent).toContain('Title');
-    expect(invokeMocks.editEvent).toHaveBeenCalledOnce();
-    const review = [...document.querySelectorAll<HTMLButtonElement>('.event-edit__conflict button')]
-      .find(button => button.textContent === 'Review my draft')!;
-    review.click();
-    expect(invokeMocks.editEvent).toHaveBeenCalledOnce();
-    expect(document.querySelector<HTMLInputElement>('.event-edit__title')?.value).toBe('My careful draft');
-  });
-
-  it('recognizes the deterministic fixture stale DTO and enters draft-preserving comparison actions', async () => {
-    const bridge = loadEventFixture();
-    const initial = await bridge.invoke('get_event_detail', { id: 'e1' }) as EventDetailDto;
-    const baseInput = {
-      event_id: initial.event.id,
-      edit_token: initial.edit_token,
-      title: initial.event.title,
-      start: initial.event.start,
-      end: initial.event.end,
-      is_all_day: initial.event.is_all_day,
-      location: initial.event.location ?? undefined,
-      description: initial.event.description ?? undefined,
+    const controller = app.getControllerForElementAndIdentifier(host, 'events') as EventsController & {
+      companion: { applyRecoveredDetail(d: EventDetailDto): void; getDraft(): { title: string; edit_token: string | null } | null; getOperationState(): string };
     };
-    await bridge.invoke('edit_event', {
-      input: { ...baseInput, operation_id: 'fixture-external-change', title: 'Changed elsewhere' },
-    });
-    let staleError: unknown;
-    try {
-      await bridge.invoke('edit_event', {
-        input: { ...baseInput, operation_id: 'fixture-stale-controller', title: 'Stale draft' },
-      });
-    } catch (error: unknown) {
-      staleError = error;
-    }
-    expect(staleError).toMatchObject({
-      code: 4,
-      kind: 'sync_conflict',
-      retriable: false,
-      details: { type: 'stale_event', event_id: 'e1' },
-    });
-
-    const latest = await bridge.invoke('get_event_detail', { id: 'e1' }) as EventDetailDto;
-    await start(initial);
-    invokeMocks.editEvent.mockRejectedValueOnce(staleError);
-    invokeMocks.getEventDetailById.mockResolvedValueOnce(latest);
-    document.querySelector<HTMLButtonElement>('.event-detail__edit')!.click();
-    document.querySelector<HTMLInputElement>('.event-edit__title')!.value = 'My preserved fixture draft';
-    document.querySelector<HTMLFormElement>('.event-edit')!.requestSubmit();
-    await flushController();
-
-    expect(document.querySelector<HTMLInputElement>('.event-edit__title')?.value)
-      .toBe('My preserved fixture draft');
-    const actions = [...document.querySelectorAll<HTMLButtonElement>('.event-edit__conflict button')]
-      .map(button => button.textContent);
-    expect(actions).toEqual(['Use latest', 'Review my draft']);
-  });
-
-  it('Use latest replaces the complete When draft and baseline without writing', async () => {
-    const initial = makeDetail({ start: '2026-06-27T23:30:17', end: '2026-06-29T01:15:17' });
-    const latest = { ...makeDetail({ start: '2026-07-04T08:15:29', end: '2026-07-04T09:45:29' }), edit_token: 'sha256:fresh' };
-    await start(initial);
-    invokeMocks.editEvent.mockRejectedValueOnce({
-      code: 4, kind: 'sync_conflict', message: 'stale', retriable: false,
-      details: { type: 'stale_event', event_id: initial.event.id },
-    });
-    invokeMocks.getEventDetailById.mockResolvedValueOnce(latest);
-    document.querySelector<HTMLButtonElement>('.event-detail__edit')!.click();
-    const relative = document.querySelector<HTMLInputElement>('[name="relative_when"]')!;
-    relative.value = 'tomorrow at noon'; relative.dispatchEvent(new Event('input'));
-    document.querySelector<HTMLFormElement>('.event-edit')!.requestSubmit();
-    await flushController();
-    [...document.querySelectorAll<HTMLButtonElement>('.event-edit__conflict button')]
-      .find(button => button.textContent === 'Use latest')!.click();
-    await flushController();
-    expect(invokeMocks.editEvent).toHaveBeenCalledOnce();
-    expect(document.querySelector<HTMLInputElement>('[name="relative_when"]')?.value).toBe('');
-    expect(document.querySelector<HTMLInputElement>('[name="start_time"]')?.value).toBe('08:15');
-    expect(document.querySelector<HTMLInputElement>('[name="end_time"]')?.value).toBe('09:45');
-    expect(document.querySelector('[role="gridcell"][data-iso="2026-07-04"]')?.getAttribute('aria-selected')).toBe('true');
-  });
-
-  it('uses the latest edit token for an explicit post-conflict Save and localizes safe-action feedback', async () => {
-    localStorage.setItem('jin:event-locale', 'pt-BR');
-    const initial = makeDetail();
-    const latest = { ...makeDetail({ title: 'Mudou fora', start: '2026-06-27T09:00:30Z', end: '2026-06-27T10:00:30Z' }), edit_token: 'sha256:fresh' };
-    await start(initial);
-    invokeMocks.editEvent.mockRejectedValueOnce({
-      code: 4, kind: 'sync_conflict', message: 'English', retriable: false,
-      details: { type: 'stale_event', event_id: initial.event.id },
-    });
-    invokeMocks.getEventDetailById.mockResolvedValueOnce(latest);
-    document.querySelector<HTMLButtonElement>('.event-detail__edit')!.click();
-    document.querySelector<HTMLInputElement>('.event-edit__title')!.value = 'Meu rascunho';
-    document.querySelector<HTMLFormElement>('.event-edit')!.requestSubmit();
-    await flushController();
-    expect(document.body.textContent).toContain('Este evento mudou');
-    expect(document.body.textContent).toContain('Data');
-    expect(document.body.textContent).not.toContain('English');
-
-    [...document.querySelectorAll<HTMLButtonElement>('.event-edit__conflict button')]
-      .find(button => button.textContent === 'Revisar meu rascunho')!.click();
-    invokeMocks.editEvent.mockResolvedValueOnce({ event: latest.event, no_op: true });
-    invokeMocks.getEventDetailById.mockResolvedValueOnce(latest);
-    document.querySelector<HTMLFormElement>('.event-edit')!.requestSubmit();
-    await flushController();
-    expect(invokeMocks.editEvent.mock.calls[1][0]).toMatchObject({
-      event_id: 'evt-001', edit_token: 'sha256:fresh', title: 'Meu rascunho',
-      start: initial.event.start, end: initial.event.end,
-    });
-    expect(document.querySelector('.event-detail--editing')).toBeNull();
+    const title = document.querySelector<HTMLInputElement>('#event-composer-title')!;
+    title.value = 'Still mine';
+    title.dispatchEvent(new Event('input', { bubbles: true }));
+    controller.companion.applyRecoveredDetail({ ...makeDetail({ title: 'From provider' }), edit_token: 'sha256:recovered' });
+    expect(controller.companion.getDraft()?.title).toBe('Still mine');
+    expect(controller.companion.getDraft()?.edit_token).toBe('sha256:recovered');
   });
 });

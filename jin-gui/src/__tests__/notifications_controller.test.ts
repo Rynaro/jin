@@ -266,7 +266,7 @@ describe('NotificationsController', () => {
 
     expect(document.querySelector('[data-notifications-target="live"]')?.textContent)
       .toBe('Invitation allowed. Pending provider confirmation.');
-    expect(document.body.textContent).toContain('Pending sync: Allow');
+    expect(document.body.textContent).toContain('Queued: Accepted');
   });
 
   it('successful mutation refetches and applies the active filter', async () => {
@@ -494,6 +494,16 @@ describe('NotificationsController', () => {
     document.querySelector<HTMLButtonElement>('[data-notification-action="retry-rsvp"]')!.click();
     await settle();
     expect(mockInvoke.mock.calls.filter(([command]) => command === 'retry_calendar_invitation')).toHaveLength(1);
-    expect(document.body.textContent).toContain('Pending sync: Refuse');
+    expect(document.body.textContent).toContain('Queued: Declined');
   });
+  it('keeps RSVP on the invitation ledger rather than EventDraft (AC-CALX-057)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const source = readFileSync(resolve(process.cwd(), 'src/controllers/notifications_controller.ts'), 'utf8');
+    expect(source).not.toMatch(/createInputFromDraft|editPayloadFromDraft|draftFromEvent/);
+    expect(source).toMatch(/respondCalendarInvitation/);
+    expect(source).toMatch(/renderRecurrenceScope/);
+    expect(source).toMatch(/openEventPreview/);
+  });
+
 });

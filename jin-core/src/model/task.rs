@@ -129,6 +129,9 @@ pub struct TaskFrontmatter {
     /// Which section within the task's list this task belongs to (nullable = "No Section").
     #[serde(default)]
     pub section_id: Option<String>,
+    /// Board placement is independent of organizational `section_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board_column_id: Option<String>,
     /// Tag slugs attached to this task (membership stored here; color in tags/<slug>.md).
     #[serde(default)]
     pub tags: Vec<String>,

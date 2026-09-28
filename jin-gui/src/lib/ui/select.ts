@@ -166,6 +166,8 @@ export class JinSelectField {
   private activeIndex = -1;
   private typeahead = '';
   private typeaheadTimer: ReturnType<typeof setTimeout> | null = null;
+  private pointerSelectingOption = false;
+  private pointerReleaseTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(select: HTMLSelectElement) {
     this.select = select;
@@ -214,8 +216,10 @@ export class JinSelectField {
     this.trigger.addEventListener('click', this.onTriggerClick);
     this.trigger.addEventListener('keydown', this.onTriggerKeydown);
     this.root.addEventListener('focusout', this.onFocusOut);
+    this.listbox.addEventListener('pointerdown', this.onListboxPointerDown);
     this.select.addEventListener('change', this.onSelectChange);
     document.addEventListener('pointerdown', this.onDocumentPointerDown, true);
+    document.addEventListener('pointerup', this.onDocumentPointerUp, true);
     window.addEventListener('resize', this.onViewportChanged);
     window.addEventListener('scroll', this.onViewportChanged, true);
 
@@ -309,6 +313,7 @@ export class JinSelectField {
   }
 
   private close(): void {
+    this.pointerSelectingOption = false;
     delete this.root.dataset.open;
     this.listbox.classList.add('hidden');
     this.trigger.setAttribute('aria-expanded', 'false');
@@ -393,8 +398,26 @@ export class JinSelectField {
     if (!this.root.contains(target) && !this.listbox.contains(target)) this.close();
   };
 
+  private readonly onListboxPointerDown = (): void => {
+    // The trigger can blur between pointerdown and click. Keep the popup alive
+    // until the option's click handler has committed the hidden select value.
+    this.pointerSelectingOption = true;
+  };
+
+  private readonly onDocumentPointerUp = (): void => {
+    if (!this.pointerSelectingOption) return;
+    if (this.pointerReleaseTimer) clearTimeout(this.pointerReleaseTimer);
+    this.pointerReleaseTimer = setTimeout(() => {
+      this.pointerReleaseTimer = null;
+      if (!this.pointerSelectingOption) return;
+      this.pointerSelectingOption = false;
+      if (!this.root.contains(document.activeElement) && !this.listbox.contains(document.activeElement)) this.close();
+    }, 0);
+  };
+
   private readonly onFocusOut = (): void => {
     queueMicrotask(() => {
+      if (this.pointerSelectingOption) return;
       if (!this.root.contains(document.activeElement) && !this.listbox.contains(document.activeElement)) this.close();
     });
   };
@@ -406,24 +429,35 @@ export class JinSelectField {
   private positionPopup(): void {
     const rect = this.trigger.getBoundingClientRect();
     const hostRect = this.portalHost === document.body
-      ? { left: -window.scrollX, top: -window.scrollY }
+      ? { left: -window.scrollX, top: -window.scrollY, right: window.innerWidth, bottom: window.innerHeight }
       : this.portalHost.getBoundingClientRect();
     const gap = 6;
     const edge = 8;
     const desiredHeight = Math.min(220, this.options.length * 38 + 8);
-    const below = window.innerHeight - rect.bottom - edge - gap;
-    const above = rect.top - edge - gap;
+    // A portaled popup is still a child of its dialog. Outside the dialog's
+    // border box, the top layer hit-tests a click as a backdrop click.
+    const minTop = this.portalHost === document.body ? edge : Math.max(edge, hostRect.top + edge);
+    const maxBottom = this.portalHost === document.body
+      ? window.innerHeight - edge
+      : Math.min(window.innerHeight - edge, hostRect.bottom - edge);
+    const minLeft = this.portalHost === document.body ? edge : Math.max(edge, hostRect.left + edge);
+    const maxRight = this.portalHost === document.body
+      ? window.innerWidth - edge
+      : Math.min(window.innerWidth - edge, hostRect.right - edge);
+    const below = maxBottom - rect.bottom - gap;
+    const above = rect.top - minTop - gap;
     const opensUp = below < desiredHeight && above > below;
-    const available = Math.max(72, opensUp ? above : below);
+    const available = Math.max(0, opensUp ? above : below);
     const height = Math.min(desiredHeight, available);
 
     this.listbox.dataset.placement = opensUp ? 'top' : 'bottom';
-    const viewportLeft = Math.max(edge, Math.min(rect.left, window.innerWidth - rect.width - edge));
+    const width = Math.min(rect.width, Math.max(0, maxRight - minLeft));
+    const viewportLeft = Math.max(minLeft, Math.min(rect.left, maxRight - width));
     const viewportTop = opensUp
-      ? Math.max(edge, rect.top - height - gap)
-      : Math.min(window.innerHeight - edge - height, rect.bottom + gap);
+      ? Math.max(minTop, rect.top - height - gap)
+      : Math.min(maxBottom - height, rect.bottom + gap);
     this.listbox.style.left = `${viewportLeft - hostRect.left}px`;
-    this.listbox.style.width = `${rect.width}px`;
+    this.listbox.style.width = `${width}px`;
     this.listbox.style.maxHeight = `${height}px`;
     this.listbox.style.top = `${viewportTop - hostRect.top}px`;
   }
@@ -433,6 +467,8 @@ export class JinSelectField {
   destroy(): void {
     this.observer.disconnect();
     document.removeEventListener('pointerdown', this.onDocumentPointerDown, true);
+    document.removeEventListener('pointerup', this.onDocumentPointerUp, true);
+    this.listbox.removeEventListener('pointerdown', this.onListboxPointerDown);
     window.removeEventListener('resize', this.onViewportChanged);
     window.removeEventListener('scroll', this.onViewportChanged, true);
     this.root.removeEventListener('focusout', this.onFocusOut);
@@ -440,6 +476,7 @@ export class JinSelectField {
     this.trigger.removeEventListener('keydown', this.onTriggerKeydown);
     this.select.removeEventListener('change', this.onSelectChange);
     if (this.typeaheadTimer) clearTimeout(this.typeaheadTimer);
+    if (this.pointerReleaseTimer) clearTimeout(this.pointerReleaseTimer);
     this.listbox.remove();
     this.root.before(this.select);
     this.root.remove();

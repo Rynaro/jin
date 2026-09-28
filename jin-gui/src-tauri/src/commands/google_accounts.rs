@@ -68,12 +68,39 @@ pub fn refresh_google_calendars_fn(
     account_id: &str,
 ) -> Result<Vec<GoogleAccountDto>, JinErrorDto> {
     let account_id = parse_account_id(account_id)?;
-    let config = Config::load(root).map_err(JinErrorDto::from)?;
-    let tokens = jin_core::google::secrets::load_tokens_for_account(root, &config, &account_id)
-        .map_err(JinErrorDto::from)?;
+    let tokens = jin_core::ops::sync::load_or_refresh_account_tokens_for_readonly(
+        root,
+        &account_id,
+        &ReqwestClient,
+    )
+    .map_err(JinErrorDto::from)?;
     google_accounts::refresh_calendars(root, &account_id, &tokens.access_token, &ReqwestClient)
         .map_err(JinErrorDto::from)?;
     list_google_accounts_fn(root)
+}
+
+pub fn refresh_google_event_details_fn(
+    root: &Path,
+    event_id: &str,
+    account_id: &str,
+    calendar_id: &str,
+) -> Result<(), JinErrorDto> {
+    let account_id = parse_account_id(account_id)?;
+    let tokens = jin_core::ops::sync::load_or_refresh_account_tokens_for_readonly(
+        root,
+        &account_id,
+        &ReqwestClient,
+    )
+    .map_err(JinErrorDto::from)?;
+    google_accounts::refresh_event_details(
+        root,
+        event_id,
+        &account_id,
+        calendar_id,
+        &tokens.access_token,
+        &ReqwestClient,
+    )
+    .map_err(JinErrorDto::from)
 }
 
 pub fn set_google_calendar_enabled_fn(
@@ -113,14 +140,14 @@ pub fn review_quarantined_sync_operation_fn(
     .map_err(JinErrorDto::from)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn list_google_accounts(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<GoogleAccountDto>, JinErrorDto> {
     list_google_accounts_fn(&state.root)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn add_google_account(
     state: tauri::State<'_, AppState>,
     alias: String,
@@ -128,7 +155,7 @@ pub async fn add_google_account(
     add_google_account_fn(&state.root, &alias)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn rename_google_account(
     state: tauri::State<'_, AppState>,
     account_id: String,
@@ -137,7 +164,7 @@ pub async fn rename_google_account(
     rename_google_account_fn(&state.root, &account_id, &alias)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn connect_google_account(
     state: tauri::State<'_, AppState>,
     account_id: String,
@@ -149,7 +176,7 @@ pub async fn connect_google_account(
     .await
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn disconnect_google_account(
     state: tauri::State<'_, AppState>,
     account_id: String,
@@ -157,7 +184,7 @@ pub async fn disconnect_google_account(
     disconnect_google_account_fn(&state.root, &account_id)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn refresh_google_calendars(
     state: tauri::State<'_, AppState>,
     account_id: String,
@@ -169,7 +196,17 @@ pub async fn refresh_google_calendars(
     .await
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
+pub async fn refresh_google_event_details(
+    state: tauri::State<'_, AppState>,
+    event_id: String,
+    account_id: String,
+    calendar_id: String,
+) -> Result<(), JinErrorDto> {
+    refresh_google_event_details_fn(&state.root, &event_id, &account_id, &calendar_id)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 pub async fn set_google_calendar_enabled(
     state: tauri::State<'_, AppState>,
     account_id: String,
@@ -179,14 +216,14 @@ pub async fn set_google_calendar_enabled(
     set_google_calendar_enabled_fn(&state.root, &account_id, &calendar_id, enabled)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn list_quarantined_sync_operations(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<jin_core::ops::sync::QuarantinedOperationDto>, JinErrorDto> {
     list_quarantined_sync_operations_fn(&state.root)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn review_quarantined_sync_operation(
     state: tauri::State<'_, AppState>,
     provider: String,

@@ -91,6 +91,7 @@ import {
   Trash2,           // Delete folder menuitem icon
   // Note compose (NN-2)
   SquarePen,      // New Note compose button
+  Search,         // Notes explorer search field
   // Registry sync — referenced in live markup but previously unregistered (icons
   // silently failed to render). Found via a used-vs-registered audit.
   Sun,            // Settings: light theme
@@ -192,6 +193,7 @@ export {
   Trash2,
   // Note compose (NN-2)
   SquarePen,
+  Search,
   // Registry sync (previously unregistered)
   Sun,
   Moon,
@@ -292,6 +294,7 @@ const REGISTERED_ICONS = {
   Trash2,
   // Note compose (NN-2)
   SquarePen,
+  Search,
   // Registry sync (previously unregistered)
   Sun,
   Moon,

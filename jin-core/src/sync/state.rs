@@ -608,6 +608,25 @@ pub fn list_scoped_entries_for_destination(
     Ok(rows)
 }
 
+/// Delivery state must distinguish a saved destination from a remote event.
+pub fn event_delivery_state(
+    conn: &Connection,
+    destination: &SyncDestination,
+    jin_id: &str,
+) -> crate::Result<String> {
+    conn.query_row(
+        "SELECT COALESCE(
+          (SELECT state FROM sync_outbox_v2 WHERE provider=?1 AND account_id=?2 AND calendar_id=?3 AND jin_id=?4
+           AND state IN ('paused','sending','pending')
+           ORDER BY CASE state WHEN 'paused' THEN 0 WHEN 'sending' THEN 1 ELSE 2 END LIMIT 1),
+          (SELECT 'synced' FROM event_sync_map_v2 WHERE provider=?1 AND account_id=?2 AND calendar_id=?3 AND jin_id=?4 AND google_event_id IS NOT NULL LIMIT 1),
+          (SELECT 'cancelled' FROM sync_outbox_v2 WHERE provider=?1 AND account_id=?2 AND calendar_id=?3 AND jin_id=?4 AND state='cancelled' LIMIT 1),
+          'unpublished')",
+        params![destination.provider, destination.account_id, destination.calendar_id, jin_id],
+        |row| row.get(0),
+    ).map_err(JinError::Index)
+}
+
 pub fn has_active_outbox_for_event(
     conn: &Connection,
     destination: &SyncDestination,
@@ -617,7 +636,7 @@ pub fn has_active_outbox_for_event(
     conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM sync_outbox_v2
          WHERE provider=?1 AND account_id=?2 AND calendar_id=?3
-           AND jin_id=?4 AND recurrence_key=?5 AND state IN ('pending','paused'))",
+           AND jin_id=?4 AND recurrence_key=?5 AND state IN ('pending','sending','paused'))",
         params![
             destination.provider,
             destination.account_id,
@@ -728,8 +747,9 @@ pub fn list_route_outbox(
     Ok(rows)
 }
 
-/// Rows eligible for one drain pass. Invitation rows left in `sending` are
-/// crash-recovery candidates and must be verified remotely before any PATCH.
+/// Rows eligible for one drain pass. A row left in `sending` has an unknown
+/// provider outcome after an interrupted process. It is surfaced to the
+/// drainer for explicit recovery; it must never be silently replayed.
 pub fn list_route_outbox_for_drain(
     conn: &Connection,
     destination: &SyncDestination,
@@ -740,7 +760,7 @@ pub fn list_route_outbox_for_drain(
                     google_event_id,operation,base_etag,canonical_revision,
                     auth_generation,route_generation,payload_json,state,pause_reason,reviewed
              FROM sync_outbox_v2 WHERE provider=?1 AND account_id=?2 AND calendar_id=?3
-               AND (state='pending' OR (operation='respond_invitation' AND state='sending'))
+               AND state IN ('pending', 'sending')
              ORDER BY created_at,operation_id",
         )
         .map_err(JinError::Index)?;
@@ -790,6 +810,53 @@ pub fn claim_invitation_outbox(
                     auth_generation,route_generation,payload_json,state,pause_reason,reviewed
              FROM sync_outbox_v2 WHERE provider=?1 AND account_id=?2 AND calendar_id=?3
                AND operation_id=?4",
+            params![
+                destination.provider,
+                destination.account_id,
+                destination.calendar_id,
+                operation_id
+            ],
+            row_to_outbox,
+        )
+        .map_err(JinError::Index)?;
+    tx.commit().map_err(JinError::Index)?;
+    Ok(Some(operation))
+}
+
+/// Atomically reserve any organizer mutation before provider I/O.  RSVP has
+/// additional recovery semantics, but insert/patch/delete need the same CAS so
+/// two drainers cannot send duplicate guest notifications.
+pub fn claim_outbox_operation(
+    conn: &Connection,
+    destination: &SyncDestination,
+    operation_id: &str,
+) -> crate::Result<Option<OutboxOperation>> {
+    let tx = conn.unchecked_transaction().map_err(JinError::Index)?;
+    let changed = tx
+        .execute(
+            "UPDATE sync_outbox_v2 SET state='sending',updated_at=?1
+         WHERE provider=?2 AND account_id=?3 AND calendar_id=?4 AND operation_id=?5
+           AND state='pending'",
+            params![
+                chrono::Utc::now().to_rfc3339(),
+                destination.provider,
+                destination.account_id,
+                destination.calendar_id,
+                operation_id
+            ],
+        )
+        .map_err(JinError::Index)?;
+    if changed != 1 {
+        tx.rollback().map_err(JinError::Index)?;
+        return Ok(None);
+    }
+    let operation = tx
+        .query_row(
+            "SELECT operation_id,provider,account_id,calendar_id,jin_id,recurrence_key,
+                google_event_id,operation,base_etag,canonical_revision,
+                auth_generation,route_generation,payload_json,state,pause_reason,reviewed
+         FROM sync_outbox_v2 WHERE provider=?1 AND account_id=?2 AND calendar_id=?3
+           AND operation_id=?4",
             params![
                 destination.provider,
                 destination.account_id,

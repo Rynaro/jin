@@ -15,6 +15,25 @@ fn init_root() -> TempDir {
     tmp
 }
 
+fn create_workflow_list(root: &std::path::Path, name: &str, kind: &str) -> jin_core::dto::ListDto {
+    jin_gui::commands::lists::create_list_fn(
+        root,
+        jin_gui::commands::lists::CreateListInput {
+            name: name.to_string(),
+            color: "accent".to_string(),
+            icon: "list".to_string(),
+            parent_id: None,
+            workflow_kind: Some(kind.to_string()),
+        },
+    )
+    .expect("create real workflow list through bridge")
+}
+
+fn seed_inbox(root: &std::path::Path) {
+    let lists = jin_gui::commands::lists::list_lists_fn(root).expect("seed canonical Inbox");
+    assert!(lists.iter().any(|list| list.id == "inbox"));
+}
+
 #[test]
 fn concurrent_startup_reads_wait_for_canonical_operation_boundary() {
     use std::fs::OpenOptions;
@@ -1299,6 +1318,7 @@ fn vg2_2_list_notes_excerpt_round_trip() {
 #[test]
 fn bridge_create_task_round_trip() {
     let tmp = init_root();
+    let work = create_workflow_list(tmp.path(), "Work", "checklist");
 
     let dto = jin_gui::commands::tasks::create_task_fn(
         tmp.path(),
@@ -1307,10 +1327,12 @@ fn bridge_create_task_round_trip() {
             body: String::new(),
             priority: Some("high".to_string()),
             due: None,
-            list: Some("work".to_string()),
+            list: Some(work.id.clone()),
             tags: None,
             reminders: None,
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("create_task must succeed");
@@ -1318,7 +1340,7 @@ fn bridge_create_task_round_trip() {
     assert!(!dto.id.is_empty());
     assert_eq!(dto.title, "Write tests");
     assert_eq!(dto.priority, "high");
-    assert_eq!(dto.list, "work");
+    assert_eq!(dto.list, work.id);
 
     // get_task round-trip
     let fetched =
@@ -1329,6 +1351,7 @@ fn bridge_create_task_round_trip() {
 #[test]
 fn bridge_task_status_transition() {
     let tmp = init_root();
+    let board = create_workflow_list(tmp.path(), "Project", "board");
 
     let task = jin_gui::commands::tasks::create_task_fn(
         tmp.path(),
@@ -1337,15 +1360,18 @@ fn bridge_task_status_transition() {
             body: String::new(),
             priority: None,
             due: None,
-            list: None,
+            list: Some(board.id.clone()),
             tags: None,
             reminders: None,
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("create");
 
     assert_eq!(task.status, "todo");
+    assert_eq!(task.list, board.id);
 
     let started = jin_gui::commands::tasks::set_task_status_fn(
         tmp.path(),
@@ -1488,6 +1514,8 @@ fn bridge_event_edit_token_result_and_typed_stale_conflict() {
             event_id: created.id.clone(),
             edit_token: detail.edit_token.clone(),
             operation_id: "bridge-edit-no-op".to_string(),
+            recurrence: None,
+            clear_recurrence: false,
             title: created.title.clone(),
             start: created.start.clone(),
             end: created.end.clone(),
@@ -1516,6 +1544,8 @@ fn bridge_event_edit_token_result_and_typed_stale_conflict() {
             event_id: created.id.clone(),
             edit_token: detail.edit_token,
             operation_id: "bridge-edit-stale".to_string(),
+            recurrence: None,
+            clear_recurrence: false,
             title: "My draft".to_string(),
             start: created.start,
             end: created.end,
@@ -1780,17 +1810,19 @@ fn bridge_capture_note() {
 #[test]
 fn bridge_capture_task() {
     let tmp = init_root();
+    let personal = create_workflow_list(tmp.path(), "Personal", "checklist");
 
     let result = jin_gui::commands::capture::capture_fn(
         tmp.path(),
         "call dentist".to_string(),
         true,
-        Some("personal".to_string()),
+        Some(personal.id.clone()),
     )
     .expect("capture task");
 
     assert_eq!(result.kind, "task");
     assert!(!result.id.is_empty());
+    assert_eq!(result.data["list"], personal.id);
 }
 
 #[test]
@@ -2066,6 +2098,8 @@ fn vg_p1_edit_task_body_fix_persists_and_returns_via_get_task() {
             tags: None,
             reminders: None,
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("VG-P1 BODY-FIX: create_task must succeed");
@@ -2138,6 +2172,8 @@ fn vg_p1_complete_sets_status_and_completed_at_reopen_clears_it() {
             tags: None,
             reminders: None,
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("VG-P1 COMPLETE: create must succeed");
@@ -2192,6 +2228,8 @@ fn vg_p1_delete_task_sets_status_deleted_and_deleted_at() {
             tags: None,
             reminders: None,
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("VG-P1 DELETE: create must succeed");
@@ -2237,6 +2275,8 @@ fn vg_p1_create_task_with_typed_title_appears_in_list() {
             tags: None,
             reminders: None,
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("VG-P1 CREATE-IN-PLACE: create must succeed");
@@ -2286,6 +2326,81 @@ fn vg_p3_bridge_list_lists_seeds_inbox() {
     assert!(inbox.is_default, "VG-P3: inbox must have is_default=true");
 }
 
+#[test]
+fn typed_board_bridge_create_move_and_projection_share_exact_column() {
+    let tmp = init_root();
+    let root = tmp.path();
+    let board = jin_gui::commands::lists::create_list_fn(
+        root,
+        jin_gui::commands::lists::CreateListInput {
+            name: "Project".into(),
+            color: "accent".into(),
+            icon: "layout-grid".into(),
+            parent_id: None,
+            workflow_kind: Some("board".into()),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        board.workflow_kind,
+        Some(jin_core::model::list::WorkflowKind::Board)
+    );
+    let queue = board
+        .columns
+        .iter()
+        .find(|c| c.column_type == jin_core::model::list::BoardColumnType::Queue)
+        .unwrap();
+    let doing = board
+        .columns
+        .iter()
+        .find(|c| c.column_type == jin_core::model::list::BoardColumnType::InProgress)
+        .unwrap();
+    let task = jin_gui::commands::tasks::create_task_fn(
+        root,
+        jin_gui::commands::tasks::TaskInput {
+            title: "Sketch release".into(),
+            body: String::new(),
+            priority: None,
+            due: None,
+            list: Some(board.id.clone()),
+            board_column_id: Some(queue.id.clone()),
+            tags: None,
+            reminders: None,
+            parent: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(task.board_column_id.as_deref(), Some(queue.id.as_str()));
+    let moved = jin_gui::commands::tasks::move_task_fn(
+        root,
+        task.id.clone(),
+        jin_gui::commands::tasks::MoveTaskInput {
+            list_id: board.id.clone(),
+            section_id: None,
+            board_column_id: Some(doing.id.clone()),
+            confirm_doing_to_checklist: false,
+            position: "V".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(moved.status, "doing");
+    assert_eq!(moved.board_column_id.as_deref(), Some(doing.id.as_str()));
+    let row = jin_gui::commands::tasks::list_tasks_fn(
+        root,
+        Some(board.id.clone()),
+        None,
+        None,
+        None,
+        false,
+    )
+    .unwrap()
+    .into_iter()
+    .find(|row| row.id == task.id)
+    .unwrap();
+    assert_eq!(row.board_column_id, moved.board_column_id);
+    assert_eq!(row.status, moved.status);
+}
+
 /// VG-P3: delete_list_fn("inbox") must be refused.
 #[test]
 fn vg_p3_bridge_delete_inbox_refused() {
@@ -2314,6 +2429,7 @@ fn vg_p3_bridge_crud_persist_and_rebuild() {
             color: "sky".to_string(),
             icon: "list".to_string(),
             parent_id: None,
+            workflow_kind: None,
         },
     )
     .expect("VG-P3: create_list must succeed");
@@ -2381,6 +2497,7 @@ fn vg_p3_bridge_delete_list_reassigns_tasks() {
             color: "sky".to_string(),
             icon: "list".to_string(),
             parent_id: None,
+            workflow_kind: None,
         },
     )
     .unwrap();
@@ -2424,6 +2541,7 @@ fn vg_p3_bridge_delete_list_reassigns_tasks() {
 fn vg_p4_bridge_list_tags_with_count() {
     let tmp = init_root();
     let root = tmp.path();
+    seed_inbox(root);
     let cfg = jin_core::Config::load(root).unwrap();
 
     // Create task and tag it via edit_task.
@@ -2477,6 +2595,7 @@ fn vg_p4_bridge_list_tags_with_count() {
 fn vg_p4_bridge_tag_filter_returns_only_tagged() {
     let tmp = init_root();
     let root = tmp.path();
+    seed_inbox(root);
     let cfg = jin_core::Config::load(root).unwrap();
 
     let task1 = jin_core::ops::tasks::create_task(
@@ -2554,6 +2673,7 @@ fn vg_p4_bridge_tag_filter_returns_only_tagged() {
 fn vg_p4_bridge_set_tag_color_persists() {
     let tmp = init_root();
     let root = tmp.path();
+    seed_inbox(root);
 
     // Ensure tag exists by tagging a task.
     let cfg = jin_core::Config::load(root).unwrap();
@@ -2626,6 +2746,7 @@ fn vg_p5_bridge_create_section_persists_and_survives_rebuild() {
             color: "accent".to_string(),
             icon: "list".to_string(),
             parent_id: None,
+            workflow_kind: None,
         },
     )
     .expect("VG-P5: create_list must succeed");
@@ -2692,6 +2813,7 @@ fn vg_p5_bridge_delete_section_clears_tasks() {
             color: "sky".to_string(),
             icon: "list".to_string(),
             parent_id: None,
+            workflow_kind: None,
         },
     )
     .expect("VG-P5: create_list");
@@ -2718,6 +2840,8 @@ fn vg_p5_bridge_delete_section_clears_tasks() {
             tags: None,
             reminders: None,
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("VG-P5: create_task");
@@ -2808,6 +2932,8 @@ fn vg_p9_bridge_move_task_persists_position_change() {
             tags: None,
             reminders: None,
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("VG-P9: create task A");
@@ -2823,6 +2949,8 @@ fn vg_p9_bridge_move_task_persists_position_change() {
             tags: None,
             reminders: None,
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("VG-P9: create task B");
@@ -2839,6 +2967,9 @@ fn vg_p9_bridge_move_task_persists_position_change() {
             list_id: "inbox".to_string(),
             section_id: None,
             position: pos_a.clone(),
+
+            board_column_id: None,
+            confirm_doing_to_checklist: false,
         },
     )
     .expect("VG-P9: move_task A must succeed");
@@ -2875,6 +3006,9 @@ fn vg_p9_bridge_move_task_persists_position_change() {
             list_id: "inbox".to_string(),
             section_id: None,
             position: pos_b_before_a.clone(),
+
+            board_column_id: None,
+            confirm_doing_to_checklist: false,
         },
     )
     .expect("VG-P9: move_task B before A must succeed");
@@ -2933,6 +3067,7 @@ fn vg_p9_bridge_move_task_cross_column() {
             color: "sky".to_string(),
             icon: "layout-grid".to_string(),
             parent_id: None,
+            workflow_kind: None,
         },
     )
     .expect("VG-P9-CROSS: create list");
@@ -2967,6 +3102,8 @@ fn vg_p9_bridge_move_task_cross_column() {
             tags: None,
             reminders: None,
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("VG-P9-CROSS: create task");
@@ -3002,6 +3139,9 @@ fn vg_p9_bridge_move_task_cross_column() {
             list_id: list.id.clone(),
             section_id: Some(sec_doing.id.clone()),
             position: pos_in_doing.clone(),
+
+            board_column_id: None,
+            confirm_doing_to_checklist: false,
         },
     )
     .expect("VG-P9-CROSS: move_task to Doing must succeed");
@@ -3069,6 +3209,8 @@ fn vg_p9_bridge_reseed_positions_assigns_ordered_keys() {
                 tags: None,
                 reminders: None,
                 parent: None,
+
+                board_column_id: None,
             },
         )
         .expect("VG-P9-RESEED: create task");
@@ -3169,6 +3311,8 @@ fn vg_p10_bridge_reminders_persist_and_survive_rebuild() {
                 },
             ]),
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("VG-P10: create_task with reminders");
@@ -3236,6 +3380,8 @@ fn vg_p10_bridge_edit_task_replaces_reminders() {
                 value: "-30m".to_string(),
             }]),
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("VG-P10-EDIT: create with 1 reminder");
@@ -3412,6 +3558,8 @@ fn vg_p10_bridge_auto_reminder_seeded_for_due_datetime() {
             tags: None,
             reminders: None, // no explicit reminders → auto-reminder should fire
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("VG-P10-AUTO: create_task with due datetime");
@@ -3453,6 +3601,8 @@ fn vg_p10_bridge_auto_reminder_seeded_for_due_datetime() {
             tags: None,
             reminders: None,
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("VG-P10-AUTO: create_task with date-only due");
@@ -3491,6 +3641,8 @@ fn s6_create_task_with_parent_persists_and_returns_it() {
             tags: None,
             reminders: None,
             parent: None,
+
+            board_column_id: None,
         },
     )
     .expect("S6: create parent task");
@@ -3506,6 +3658,8 @@ fn s6_create_task_with_parent_persists_and_returns_it() {
             tags: None,
             reminders: None,
             parent: Some(parent.id.clone()),
+
+            board_column_id: None,
         },
     )
     .expect("S6: create_task with parent must succeed");
@@ -3544,6 +3698,8 @@ fn s6_create_task_rejects_depth_two_parent_via_bridge() {
             tags: None,
             reminders: None,
             parent: None,
+
+            board_column_id: None,
         },
     )
     .unwrap();
@@ -3558,6 +3714,8 @@ fn s6_create_task_rejects_depth_two_parent_via_bridge() {
             tags: None,
             reminders: None,
             parent: Some(a.id.clone()),
+
+            board_column_id: None,
         },
     )
     .unwrap();
@@ -3573,6 +3731,8 @@ fn s6_create_task_rejects_depth_two_parent_via_bridge() {
             tags: None,
             reminders: None,
             parent: Some(b.id.clone()),
+
+            board_column_id: None,
         },
     );
 
@@ -3601,6 +3761,8 @@ fn s6_edit_task_clear_parent_detaches_subtask() {
             tags: None,
             reminders: None,
             parent: None,
+
+            board_column_id: None,
         },
     )
     .unwrap();
@@ -3615,6 +3777,8 @@ fn s6_edit_task_clear_parent_detaches_subtask() {
             tags: None,
             reminders: None,
             parent: Some(parent.id.clone()),
+
+            board_column_id: None,
         },
     )
     .unwrap();

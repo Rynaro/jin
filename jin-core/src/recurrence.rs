@@ -214,7 +214,16 @@ pub fn is_supported(recurrence: &[String]) -> bool {
             "FREQ" | "INTERVAL" | "BYDAY" | "BYMONTHDAY" | "COUNT" | "UNTIL"
         )
     }) && recurrence.iter().all(|line| {
-        line.starts_with("RRULE:") || line.starts_with("EXDATE:") || line.starts_with("RDATE:")
+        // Google commonly retains a TZID parameter on exclusions, e.g.
+        // `EXDATE;TZID=America/Sao_Paulo:20251120T080000`.  It does not make
+        // the rule uneditable: the RRULE remains in Jin's supported subset and
+        // the exclusion remains losslessly preserved until the user changes the
+        // recurrence.
+        line.starts_with("RRULE:")
+            || line.starts_with("EXDATE:")
+            || line.starts_with("EXDATE;")
+            || line.starts_with("RDATE:")
+            || line.starts_with("RDATE;")
     })
 }
 
@@ -315,6 +324,15 @@ mod tests {
         let raw = vec!["RRULE:FREQ=MONTHLY;BYSETPOS=1;BYDAY=MO,TU,WE,TH,FR".to_string()];
         assert!(!is_supported(&raw));
         assert_eq!(raw[0], "RRULE:FREQ=MONTHLY;BYSETPOS=1;BYDAY=MO,TU,WE,TH,FR");
+    }
+
+    #[test]
+    fn parameterized_google_exdates_keep_an_otherwise_supported_rule_editable() {
+        let raw = vec![
+            "EXDATE;TZID=America/Sao_Paulo:20251120T080000,20251201T080000".to_string(),
+            "RRULE:FREQ=WEEKLY;BYDAY=MO,WE,TH".to_string(),
+        ];
+        assert!(is_supported(&raw));
     }
 
     #[test]

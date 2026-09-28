@@ -1,0 +1,59 @@
+change_id: calendar-experience-s2-core-temporal-draft
+eidolon: ramza
+version: 0.1.0
+kind: spec
+status: ready-for-implementation
+tier: full
+executor: vivi
+checker: vigil
+depends_on: calendar-experience-s1-baseline-freeze
+objective: >
+  Add core CalendarRangeProjection and EventTemporalPreview (display-timezone
+  range/DST truth), a sparse token-guarded EventEditDelta, the shared GUI
+  EventDraft extraction, and a pure operation-state reducer — plus, as a
+  first mechanical action, fix the 9 pre-existing E0063 fixture omissions
+  blocking `cargo test -p jin-gui` compilation.
+target_repos:
+  - Rynaro/jin
+parent_plan:
+  root: .spectra/plans/calendar-experience/
+  spec: .spectra/plans/calendar-experience/spec.md
+  implementation: .spectra/plans/calendar-experience/implementation.md
+  implementation_section: "S2 — Core range projection, temporal preview, EventDraft, operation reducer"
+  criteria: .spectra/plans/calendar-experience/criteria.md
+  decisions: .spectra/plans/calendar-experience/decisions.md
+  critique: .spectra/plans/calendar-experience/critique.md
+  plan_state: .spectra/plans/calendar-experience/plan.state.json
+  confidence: 0.9475
+  confidence_verdict: AUTO_PROCEED
+  criteria_sha256: b2f3a342fb01c6c15c04e6aa61cee8756d5971c891d63716b18fce807e94f73b
+  critic_author: calendar_experience_spec
+  critic_checker: calendar_experience_audit
+inherits_critique: true
+requires_fresh_critique: false
+gate_criteria_ids:
+  - AC-CALX-024
+  - AC-CALX-027
+  - AC-CALX-035
+  - AC-CALX-036
+  - AC-CALX-037
+  - AC-CALX-038
+  - AC-CALX-039
+  - AC-CALX-051
+  - AC-CALX-054
+  - AC-CALX-055
+  - AC-CALX-056
+fixture_fix:
+  reason: "cargo test -p jin-gui fails to compile: 9 E0063 missing-field errors predating S2"
+  sites:
+    - file: jin-gui/src-tauri/tests/google_calendar_mutation_routing.rs
+      lines: [28, 62, 87, 112, 143, 194, 220]
+    - file: jin-gui/src-tauri/tests/bridge.rs
+      lines: [1487, 1515]
+out_of_scope: [preview_ui, composer_ui, companion_host, css, cursor, move_resize, surface_migration_s3_s10]
+verification:
+  - cargo fmt --all --check
+  - cargo test -p jin-core
+  - cargo test -p jin-gui
+  - cargo test --workspace
+  - npm --prefix jin-gui run build

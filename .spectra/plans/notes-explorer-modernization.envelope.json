@@ -1,0 +1,65 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "4f39415e-c29b-4875-adda-4517e84835f2",
+  "thread_id": "332adee7-3dd4-40a5-b344-527edf845b88",
+  "parent_id": null,
+  "from": {
+    "eidolon": "ramza",
+    "version": "0.1.0"
+  },
+  "to": {
+    "eidolon": "vivi",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Modernize the Notes explorer and add an optional paper-card representation using existing data.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/notes-explorer-modernization.md",
+    "sha256": "c702cdf22c68d6ceb3b86d7c930810f45551a29e9864b5feb86a0a4402982776",
+    "size_bytes": 12285
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 0,
+    "input_handles": [],
+    "summary": "Four stories, ten acceptance criteria, native safearea and shared result identity contracts."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "ise": {
+    "assertion_grade": "self-attested",
+    "provenance": {
+      "methodology_version": "ramza-0.1.0",
+      "tool_surface": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "lateral_consults": []
+    },
+    "receiver_authorization": {
+      "auto_route": true,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "confidence": 0.945,
+  "integrity": {
+    "method": "sha256",
+    "value": "c702cdf22c68d6ceb3b86d7c930810f45551a29e9864b5feb86a0a4402982776"
+  },
+  "trace": {
+    "ts": "2026-09-24T12:00:00Z",
+    "host": "codex",
+    "model": "gpt-6-astra",
+    "tier": "standard"
+  },
+  "x_ramza_acceptance_criteria": {
+    "path": ".spectra/plans/notes-explorer-modernization.md",
+    "sha256": "c702cdf22c68d6ceb3b86d7c930810f45551a29e9864b5feb86a0a4402982776"
+  }
+}

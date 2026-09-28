@@ -1,0 +1,73 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "b3dc2b1f-73ce-4eda-bc6e-c902d27df726",
+  "thread_id": "01a0a715-0d22-7a12-ba9f-5eaedf350e59",
+  "parent_id": null,
+  "from": {
+    "eidolon": "ramza",
+    "version": "0.1.0"
+  },
+  "to": {
+    "eidolon": "vivi",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Propose an implementation-ready definitive Jin Calendar experience while retaining the stable Google integration baseline and requiring explicit user greenlight before execution.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/calendar-experience/spec.md",
+    "sha256": "1ef1490d635f5de21bb4e7712ba4a259396a8cfecbab7be4b39f7316e7e840c4",
+    "size_bytes": 35347
+  },
+  "context_delta": {
+    "token_budget": 8000,
+    "tokens_used": 0,
+    "input_handles": [
+      "calendar-experience-official-research",
+      "calendar-experience-repo-audit",
+      "calendar-experience-baseline",
+      "calendar-experience-independent-critique"
+    ],
+    "summary": "Full-tier Calendar plan for one adaptive Event Companion, transition-aware range projection, sparse token-guarded edits, direct scheduling actions, shared presenters, stable provider truth, and staged usability gates."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "ise": {
+    "assertion_grade": "independently-critiqued",
+    "provenance": {
+      "methodology_version": "ramza-0.1.0",
+      "tool_surface": [
+        "Read",
+        "Grep",
+        "Web",
+        "RAMZA gates"
+      ],
+      "lateral_consults": [
+        "calendar_experience_audit"
+      ]
+    },
+    "receiver_authorization": {
+      "auto_route": false,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "confidence": 0.9475,
+  "integrity": {
+    "method": "sha256",
+    "value": "1ef1490d635f5de21bb4e7712ba4a259396a8cfecbab7be4b39f7316e7e840c4"
+  },
+  "trace": {
+    "ts": "2026-09-16T20:23:04.802683Z",
+    "host": "codex-desktop",
+    "model": "gpt-6-astra",
+    "tier": "standard"
+  },
+  "x_ramza_acceptance_criteria": {
+    "path": ".spectra/plans/calendar-experience/criteria.md",
+    "sha256": "b2f3a342fb01c6c15c04e6aa61cee8756d5971c891d63716b18fce807e94f73b"
+  }
+}

@@ -62,6 +62,28 @@ pub struct MoveTaskParams {
 
 /// Create a new Task, write to disk.
 pub fn create_task(tasks_dir: &Path, params: CreateTaskParams) -> Result<Task> {
+    create_task_with_column(tasks_dir, params, None, TaskStatus::Todo)
+}
+
+/// Persist a new task with validated board placement in the same file write.
+/// Callers must validate the column against the canonical owning list first.
+pub fn create_task_with_column(
+    tasks_dir: &Path,
+    params: CreateTaskParams,
+    board_column_id: Option<String>,
+    initial_status: TaskStatus,
+) -> Result<Task> {
+    let task = prepare_new_task(tasks_dir, params, board_column_id, initial_status)?;
+    fs::write_task(tasks_dir, &task)?;
+    Ok(task)
+}
+
+pub(crate) fn prepare_new_task(
+    tasks_dir: &Path,
+    params: CreateTaskParams,
+    board_column_id: Option<String>,
+    initial_status: TaskStatus,
+) -> Result<Task> {
     // S6: validate the parent BEFORE anything is written — a rejection must
     // leave no file behind.
     if let Some(ref parent_id) = params.parent {
@@ -84,15 +106,20 @@ pub fn create_task(tasks_dir: &Path, params: CreateTaskParams) -> Result<Task> {
         title: params.title,
         created: now,
         updated: now,
-        status: TaskStatus::Todo,
+        status: initial_status.clone(),
         priority: params.priority.unwrap_or_default(),
         due: params.due,
         list: params.list.unwrap_or_else(|| "inbox".to_string()),
-        completed_at: None,
+        completed_at: if initial_status == TaskStatus::Done {
+            Some(now)
+        } else {
+            None
+        },
         deleted_at: None,
         links: vec![],
         // P2 fields: default values for newly created tasks.
         section_id: None,
+        board_column_id,
         tags: params.tags.unwrap_or_default(),
         position: String::new(),
         reminders,
@@ -103,7 +130,6 @@ pub fn create_task(tasks_dir: &Path, params: CreateTaskParams) -> Result<Task> {
         frontmatter: fm,
         body: params.body,
     };
-    fs::write_task(tasks_dir, &task)?;
     Ok(task)
 }
 
@@ -218,6 +244,20 @@ fn cascade_status_to_children(tasks_dir: &Path, parent_id: &str, next: &TaskStat
 /// (Approach §6: "a subtask lives with its parent"), written FIRST, parent
 /// LAST — the same crash-safety ordering as the status rollup.
 pub fn edit_task(tasks_dir: &Path, id: &str, params: EditTaskParams) -> Result<Task> {
+    let (task, changed) = prepare_edit_task(tasks_dir, id, params)?;
+    for update in changed {
+        fs::write_task(tasks_dir, &update)?;
+    }
+    Ok(task)
+}
+
+/// Prepare a metadata edit and its placement cascade without writing. The
+/// workflow boundary stages these images together under the operation lock.
+pub(crate) fn prepare_edit_task(
+    tasks_dir: &Path,
+    id: &str,
+    params: EditTaskParams,
+) -> Result<(Task, Vec<Task>)> {
     let path = fs::find_task_path(tasks_dir, id)?;
     let mut task = fs::read_task(&path)?;
     if task.is_deleted() {
@@ -284,6 +324,7 @@ pub fn edit_task(tasks_dir: &Path, id: &str, params: EditTaskParams) -> Result<T
         changed = true;
     }
 
+    let mut updates = Vec::new();
     if changed {
         // S6: a placement change (list and/or section) cascades to children
         // FIRST — they must live wherever their parent ends up, and the
@@ -292,39 +333,20 @@ pub fn edit_task(tasks_dir: &Path, id: &str, params: EditTaskParams) -> Result<T
         let placement_changed =
             task.frontmatter.list != list_before || task.frontmatter.section_id != section_before;
         if placement_changed {
-            cascade_placement_to_children(
-                tasks_dir,
-                id,
-                &task.frontmatter.list,
-                task.frontmatter.section_id.as_deref(),
-            )?;
+            for mut child in find_children(tasks_dir, id, false)? {
+                child.frontmatter.list = task.frontmatter.list.clone();
+                child.frontmatter.section_id = task.frontmatter.section_id.clone();
+                child.frontmatter.updated = Local::now().fixed_offset();
+                updates.push(child);
+            }
         }
 
         let now = Local::now().fixed_offset();
         task.frontmatter.updated = now;
-        fs::write_task(tasks_dir, &task)?;
+        updates.push(task.clone());
     }
 
-    Ok(task)
-}
-
-/// S6 — cascade a parent's new `list`/`section_id` down to every child (a
-/// subtask lives with its parent, Approach §6). Children are written before
-/// this is called by the caller writing the parent, matching the
-/// children-first / parent-last ordering used by the status rollup.
-fn cascade_placement_to_children(
-    tasks_dir: &Path,
-    parent_id: &str,
-    new_list: &str,
-    new_section_id: Option<&str>,
-) -> Result<()> {
-    for mut child in find_children(tasks_dir, parent_id, false)? {
-        child.frontmatter.list = new_list.to_string();
-        child.frontmatter.section_id = new_section_id.map(|s| s.to_string());
-        child.frontmatter.updated = Local::now().fixed_offset();
-        fs::write_task(tasks_dir, &child)?;
-    }
-    Ok(())
+    Ok((task, updates))
 }
 
 /// Soft-delete a task.
@@ -384,18 +406,37 @@ pub fn reseed_positions(
     ordered_ids: &[String],
 ) -> Result<()> {
     use crate::order::between;
+    let mut seen = std::collections::HashSet::new();
+    let tasks = ordered_ids
+        .iter()
+        .map(|task_id| {
+            if !seen.insert(task_id) {
+                return Err(JinError::InvalidInput(format!(
+                    "duplicate task/{task_id} in reseed"
+                )));
+            }
+            let path = fs::find_task_path(tasks_dir, task_id)?;
+            let task = fs::read_task(&path)?;
+            if task.is_deleted() {
+                return Err(JinError::InvalidInput(format!(
+                    "cannot reseed deleted task/{task_id}"
+                )));
+            }
+            if task.frontmatter.list != list_id
+                || task.frontmatter.section_id.as_deref() != section_id
+            {
+                return Err(JinError::InvalidInput(format!(
+                    "task/{task_id} does not belong to the requested list and section"
+                )));
+            }
+            Ok(task)
+        })
+        .collect::<Result<Vec<_>>>()?;
     let mut prev: Option<String> = None;
-    for task_id in ordered_ids {
-        let path = fs::find_task_path(tasks_dir, task_id)?;
-        let mut task = fs::read_task(&path)?;
-        if task.is_deleted() {
-            continue;
-        }
+    for mut task in tasks {
         let now = Local::now().fixed_offset();
         let new_pos = between(prev.as_deref(), None);
         task.frontmatter.position = new_pos.clone();
-        task.frontmatter.list = list_id.to_string();
-        task.frontmatter.section_id = section_id.map(|s| s.to_string());
         task.frontmatter.updated = now;
         fs::write_task(tasks_dir, &task)?;
         prev = Some(new_pos);
@@ -499,7 +540,11 @@ fn validate_parent_for_create(tasks_dir: &Path, parent_id: &str) -> Result<()> {
 /// (depth ≥ 2 one direction), and `task_id` already having children of its
 /// own (depth ≥ 2 the other direction — a task with subtasks cannot become a
 /// subtask itself).
-fn validate_parent_assignment(tasks_dir: &Path, task_id: &str, parent_id: &str) -> Result<()> {
+pub(crate) fn validate_parent_assignment(
+    tasks_dir: &Path,
+    task_id: &str,
+    parent_id: &str,
+) -> Result<()> {
     if parent_id == task_id {
         return Err(JinError::InvalidInput(format!(
             "task {} cannot be its own parent",

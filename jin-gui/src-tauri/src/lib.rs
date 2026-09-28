@@ -10,6 +10,7 @@
 
 pub mod commands;
 pub mod error;
+pub mod external_links;
 pub mod notifications;
 pub mod root_resolver;
 pub mod scheduler;
@@ -38,6 +39,21 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
         .setup(|app| {
             use tauri::Manager;
 
+            let main_config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|window| window.label == "main")
+                .ok_or_else(|| "Missing main window configuration".to_string())?;
+            let allowed = external_links::configured_main_url(app.config(), tauri::is_dev())
+                .map_err(|error| format!("Invalid main navigation origin: {error}"))?;
+            let policy = external_links::MainNavigationPolicy::new(allowed);
+            tauri::WebviewWindowBuilder::from_config(app.handle(), main_config)?
+                .on_navigation(move |url| policy.allows(url))
+                .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
+                .build()?;
+
             let state = app.state::<state::AppState>();
             if matches!(state.launch, root_resolver::LaunchState::Ready { .. }) {
                 scheduler::spawn(
@@ -49,6 +65,7 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            external_links::open_external_url,
             // Agenda (hero view — VG-GUI-2)
             commands::agenda::today_agenda,
             commands::agenda::today_projection,
@@ -107,6 +124,14 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
             commands::lists::edit_list,
             commands::lists::reorder_list,
             commands::lists::delete_list,
+            commands::lists::preview_workflow_setup,
+            commands::lists::apply_workflow_setup,
+            commands::lists::create_board_column,
+            commands::lists::set_initial_board_column,
+            commands::lists::rename_board_column,
+            commands::lists::reorder_board_column,
+            commands::lists::change_board_column_type,
+            commands::lists::delete_board_column,
             // Sections (P5)
             commands::lists::create_section,
             commands::lists::rename_section,
@@ -127,6 +152,11 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
             commands::events::preview_recurrence,
             commands::events::edit_routed_event,
             commands::events::delete_routed_event,
+            // Calendar experience S2: display-timezone truth + sparse edits
+            commands::events::calendar_range_projection,
+            commands::events::event_temporal_preview,
+            commands::events::edit_event_delta,
+            commands::events::edit_routed_event_delta,
             // Linking / promotion
             commands::promote::promote_task,
             commands::attach::attach_note,
@@ -135,6 +165,7 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
             commands::capture::capture,
             // Sync / auth / export
             commands::sync_cmd::run_sync,
+            commands::sync_cmd::sync_calendar_event,
             commands::auth::auth_status,
             commands::auth::auth_login,
             commands::auth::auth_logout,
@@ -144,6 +175,7 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
             commands::google_accounts::rename_google_account,
             commands::google_accounts::disconnect_google_account,
             commands::google_accounts::refresh_google_calendars,
+            commands::google_accounts::refresh_google_event_details,
             commands::google_accounts::set_google_calendar_enabled,
             commands::google_accounts::list_quarantined_sync_operations,
             commands::google_accounts::review_quarantined_sync_operation,

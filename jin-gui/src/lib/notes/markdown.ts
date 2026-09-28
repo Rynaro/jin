@@ -313,16 +313,14 @@ function decorateExternalLinks(fragment: DocumentFragment): void {
     let hostname = '';
     try { hostname = new URL(href).hostname.replace(/^www\./, ''); } catch { continue; }
     const label = (anchor.textContent ?? '').trim();
-    if (label && label !== href) {
+    if (anchor.getAttribute('title') === 'jin-card' && anchor.parentElement?.tagName === 'P' && anchor.parentElement.childNodes.length === 1) {
+      anchor.classList.add('jin-link-card');
+      anchor.removeAttribute('title');
+      anchor.parentElement.classList.add('jin-link-card-wrap');
+      anchor.dataset.linkHost = hostname;
+    } else if (label && label !== href) {
       anchor.classList.add('jin-inline-link');
       anchor.dataset.linkHost = hostname;
-      const parent = anchor.parentElement;
-      if (anchor.getAttribute('title') === 'jin-card' && parent?.tagName === 'P' && parent.childNodes.length === 1) {
-        anchor.classList.remove('jin-inline-link');
-        anchor.classList.add('jin-link-card');
-        anchor.removeAttribute('title');
-        parent.classList.add('jin-link-card-wrap');
-      }
     } else {
       anchor.classList.add('jin-plain-link');
     }

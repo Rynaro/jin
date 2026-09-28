@@ -12,7 +12,7 @@
  *   ✓ taskStatusLabel: human-readable text (color-independence)
  *   ✓ taskStatusGlyph: correct icon names
  *   ✓ taskPriorityLabel: canonical vocabulary none|low|medium|high (VG-P0)
- *   ✓ taskPriorityGlyph: flag for non-none, empty string for none (VG-P0)
+ *   ✓ taskPriorityGlyph: one to three marks for ranked priorities, empty for none (VG-P0)
  *   ✓ renderTasksList: renders title; status by glyph AND label (never color-only)
  *   ✓ renderTasksList: clicking row fires onNavigate with task id
  *   ✓ renderTasksList: empty state
@@ -437,16 +437,16 @@ describe('taskPriorityLabel', () => {
 });
 
 describe('taskPriorityGlyph', () => {
-  it('returns "flag" for high (P0: flag glyph decision, tinted --color-danger)', () => {
-    expect(taskPriorityGlyph('high')).toBe('flag');
+  it('returns three visible marks for high priority', () => {
+    expect(taskPriorityGlyph('high')).toBe('!!!');
   });
 
-  it('returns "flag" for medium (P0: flag glyph, tinted warning/accent)', () => {
-    expect(taskPriorityGlyph('medium')).toBe('flag');
+  it('returns two visible marks for medium priority', () => {
+    expect(taskPriorityGlyph('medium')).toBe('!!');
   });
 
-  it('returns "flag" for low (P0: flag glyph, tinted muted)', () => {
-    expect(taskPriorityGlyph('low')).toBe('flag');
+  it('returns one visible mark for low priority', () => {
+    expect(taskPriorityGlyph('low')).toBe('!');
   });
 
   it('returns "" for none (P0: no flag for no-priority)', () => {
@@ -527,23 +527,25 @@ describe('renderTasksList — row rendering (spec AC: status by color AND glyph 
     expect(priorityLabelEl?.textContent?.trim()).toBe('Medium');
   });
 
-  it('renders priority GLYPH as "flag" for high (P0 flag decision)', () => {
+  it('renders high priority with three visible marks and an accessible label', () => {
     renderTasksList(el, templates, [makeTask({ priority: 'high' })], noopNavigate);
     const priorityIconEl = el.list.querySelector('.task-item__priority-icon');
-    expect(priorityIconEl?.getAttribute('data-lucide')).toBe('flag');
+    expect(priorityIconEl?.textContent).toBe('!!!');
+    expect(priorityIconEl?.getAttribute('data-priority')).toBe('high');
+    expect(el.list.querySelector('.task-item__priority')?.getAttribute('aria-label')).toBe('High priority');
   });
 
-  it('renders priority GLYPH as "flag" for low (P0 flag decision)', () => {
+  it('renders low priority with one visible mark and an accessible label', () => {
     renderTasksList(el, templates, [makeTask({ priority: 'low' })], noopNavigate);
     const priorityIconEl = el.list.querySelector('.task-item__priority-icon');
-    expect(priorityIconEl?.getAttribute('data-lucide')).toBe('flag');
+    expect(priorityIconEl?.textContent).toBe('!');
+    expect(priorityIconEl?.getAttribute('data-priority')).toBe('low');
+    expect(el.list.querySelector('.task-item__priority')?.getAttribute('aria-label')).toBe('Low priority');
   });
 
-  it('hides priority icon for "none" priority (P0: no flag for none)', () => {
+  it('omits the priority badge for "none" rather than leaving an empty slot', () => {
     renderTasksList(el, templates, [makeTask({ priority: 'none' })], noopNavigate);
-    const priorityIconEl = el.list.querySelector('.task-item__priority-icon') as HTMLElement | null;
-    // Icon hidden (display:none) when no glyph
-    expect(priorityIconEl?.style.display).toBe('none');
+    expect(el.list.querySelector('.task-item__priority')).toBeNull();
   });
 
   it('list_tasks({status:"todo", list:"inbox"}) — renders only filtered tasks', () => {
@@ -731,7 +733,7 @@ describe('VG-P0 — no GUI option emits "normal"; medium is selectable/labelled'
     // The capture form sends empty string for none (→ undefined → core default)
     // or an explicit value for others. Verify medium is the string "medium".
     expect(taskPriorityLabel('medium')).toBe('Medium');
-    expect(taskPriorityGlyph('medium')).toBe('flag');
+    expect(taskPriorityGlyph('medium')).toBe('!!');
     // The select option value "medium" maps to the canonical core priority.
     // (No "normal" option exists; buildCreateTaskPayload passes value through unchanged.)
     const canonicalValues = ['', 'high', 'medium', 'low']; // capture form option values
@@ -2729,26 +2731,26 @@ describe('S1 — view persists globally + toggle honesty (real TasksController)'
     expect(toggleBtn.hasAttribute('aria-disabled')).toBe(false);
   });
 
-  it('opens the task-list overlay with a focus handoff and restores the toggle on close', async () => {
+  it('delegates task-list navigation to the shared sidebar without a second overlay', async () => {
     vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([]);
     vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([]);
 
     startStimulusApp();
     await flushStimulusAsync();
 
-    const section = document.querySelector('[data-controller~="tasks"]') as HTMLElement;
     const toggle = document.querySelector('[data-tasks-target="railToggleBtn"]') as HTMLButtonElement;
     const close = document.querySelector('[data-tasks-target="railCloseBtn"]') as HTMLButtonElement;
+    const toggleRequest = vi.fn();
+    window.addEventListener('jin:sidebar-toggle', toggleRequest, { once: true });
 
     toggle.click();
-    expect(section.classList.contains('tasks-rail-open')).toBe(true);
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement).toBe(close);
+    expect(toggleRequest).toHaveBeenCalledOnce();
+    expect(document.querySelector('[data-controller~="tasks"]')?.classList.contains('tasks-rail-open')).toBe(false);
 
+    const closeRequest = vi.fn();
+    window.addEventListener('jin:sidebar-toggle', closeRequest, { once: true });
     close.click();
-    expect(section.classList.contains('tasks-rail-open')).toBe(false);
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    expect(document.activeElement).toBe(toggle);
+    expect(closeRequest).toHaveBeenCalledOnce();
   });
 });
 
@@ -2843,7 +2845,8 @@ describe('due-date quick actions own their interaction boundary', () => {
 
     dateButton!.click();
     expect(dateButton?.getAttribute('aria-expanded')).toBe('true');
-    item.querySelector<HTMLButtonElement>('.due-reschedule__btn')!.click();
+    // The popup is portaled so it can clear the viewport edge and task sheet.
+    document.querySelector<HTMLButtonElement>('.due-reschedule[data-portaled] .due-reschedule__btn')!.click();
 
     expect(onReschedule).toHaveBeenCalledWith('overdue-1', expect.any(String));
     expect(onNavigate).not.toHaveBeenCalled();
@@ -2903,6 +2906,29 @@ describe('S2 — board card delete parity with the list row (AC-S2-03)', () => {
     expect(onDeleteRequest).toHaveBeenNthCalledWith(1, 'card-del-1', 'Card Delete Task');
     expect(onDeleteRequest).toHaveBeenNthCalledWith(2, 'card-del-1', 'Card Delete Task');
   });
+});
+
+it('a card title still opens detail after an Escape-cancelled whole-card drag', () => {
+  const container = document.createElement('div');
+  document.body.append(container);
+  const navigate = vi.fn();
+  renderBoardView(container, templates, [makeTask({ id: 'drag-title', title: 'Drag title' })],
+    'manual', navigate, { onStatusDrop: vi.fn() });
+  const body = container.querySelector<HTMLElement>('.task-item--card .task-item__body')!;
+  const card = body.closest<HTMLElement>('.task-item--card')!;
+
+  firePointer(body, 'pointerdown', 10, 10);
+  firePointer(document.body, 'pointermove', 28, 28);
+  expect(card.classList.contains('task-item--dragging')).toBe(true);
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  firePointer(document.body, 'pointerup', 28, 28);
+  expect(card.classList.contains('task-item--dragging')).toBe(false);
+  expect(document.querySelector('.task-drag-preview')).toBeNull();
+
+  firePointer(body, 'pointerdown', 10, 10);
+  firePointer(document.body, 'pointerup', 10, 10);
+  body.click();
+  expect(navigate).toHaveBeenCalledWith('tasks', 'drag-title');
 });
 
 describe('S2 — board honors the active sort mode, never a hardcoded manual (AC-S2-05/06)', () => {
@@ -3121,7 +3147,7 @@ describe('S4 — Board becomes a Kanban by status (AC-S4-01..08)', () => {
     expect(InvokeModule.setTaskStatus).toHaveBeenCalledWith('done-1', 'todo');
   });
 
-  it('board_renders_in_smart_view_scope', async () => {
+  it('smart_view_remains_a_list_without_a_container_workflow', async () => {
     // S5: no default list among the returned lists → connectAutoSelect finds
     // none → currentScope stays at its initial value, the Inbox SMART VIEW
     // (Approach §4) — genuinely a smart-view scope now, not a stand-in.
@@ -3136,12 +3162,10 @@ describe('S4 — Board becomes a Kanban by status (AC-S4-01..08)', () => {
     switchToBoardView();
     await flushStimulusAsync();
 
-    // AC-S4-07: the board renders regardless, and the toggle is never
-    // disabled/aria-disabled — retires AC-S1-08.
-    expect(document.querySelector('.tasks-board')).not.toBeNull();
-    const toggleBtn = document.querySelector('[data-tasks-target="viewToggleBtn"]') as HTMLButtonElement;
-    expect(toggleBtn.disabled).toBe(false);
-    expect(toggleBtn.hasAttribute('aria-disabled')).toBe(false);
+    // A Board is a real container workflow; smart scopes cannot manufacture
+    // typed columns from a presentation toggle.
+    expect(document.querySelector('.tasks-board')).toBeNull();
+    expect(document.querySelector('[data-tasks-target="list"]')).not.toBeNull();
   });
 
   it('board_add_row_only_in_todo_column', async () => {
@@ -3716,10 +3740,11 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     expect(detailContent.childElementCount).toBeGreaterThan(0);
 
     fireScopeChanged({ kind: 'list', id: 'work' });
-
+    // The guarded transition is asynchronous so a failed draft save can
+    // refuse it before the old pane or scope is cleared.
+    await flushStimulusAsync();
     expect(getMainEl().classList.contains('tasks-main--detail-open')).toBe(false);
     expect(detailContent.childElementCount).toBe(0);
-    await flushStimulusAsync();
     expect(document.querySelector('li[data-task-id="t2"]')).not.toBeNull();
     expect(document.querySelectorAll('[data-tasks-target="list"] [aria-selected="true"]')).toHaveLength(0);
   });
@@ -3747,7 +3772,7 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     expect(document.querySelectorAll('[data-tasks-target="list"] [aria-selected="true"]').length).toBe(0);
   });
 
-  it('full_workspace_detail_hides_covered_list_controls_and_restores_the_invoking_row', async () => {
+  it('desktop_inspector_keeps_list_controls_available_and_restores_the_invoking_row', async () => {
     vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([makeDefaultListDto()]);
     vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([
       makeTaskDtoForStimulus({ id: 't1', title: 'Task One' }),
@@ -3762,8 +3787,8 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     await flushStimulusAsync();
 
     const panel = getListPanelEl();
-    expect(panel.getAttribute('aria-hidden')).toBe('true');
-    expect(panel.hasAttribute('inert')).toBe(true);
+    expect(panel.getAttribute('aria-hidden')).toBeNull();
+    expect(panel.hasAttribute('inert')).toBe(false);
 
     (document.querySelector('.tasks-detail-pane__close-btn') as HTMLButtonElement).click();
     await flushStimulusAsync();
@@ -3823,6 +3848,137 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     promoteBtn.click();
 
     expect(promoted).toEqual(['t1']);
+  });
+
+  it('keeps_a_successfully_saved_title_when_a_stale_detail_refresh_finishes', async () => {
+    const original = makeTaskDtoForStimulus({ id: 't1', title: 'Original' });
+    let releaseTags!: (value: []) => void;
+    const heldTags = new Promise<[]>(resolve => { releaseTags = resolve; });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([makeDefaultListDto()]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([original]);
+    vi.spyOn(InvokeModule, 'getTaskById').mockResolvedValue(original);
+    vi.spyOn(InvokeModule, 'listTags')
+      .mockResolvedValueOnce([])
+      .mockImplementationOnce(() => heldTags)
+      .mockResolvedValue([]);
+    const save = vi.spyOn(InvokeModule, 'editTask').mockResolvedValue({ ...original, title: 'Saved while loading' });
+
+    startS3App();
+    await flushStimulusAsync();
+    clickItemBody('t1');
+    await flushStimulusAsync();
+
+    const controller = s3App.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="tasks"]')!, 'tasks',
+    ) as TasksController & { refreshPane: (id: string) => Promise<void> };
+    const refresh = controller.refreshPane('t1');
+    await flushStimulusAsync();
+    const title = document.querySelector<HTMLElement>('.task-detail__title-editable')!;
+    title.textContent = 'Saved while loading';
+    title.dispatchEvent(new Event('blur'));
+    await flushStimulusAsync();
+    expect(save).toHaveBeenCalledWith('t1', { title: 'Saved while loading' });
+
+    releaseTags([]);
+    await refresh;
+    expect(document.querySelector('.task-detail__title-editable')?.textContent).toBe('Saved while loading');
+  });
+
+  it('flushes_edits_made_while_a_deep_link_fetch_is_pending', async () => {
+    const first = makeTaskDtoForStimulus({ id: 't1', title: 'First' });
+    const second = makeTaskDtoForStimulus({ id: 't2', title: 'Second' });
+    let releaseSecond!: (value: TaskDto) => void;
+    const heldSecond = new Promise<TaskDto>(resolve => { releaseSecond = resolve; });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([makeDefaultListDto()]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([first, second]);
+    vi.spyOn(InvokeModule, 'getTaskById').mockImplementation((id) =>
+      id === 't2' ? heldSecond : Promise.resolve(first));
+    const save = vi.spyOn(InvokeModule, 'editTask').mockResolvedValue({ ...first, title: 'Edited during fetch' });
+
+    startS3App();
+    await flushStimulusAsync();
+    clickItemBody('t1');
+    await flushStimulusAsync();
+
+    document.querySelector('[data-controller="tasks"]')!.dispatchEvent(
+      new CustomEvent('jin:open-detail', { detail: { id: 't2' } }),
+    );
+    await flushStimulusAsync();
+    const title = document.querySelector<HTMLElement>('.task-detail__title-editable')!;
+    title.textContent = 'Edited during fetch';
+    releaseSecond(second);
+    await flushStimulusAsync();
+
+    expect(save).toHaveBeenCalledWith('t1', { title: 'Edited during fetch' });
+    expect(document.querySelector('.task-detail__title-editable')?.textContent).toBe('Second');
+  });
+
+  it('requires_explicit_reset_before_moving_in_progress_board_work_to_a_list', async () => {
+    const boardTask = makeTaskDtoForStimulus({ id: 'doing-task', title: 'Review', list: 'project', status: 'doing', board_column_id: 'doing-col', position: 'V' });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([
+      makeDefaultListDto({ id: 'inbox', workflow_kind: 'checklist' }),
+      makeDefaultListDto({ id: 'project', name: 'Project', is_default: false, workflow_kind: 'board', columns: [
+        { id: 'queue-col', name: 'Queue', position: 'A', type: 'queue' },
+        { id: 'doing-col', name: 'In Progress', position: 'B', type: 'in_progress' },
+        { id: 'done-col', name: 'Done', position: 'C', type: 'done' },
+      ] }),
+    ]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([boardTask]);
+    vi.spyOn(InvokeModule, 'getTaskById').mockResolvedValue(boardTask);
+    const move = vi.spyOn(InvokeModule, 'moveTask').mockResolvedValue({ ...boardTask, list: 'inbox', status: 'todo' });
+
+    startS3App();
+    await flushStimulusAsync();
+    clickItemBody('doing-task');
+    await flushStimulusAsync();
+
+    const listSelect = document.querySelector<HTMLSelectElement>('.task-detail__list-select')!;
+    listSelect.value = 'inbox';
+    listSelect.dispatchEvent(new Event('change'));
+    const dialog = document.querySelector<HTMLDialogElement>('#jin-modal-root dialog[open]')!;
+    expect(dialog?.textContent).toContain('will make it unchecked');
+    expect(listSelect.value).toBe('project');
+    dialog.querySelector<HTMLButtonElement>('.btn-secondary')!.click();
+    expect(move).not.toHaveBeenCalled();
+
+    listSelect.value = 'inbox';
+    listSelect.dispatchEvent(new Event('change'));
+    document.querySelector<HTMLDialogElement>('#jin-modal-root dialog[open]')!
+      .querySelector<HTMLButtonElement>('.btn-primary')!.click();
+    await flushStimulusAsync();
+    expect(move).toHaveBeenCalledWith('doing-task', expect.objectContaining({
+      listId: 'inbox', confirmDoingToChecklist: true, boardColumnId: null,
+    }));
+  });
+
+  it('keeps the column manager open and shows a raw native argument rejection', async () => {
+    const board = makeDefaultListDto({
+      id: 'project', name: 'Project', is_default: true, workflow_kind: 'board',
+      initial_column_id: 'queue-col', columns: [
+        { id: 'queue-col', name: 'Queue', position: 'A', type: 'queue' },
+        { id: 'done-col', name: 'Done', position: 'B', type: 'done' },
+      ],
+    });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([board]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([]);
+    const create = vi.spyOn(InvokeModule, 'createBoardColumn')
+      .mockRejectedValue('missing required key `columnType`');
+
+    startS3App();
+    await flushStimulusAsync();
+    const controller = s3App.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="tasks"]')!, 'tasks',
+    ) as TasksController;
+    await controller.manageColumns();
+    const dialog = document.querySelector<HTMLDialogElement>('#jin-modal-root dialog[open]')!;
+    dialog.querySelector<HTMLInputElement>('.tasks-column-manager__add input')!.value = 'Backlog';
+    dialog.querySelector<HTMLSelectElement>('.tasks-column-manager__add select')!.value = 'none';
+    dialog.querySelector<HTMLButtonElement>('.tasks-column-manager__add button')!.click();
+    await flushStimulusAsync();
+
+    expect(create).toHaveBeenCalledWith('project', 'Backlog', 'none');
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('missing required key `columnType`');
+    expect(dialog.open).toBe(true);
   });
 });
 
@@ -3888,10 +4044,10 @@ describe('AC-S6-11 — parent item shows a `2/5` subtask progress indicator', ()
     expect(progressEl?.textContent).toBe('2/5');
   });
 
-  it('a task with no children shows no progress text (empty slot, hidden by CSS)', () => {
+  it('a task with no children has no progress slot', () => {
     renderTasksList(el, templates, [makeTask({ id: 'lonely' })], noopNavigate);
     const progressEl = document.querySelector('li[data-task-id="lonely"] .task-item__subtask-progress');
-    expect(progressEl?.textContent).toBe('');
+    expect(progressEl).toBeNull();
   });
 });
 
@@ -4351,6 +4507,46 @@ describe('S7 — bulk multi-select and keyboard flow (AC-S7-01..08)', () => {
       .map((o) => o.value)
       .filter((v) => v !== '');
     expect(values).toEqual(['todo']);
+  });
+
+  it('bulk_board_to_list_move_requires_explicit_unchecked_reset', async () => {
+    stubDialogPrototype();
+    const tasks = [
+      makeTaskDtoForStimulus({ id: 't1', title: 'First', list: 'project', status: 'doing', position: 'V' }),
+      makeTaskDtoForStimulus({ id: 't2', title: 'Second', list: 'project', status: 'doing', position: 'W' }),
+    ];
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([
+      makeDefaultListDto({ id: 'inbox', workflow_kind: 'checklist' }),
+      makeDefaultListDto({ id: 'project', name: 'Project', is_default: false, workflow_kind: 'board' }),
+    ]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue(tasks);
+    const move = vi.spyOn(InvokeModule, 'moveTask').mockImplementation(async (id) =>
+      ({ ...tasks.find((task) => task.id === id)!, list: 'inbox', status: 'todo' }));
+
+    startS7App();
+    await flushStimulusAsync();
+    ctrlClickItemBody('t1');
+    ctrlClickItemBody('t2');
+    await flushStimulusAsync();
+
+    const select = document.querySelector<HTMLSelectElement>('.tasks-bulk-panel__list-select')!;
+    select.value = 'inbox';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    const dialog = document.querySelector<HTMLDialogElement>('#jin-modal-root dialog[open]')!;
+    expect(dialog.textContent).toContain('2 In Progress tasks will become unchecked');
+    expect(select.value).toBe('');
+    dialog.querySelector<HTMLButtonElement>('.btn-secondary')!.click();
+    expect(move).not.toHaveBeenCalled();
+
+    select.value = 'inbox';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    document.querySelector<HTMLDialogElement>('#jin-modal-root dialog[open]')!
+      .querySelector<HTMLButtonElement>('.btn-primary')!.click();
+    await flushStimulusAsync();
+    expect(move).toHaveBeenCalledTimes(2);
+    expect(move).toHaveBeenCalledWith('t1', expect.objectContaining({
+      listId: 'inbox', confirmDoingToChecklist: true,
+    }));
   });
 
   // ── AC-S7-03 — partial failure reports honestly and keeps going ──────────

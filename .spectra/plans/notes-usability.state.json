@@ -1,0 +1,129 @@
+{
+  "schema": "ramza/plan-state.v1",
+  "plan": "notes-usability",
+  "created_at": "2026-09-23T23:26:57Z",
+  "tier": "lite",
+  "phase": "A",
+  "phases_done": [
+    "RS",
+    "S",
+    "P",
+    "E",
+    "C",
+    "T",
+    "A"
+  ],
+  "rightsize": {
+    "score": 3,
+    "computed_tier": "lite",
+    "inputs": {
+      "files_est": 10,
+      "new_dep": false,
+      "public_api": false,
+      "migration": false,
+      "security": false,
+      "novel": false,
+      "stakes": "med"
+    }
+  },
+  "refine_cycles": 0,
+  "skips": [],
+  "gates": [
+    {
+      "rubric": "complexity",
+      "total": 7,
+      "dims": {
+        "scope": 2,
+        "ambiguity": 1,
+        "dependencies": 2,
+        "risk": 2
+      },
+      "verdict": "extended",
+      "at": "2026-09-23T23:29:56Z"
+    },
+    {
+      "rubric": "explore",
+      "total": 66.5,
+      "dims": {
+        "alignment": 5,
+        "correctness": 5,
+        "maintainability": 8,
+        "performance": 9,
+        "simplicity": 9,
+        "risk": 8,
+        "innovation": 3
+      },
+      "verdict": "weak",
+      "at": "2026-09-23T23:29:56Z",
+      "label": "css-only"
+    },
+    {
+      "rubric": "explore",
+      "total": 90.5,
+      "dims": {
+        "alignment": 10,
+        "correctness": 9,
+        "maintainability": 9,
+        "performance": 9,
+        "simplicity": 8,
+        "risk": 9,
+        "innovation": 7
+      },
+      "verdict": "elite",
+      "at": "2026-09-23T23:29:56Z",
+      "label": "existing-contracts"
+    },
+    {
+      "rubric": "explore",
+      "total": 65.5,
+      "dims": {
+        "alignment": 7,
+        "correctness": 7,
+        "maintainability": 6,
+        "performance": 7,
+        "simplicity": 5,
+        "risk": 5,
+        "innovation": 9
+      },
+      "verdict": "weak",
+      "at": "2026-09-23T23:29:56Z",
+      "label": "gallery-rewrite"
+    },
+    {
+      "rubric": "confidence",
+      "total": 93.75,
+      "dims": {
+        "pattern_match": 94,
+        "requirement_clarity": 93,
+        "decomposition_stability": 91,
+        "constraint_compliance": 97
+      },
+      "verdict": "AUTO_PROCEED",
+      "at": "2026-09-23T23:29:56Z"
+    }
+  ],
+  "amendments": [
+    {
+      "prev": "76e4402320518239efe3a266325ef54b18ce7e640bb39f0d95071ad2f6751b5b",
+      "new": "6b36006ce1ec9afab29392363658fbaa52fd179017a8e64db41b8ab7cbb55031",
+      "reason": "Required emission frontmatter added; all twelve acceptance criteria unchanged.",
+      "at": "2026-09-23T23:30:26Z"
+    }
+  ],
+  "declared_scope": [
+    "jin-gui/index.html",
+    "jin-gui/src/controllers/*",
+    "jin-gui/src/lib/notes/*",
+    "jin-gui/src/lib/ui/*",
+    "jin-gui/src/styles/*",
+    "jin-gui/src/__tests__/*",
+    "docs/visual-language/README.md"
+  ],
+  "criteria_sha256": "6b36006ce1ec9afab29392363658fbaa52fd179017a8e64db41b8ab7cbb55031",
+  "critic": {
+    "author": null,
+    "checker": null
+  },
+  "scope_declared_at": "2026-09-23T23:29:56Z",
+  "criteria_frozen_at": "2026-09-23T23:29:56Z"
+}

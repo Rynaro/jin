@@ -1044,9 +1044,8 @@ fn cmd_task_add(
     let priority = priority.as_deref().map(parse_priority).transpose()?;
     let due = due.as_deref().map(parse_due_date).transpose()?;
 
-    let cfg = Config::load(root)?;
-    let task = jin_core::ops::tasks::create_task(
-        &cfg.tasks_dir(),
+    let task = jin_core::ops::workflows::create_task(
+        root,
         jin_core::ops::tasks::CreateTaskParams {
             title,
             body: String::new(),
@@ -1057,6 +1056,7 @@ fn cmd_task_add(
             reminders: None,
             parent,
         },
+        None,
     )?;
     api::refresh(root)?;
     if json {
@@ -1133,11 +1133,8 @@ fn cmd_task_rm(root: &std::path::Path, id: &str, json: bool) -> anyhow::Result<(
 }
 
 fn cmd_task_done(root: &std::path::Path, id: &str, json: bool) -> anyhow::Result<()> {
-    let task = jin_core::ops::tasks::transition_task(
-        &Config::load(root)?.tasks_dir(),
-        id,
-        jin_core::model::TaskStatus::Done,
-    )?;
+    let task =
+        jin_core::ops::workflows::transition_task(root, id, jin_core::model::TaskStatus::Done)?;
     api::refresh(root)?;
     if json {
         let dto = jin_core::dto::TaskDto::from_model(&task);
@@ -1156,7 +1153,7 @@ fn cmd_task_transition(
     next: jin_core::model::TaskStatus,
     json: bool,
 ) -> anyhow::Result<()> {
-    let task = jin_core::ops::tasks::transition_task(&Config::load(root)?.tasks_dir(), id, next)?;
+    let task = jin_core::ops::workflows::transition_task(root, id, next)?;
     api::refresh(root)?;
     if json {
         let dto = jin_core::dto::TaskDto::from_model(&task);
@@ -1196,9 +1193,8 @@ fn cmd_task_edit(
         parent.map(Some)
     };
 
-    let cfg = Config::load(root)?;
-    let task = jin_core::ops::tasks::edit_task(
-        &cfg.tasks_dir(),
+    let task = jin_core::ops::workflows::edit_task(
+        root,
         id,
         jin_core::ops::tasks::EditTaskParams {
             title,
@@ -1780,8 +1776,8 @@ fn cmd_capture(
 ) -> anyhow::Result<()> {
     let cfg = Config::load(root)?;
     if as_task {
-        let task = jin_core::ops::tasks::create_task(
-            &cfg.tasks_dir(),
+        let task = jin_core::ops::workflows::create_task(
+            root,
             jin_core::ops::tasks::CreateTaskParams {
                 title: text,
                 body: String::new(),
@@ -1792,6 +1788,7 @@ fn cmd_capture(
                 reminders: None,
                 parent: None,
             },
+            None,
         )?;
         api::refresh(root)?;
         if json {

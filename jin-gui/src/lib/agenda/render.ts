@@ -13,6 +13,8 @@
 
 import type { AgendaEventDto, AgendaTaskDto, TodayFocusEventDto } from '../../types/dto';
 import type { AgendaRowPresentation, GroupedAgenda } from './transform';
+import { calendarMembershipIdentity } from '../calendar/colors';
+import { eventMessage } from '../events/locale';
 import { sourceBadgeLabel, sourceBadgeIcon, isRecurring } from './transform';
 
 // ── Interface types ───────────────────────────────────────────────────────────
@@ -316,12 +318,14 @@ function buildEventRow(
   const badgeLabelEl = row.querySelector('.today-event-row__source-label');
   const badgeIconEl = row.querySelector('.today-event-row__source-icon');
   if (badgeEl && badgeLabelEl && badgeIconEl) {
-    const label = sourceBadgeLabel(event.source);
+    const membership = calendarMembershipIdentity(event, eventMessage('jinCalendarName'));
+    const route = event.sync_context?.provider === 'google' ? event.sync_context : null;
+    const label = route ? `Google · ${membership.label}` : sourceBadgeLabel(event.source);
     badgeLabelEl.textContent = label;
-    badgeIconEl.setAttribute('data-lucide', sourceBadgeIcon(event.source));
-    badgeEl.setAttribute('aria-label', `Source: ${label}`);
+    badgeIconEl.setAttribute('data-lucide', sourceBadgeIcon(membership.provider));
+    badgeEl.setAttribute('aria-label', route ? label : `Source: ${label}`);
     // data-source is a supplementary CSS hook for colour (NOT the primary identifier)
-    badgeEl.dataset.source = event.source.toLowerCase();
+    badgeEl.dataset.source = membership.provider;
   }
 
   // ── Recurring flag ────────────────────────────────────────────────────────

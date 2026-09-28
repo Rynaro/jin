@@ -45,6 +45,7 @@ import {
   taskPriorityLabel,
   taskPriorityGlyph,
   formatTaskDue,
+  formatTaskDueCompact,
   isTaskOverdue,
   type SubtaskDisplayInfo,
   type ParentBreadcrumb,
@@ -52,6 +53,7 @@ import {
 import { buildTagChips } from '../lists/render';
 import type { BrowseNavigateCallback } from '../notes/render';
 import { configureTaskCompletion } from './completion';
+import { beginMovementSelection } from '../ui/movement';
 
 /**
  * Pointer-driven task dragging keeps reordering inside the app rather than
@@ -66,6 +68,9 @@ export interface PointerDragHooks<T extends HTMLElement> {
   onTargetChange: (previous: T | null, next: T | null, point: { x: number; y: number }) => void;
   onCommit: (target: T, point: { x: number; y: number }) => void;
   onCleanup: () => void;
+  /** Card dragging leaves native button clicks intact until the threshold. */
+  preserveClickTarget?: boolean;
+  shouldStart?: (event: PointerEvent) => boolean;
 }
 
 export function wirePointerDrag<T extends HTMLElement>(
@@ -81,6 +86,7 @@ export function wirePointerDrag<T extends HTMLElement>(
     preview: HTMLElement | null;
     previewPoint: { x: number; y: number } | null;
     previewFrame: number | null;
+    releaseSelection: (() => void) | null;
   } | null = null;
   let suppressClick = false;
   let cleaning = false;
@@ -91,14 +97,28 @@ export function wirePointerDrag<T extends HTMLElement>(
     const pointerId = session.pointerId;
     const preview = session.preview;
     const previewFrame = session.previewFrame;
+    const releaseSelection = session.releaseSelection;
     session = null;
     if (previewFrame !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(previewFrame);
     preview?.remove();
-    hooks.onCleanup();
-    if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture?.(pointerId);
-    document.removeEventListener('keydown', onKeyDown, true);
-    window.removeEventListener('blur', cleanup);
-    cleaning = false;
+    try { hooks.onCleanup(); }
+    finally {
+      releaseSelection?.();
+      if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture?.(pointerId);
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+      document.removeEventListener('pointercancel', cancel);
+      document.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('blur', cancel);
+      cleaning = false;
+    }
+  };
+
+  const cancel = () => {
+    cleanup();
+    // A cancelled drag has no matching click to consume. Keeping this flag
+    // would swallow the next ordinary title activation.
+    suppressClick = false;
   };
 
   const updateTarget = (clientX: number, clientY: number) => {
@@ -121,7 +141,9 @@ export function wirePointerDrag<T extends HTMLElement>(
       const viewportHeight = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
       const maxX = Math.max(8, viewportWidth - rect.width - 8);
       const maxY = Math.max(8, viewportHeight - rect.height - 8);
-      session.preview.style.transform = `translate3d(${Math.min(Math.max(8, x + 10), maxX)}px, ${Math.min(Math.max(8, y + 10), maxY)}px, 0)`;
+      const tilt = session.preview.classList.contains('task-drag-preview--card')
+        && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? ' rotate(1.5deg)' : '';
+      session.preview.style.transform = `translate3d(${Math.min(Math.max(8, x + 10), maxX)}px, ${Math.min(Math.max(8, y + 10), maxY)}px, 0)${tilt}`;
       session.preview.style.visibility = 'visible';
     };
     if (typeof requestAnimationFrame === 'function') {
@@ -134,12 +156,12 @@ export function wirePointerDrag<T extends HTMLElement>(
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key !== 'Escape' || !session) return;
     event.preventDefault();
-    cleanup();
+    cancel();
   };
 
   handle.addEventListener('pointerdown', (event: PointerEvent) => {
-    if (event.button !== 0 || session) return;
-    event.preventDefault();
+    if (event.button !== 0 || session || hooks.shouldStart?.(event) === false) return;
+    if (!hooks.preserveClickTarget) event.preventDefault();
     session = {
       pointerId: event.pointerId,
       startX: event.clientX,
@@ -149,20 +171,28 @@ export function wirePointerDrag<T extends HTMLElement>(
       preview: null,
       previewPoint: null,
       previewFrame: null,
+      releaseSelection: null,
     };
-    handle.setPointerCapture?.(event.pointerId);
+    if (hooks.preserveClickTarget) {
+      document.addEventListener('pointermove', onPointerMove);
+      document.addEventListener('pointerup', onPointerUp);
+      document.addEventListener('pointercancel', cancel);
+    } else handle.setPointerCapture?.(event.pointerId);
     document.addEventListener('keydown', onKeyDown, true);
-    window.addEventListener('blur', cleanup);
+    window.addEventListener('blur', cancel);
   });
 
-  handle.addEventListener('pointermove', (event: PointerEvent) => {
+  const onPointerMove = (event: PointerEvent) => {
     if (!session || event.pointerId !== session.pointerId) return;
     if (!session.active) {
       const distance = Math.hypot(event.clientX - session.startX, event.clientY - session.startY);
       if (distance < 6) return;
       session.active = true;
       suppressClick = true;
-      hooks.onActivate();
+      event.preventDefault();
+      session.releaseSelection = beginMovementSelection(handle);
+      try { hooks.onActivate(); }
+      catch (error) { cleanup(); throw error; }
       const preview = hooks.createPreview?.();
       if (preview) {
         preview.style.transform = 'translate3d(-9999px, -9999px, 0)';
@@ -173,17 +203,24 @@ export function wirePointerDrag<T extends HTMLElement>(
     }
     updatePreview(event.clientX, event.clientY);
     updateTarget(event.clientX, event.clientY);
-  });
+  };
 
-  handle.addEventListener('pointerup', (event: PointerEvent) => {
+  const onPointerUp = (event: PointerEvent) => {
     if (!session || event.pointerId !== session.pointerId) return;
     const target = session.active ? hooks.resolveTarget(event.clientX, event.clientY) : null;
-    if (session.active && target) hooks.onCommit(target, { x: event.clientX, y: event.clientY });
-    cleanup();
-  });
+    try {
+      if (session.active && target) hooks.onCommit(target, { x: event.clientX, y: event.clientY });
+    } finally { cleanup(); }
+    if (suppressClick) window.setTimeout(() => { suppressClick = false; }, 0);
+  };
 
-  handle.addEventListener('pointercancel', cleanup);
-  handle.addEventListener('lostpointercapture', cleanup);
+  if (!hooks.preserveClickTarget) {
+    handle.addEventListener('pointermove', onPointerMove);
+    handle.addEventListener('pointerup', onPointerUp);
+  }
+
+  handle.addEventListener('pointercancel', cancel);
+  handle.addEventListener('lostpointercapture', cancel);
   handle.addEventListener('click', (event) => {
     if (!suppressClick) return;
     suppressClick = false;
@@ -199,6 +236,8 @@ export function createTaskDragPreview(source: HTMLElement): HTMLElement {
   const sourceWidth = source.getBoundingClientRect().width;
   const isCard = source.classList.contains('task-item--card');
   preview.classList.add('task-drag-preview');
+  if (isCard) preview.classList.add('task-drag-preview--card');
+  preview.dataset.taskDragPreview = isCard ? 'card' : 'row';
   preview.setAttribute('aria-hidden', 'true');
   preview.setAttribute('inert', '');
   preview.style.inlineSize = `${isCard
@@ -253,6 +292,9 @@ export interface TaskItemNestingInfo extends SubtaskDisplayInfo {
  * Shared verbatim by both variants — see the module doc above (AC-S2-02).
  */
 export interface TaskRowCallbacks {
+  /** Typed board column placement, independent of its status type. */
+  onColumnDrop?: (taskId: string, columnId: string) => void;
+  onColumnCreate?: (columnId: string, title: string, due?: string) => void;
   /** Called when the status circle is clicked. Controller decides the next status. */
   onStatusToggle?: (taskId: string, currentStatus: string) => void;
   /** True while this task's optimistic completion mutation is in flight. */
@@ -545,8 +587,7 @@ export function buildTaskItem(
 
   // ── S6: subtask progress badge (AC-S6-11) ─────────────────────────────────
   // Populated ONLY when `task` itself has children in the current dataset;
-  // left empty otherwise (`.task-item__subtask-progress:empty` hides it —
-  // browse.css). A nested child never shows its own progress badge redundant
+  // otherwise the placeholder is removed. A nested child never shows its own progress badge redundant
   // with the parent's, but a subtask could itself carry the badge if depth
   // allowed grandchildren — it never does (depth capped at one), so this is
   // simply "does `nesting.progress` exist for this task".
@@ -558,7 +599,7 @@ export function buildTaskItem(
       progressEl.setAttribute('aria-label', `${done} of ${total} subtasks complete`);
       progressEl.removeAttribute('aria-hidden');
     } else {
-      progressEl.textContent = '';
+      progressEl.remove();
     }
   }
 
@@ -594,15 +635,17 @@ export function buildTaskItem(
   const priorityLabelEl = item.querySelector('.task-item__priority-label');
 
   const pLabel = taskPriorityLabel(task.priority);
-  if (priorityBadgeEl) priorityBadgeEl.setAttribute('aria-label', `Priority: ${pLabel}`);
-
   const pGlyph = taskPriorityGlyph(task.priority);
-  if (priorityIconEl) {
-    if (pGlyph) {
-      priorityIconEl.setAttribute('data-lucide', pGlyph);
+  if (!pGlyph) {
+    priorityBadgeEl?.remove();
+  } else {
+    priorityBadgeEl?.setAttribute('aria-label', `${pLabel} priority`);
+    priorityBadgeEl?.setAttribute('title', `${pLabel} priority`);
+    priorityBadgeEl?.setAttribute('data-priority', task.priority.toLowerCase());
+    if (priorityIconEl) {
+      priorityIconEl.removeAttribute('data-lucide');
+      priorityIconEl.textContent = pGlyph;
       priorityIconEl.setAttribute('data-priority', task.priority.toLowerCase());
-    } else {
-      priorityIconEl.style.display = 'none';
     }
   }
   if (priorityLabelEl) priorityLabelEl.textContent = pLabel;
@@ -650,9 +693,6 @@ export function buildTaskItem(
     item.appendChild(reopenBtn);
   }
 
-  // ── S6 subtask-progress slot — inert placeholder until S6 populates it ───
-  // (No `parent`/children fields exist on TaskDto yet; left empty on purpose.)
-
   return item;
 }
 
@@ -680,13 +720,15 @@ export function buildDueChipGroup(
   const now = new Date().toISOString();
   const overdue = isActive && isTaskOverdue(task.due, now);
   const hasQuickActions = overdue && Boolean(callbacks?.onReschedule || callbacks?.onPickDate);
+  const canEdit = Boolean(callbacks?.onPickDate || hasQuickActions);
 
   // The date is a real button: pointer users own the hover target here, while
   // keyboard and touch users can explicitly disclose the same actions.
-  const chipEl = document.createElement(hasQuickActions ? 'button' : 'span');
+  const chipEl = document.createElement(canEdit ? 'button' : 'span');
   if (chipEl instanceof HTMLButtonElement) chipEl.type = 'button';
   chipEl.className = 'task-due-chip text-caption2';
   chipEl.setAttribute('aria-label', `Due: ${formatTaskDue(task.due)}`);
+  chipEl.setAttribute('title', formatTaskDue(task.due));
   if (overdue) {
     chipEl.setAttribute('data-overdue', 'true');
     chipEl.setAttribute('aria-label', `Overdue: ${formatTaskDue(task.due)}`);
@@ -698,23 +740,49 @@ export function buildDueChipGroup(
   chipEl.appendChild(calIcon);
 
   const chipText = document.createElement('span');
-  chipText.textContent = formatTaskDue(task.due);
+  chipText.textContent = formatTaskDueCompact(task.due);
   chipEl.appendChild(chipText);
 
   wrapper.appendChild(chipEl);
 
+  if (!hasQuickActions && chipEl instanceof HTMLButtonElement && callbacks?.onPickDate) {
+    chipEl.addEventListener('click', (event) => {
+      event.stopPropagation();
+      callbacks.onPickDate?.(task.id, task.due ?? null);
+    });
+  }
+
   // Quick-reschedule affordance (only for overdue active tasks)
   if (hasQuickActions && callbacks) {
+    let positionObserver: MutationObserver | null = null;
+    const portalHost = () => wrapper.closest('dialog[open]') ?? document.getElementById('jin-modal-root') ?? document.body;
+    const position = () => {
+      if (!wrapper.hasAttribute('data-open')) return;
+      const anchor = chipEl.getBoundingClientRect();
+      const popup = rescheduleEl.getBoundingClientRect();
+      const left = Math.min(Math.max(8, anchor.left), Math.max(8, window.innerWidth - popup.width - 8));
+      const below = anchor.bottom + 6;
+      const top = below + popup.height <= window.innerHeight - 8
+        ? below : Math.max(8, anchor.top - popup.height - 6);
+      rescheduleEl.style.left = `${left}px`;
+      rescheduleEl.style.top = `${top}px`;
+    };
     const close = (restoreFocus = false, suppressHover = false) => {
       wrapper.removeAttribute('data-open');
       if (suppressHover) wrapper.setAttribute('data-dismissed', 'true');
       else wrapper.removeAttribute('data-dismissed');
       chipEl.setAttribute('aria-expanded', 'false');
       document.removeEventListener('pointerdown', handleOutsidePointerDown);
+      window.removeEventListener('resize', position);
+      window.removeEventListener('scroll', position, true);
+      positionObserver?.disconnect(); positionObserver = null;
+      rescheduleEl.removeAttribute('data-portaled');
+      if (wrapper.isConnected) wrapper.appendChild(rescheduleEl);
+      else rescheduleEl.remove();
       if (restoreFocus) chipEl.focus();
     };
     const handleOutsidePointerDown = (event: Event) => {
-      if (!wrapper.contains(event.target as Node)) close();
+      if (!wrapper.contains(event.target as Node) && !rescheduleEl.contains(event.target as Node)) close();
     };
     const rescheduleEl = buildRescheduleRow(task, callbacks, () => close());
     rescheduleEl.id = `due-reschedule-${task.id}`;
@@ -730,13 +798,24 @@ export function buildDueChipGroup(
       wrapper.removeAttribute('data-dismissed');
       wrapper.setAttribute('data-open', 'true');
       chipEl.setAttribute('aria-expanded', 'true');
+      portalHost().appendChild(rescheduleEl);
+      rescheduleEl.setAttribute('data-portaled', 'true');
+      position();
       document.addEventListener('pointerdown', handleOutsidePointerDown);
+      window.addEventListener('resize', position);
+      window.addEventListener('scroll', position, true);
+      positionObserver = new MutationObserver(() => { if (!wrapper.isConnected) close(); });
+      positionObserver.observe(document.body, { childList: true, subtree: true });
     });
     wrapper.addEventListener('keydown', (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
       event.stopPropagation();
       close(true, true);
+    });
+    rescheduleEl.addEventListener('keydown', (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault(); event.stopPropagation(); close(true, true);
     });
     wrapper.addEventListener('pointerleave', () => {
       wrapper.removeAttribute('data-dismissed');

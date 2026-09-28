@@ -1,0 +1,65 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "b61259ea-1a3a-4666-9fcb-606e0dd08856",
+  "thread_id": "6774b539-ea19-4832-881f-2cb21542d2a9",
+  "parent_id": null,
+  "from": {
+    "eidolon": "ramza",
+    "version": "0.1.0"
+  },
+  "to": {
+    "eidolon": "vivi",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Keep Notes external links outside Jin through confirmation and native policy, with seamless paste cards and compact reading.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/notes-links-reading.md",
+    "sha256": "b257c36a56615897dc4b0bf5af6404439c269d07994939da55fffc009cdfe10c",
+    "size_bytes": 13595
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 0,
+    "input_handles": [],
+    "summary": "Four bounded stories, ten criteria, native/frontend URL boundaries, no remote metadata fetch."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "ise": {
+    "assertion_grade": "self-attested",
+    "provenance": {
+      "methodology_version": "ramza-0.1.0",
+      "tool_surface": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "lateral_consults": []
+    },
+    "receiver_authorization": {
+      "auto_route": true,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "confidence": 0.9325,
+  "integrity": {
+    "method": "sha256",
+    "value": "b257c36a56615897dc4b0bf5af6404439c269d07994939da55fffc009cdfe10c"
+  },
+  "trace": {
+    "ts": "2026-09-24T12:00:00Z",
+    "host": "codex",
+    "model": "gpt-6-astra",
+    "tier": "standard"
+  },
+  "x_ramza_acceptance_criteria": {
+    "path": ".spectra/plans/notes-links-reading.md",
+    "sha256": "b257c36a56615897dc4b0bf5af6404439c269d07994939da55fffc009cdfe10c"
+  }
+}

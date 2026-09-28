@@ -295,7 +295,9 @@ export function isTaskOverdue(due: string | null, now?: string): boolean {
   if (due == null || !now) return false;
   // Date-only: compare YYYY-MM-DD portions
   if (/^\d{4}-\d{2}-\d{2}$/.test(due)) {
-    const todayDate = now.substring(0, 10);
+    const today = new Date(now);
+    if (Number.isNaN(today.getTime())) return false;
+    const todayDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     return due < todayDate;
   }
   // DateTime: lexicographic ISO comparison works for RFC-3339 with the same offset

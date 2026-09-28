@@ -13,6 +13,7 @@ import { between } from '../tasks/rank';
 import type { TaskScope } from '../tasks/scopes';
 import type { SidebarCounts } from './counts';
 import { applyJinColor } from '../ui/color_picker';
+import { guardNativeDrag } from '../ui/movement';
 
 let draggedListId: string | null = null;
 
@@ -25,6 +26,7 @@ export interface ListRowCallbacks {
   onEditRequest?: (list: ListDto) => void;
   /** Called when the delete button is clicked. */
   onDeleteRequest?: (list: ListDto) => void;
+  onSetupRequest?: (list: ListDto) => void;
   /**
    * S5: called after a non-default list row is dropped onto another row —
    * `position` is a fresh fractional rank key computed by `between()`, ready
@@ -70,8 +72,19 @@ export function renderListsSidebar(
   container.innerHTML = '';
 
   const sorted = sortLists(lists);
-  for (const list of sorted) {
-    container.appendChild(buildListRow(list, options));
+  for (const group of [
+    { kind: 'checklist', label: 'Lists' },
+    { kind: 'board', label: 'Boards' },
+    { kind: 'legacy', label: 'Existing work' },
+  ] as const) {
+    const members = sorted.filter(list => (list.workflow_kind ?? 'legacy') === group.kind);
+    if (!members.length) continue;
+    const heading = document.createElement('li');
+    heading.className = 'lists-rail__group-heading';
+    heading.textContent = group.label;
+    heading.setAttribute('aria-hidden', 'true');
+    container.appendChild(heading);
+    for (const list of members) container.appendChild(buildListRow(list, options));
   }
 }
 
@@ -276,7 +289,7 @@ function buildListRow(list: ListDto, options?: ListsRailRenderOptions): HTMLElem
   // (index/query.rs) and a badge sourced from it never goes down.
   const count = options?.counts?.[list.id] ?? 0;
   const displayName = list.is_default ? 'Inbox list' : list.name;
-  btn.setAttribute('aria-label', `${displayName} — ${count} tasks`);
+  btn.setAttribute('aria-label', `${displayName} — ${list.workflow_kind === 'board' ? 'Board' : list.workflow_kind === 'checklist' ? 'List' : 'Existing work'} — ${count} tasks`);
 
   const nameEl = document.createElement('span');
   nameEl.className = 'lists-rail__name jin-navigation-row__label';
@@ -289,6 +302,19 @@ function buildListRow(list: ListDto, options?: ListsRailRenderOptions): HTMLElem
   btn.appendChild(countEl);
 
   li.appendChild(btn);
+
+  if (!list.workflow_kind && options?.onSetupRequest) {
+    const setup = document.createElement('button');
+    setup.type = 'button';
+    setup.className = 'lists-rail__setup-btn jin-control jin-control--secondary';
+    setup.textContent = 'Set up';
+    setup.setAttribute('aria-label', `Set up workflow for ${list.name}`);
+    setup.addEventListener('click', event => {
+      event.stopPropagation();
+      options.onSetupRequest?.(list);
+    });
+    li.appendChild(setup);
+  }
 
   if (options?.onSelect) {
     const onSelect = options.onSelect;
@@ -436,6 +462,7 @@ function buildListRow(list: ListDto, options?: ListsRailRenderOptions): HTMLElem
     };
 
     dragGrip.addEventListener('dragstart', (e: DragEvent) => {
+      guardNativeDrag(dragGrip);
       draggedListId = list.id;
       if (e.dataTransfer) {
         e.dataTransfer.setData('application/x-jin-list-id', list.id);

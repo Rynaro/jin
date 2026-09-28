@@ -42,13 +42,10 @@ import {
   buildCreateNotePayload,
   validateTaskForm,
   buildCreateTaskPayload,
-  validateEventForm,
-  buildCreateEventPayload,
   splitNoteDocument,
   type CaptureFormState,
   type NoteFormState,
   type TaskFormState,
-  type EventFormState,
 } from '../lib/capture/transform';
 import type TemporalEditorController from './temporal_editor_controller';
 import {
@@ -60,8 +57,19 @@ import {
 import { isJinErrorDto } from '../types/error';
 import {
   capture, createNote, createTask, createEvent, createRoutedEvent,
-  listGoogleAccounts, listLists, newOperationId,
+  listGoogleAccounts, listLists, newOperationId, getEventDetailById,
 } from '../invoke';
+import {
+  createInputFromDraft,
+  draftFromCapture,
+  isDirty,
+  routedCreateInputFromDraft,
+  type EventDraft,
+} from '../lib/events/draft';
+import { EventCompanion, type CompanionSaveResult } from '../lib/ui/companion';
+import type { ComposerDestination } from '../lib/events/composer';
+import { eventMessage, resolveEventLocale } from '../lib/events/locale';
+import { calendarColor, googleCalendarKey } from '../lib/calendar/colors';
 import { populateListFilter } from '../lib/lists/render';
 import { initIcons } from '../lib/icons';
 import { mountCompactEditor, type CompactEditorHandle } from '../lib/notes/editor';
@@ -99,6 +107,8 @@ export default class CaptureController extends Controller {
     'eventLocation',
     'eventError',
     'eventSubmit',
+    'eventMoreOptions',
+    'eventDiscard',
     'tabCapture',
     'tabNote',
     'tabTask',
@@ -147,6 +157,10 @@ export default class CaptureController extends Controller {
   declare eventLocationTarget: HTMLInputElement;
   declare eventErrorTarget: HTMLElement;
   declare eventSubmitTarget: HTMLButtonElement;
+  declare eventMoreOptionsTarget: HTMLButtonElement;
+  declare hasEventMoreOptionsTarget: boolean;
+  declare eventDiscardTarget: HTMLElement;
+  declare hasEventDiscardTarget: boolean;
   declare tabCaptureTarget: HTMLButtonElement;
   declare tabNoteTarget: HTMLButtonElement;
   declare tabTaskTarget: HTMLButtonElement;
@@ -161,9 +175,13 @@ export default class CaptureController extends Controller {
   private taskPrioritySelect: JinSelectField | null = null;
   private taskListSelect: JinSelectField | null = null;
   private eventDestinationSelect: JinSelectField | null = null;
+  private eventComposerDestinations: ComposerDestination[] = [];
   private eventDestinationInvalid = false;
   private readonly pendingSubmits = new Map<'capture' | 'note' | 'task' | 'event', number>();
   private modalSession = 0;
+  private eventCompanion: EventCompanion | null = null;
+  private handedOffDraft: EventDraft | null = null;
+  private discardResolver: ((keep: boolean) => void) | null = null;
   private readonly handleModalClick = (event: MouseEvent): void => {
     if (event.target === this.modalTarget) this.close();
   };
@@ -217,6 +235,9 @@ export default class CaptureController extends Controller {
     this.eventDestinationSelect = null;
     this.pendingSubmits.clear();
     this.eventDestinationInvalid = false;
+    this.eventCompanion?.close(true);
+    this.eventCompanion = null;
+    this.handedOffDraft = null;
     this.modalSession += 1;
   }
 
@@ -251,6 +272,26 @@ export default class CaptureController extends Controller {
 
   /** close — hide the capture modal and reset all forms. */
   close(): void {
+    void this.requestClose();
+  }
+
+  private async requestClose(): Promise<void> {
+    if (this.eventCompanion?.isOpen()) {
+      // Companion owns its own dirty/dismiss policy.
+      return;
+    }
+    if (this.isEventDraftDirty()) {
+      const discard = await this.promptEventDiscard();
+      if (!discard) return;
+    }
+    this.forceClose();
+  }
+
+  private forceClose(): void {
+    this.eventCompanion?.close(true);
+    this.eventCompanion = null;
+    this.handedOffDraft = null;
+    this.clearEventDiscard();
     this.modalTarget.close();
     this.modalSession += 1;
     this.pendingSubmits.clear();
@@ -424,29 +465,23 @@ export default class CaptureController extends Controller {
     clearAllFormErrors(this.formEventTarget);
     this.eventDestinationInvalid = false;
     this.eventDestinationSelect?.setInvalid(false);
-    const timing = eventTimingFromDue(this.eventWhenTarget.value);
-    const state: EventFormState = {
-      title: this.eventTitleTarget.value,
-      ...timing,
-      description: '',
-      location: this.eventLocationTarget.value,
-    };
-    const validation = validateEventForm(state);
-    if (!validation.valid) {
-      const firstError = Object.values(validation.errors)[0] ?? 'Invalid input.';
-      renderFormError(this.eventErrorTarget, firstError);
-      // Focus the first invalid field
-      if (validation.errors['title']) this.eventTitleTarget.focus();
-      else this.eventWhenTriggerTarget.focus();
+    const draft = this.currentEventDraft();
+    if (!draft.title.trim()) {
+      renderFormError(this.eventErrorTarget, 'A title is required.');
+      this.eventTitleTarget.focus();
+      return;
+    }
+    if (!draft.temporal.start_date) {
+      renderFormError(this.eventErrorTarget, 'Choose a date and time.');
+      this.eventWhenTriggerTarget.focus();
       return;
     }
     const session = this.modalSession;
     if (!this.beginSubmit('event', session)) return;
     setFormBusy(this.eventSubmitTarget, true);
     try {
-      const { input } = buildCreateEventPayload(state);
       const destination = this.selectedEventDestination();
-      if (state.recurrence && !destination) {
+      if (draft.recurrence && !destination) {
         renderFormError(this.eventErrorTarget, 'Choose a writable Google Calendar to create a recurring event.');
         this.eventDestinationInvalid = true;
         this.eventDestinationSelect?.setInvalid(true, this.eventErrorTarget.id);
@@ -461,21 +496,20 @@ export default class CaptureController extends Controller {
         return;
       }
       const event = destination
-        ? await createRoutedEvent({
-          ...input,
-          account_id: destination.accountId,
-          calendar_id: destination.calendarId,
-          operation_id: newOperationId('create'),
-        })
-        : await createEvent(input);
+        ? await createRoutedEvent(
+          routedCreateInputFromDraft(
+            draft,
+            { account_id: destination.accountId, calendar_id: destination.calendarId },
+            newOperationId('create'),
+          ),
+        )
+        : await createEvent(createInputFromDraft(draft));
       if (!this.isCurrentSession(session)) return;
-      this.close();
+      this.forceClose();
       this.navigateAfterCreate('events', event.id);
     } catch (err: unknown) {
       if (!this.isCurrentSession(session)) return;
       if (isJinErrorDto(err)) {
-        // Maps JinErrorDto (e.g. invalid tz = code 2, invalid time range = code 2)
-        // to inline form error — spec: "surface the core's validation rejection"
         renderFormError(this.eventErrorTarget, err.message);
       } else {
         renderFormError(this.eventErrorTarget, 'An unexpected error occurred. Please try again.');
@@ -485,11 +519,212 @@ export default class CaptureController extends Controller {
     }
   }
 
+  /** AC-CALX-028 — hand the same EventDraft into shared Composer without reparsing. */
+  openMoreEventOptions(): void {
+    clearAllFormErrors(this.formEventTarget);
+    const draft = this.handedOffDraft ?? this.currentEventDraft();
+    this.handedOffDraft = draft;
+    const destination = this.composerDestination();
+    this.ensureEventCompanion();
+    this.eventCompanion?.setContentBox(Math.min(this.modalTarget.getBoundingClientRect().width || 720, 900));
+    this.eventCompanion?.openCreate(draft, destination ?? undefined, this.eventComposerDestinations);
+  }
+
+  private currentEventDraft(): EventDraft {
+    if (this.handedOffDraft) {
+      // Keep title/location/when from compact fields when they still drive Capture.
+      this.handedOffDraft.title = this.eventTitleTarget.value;
+      this.handedOffDraft.location = this.eventLocationTarget.value;
+      this.applyWhenToDraft(this.handedOffDraft, this.eventWhenTarget.value);
+      return this.handedOffDraft;
+    }
+    return this.draftFromCaptureFields();
+  }
+
+  private draftFromCaptureFields(): EventDraft {
+    const when = this.eventWhenTarget.value;
+    const capture: Parameters<typeof draftFromCapture>[0] = {
+      title: this.eventTitleTarget.value,
+      location: this.eventLocationTarget.value,
+      description: '',
+    };
+    if (/^\d{4}-\d{2}-\d{2}$/.test(when)) {
+      capture.date = when;
+      capture.is_all_day = true;
+    } else {
+      const match = when.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+      if (match) {
+        capture.date = match[1];
+        capture.start_time = match[2];
+        const end = addOneHour(`${match[1]}T${match[2]}`);
+        const endMatch = end.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+        if (endMatch) {
+          capture.end_time = endMatch[2];
+        }
+        capture.is_all_day = false;
+        capture.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      } else if (when) {
+        capture.date = when.slice(0, 10);
+      }
+    }
+    return draftFromCapture(capture);
+  }
+
+  private applyWhenToDraft(draft: EventDraft, _when: string): void {
+    const next = this.draftFromCaptureFields();
+    draft.temporal = { ...next.temporal };
+  }
+
+  private composerDestination(): ComposerDestination | null {
+    if (!this.hasEventDestinationTarget || this.eventDestinationTarget.value === '') return null;
+    if (this.eventDestinationTarget.value === 'local') return this.eventComposerDestinations[0]
+      ?? { name: eventMessage('jinCalendarName', resolveEventLocale()) };
+    const selected = this.selectedEventDestination();
+    return this.eventComposerDestinations.find(choice =>
+      choice.accountId === selected?.accountId && choice.calendarId === selected?.calendarId,
+    ) ?? null;
+  }
+
+  private ensureEventCompanion(): void {
+    if (this.eventCompanion) return;
+    this.eventCompanion = new EventCompanion({
+      workspace: this.modalTarget,
+      presentation: 'modal',
+      field: this.formEventTarget,
+      locale: resolveEventLocale(),
+      onDestinationChange: destination => {
+        const value = destination.accountId && destination.calendarId
+          ? `${destination.accountId}\u0000${destination.calendarId}` : 'local';
+        this.eventDestinationSelect?.setValue(value);
+      },
+      onSave: async (draft) => this.saveCompanionCreate(draft),
+      onClose: () => {
+        // Preserve handed-off draft values back into compact fields.
+        if (this.handedOffDraft) this.syncCompactFieldsFromDraft(this.handedOffDraft);
+        this.eventCompanion = null;
+      },
+    });
+  }
+
+  private async saveCompanionCreate(draft: EventDraft): Promise<CompanionSaveResult> {
+    this.handedOffDraft = draft;
+    if (this.eventDestinationTarget.value === '') {
+      throw new Error(eventMessage('chooseExactDestination', resolveEventLocale()));
+    }
+    const destination = this.selectedEventDestination();
+    const emails = draft.attendees?.map(attendee => attendee.email ?? '').filter(Boolean) ?? [];
+    if (!destination && (emails.length > 0 || draft.conference_intent.kind !== 'preserve' || draft.recurrence)) {
+      throw new Error(eventMessage('googleDestinationRequired', resolveEventLocale()));
+    }
+    if (destination) {
+      const accounts = await listGoogleAccounts();
+      const account = accounts.find(item => item.id === destination.accountId && item.state === 'connected');
+      const calendar = account?.calendars.find(item => item.calendar_id === destination.calendarId);
+      if (!calendar?.enabled || !calendar.available || !calendar.writable) {
+        throw new Error(eventMessage('destinationNoLongerWritable', resolveEventLocale()));
+      }
+      if (draft.conference_intent.kind === 'add'
+        && calendar.allowed_conference_solution_types.length > 0
+        && !calendar.allowed_conference_solution_types.includes('hangoutsMeet')) {
+        throw new Error(eventMessage('destinationNoMeet', resolveEventLocale()));
+      }
+    }
+    const created = destination
+      ? await createRoutedEvent(
+        routedCreateInputFromDraft(
+          draft,
+          { account_id: destination.accountId, calendar_id: destination.calendarId },
+          newOperationId('create'),
+        ),
+      )
+      : await createEvent(createInputFromDraft(draft));
+    const detail = await getEventDetailById(created.id);
+    this.forceClose();
+    this.navigateAfterCreate('events', created.id);
+    return {
+      detail,
+      outcome: destination ? 'sync_pending' : 'local',
+      closeAfterSave: true,
+    };
+  }
+
+  private syncCompactFieldsFromDraft(draft: EventDraft): void {
+    this.eventTitleTarget.value = draft.title;
+    this.eventLocationTarget.value = draft.location;
+    const t = draft.temporal;
+    if (t.is_all_day) {
+      this.eventWhenTarget.value = t.start_date;
+      this.eventWhenLabelTarget.textContent = formatEventWhenLabel(t.start_date, '');
+    } else {
+      this.eventWhenTarget.value = `${t.start_date}T${t.start_time}`;
+      this.eventWhenLabelTarget.textContent = formatEventWhenLabel(t.start_date, t.start_time);
+    }
+  }
+
+  private isEventDraftDirty(): boolean {
+    if (!this.formEventTarget.classList.contains('hidden')) {
+      const draft = this.currentEventDraft();
+      return isDirty(draft) || Boolean(draft.title.trim() || draft.location.trim());
+    }
+    return false;
+  }
+
+  private promptEventDiscard(): Promise<boolean> {
+    if (!this.hasEventDiscardTarget) return Promise.resolve(true);
+    if (this.discardResolver) {
+      return new Promise((resolve) => {
+        const prev = this.discardResolver!;
+        this.discardResolver = (keep) => {
+          prev(keep);
+          resolve(keep);
+        };
+      });
+    }
+    return new Promise((resolve) => {
+      this.discardResolver = resolve;
+      const region = this.eventDiscardTarget;
+      region.hidden = false;
+      region.classList.remove('hidden');
+      region.replaceChildren();
+      const prompt = document.createElement('p');
+      prompt.textContent = eventMessage('discardPrompt', resolveEventLocale());
+      const keep = document.createElement('button');
+      keep.type = 'button';
+      keep.className = 'btn-secondary';
+      keep.textContent = eventMessage('keepEditing', resolveEventLocale());
+      keep.addEventListener('click', () => {
+        this.clearEventDiscard();
+        resolve(false);
+      });
+      const discard = document.createElement('button');
+      discard.type = 'button';
+      discard.className = 'btn-danger';
+      discard.textContent = eventMessage('discardChanges', resolveEventLocale());
+      discard.addEventListener('click', () => {
+        this.clearEventDiscard();
+        resolve(true);
+      });
+      region.append(prompt, keep, discard);
+      keep.focus();
+    });
+  }
+
+  private clearEventDiscard(): void {
+    if (!this.hasEventDiscardTarget) {
+      this.discardResolver = null;
+      return;
+    }
+    this.eventDiscardTarget.hidden = true;
+    this.eventDiscardTarget.classList.add('hidden');
+    this.eventDiscardTarget.replaceChildren();
+    this.discardResolver = null;
+  }
+
   private async populateEventDestinations(): Promise<void> {
     if (!this.hasEventDestinationTarget) return;
     const select = this.eventDestinationTarget;
     select.replaceChildren();
-    let destinations: Array<{ accountId: string; calendarId: string; label: string }> = [];
+    let destinations: ComposerDestination[] = [];
     try {
       const accounts = await listGoogleAccounts();
       destinations = accounts.flatMap(account => account.calendars
@@ -497,7 +732,10 @@ export default class CaptureController extends Controller {
         .map(calendar => ({
           accountId: account.id,
           calendarId: calendar.calendar_id,
-          label: `${account.alias} · ${calendar.name}`,
+          name: calendar.name,
+          alias: account.alias,
+          color: calendarColor(googleCalendarKey(account.id, calendar.calendar_id)),
+          allowedConferenceSolutionTypes: calendar.allowed_conference_solution_types,
         })));
     } catch {
       // The local-only destination remains available when account discovery fails.
@@ -505,9 +743,13 @@ export default class CaptureController extends Controller {
     if (destinations.length > 1) {
       select.append(new Option('Choose a destination', '', true, true));
     }
+    this.eventComposerDestinations = [
+      { name: eventMessage('jinCalendarName', resolveEventLocale()), color: calendarColor('jin') },
+      ...destinations,
+    ];
     select.append(new Option('Jin only', 'local', destinations.length === 0, destinations.length === 0));
     for (const destination of destinations) {
-      const option = new Option(destination.label, `${destination.accountId}\u0000${destination.calendarId}`);
+      const option = new Option(`${destination.alias} · ${destination.name}`, `${destination.accountId}\u0000${destination.calendarId}`);
       option.dataset.accountId = destination.accountId;
       option.dataset.calendarId = destination.calendarId;
       if (destinations.length === 1) option.selected = true;
@@ -613,6 +855,7 @@ export default class CaptureController extends Controller {
     clearFormError(this.taskErrorTarget);
 
     // Event form
+    this.handedOffDraft = null;
     this.eventTitleTarget.value = '';
     this.eventWhenTarget.value = '';
     this.setDefaultEventWhen();
@@ -688,27 +931,6 @@ function addOneHour(start: string): string {
   const date = new Date(start);
   date.setHours(date.getHours() + 1);
   return `${localIsoDate(date)}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-}
-
-function nextIsoDate(iso: string): string {
-  const date = new Date(`${iso}T12:00:00`);
-  date.setDate(date.getDate() + 1);
-  return localIsoDate(date);
-}
-
-function eventTimingFromDue(due: string): Pick<EventFormState, 'start' | 'end' | 'tzid' | 'isAllDay'> {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(due)) {
-    return { start: due, end: nextIsoDate(due), tzid: '', isAllDay: true };
-  }
-  const match = due.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
-  if (!match) return { start: '', end: '', tzid: '', isAllDay: false };
-  const start = `${match[1]}T${match[2]}`;
-  return {
-    start,
-    end: addOneHour(start),
-    tzid: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    isAllDay: false,
-  };
 }
 
 function formatEventWhenLabel(date: string, time: string): string {

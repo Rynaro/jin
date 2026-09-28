@@ -1,0 +1,39 @@
+{
+  "thread_id": "01a0a715-0d22-7a12-ba9f-5eaedf350e59",
+  "tier": "deep",
+  "enforce": "fail-fast",
+  "executor": "container",
+  "activation": "explicit-user-greenlight-required",
+  "steps": [
+    {
+      "step_id": "S0",
+      "from": { "eidolon": "ramza", "version": "0.1.0" },
+      "to": { "eidolon": "vivi", "version": "n/a" },
+      "performative": "DELEGATE",
+      "edge_origin": "roster",
+      "objective": "Implement stages S1-S8 of the frozen Calendar experience plan without widening its provider or temporal model scope.",
+      "artifact": {
+        "kind": "spec",
+        "schema_version": "1.0",
+        "path": ".spectra/plans/calendar-experience/spec.md"
+      },
+      "model_tier_hint": "reasoning-class",
+      "constraints": { "trust_level": "standard", "requires_user_greenlight": true }
+    },
+    {
+      "step_id": "S1",
+      "from": { "eidolon": "vivi", "version": "n/a" },
+      "to": { "eidolon": "vigil", "version": "n/a" },
+      "performative": "REQUEST",
+      "edge_origin": "roster",
+      "objective": "Independently verify all frozen criteria, provider recovery, range projection, interaction parity, accessibility, and regression evidence in stages S9-S10.",
+      "artifact": {
+        "kind": "report",
+        "schema_version": "1.0",
+        "path": ".spectra/plans/calendar-experience/criteria.md"
+      },
+      "model_tier_hint": "reasoning-class",
+      "constraints": { "trust_level": "standard" }
+    }
+  ]
+}

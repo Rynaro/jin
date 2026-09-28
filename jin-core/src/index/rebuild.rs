@@ -51,8 +51,8 @@ pub fn rebuild(conn: &mut Connection, root: &Path) -> Result<Vec<JinError>> {
             tx.execute(
                 "INSERT OR REPLACE INTO lists
                  (id, name, color, icon, position, parent_id, view, sort_mode,
-                  archived_at, created, updated, file_path)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                  workflow_kind, columns, initial_column_id, archived_at, created, updated, file_path)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 params![
                     fm.id,
                     fm.name,
@@ -62,6 +62,12 @@ pub fn rebuild(conn: &mut Connection, root: &Path) -> Result<Vec<JinError>> {
                     fm.parent_id,
                     fm.view,
                     fm.sort_mode,
+                    fm.workflow_kind.map(|kind| match kind {
+                        crate::model::list::WorkflowKind::Checklist => "checklist",
+                        crate::model::list::WorkflowKind::Board => "board",
+                    }),
+                    serde_json::to_string(&fm.columns).unwrap_or_else(|_| "[]".to_string()),
+                    fm.initial_column_id,
                     fm.archived_at.map(|d| d.to_rfc3339()),
                     fm.created.to_rfc3339(),
                     fm.updated.to_rfc3339(),
@@ -179,8 +185,8 @@ pub fn rebuild(conn: &mut Connection, root: &Path) -> Result<Vec<JinError>> {
                 "INSERT OR REPLACE INTO tasks
                  (id, title, status, priority, due, list_name, completed_at, deleted_at,
                   created, updated, file_path, section_id, tags, position, reminders, parent,
-                  agenda_bucket)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                  agenda_bucket, board_column_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
                 params![
                     task.frontmatter.id,
                     task.frontmatter.title,
@@ -199,6 +205,7 @@ pub fn rebuild(conn: &mut Connection, root: &Path) -> Result<Vec<JinError>> {
                     reminders_json,
                     task.frontmatter.parent,
                     task.frontmatter.agenda_bucket.as_ref().map(|_| "flexible"),
+                    task.frontmatter.board_column_id,
                 ],
             )
             .map_err(JinError::Index)?;
@@ -575,6 +582,7 @@ mod tests {
             deleted_at: None,
             links: vec![],
             section_id,
+            board_column_id: None,
             tags,
             position: position.to_string(),
             reminders,
@@ -606,6 +614,7 @@ mod tests {
             deleted_at: None,
             links: vec![],
             section_id: None,
+            board_column_id: None,
             tags: vec![],
             position: String::new(),
             reminders: vec![],
@@ -802,6 +811,9 @@ mod tests {
                     position: "VV".to_string(),
                 },
             ],
+            workflow_kind: None,
+            columns: vec![],
+            initial_column_id: None,
             archived_at: None,
             created: now,
             updated: now,

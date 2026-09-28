@@ -1,0 +1,53 @@
+{
+  "thread_id": "01a0a715-0d22-7a12-ba9f-5eaedf350e59",
+  "tier": "standard",
+  "enforce": "fail-fast",
+  "executor": "container",
+  "steps": [
+    {
+      "step_id": "S0",
+      "from": { "eidolon": "human", "version": "n/a" },
+      "to": { "eidolon": "atlas", "version": "n/a" },
+      "performative": "REQUEST",
+      "edge_origin": "roster",
+      "objective": "Scout the implemented Google Calendar, RSVP, Event detail, Notification Center, conferencing, permissions, and official provider constraints without changing product code.",
+      "artifact": {
+        "kind": "report",
+        "schema_version": "1.0",
+        "path": ".spectra/plans/google-calendar-stable-release.audit.md"
+      },
+      "model_tier_hint": "reasoning-class",
+      "constraints": { "trust_level": "standard" }
+    },
+    {
+      "step_id": "S1",
+      "from": { "eidolon": "atlas", "version": "n/a" },
+      "to": { "eidolon": "ramza", "version": "0.1.0" },
+      "performative": "INFORM",
+      "edge_origin": "roster",
+      "objective": "Turn repository and provider evidence into a decision-ready, spec-only Google Calendar stable-release plan with time suggestions deferred to a bounded backlog.",
+      "artifact": {
+        "kind": "spec",
+        "schema_version": "1.0",
+        "path": ".spectra/plans/google-calendar-stable-release.md"
+      },
+      "model_tier_hint": "reasoning-class",
+      "constraints": { "trust_level": "standard" }
+    },
+    {
+      "step_id": "S2",
+      "from": { "eidolon": "ramza", "version": "0.1.0" },
+      "to": { "eidolon": "idg", "version": "n/a" },
+      "performative": "INFORM",
+      "edge_origin": "composition",
+      "objective": "Synthesize the amended specification, including the no-Gmail stable boundary and preferred future suggestion route, while preserving the implementation-greenlight stop.",
+      "artifact": {
+        "kind": "spec",
+        "schema_version": "1.0",
+        "path": ".spectra/plans/google-calendar-stable-release.md"
+      },
+      "model_tier_hint": "reasoning-class",
+      "constraints": { "trust_level": "standard" }
+    }
+  ]
+}

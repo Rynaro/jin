@@ -5,14 +5,89 @@ export const CALENDAR_COLOR_STORAGE_KEY = 'jin:calendar-colors:v1';
 export const JIN_CALENDAR_KEY = 'jin';
 export type CalendarColorPreferences = Record<string, JinColor>;
 
+/** Shared membership fields — every surface must derive label/color/key from these. */
+export interface CalendarMembershipIdentity {
+  key: string;
+  /** Calendar name (Google calendar_name) or the Jin calendar label — never provenance. */
+  label: string;
+  accountAlias: string | null;
+  color: JinColor;
+  provider: string;
+}
+
 export function googleCalendarKey(accountId: string, calendarId: string): string {
   return `google:${encodeURIComponent(accountId)}:${encodeURIComponent(calendarId)}`;
 }
 
 export function calendarKeyForEvent(event: Pick<EventDto, 'source' | 'sync_context'>): string {
-  if (event.source.toLowerCase() !== 'google') return JIN_CALENDAR_KEY;
-  if (!event.sync_context) return 'google';
-  return googleCalendarKey(event.sync_context.account_id, event.sync_context.calendar_id);
+  if (event.sync_context?.provider === 'google') {
+    return googleCalendarKey(event.sync_context.account_id, event.sync_context.calendar_id);
+  }
+  return calendarProviderForEvent(event) === 'google' ? 'google' : JIN_CALENDAR_KEY;
+}
+
+/** Calendar membership is independent of where the event was first created. */
+export function calendarProviderForEvent(event: Pick<EventDto, 'source' | 'sync_context'>): string {
+  return event.sync_context?.provider === 'google' ? 'google' : event.source.toLowerCase();
+}
+
+/**
+ * Membership label only. Pass the localized Jin calendar name for local events.
+ * Never use "Created in Jin" / source badges here — those are provenance.
+ */
+export function calendarLabelForEvent(
+  event: Pick<EventDto, 'source' | 'sync_context'>,
+  jinLabel: string,
+): string {
+  if (event.sync_context?.provider === 'google') {
+    return event.sync_context.calendar_name;
+  }
+  return jinLabel;
+}
+
+export function calendarAccountAliasForEvent(
+  event: Pick<EventDto, 'sync_context'>,
+): string | null {
+  return event.sync_context?.provider === 'google'
+    ? event.sync_context.account_alias
+    : null;
+}
+
+/** Compact chip/badge line: `alias · label` when an account alias is present. */
+export function formatCalendarMembershipShort(
+  identity: Pick<CalendarMembershipIdentity, 'label' | 'accountAlias'>,
+): string {
+  return identity.accountAlias
+    ? `${identity.accountAlias} · ${identity.label}`
+    : identity.label;
+}
+
+/**
+ * Provenance is secondary metadata. It must never replace calendar membership.
+ */
+export function calendarProvenanceLabel(
+  event: Pick<EventDto, 'source' | 'sync_context'>,
+  copy: { createdInJin: string; sourceGoogle: string; sourceJin: string },
+): string {
+  if (event.sync_context?.provider === 'google') {
+    return event.source === 'jin' ? copy.createdInJin : copy.sourceGoogle;
+  }
+  return event.source.toLowerCase() === 'google' ? copy.sourceGoogle : copy.sourceJin;
+}
+
+export function calendarMembershipIdentity(
+  event: Pick<EventDto, 'source' | 'sync_context'>,
+  jinLabel: string,
+  preferences: CalendarColorPreferences = loadCalendarColors(),
+): CalendarMembershipIdentity {
+  const key = calendarKeyForEvent(event);
+  return {
+    key,
+    label: calendarLabelForEvent(event, jinLabel),
+    accountAlias: calendarAccountAliasForEvent(event),
+    color: calendarColor(key, preferences),
+    provider: calendarProviderForEvent(event),
+  };
 }
 
 export function loadCalendarColors(storage: Pick<Storage, 'getItem'> = localStorage): CalendarColorPreferences {

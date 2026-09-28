@@ -26,10 +26,11 @@ describe('Continuous Ink Workspace', () => {
   const spacing = read('../styles/spacing.css');
   const settings = read('../styles/settings.css');
   const a11y = read('../styles/a11y.css');
+  const sidebar = read('../styles/sidebar.css');
 
   it('publishes the continuous workspace geometry and semantic surface tokens', () => {
     for (const contract of [
-      '--app-rail-width: 184px',
+      '--app-rail-width: 248px',
       '--app-rail-collapsed-width: 52px',
       '--navigation-rail-width: var(--app-rail-width)',
       '--context-rail-width: var(--navigation-rail-width)',
@@ -64,14 +65,14 @@ describe('Continuous Ink Workspace', () => {
     }
   });
 
-  it('uses the display voice only for prominent identity and title surfaces', () => {
+  it('uses system type for shared chrome while retaining the optional display utility', () => {
     expect(typography).toContain('.text-display-title');
     expect(typography).toContain('font-family: var(--font-display)');
-    expect(today).toMatch(/\.today-agenda-intro__title \{[\s\S]*?font-family: var\(--font-display\);/);
-    expect(settings).toMatch(/\.settings-view__heading \{[\s\S]*?font-family: var\(--font-display\);/);
-    expect(forms).toMatch(/\.action-dialog__title \{[\s\S]*?font-family: var\(--font-display\);/);
-    expect(browse).toMatch(/\.notes-detail-pane \.browse-detail__title--input\.jin-title-field \{[\s\S]*?font-family: var\(--font-display\);/);
-    expect(browse).toMatch(/\.notes-detail-pane \.cm-content \{[\s\S]*?font-size: var\(--editor-text-size\);/);
+    expect(today).toMatch(/\.today-agenda-intro__title \{[\s\S]*?font-family: var\(--font-text\);/);
+    expect(settings).toMatch(/\.settings-view__heading \{[\s\S]*?font-family: var\(--font-text\);/);
+    expect(forms).toMatch(/\.action-dialog__title \{[\s\S]*?font-family: var\(--font-text\);/);
+    expect(browse).toMatch(/\.notes-detail-pane \.browse-detail__title--input\.jin-title-field \{[\s\S]*?font-family: var\(--font-text\);/);
+    expect(browse).toMatch(/\.notes-detail-pane \.cm-content \{[\s\S]*?font-size: var\(--notes-prose-size\);/);
   });
 
   it('keeps artistic marks pointer inert and exposes high-contrast fallbacks', () => {
@@ -167,10 +168,10 @@ describe('Continuous Ink Workspace', () => {
     expect(browse).toContain("grid-template-columns: 32px minmax(0, 1fr) 64px");
     expect(browse).toContain('height: auto;');
     expect(browse).toContain('max-height: none;');
-    expect(browse).toContain('min-block-size: var(--note-row-height)');
+    expect(browse).toContain('min-block-size: 92px;');
     expect(browse).toContain('max-block-size: none;');
-    expect(browse).toContain('width: min(100%, var(--reading-width))');
-    expect(browse).toContain('font-size: clamp(1.75rem, 3vw, 2rem) !important');
+    expect(browse).toContain('width: var(--notes-writing-column)');
+    expect(browse).toContain('font-size: var(--notes-detail-title-size) !important');
     expect(browse).toContain('visibility: hidden');
     expect(browse).toContain('opacity: 0');
   });
@@ -235,10 +236,10 @@ describe('Continuous Ink Workspace', () => {
     expect(markup).not.toMatch(/<(?:input|select|textarea)[^>]*class="[^"]*tap-target/);
   });
 
-  it('uses ink for primary actions and lets native switches own their hit area', () => {
-    expect(components).toMatch(/\.jin-control--primary,[\s\S]*?background: var\(--ink-primary\);/);
-    expect(forms).toMatch(/\.btn-primary,[\s\S]*?background: var\(--ink-primary\);/);
-    expect(forms).toMatch(/\.btn-danger,[\s\S]*?background: var\(--seal\);/);
+  it('uses accessible action fills and lets native switches own their hit area', () => {
+    expect(components).toMatch(/\.jin-control--primary,[\s\S]*?background: var\(--action-primary-fill\);/);
+    expect(forms).toMatch(/\.btn-primary,[\s\S]*?background: var\(--action-primary-fill\);/);
+    expect(forms).toMatch(/\.btn-danger,[\s\S]*?background: var\(--action-danger-fill\);/);
     expect(components).toMatch(/\.jin-switch > input \{[\s\S]*?inset: 0;[\s\S]*?width: 100%;[\s\S]*?opacity: 0;/);
     expect(components).toMatch(/\.jin-switch__track \{[\s\S]*?pointer-events: none;/);
     expect(calendar).toMatch(/\[data-state="selected"\] \{[\s\S]*?color: var\(--ink-on\);/);
@@ -288,7 +289,8 @@ describe('Continuous Ink Workspace', () => {
     expect(settings).toMatch(/\.settings-nav \{[\s\S]*?padding: var\(--space-3\) var\(--space-1\);/);
     expect(navigation).toMatch(/\.jin-navigation-list \{[\s\S]*?gap: 0;/);
     expect(navigation).toMatch(/\.jin-navigation-row \{[\s\S]*?min-block-size: var\(--rail-row-height\);/);
-    expect(navigation).toMatch(/\.jin-navigation-row\[aria-current="page"\]::before,[\s\S]*?inline-size: 3px;/);
+    expect(navigation).toMatch(/\.jin-navigation-row\[aria-current="page"\]::before,[\s\S]*?content: none;/);
+    expect(navigation).toMatch(/\.jin-navigation-row:hover \{[\s\S]*?text-decoration: none;/);
     expect(settings).not.toContain('.settings-nav__item[aria-current="page"]::before');
     expect(settings).not.toMatch(/\.settings-nav__item\.is-active,[\s\S]*?background:/);
   });
@@ -359,7 +361,7 @@ describe('Continuous Ink Workspace', () => {
     expect(markup).toContain('task-item__checkbox jin-check tap-target');
     expect(taskRenderer).toContain('configureTaskCompletion(statusBtnEl as HTMLButtonElement');
     expect(taskDetailRenderer).toContain('configureTaskCompletion(statusBtn, subtask');
-    expect(browse).toMatch(/\.task-item--child\.task-item--row\.jin-list-row \{[\s\S]*?margin-inline-start: 32px;/);
+    expect(browse).toMatch(/\.task-item--child\.task-item--row\.jin-list-row \{[\s\S]*?margin-inline-start: 24px;/);
     expect(browse).toMatch(/\.task-item__collapse-toggle \{[\s\S]*?position: absolute;[\s\S]*?inset-inline-start: -24px;/);
     expect(taskController).toMatch(/setScope\(event: Event\): void \{[\s\S]*?this\.selectedTaskId = null;[\s\S]*?this\.selectedTaskIds\.clear\(\);[\s\S]*?this\.selectionAnchorId = null;[\s\S]*?this\.setDetailOpen\(false\);[\s\S]*?this\.detailContentTarget\.replaceChildren\(\);[\s\S]*?this\.currentScope = ce\.detail\.scope;/);
     expect(browse).toMatch(/@media \(pointer: coarse\) \{[\s\S]*?\.task-completion\.jin-check,[\s\S]*?min-width: var\(--coarse-hit-target\);[\s\S]*?min-height: var\(--coarse-hit-target\);/);
@@ -371,7 +373,9 @@ describe('Continuous Ink Workspace', () => {
     expect(browse).toMatch(/\.task-item--row \.task-item__tags \{[\s\S]*?overflow: visible;/);
     expect(calendar).toMatch(/\.due-reschedule \{[\s\S]*?position: absolute;[\s\S]*?visibility: hidden;/);
     expect(calendar).toContain('.due-chip-group[data-open="true"] .due-reschedule');
-    expect(calendar).toMatch(/@media \(hover: hover\) and \(pointer: fine\)/);
+    expect(calendar).toMatch(/\.due-reschedule\[data-portaled="true"\] \{[\s\S]*?position: fixed;[\s\S]*?pointer-events: auto;/);
+    expect(taskRenderer).toContain("chipEl.setAttribute('aria-expanded', 'true')");
+    expect(taskRenderer).toContain("if (event.key !== 'Escape') return;");
     expect(calendar).not.toContain('.due-chip-group:focus-within .due-reschedule');
   });
 
@@ -381,7 +385,7 @@ describe('Continuous Ink Workspace', () => {
   });
 
   it('keeps Notes scope identity, adaptive ink roles, and content-sized rows in the real surface', () => {
-    expect(markup).toContain('class="notes-workspace-title" data-notes-target="scopeTitle">All Notes</h1>');
+    expect(markup).toContain('class="notes-workspace-title" data-notes-target="scopeTitle" tabindex="-1">All Notes</h1>');
     expect(markup.match(/<h1\b/g)?.length).toBeGreaterThanOrEqual(1);
     expect(notesController).toContain('private updateScopeTitle(): void');
     expect(notesController).toContain("this.scopeTitleTarget.textContent = this.currentFolder || 'All Notes';");
@@ -391,15 +395,16 @@ describe('Continuous Ink Workspace', () => {
     }
     expect(browse).toMatch(/\.note-row \.browse-row__inner\.jin-list-row \{[\s\S]*?max-block-size: none;[\s\S]*?overflow: visible;/);
     expect(a11y).toContain(':root[data-text-scale="accessibility"] .note-row .browse-row__inner.jin-list-row');
-    expect(a11y).toContain('.notes-paned:not(.rail-collapsed) .notes-folder-rail');
-    expect(a11y).toMatch(/@media \(min-width: 641px\) \{[\s\S]*?\.notes-paned\.rail-collapsed \.notes-folder-rail \{[\s\S]*?display: none;[\s\S]*?\.notes-paned\.rail-collapsed :is\(\.notes-list-pane, \.notes-detail-pane\) \{[\s\S]*?grid-column: 2;/);
+    expect(sidebar).toContain('.jin-shell [data-sidebar-context]');
+    expect(sidebar).toContain('.jin-shell .notes-collections');
+    expect(a11y).not.toContain('.notes-paned:not(.rail-collapsed) .notes-folder-rail');
   });
 
   it('makes the editor one adaptive writing surface with editorial measure and AX reflow', () => {
     for (const token of [
       '--notes-writing-paper:', '--notes-writing-ink:', '--notes-toolbar-wash:',
       '--notes-selection-tint:', '--notes-quote-rule:', '--notes-code-wash:',
-      '--notes-prose-measure: 66ch', '--notes-prose-size: 1rem', '--notes-prose-line: 1.6',
+      '--notes-prose-measure: 66ch', '--notes-prose-size: .9375rem', '--notes-prose-line: 1.5',
     ]) expect(tokens).toContain(token);
 
     expect(browse).toMatch(/\.notes-detail-pane,\n\.notes-detail-pane \.note-detail__body,[\s\S]*?background: var\(--notes-writing-paper\);/);

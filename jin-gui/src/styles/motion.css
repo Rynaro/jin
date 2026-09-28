@@ -139,3 +139,9 @@
 .animate-spin {
   animation: jin-spin 1s var(--ease-linear) infinite;
 }
+/* Applied only between a real drag/resize activation and its cleanup. */
+:root[data-jin-moving="true"],
+:root[data-jin-moving="true"] * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}

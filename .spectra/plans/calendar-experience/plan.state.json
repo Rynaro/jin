@@ -1,0 +1,174 @@
+{
+  "schema": "ramza/plan-state.v1",
+  "plan": "calendar-experience",
+  "created_at": "2026-09-16T19:59:03Z",
+  "tier": "full",
+  "phase": "A",
+  "phases_done": [
+    "RS",
+    "S",
+    "P",
+    "E",
+    "C",
+    "T",
+    "A"
+  ],
+  "rightsize": {
+    "score": 6,
+    "computed_tier": "full",
+    "inputs": {
+      "files_est": 18,
+      "new_dep": false,
+      "public_api": true,
+      "migration": false,
+      "security": false,
+      "novel": true,
+      "stakes": "high"
+    }
+  },
+  "refine_cycles": 0,
+  "skips": [],
+  "gates": [
+    {
+      "rubric": "complexity",
+      "total": 11,
+      "dims": {
+        "scope": 3,
+        "ambiguity": 2,
+        "dependencies": 3,
+        "risk": 3
+      },
+      "verdict": "human_loop",
+      "at": "2026-09-16T20:00:20Z"
+    },
+    {
+      "rubric": "explore",
+      "total": 64,
+      "dims": {
+        "alignment": 6,
+        "correctness": 7,
+        "maintainability": 5,
+        "performance": 8,
+        "simplicity": 8,
+        "risk": 6,
+        "innovation": 3
+      },
+      "verdict": "weak",
+      "at": "2026-09-16T20:01:23Z",
+      "label": "A-reskin-existing-surfaces"
+    },
+    {
+      "rubric": "explore",
+      "total": 88.5,
+      "dims": {
+        "alignment": 10,
+        "correctness": 9,
+        "maintainability": 9,
+        "performance": 8,
+        "simplicity": 8,
+        "risk": 8,
+        "innovation": 8
+      },
+      "verdict": "elite",
+      "at": "2026-09-16T20:01:23Z",
+      "label": "B-calendar-workspace-inspector-host"
+    },
+    {
+      "rubric": "explore",
+      "total": 72.5,
+      "dims": {
+        "alignment": 7,
+        "correctness": 8,
+        "maintainability": 7,
+        "performance": 8,
+        "simplicity": 7,
+        "risk": 7,
+        "innovation": 5
+      },
+      "verdict": "solid",
+      "at": "2026-09-16T20:01:23Z",
+      "label": "C-modal-first-everywhere"
+    },
+    {
+      "rubric": "explore",
+      "total": 65.5,
+      "dims": {
+        "alignment": 6,
+        "correctness": 8,
+        "maintainability": 7,
+        "performance": 6,
+        "simplicity": 6,
+        "risk": 7,
+        "innovation": 4
+      },
+      "verdict": "weak",
+      "at": "2026-09-16T20:01:23Z",
+      "label": "D-route-first-full-page"
+    },
+    {
+      "rubric": "confidence",
+      "total": 94.75,
+      "dims": {
+        "pattern_match": 92,
+        "requirement_clarity": 96,
+        "decomposition_stability": 94,
+        "constraint_compliance": 97
+      },
+      "verdict": "AUTO_PROCEED",
+      "at": "2026-09-16T20:22:03Z",
+      "label": "final"
+    }
+  ],
+  "amendments": [],
+  "declared_scope": [
+    "jin-core/src/time/mod.rs",
+    "jin-core/src/dto/**",
+    "jin-core/src/ops/agenda.rs",
+    "jin-core/src/ops/calendar_projection.rs",
+    "jin-core/src/ops/event_mutation.rs",
+    "jin-core/tests/**",
+    "jin-gui/src-tauri/src/lib.rs",
+    "jin-gui/src-tauri/src/commands/events.rs",
+    "jin-gui/src-tauri/tests/**",
+    "jin-gui/index.html",
+    "jin-gui/src/invoke.ts",
+    "jin-gui/src/types/dto.ts",
+    "jin-gui/src/controllers/calendar_view_controller.ts",
+    "jin-gui/src/controllers/events_controller.ts",
+    "jin-gui/src/controllers/today_controller.ts",
+    "jin-gui/src/controllers/capture_controller.ts",
+    "jin-gui/src/controllers/notifications_controller.ts",
+    "jin-gui/src/controllers/router_controller.ts",
+    "jin-gui/src/lib/router.ts",
+    "jin-gui/src/lib/ui/modal.ts",
+    "jin-gui/src/lib/ui/companion.ts",
+    "jin-gui/src/lib/calendar/**",
+    "jin-gui/src/lib/events/**",
+    "jin-gui/src/styles/index.css",
+    "jin-gui/src/styles/tokens.css",
+    "jin-gui/src/styles/components.css",
+    "jin-gui/src/styles/forms.css",
+    "jin-gui/src/styles/events.css",
+    "jin-gui/src/styles/calendar.css",
+    "jin-gui/src/styles/today.css",
+    "jin-gui/src/styles/browse.css",
+    "jin-gui/src/styles/a11y.css",
+    "jin-gui/src/__tests__/**calendar**",
+    "jin-gui/src/__tests__/**event**",
+    "jin-gui/src/__tests__/today*.test.ts",
+    "jin-gui/src/__tests__/capture*.test.ts",
+    "jin-gui/src/__tests__/notifications*.test.ts",
+    "jin-gui/src/__tests__/ui_modal*.test.ts",
+    "jin-gui/src/__tests__/router_controller*.test.ts",
+    "docs/visual-language/README.md",
+    ".artifacts/playwright-mcp/calendar-experience/**"
+  ],
+  "criteria_sha256": "b2f3a342fb01c6c15c04e6aa61cee8756d5971c891d63716b18fce807e94f73b",
+  "critic": {
+    "author": "calendar_experience_spec",
+    "checker": "calendar_experience_audit",
+    "at": "2026-09-16T20:21:58Z"
+  },
+  "scope_declared_at": "2026-09-16T20:22:40Z",
+  "criteria_frozen_at": "2026-09-16T20:22:45Z"
+}

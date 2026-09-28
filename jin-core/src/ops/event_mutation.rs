@@ -3,6 +3,7 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::google::account::{EventSyncTarget, GoogleAccountState};
@@ -22,6 +23,355 @@ pub enum RecurrenceMutationScope {
     ThisOccurrence,
     EntireSeries,
     ThisAndFollowing,
+}
+
+/// Immutable notification policy captured with every organizer mutation.
+/// It is intentionally distinct from attendee RSVP, which always uses
+/// Google's `sendUpdates=none` narrow-response transport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GuestUpdatePolicy {
+    #[default]
+    All,
+    ExternalOnly,
+    None,
+}
+
+impl GuestUpdatePolicy {
+    pub fn google_send_updates(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::ExternalOnly => "externalOnly",
+            Self::None => "none",
+        }
+    }
+}
+
+// ── S2: sparse, token-guarded event edit ──────────────────────────────────────
+//
+// The full `EditEventPatch` is a *total* replacement: every field it carries
+// overwrites the canonical event. That forces a client to resend values it
+// never touched, which is how a browser ends up cloning one timezone over a
+// distinct baseline end zone. `EventEditDelta` is the sparse alternative:
+// absent means "leave it alone", and time is all-or-nothing.
+
+/// The atomic temporal bundle.
+///
+/// Either every temporal endpoint travels together or none of them do. A
+/// partial bundle — a `start` with no `end`, an anchored event missing one of
+/// its zones — is rejected at construction and at deserialization, because a
+/// half-specified time is exactly the shape that silently moves an event.
+///
+/// Fields are private so [`EventTemporalDelta::new`] is the only way to build
+/// one; there is no path that skips the completeness check.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EventTemporalDelta {
+    start: String,
+    end: String,
+    is_all_day: bool,
+    floating: bool,
+    start_tzid: Option<String>,
+    end_tzid: Option<String>,
+}
+
+impl EventTemporalDelta {
+    /// Build a complete temporal bundle, or explain why it is not one.
+    ///
+    /// An anchored bundle (neither all-day nor floating) must name both of its
+    /// zones. An all-day or floating bundle must name neither — carrying a
+    /// zone there would be a contradiction, not a harmless extra.
+    pub fn new(
+        start: impl Into<String>,
+        end: impl Into<String>,
+        is_all_day: bool,
+        floating: bool,
+        start_tzid: Option<String>,
+        end_tzid: Option<String>,
+    ) -> std::result::Result<Self, String> {
+        let start = start.into();
+        let end = end.into();
+        if start.trim().is_empty() || end.trim().is_empty() {
+            return Err(
+                "a temporal bundle needs both start and end; send every temporal field or none"
+                    .to_string(),
+            );
+        }
+        if is_all_day && floating {
+            return Err("a bundle cannot be both all-day and floating".to_string());
+        }
+        let zoneless = is_all_day || floating;
+        if zoneless && (start_tzid.is_some() || end_tzid.is_some()) {
+            return Err("all-day and floating bundles must not carry a timezone".to_string());
+        }
+        if !zoneless && (start_tzid.is_none() || end_tzid.is_none()) {
+            return Err("an anchored bundle needs both start_tzid and end_tzid; \
+                 send every temporal field or none"
+                .to_string());
+        }
+        Ok(Self {
+            start,
+            end,
+            is_all_day,
+            floating,
+            start_tzid,
+            end_tzid,
+        })
+    }
+
+    pub fn start(&self) -> &str {
+        &self.start
+    }
+    pub fn end(&self) -> &str {
+        &self.end
+    }
+    pub fn is_all_day(&self) -> bool {
+        self.is_all_day
+    }
+    pub fn floating(&self) -> bool {
+        self.floating
+    }
+    pub fn start_tzid(&self) -> Option<&str> {
+        self.start_tzid.as_deref()
+    }
+    pub fn end_tzid(&self) -> Option<&str> {
+        self.end_tzid.as_deref()
+    }
+}
+
+/// Wire shape for a temporal bundle: every field optional so a partial payload
+/// parses far enough to be *rejected with a reason* rather than failing with an
+/// opaque missing-field error.
+#[derive(Debug, Deserialize)]
+struct RawEventTemporalDelta {
+    #[serde(default)]
+    start: Option<String>,
+    #[serde(default)]
+    end: Option<String>,
+    #[serde(default)]
+    is_all_day: Option<bool>,
+    #[serde(default)]
+    floating: Option<bool>,
+    #[serde(default)]
+    start_tzid: Option<String>,
+    #[serde(default)]
+    end_tzid: Option<String>,
+}
+
+impl TryFrom<RawEventTemporalDelta> for EventTemporalDelta {
+    type Error = String;
+
+    fn try_from(raw: RawEventTemporalDelta) -> std::result::Result<Self, Self::Error> {
+        let (Some(start), Some(end)) = (raw.start, raw.end) else {
+            return Err(
+                "a temporal bundle needs both start and end; send every temporal field or none"
+                    .to_string(),
+            );
+        };
+        let (Some(is_all_day), Some(floating)) = (raw.is_all_day, raw.floating) else {
+            return Err("a temporal bundle needs both is_all_day and floating; \
+                 send every temporal field or none"
+                .to_string());
+        };
+        Self::new(
+            start,
+            end,
+            is_all_day,
+            floating,
+            raw.start_tzid,
+            raw.end_tzid,
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for EventTemporalDelta {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = RawEventTemporalDelta::deserialize(deserializer)?;
+        Self::try_from(raw).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Distinguish "key absent" (leave the field alone) from "key present and
+/// null" (clear the field). Without this, a sparse payload cannot express
+/// clearing a description.
+fn double_option<'de, D, T>(deserializer: D) -> std::result::Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Deserialize::deserialize(deserializer).map(Some)
+}
+
+/// A sparse edit: only the fields the user actually touched.
+///
+/// Every absent field preserves the canonical value, which is what makes a
+/// title-only edit safe on an event whose endpoints live in different zones.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct EventEditDelta {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub description: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub location: Option<Option<String>>,
+    /// The all-or-nothing temporal bundle; absent leaves time untouched.
+    #[serde(default)]
+    pub temporal: Option<EventTemporalDelta>,
+    #[serde(default)]
+    pub recurrence: Option<crate::recurrence::RecurrenceDraft>,
+    #[serde(default)]
+    pub clear_recurrence: bool,
+    #[serde(default)]
+    pub attendees: Option<Vec<crate::model::event::EventAttendee>>,
+    #[serde(default)]
+    pub attendees_omitted: Option<bool>,
+    #[serde(default)]
+    pub conference_data: Option<crate::model::event::EventConferenceData>,
+    #[serde(default)]
+    pub clear_conference_data: bool,
+    #[serde(default)]
+    pub reminders: Option<crate::model::event::EventReminderSettings>,
+}
+
+impl EventEditDelta {
+    /// Whether this delta proposes any change to the event's time.
+    pub fn touches_time(&self) -> bool {
+        self.temporal.is_some()
+    }
+
+    /// Merge onto a canonical baseline, producing the full patch the existing
+    /// mutation path already knows how to apply.
+    ///
+    /// This is where sparseness becomes concrete: an absent temporal bundle
+    /// copies the baseline's endpoints *and both of its zones verbatim*, so a
+    /// distinct `end_tzid` survives a title-only edit untouched.
+    pub fn merge_into_patch(&self, baseline: &Event) -> crate::Result<EditEventPatch> {
+        use crate::model::event::{TemporalValue, ValueType};
+
+        let fm = &baseline.frontmatter;
+
+        let (
+            start,
+            end,
+            start_value_type,
+            end_value_type,
+            is_all_day,
+            start_tzid,
+            end_tzid,
+            floating,
+        ) = match &self.temporal {
+            Some(temporal) => {
+                if let Some(tzid) = temporal.start_tzid() {
+                    crate::time::validate_tzid(tzid).map_err(|reason| JinError::Validation {
+                        field: "temporal.start_tzid".to_string(),
+                        reason,
+                    })?;
+                }
+                if let Some(tzid) = temporal.end_tzid() {
+                    crate::time::validate_tzid(tzid).map_err(|reason| JinError::Validation {
+                        field: "temporal.end_tzid".to_string(),
+                        reason,
+                    })?;
+                }
+                if temporal.is_all_day() {
+                    (
+                        TemporalValue::Date(parse_delta_date(temporal.start(), "temporal.start")?),
+                        TemporalValue::Date(parse_delta_date(temporal.end(), "temporal.end")?),
+                        ValueType::Date,
+                        ValueType::Date,
+                        true,
+                        None,
+                        None,
+                        false,
+                    )
+                } else {
+                    (
+                        TemporalValue::DateTime(parse_delta_wall(
+                            temporal.start(),
+                            "temporal.start",
+                        )?),
+                        TemporalValue::DateTime(parse_delta_wall(temporal.end(), "temporal.end")?),
+                        ValueType::DateTime,
+                        ValueType::DateTime,
+                        false,
+                        temporal.start_tzid().map(str::to_string),
+                        temporal.end_tzid().map(str::to_string),
+                        temporal.floating(),
+                    )
+                }
+            }
+            None => (
+                fm.start.clone(),
+                fm.end.clone(),
+                fm.start_value_type.clone(),
+                fm.end_value_type.clone(),
+                fm.is_all_day,
+                fm.start_tzid.clone(),
+                fm.end_tzid.clone(),
+                fm.floating,
+            ),
+        };
+
+        // Recurrence is compiled against the *merged* start, so a rule and a
+        // new time cannot disagree about which instant anchors the series.
+        let recurrence = match (&self.recurrence, self.clear_recurrence) {
+            (Some(draft), _) => Some(crate::recurrence::compile(
+                draft,
+                &start,
+                start_tzid.as_deref(),
+            )?),
+            (None, true) => Some(Vec::new()),
+            (None, false) => None,
+        };
+
+        Ok(EditEventPatch {
+            title: self
+                .title
+                .as_ref()
+                .map(|title| title.trim().to_string())
+                .unwrap_or_else(|| fm.title.clone()),
+            start,
+            end,
+            start_value_type,
+            end_value_type,
+            is_all_day,
+            start_tzid,
+            end_tzid,
+            floating,
+            description: match &self.description {
+                Some(value) => value.clone(),
+                None => fm.description.clone(),
+            },
+            location: match &self.location {
+                Some(value) => value.clone(),
+                None => fm.location.clone(),
+            },
+            recurrence,
+            attendees: self.attendees.clone(),
+            attendees_omitted: self.attendees_omitted,
+            conference_data: self.conference_data.clone(),
+            clear_conference_data: self.clear_conference_data,
+            reminders: self.reminders.clone(),
+        })
+    }
+}
+
+fn parse_delta_date(value: &str, field: &str) -> crate::Result<chrono::NaiveDate> {
+    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|_| JinError::Validation {
+        field: field.to_string(),
+        reason: format!("invalid date '{}'; expected YYYY-MM-DD", value),
+    })
+}
+
+fn parse_delta_wall(value: &str, field: &str) -> crate::Result<chrono::NaiveDateTime> {
+    chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S")
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M"))
+        .map_err(|_| JinError::Validation {
+            field: field.to_string(),
+            reason: format!("invalid datetime '{}'; expected YYYY-MM-DDTHH:MM:SS", value),
+        })
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +413,8 @@ struct MutationJournal {
     auth_generation: u64,
     route_generation: u64,
     payload: Option<serde_json::Value>,
+    #[serde(default)]
+    guest_update_policy: GuestUpdatePolicy,
     finalized: bool,
 }
 
@@ -95,6 +447,23 @@ impl<'a> EventMutationService<'a> {
         target: Option<EventSyncTarget>,
         operation_id: &str,
     ) -> crate::Result<Event> {
+        self.create_with_recurrence_and_policy(
+            params,
+            recurrence,
+            target,
+            operation_id,
+            GuestUpdatePolicy::All,
+        )
+    }
+
+    pub fn create_with_recurrence_and_policy(
+        &self,
+        params: CreateEventParams,
+        recurrence: Vec<String>,
+        target: Option<EventSyncTarget>,
+        operation_id: &str,
+        guest_update_policy: GuestUpdatePolicy,
+    ) -> crate::Result<Event> {
         validate_operation_id(operation_id)?;
         if target.is_none() && !recurrence.is_empty() {
             return Err(JinError::InvalidInput(
@@ -102,7 +471,28 @@ impl<'a> EventMutationService<'a> {
                     .to_string(),
             ));
         }
+        if target.is_none()
+            && (params
+                .attendees
+                .as_ref()
+                .is_some_and(|attendees| !attendees.is_empty())
+                || params.conference_data.is_some())
+        {
+            return Err(JinError::InvalidInput(
+                "Google guests and conferencing require an exact writable calendar destination"
+                    .to_string(),
+            ));
+        }
+        let principal = target.as_ref().and_then(|target| {
+            self.config
+                .google_registry
+                .account(&target.account_id)
+                .ok()
+                .and_then(|account| account.principal.as_deref())
+        });
+        validate_new_attendees(params.attendees.as_deref(), principal)?;
         let mut event = crate::ops::events::build_event(params, None)?;
+        freshen_conference_request_id(&mut event.frontmatter.conference_data);
         event.frontmatter.recurrence = recurrence;
         event.frontmatter.recurrence_unexpanded = !event.frontmatter.recurrence.is_empty();
         if let Some(target) = target {
@@ -123,6 +513,7 @@ impl<'a> EventMutationService<'a> {
                 auth_generation,
                 route_generation,
                 payload: Some(payload),
+                guest_update_policy,
                 finalized: false,
             };
             self.write_journal(&journal)?;
@@ -181,6 +572,68 @@ impl<'a> EventMutationService<'a> {
             edit_token,
             operation_id,
             patch,
+        )
+    }
+
+    /// Load the canonical event only if `edit_token` still matches it.
+    ///
+    /// This runs *before* any merge and before any write. A stale token is a
+    /// statement that the client's baseline is not the current one — merging a
+    /// sparse delta onto a baseline the client never saw would silently adopt
+    /// whatever changed underneath it, so the operation stops here instead.
+    fn baseline_for_token(&self, event_id: &str, edit_token: &str) -> crate::Result<Event> {
+        crate::ops::api::recover_before_read(self.root)?;
+        let path = fs::find_event_path(&self.config.events_dir(), event_id)?;
+        let bytes = std::fs::read(&path)?;
+        if crate::ops::events::edit_token_for_bytes(&bytes) != edit_token {
+            return Err(JinError::StaleEvent {
+                event_id: event_id.to_string(),
+            });
+        }
+        fs::parse_event_bytes(&bytes)
+    }
+
+    /// Apply a sparse delta to a Jin-local (or route-owned) event.
+    ///
+    /// Order matters and is load-bearing: validate the token, *then* merge onto
+    /// the canonical baseline, then hand the resulting full patch to the
+    /// existing mutation path — which re-checks the token under the operation
+    /// lock, so this fast path never weakens the concurrency guarantee.
+    pub fn edit_sparse(
+        &self,
+        event_id: &str,
+        edit_token: &str,
+        delta: EventEditDelta,
+        scope: Option<RecurrenceMutationScope>,
+        operation_id: &str,
+    ) -> crate::Result<crate::ops::events::EditEventOutcome> {
+        let baseline = self.baseline_for_token(event_id, edit_token)?;
+        let patch = delta.merge_into_patch(&baseline)?;
+        self.edit_local_scoped(event_id, edit_token, patch, scope, operation_id)
+    }
+
+    /// Routed sibling of [`EventMutationService::edit_sparse`].
+    #[allow(clippy::too_many_arguments)] // Mirrors the routed full-patch mutation boundary.
+    pub fn edit_sparse_with_guest_update_policy(
+        &self,
+        event_id: &str,
+        edit_token: &str,
+        delta: EventEditDelta,
+        target: EventSyncTarget,
+        scope: Option<RecurrenceMutationScope>,
+        operation_id: &str,
+        guest_update_policy: GuestUpdatePolicy,
+    ) -> crate::Result<Event> {
+        let baseline = self.baseline_for_token(event_id, edit_token)?;
+        let patch = delta.merge_into_patch(&baseline)?;
+        self.edit_with_guest_update_policy(
+            event_id,
+            edit_token,
+            patch,
+            target,
+            scope,
+            operation_id,
+            guest_update_policy,
         )
     }
 
@@ -263,6 +716,7 @@ impl<'a> EventMutationService<'a> {
             auth_generation,
             route_generation,
             payload: Some(crate::google::mapping::jin_to_google(&event.frontmatter)),
+            guest_update_policy: GuestUpdatePolicy::All,
             finalized: false,
         };
         self.write_journal(&journal)?;
@@ -285,6 +739,28 @@ impl<'a> EventMutationService<'a> {
         target: EventSyncTarget,
         scope: Option<RecurrenceMutationScope>,
         operation_id: &str,
+    ) -> crate::Result<Event> {
+        self.edit_with_guest_update_policy(
+            event_id,
+            edit_token,
+            patch,
+            target,
+            scope,
+            operation_id,
+            GuestUpdatePolicy::All,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)] // The public mutation boundary keeps token, target, scope, and policy explicit.
+    pub fn edit_with_guest_update_policy(
+        &self,
+        event_id: &str,
+        edit_token: &str,
+        mut patch: EditEventPatch,
+        target: EventSyncTarget,
+        scope: Option<RecurrenceMutationScope>,
+        operation_id: &str,
+        guest_update_policy: GuestUpdatePolicy,
     ) -> crate::Result<Event> {
         validate_operation_id(operation_id)?;
         if scope == Some(RecurrenceMutationScope::ThisAndFollowing) {
@@ -315,6 +791,11 @@ impl<'a> EventMutationService<'a> {
         let mut event = fs::read_event(&path)?;
         let before_event = event.clone();
         self.validate_event_target(&event, &target)?;
+        if patch.recurrence.is_some() && scope != Some(RecurrenceMutationScope::EntireSeries) {
+            return Err(JinError::InvalidInput(
+                "recurrence changes must apply to the entire series".to_string(),
+            ));
+        }
         let recurrence_key = recurrence_key(&event, scope)?;
         if event.frontmatter.status == EventStatus::Cancelled {
             return Err(JinError::InvalidStateTransition {
@@ -322,9 +803,13 @@ impl<'a> EventMutationService<'a> {
                 to: "changed".to_string(),
             });
         }
+        ensure_google_edit_authority(&event, &patch, &self.config.google_registry, &target)?;
         if event.frontmatter.source == EventSource::Jin {
             validate_supported_recurrence_mutation(&event, scope)?;
         }
+        // Request ids are generated by core at the semantic-mutation boundary.
+        // A browser-provided value is deliberately never trusted or retried.
+        freshen_conference_request_id(&mut patch.conference_data);
         crate::ops::events::validate_meeting_patch(&patch)?;
         validate_attendee_patch(&event, &patch)?;
         if effective_id != event_id && scope == Some(RecurrenceMutationScope::EntireSeries) {
@@ -362,6 +847,7 @@ impl<'a> EventMutationService<'a> {
             auth_generation,
             route_generation,
             payload: Some(payload),
+            guest_update_policy,
             finalized: false,
         };
         self.write_journal(&journal)?;
@@ -378,6 +864,23 @@ impl<'a> EventMutationService<'a> {
         scope: Option<RecurrenceMutationScope>,
         operation_id: &str,
     ) -> crate::Result<Event> {
+        self.delete_with_guest_update_policy(
+            event_id,
+            target,
+            scope,
+            operation_id,
+            GuestUpdatePolicy::All,
+        )
+    }
+
+    pub fn delete_with_guest_update_policy(
+        &self,
+        event_id: &str,
+        target: EventSyncTarget,
+        scope: Option<RecurrenceMutationScope>,
+        operation_id: &str,
+        guest_update_policy: GuestUpdatePolicy,
+    ) -> crate::Result<Event> {
         validate_operation_id(operation_id)?;
         if scope == Some(RecurrenceMutationScope::ThisAndFollowing) {
             return Err(JinError::InvalidInput(
@@ -390,6 +893,7 @@ impl<'a> EventMutationService<'a> {
         let path = fs::find_event_path(&self.config.events_dir(), &effective_id)?;
         let mut event = fs::read_event(&path)?;
         self.validate_event_target(&event, &target)?;
+        ensure_google_organizer_authority(&event, &self.config.google_registry, &target)?;
         let recurrence_key = recurrence_key(&event, scope)?;
         if event.frontmatter.source == EventSource::Jin {
             validate_supported_recurrence_mutation(&event, scope)?;
@@ -424,6 +928,7 @@ impl<'a> EventMutationService<'a> {
             auth_generation,
             route_generation,
             payload: None,
+            guest_update_policy,
             finalized: false,
         };
         self.write_journal(&journal)?;
@@ -550,8 +1055,20 @@ impl<'a> EventMutationService<'a> {
                 reason: "self_attendee_changed".to_string(),
             });
         }
-        if self_attendee.response_status.as_deref() != Some("needsAction") {
-            return Err(JinError::InvalidInput("already_answered".to_string()));
+        let current_response = self_attendee
+            .response_status
+            .as_deref()
+            .unwrap_or("needsAction");
+        if !matches!(
+            current_response,
+            "needsAction" | "accepted" | "tentative" | "declined"
+        ) {
+            return Err(JinError::InvalidInput(
+                "response_not_actionable".to_string(),
+            ));
+        }
+        if current_response == request.response.provider_status() {
+            return Err(JinError::InvalidInput("response_unchanged".to_string()));
         }
 
         let recurrence_key = invitation_response_recurrence_key(&event, request.recurrence_scope)?;
@@ -605,6 +1122,7 @@ impl<'a> EventMutationService<'a> {
             auth_generation,
             route_generation,
             payload: Some(payload.clone()),
+            guest_update_policy: GuestUpdatePolicy::None,
             finalized: false,
         };
         if enqueue {
@@ -803,6 +1321,31 @@ impl<'a> EventMutationService<'a> {
 
     fn finalize(&self, mut journal: MutationJournal) -> crate::Result<()> {
         let conn = state::open_sync_db(&self.config.sync_dir())?;
+        // The v2 outbox schema deliberately has one opaque intent payload. Keep
+        // the delivery policy beside the provider patch so retries cannot pick
+        // up a later UI preference. The sync drainer strips this private key
+        // before issuing the Google request.
+        let payload = if journal.operation == OutboxOperationKind::RespondInvitation {
+            journal.payload.clone()
+        } else {
+            let mut payload = journal
+                .payload
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({}));
+            let object = payload.as_object_mut().ok_or_else(|| {
+                JinError::Integrity("event mutation payload must be an object".to_string())
+            })?;
+            object.insert(
+                "_jinGuestUpdatePolicy".to_string(),
+                serde_json::Value::String(
+                    journal
+                        .guest_update_policy
+                        .google_send_updates()
+                        .to_string(),
+                ),
+            );
+            Some(payload)
+        };
         state::enqueue_outbox(
             &conn,
             &OutboxOperation {
@@ -819,7 +1362,7 @@ impl<'a> EventMutationService<'a> {
                 canonical_revision: journal.canonical_revision.clone(),
                 auth_generation: journal.auth_generation,
                 route_generation: journal.route_generation,
-                payload: journal.payload.clone(),
+                payload,
                 state: "pending".to_string(),
                 pause_reason: None,
                 reviewed: false,
@@ -834,6 +1377,119 @@ impl<'a> EventMutationService<'a> {
         crate::index::rebuild::rebuild(&mut index, self.root)?;
         Ok(())
     }
+}
+
+/// Google organizer fields are read-only provider facts.  A writable calendar
+/// alone is not authority to reschedule or cancel another person's meeting.
+/// RSVP has its own narrow, attendee-only path above.
+fn ensure_google_organizer_authority(
+    event: &Event,
+    registry: &crate::google::account::GoogleRegistry,
+    target: &EventSyncTarget,
+) -> crate::Result<()> {
+    if event.frontmatter.source != EventSource::Google {
+        return Ok(());
+    }
+    if event.frontmatter.locked {
+        return Err(JinError::InvalidInput("google_event_locked".to_string()));
+    }
+    let organizer_self = event
+        .frontmatter
+        .organizer
+        .as_ref()
+        .and_then(|organizer| organizer.is_self)
+        == Some(true);
+    let calendar_is_writable = registry.calendars.iter().any(|calendar| {
+        calendar.account_id == target.account_id
+            && calendar.calendar_id == target.calendar_id
+            && calendar.enabled
+            && calendar.available
+            && calendar.access_role.can_write()
+    });
+    let organizer_is_shared_calendar = event
+        .frontmatter
+        .organizer
+        .as_ref()
+        .and_then(|organizer| organizer.email.as_deref())
+        .is_some_and(|email| email.eq_ignore_ascii_case(&target.calendar_id));
+    // A shared calendar may itself be the organizer. Its writer/owner route
+    // is provider-backed authority. A writable primary calendar alone is not:
+    // it can contain an invitation from another organizer.
+    if organizer_self || (organizer_is_shared_calendar && calendar_is_writable) {
+        Ok(())
+    } else {
+        Err(JinError::InvalidInput(
+            "organizer_authority_required: use RSVP for an invitation you do not organize"
+                .to_string(),
+        ))
+    }
+}
+
+fn ensure_google_edit_authority(
+    event: &Event,
+    patch: &EditEventPatch,
+    registry: &crate::google::account::GoogleRegistry,
+    target: &EventSyncTarget,
+) -> crate::Result<()> {
+    if event.frontmatter.source != EventSource::Google {
+        return Ok(());
+    }
+    if event.frontmatter.locked {
+        return Err(JinError::InvalidInput("google_event_locked".to_string()));
+    }
+    let organizer_self = event
+        .frontmatter
+        .organizer
+        .as_ref()
+        .and_then(|organizer| organizer.is_self)
+        == Some(true);
+    let calendar_is_writable = registry.calendars.iter().any(|calendar| {
+        calendar.account_id == target.account_id
+            && calendar.calendar_id == target.calendar_id
+            && calendar.enabled
+            && calendar.available
+            && calendar.access_role.can_write()
+    });
+    let organizer_is_shared_calendar = event
+        .frontmatter
+        .organizer
+        .as_ref()
+        .and_then(|organizer| organizer.email.as_deref())
+        .is_some_and(|email| email.eq_ignore_ascii_case(&target.calendar_id));
+    if organizer_self || (organizer_is_shared_calendar && calendar_is_writable) {
+        return Ok(());
+    }
+    let self_guest = event
+        .frontmatter
+        .attendees
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .any(|attendee| attendee.is_self == Some(true) && attendee.organizer != Some(true));
+    let changes_only_schedule_fields = patch.attendees.is_none()
+        && patch.conference_data.is_none()
+        && !patch.clear_conference_data;
+    if self_guest && event.frontmatter.guests_can_modify && changes_only_schedule_fields {
+        return Ok(());
+    }
+    Err(JinError::InvalidInput(
+        "organizer_authority_required: use RSVP for an invitation you do not organize".to_string(),
+    ))
+}
+
+/// Generate the one provider request id that belongs to a new semantic Meet
+/// operation. The resulting id is persisted in the event/outbox and is reused
+/// by transport retries; callers cannot manufacture it in the UI.
+fn freshen_conference_request_id(
+    conference: &mut Option<crate::model::event::EventConferenceData>,
+) {
+    let Some(pending) = conference
+        .as_mut()
+        .and_then(|conference| conference.pending_create_request.as_mut())
+    else {
+        return;
+    };
+    pending.request_id = format!("jin-meet-{}", crate::id::new_ulid());
 }
 
 fn validate_operation_id(operation_id: &str) -> crate::Result<()> {
@@ -1088,6 +1744,31 @@ fn validate_attendee_patch(event: &Event, patch: &EditEventPatch) -> crate::Resu
     let Some(attendees) = patch.attendees.as_ref() else {
         return Ok(());
     };
+    validate_new_attendees(Some(attendees), None)?;
+    if let Some(organizer_email) = event
+        .frontmatter
+        .organizer
+        .as_ref()
+        .and_then(|organizer| organizer.email.as_deref())
+    {
+        let organizer_kept = attendees.iter().any(|attendee| {
+            attendee
+                .email
+                .as_deref()
+                .is_some_and(|email| email.eq_ignore_ascii_case(organizer_email))
+        });
+        if event.frontmatter.attendees.as_ref().is_some_and(|current| {
+            current
+                .iter()
+                .any(|attendee| attendee.organizer == Some(true))
+        }) && !organizer_kept
+        {
+            return Err(JinError::Validation {
+                field: "attendees".to_string(),
+                reason: "an attendee edit may not remove the organizer".to_string(),
+            });
+        }
+    }
     if patch.attendees_omitted == Some(true) && event.frontmatter.attendees_omitted != Some(true) {
         return Err(JinError::Validation {
             field: "attendees_omitted".to_string(),
@@ -1121,6 +1802,49 @@ fn validate_attendee_patch(event: &Event, patch: &EditEventPatch) -> crate::Resu
             field: "attendees".to_string(),
             reason: "limited attendee mode may change only response_status and comment".to_string(),
         });
+    }
+    Ok(())
+}
+
+fn validate_new_attendees(
+    attendees: Option<&[crate::model::event::EventAttendee]>,
+    authenticated_email: Option<&str>,
+) -> crate::Result<()> {
+    let Some(attendees) = attendees else {
+        return Ok(());
+    };
+    if attendees.len() > 200 {
+        return Err(JinError::Validation {
+            field: "attendees".to_string(),
+            reason: "Google invitation delivery supports at most 200 attendees".to_string(),
+        });
+    }
+    let mut seen = HashSet::new();
+    for attendee in attendees {
+        let email = attendee
+            .email
+            .as_deref()
+            .map(str::trim)
+            .filter(|email| !email.is_empty())
+            .ok_or_else(|| JinError::Validation {
+                field: "attendees".to_string(),
+                reason: "each attendee requires an email address".to_string(),
+            })?;
+        let canonical = email.to_ascii_lowercase();
+        if !seen.insert(canonical.clone()) {
+            return Err(JinError::Validation {
+                field: "attendees".to_string(),
+                reason: "attendee email addresses must be unique".to_string(),
+            });
+        }
+        if authenticated_email
+            .is_some_and(|self_email| canonical == self_email.trim().to_ascii_lowercase())
+        {
+            return Err(JinError::Validation {
+                field: "attendees".to_string(),
+                reason: "the authenticated account cannot be added as a guest".to_string(),
+            });
+        }
     }
     Ok(())
 }
@@ -1261,6 +1985,10 @@ mod tests {
                 conference_data: None,
                 hangout_link: None,
                 reminders: None,
+                guests_can_modify: false,
+                guests_can_invite_others: false,
+                guests_can_see_other_guests: false,
+                locked: false,
                 source: EventSource::Google,
                 authority: EventSource::Google,
                 calendar_id: "primary".to_string(),
@@ -1283,6 +2011,7 @@ mod tests {
             floating: event.frontmatter.floating,
             description: event.frontmatter.description.clone(),
             location: event.frontmatter.location.clone(),
+            recurrence: None,
             attendees: None,
             attendees_omitted: None,
             conference_data: None,
@@ -1313,6 +2042,7 @@ mod tests {
                 floating: false,
                 description: None,
                 location: None,
+                recurrence: None,
                 attendees: None,
                 attendees_omitted: None,
                 conference_data: None,

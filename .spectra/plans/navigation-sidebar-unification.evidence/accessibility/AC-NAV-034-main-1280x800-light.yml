@@ -1,0 +1,19 @@
+- generic [active] [ref=e1] [box=0,0,1280,800]:
+  - link "Skip to main content" [ref=e2] [cursor=pointer] [box=16,-64,197,40]:
+    - /url: "#main-content"
+  - generic [ref=e3] [box=0,0,1280,800]:
+    - navigation "Application navigation" [ref=e4] [box=0,0,184,800]:
+      - generic [ref=e5] [box=0,8,183,40]:
+        - generic "Jin" [ref=e6] [box=10,18,60,20]
+        - button "Collapse sidebar" [expanded] [ref=e12] [cursor=pointer] [box=145,14,28,28]
+      - button "Quick capture (Ctrl+N)" [ref=e17] [cursor=pointer] [box=8,52,167,32]:
+        - generic [ref=e19] [box=41,59,52,18]: Capture
+      - navigation "Primary navigation" [ref=e92] [box=0,100,183,643]:
+        - list [ref=e20] [box=8,100,167,160]
+      - link "Settings" [ref=e47] [cursor=pointer] [box=8,752,167,32]:
+        - /url: "#settings"
+    - main [ref=e93] [box=184,0,1096,800]:
+      - region "Today's agenda" [ref=e94] [box=184,0,1096,800]:
+        - toolbar "Date navigation" [ref=e95] [box=208,24,1048,55]
+        - region "All-day events" [ref=e98] [box=208,103,1048,88]
+        - region "Scheduled events" [ref=e103] [box=208,215,1048,224]

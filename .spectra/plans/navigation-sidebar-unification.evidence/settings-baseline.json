@@ -1,0 +1,27 @@
+{
+  "baseline_revision": "44dff1549095580305f2b44fac4f7c958bda3ec3",
+  "patch_sha256": "37dd062ce806c021a7a75c1a5b0151873f5bc52313b37fac5caa03fecda369cb",
+  "dirty_files": [
+    "jin-gui/index.html",
+    "jin-gui/src/styles/settings.css",
+    "jin-gui/src/controllers/settings_controller.ts",
+    "jin-gui/src/lib/settings/navigation.ts",
+    "jin-gui/src/__tests__/settings_controller.test.ts",
+    "jin-gui/src/__tests__/notes_visual_system.test.ts"
+  ],
+  "settings_navigation": {
+    "pane_keys": ["calendars", "data-storage", "general", "notifications"],
+    "targets": ["settingsNavItem", "settingsPane", "settingsWorkspace"],
+    "current_semantics": "exactly one aria-current=page; inactive items omit aria-current",
+    "persistence": "jin.settings.pane with General fallback",
+    "desktop_scroll": "route bounded; workspace owns vertical scrolling; pane change resets workspace scrollTop",
+    "compact_ax_scroll": "route owns vertical scrolling; workspace overflow visible",
+    "focus": "pane switch retains category-button focus"
+  },
+  "hook_inventory_guard": "notes_visual_system.test.ts preserves all Settings targets, IDs, actions, pane keys, and scroll assertions",
+  "focused_test": {
+    "command": "npm test -- --run src/__tests__/settings_controller.test.ts src/__tests__/notes_visual_system.test.ts",
+    "result": "pass",
+    "tests": 173
+  }
+}

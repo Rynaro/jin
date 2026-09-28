@@ -33,6 +33,8 @@ export interface ConfirmDialogOpts extends JinModalOpts {
   confirmLabel?: string;
   cancelLabel?: string;
   checkboxLabel?: string;
+  selectLabel?: string;
+  selectOptions?: Array<{ value: string; label: string }>;
   /**
    * 'danger' — confirm button uses .btn-danger (cinnabar seal accent) to signal
    *            a destructive action.
@@ -40,7 +42,7 @@ export interface ConfirmDialogOpts extends JinModalOpts {
    */
   variant?: 'default' | 'danger';
   /** Called when the user clicks Confirm, before close(). */
-  onConfirm?: (checked: boolean) => void;
+  onConfirm?: (checked: boolean, selectedValue?: string) => void;
 }
 
 // ── ConfirmDialog ─────────────────────────────────────────────────────────────
@@ -49,8 +51,9 @@ export class ConfirmDialog extends JinModal {
   /** Live message element — updated by updateMessage(). */
   private _messageEl: HTMLParagraphElement | null = null;
   /** Stored for re-confirmation after updateMessage calls. */
-  private readonly _onConfirm: ((checked: boolean) => void) | undefined;
+  private readonly _onConfirm: ((checked: boolean, selectedValue?: string) => void) | undefined;
   private _checkbox: HTMLInputElement | null = null;
+  private _select: HTMLSelectElement | null = null;
 
   constructor(opts: ConfirmDialogOpts = {}) {
     // Parent builds the shell (action-dialog__inner / __header / __body / __footer).
@@ -85,6 +88,18 @@ export class ConfirmDialog extends JinModal {
       label.appendChild(copy);
       body.appendChild(label);
       this._checkbox = checkbox;
+    }
+    if (opts.selectOptions?.length) {
+      const label = document.createElement('label');
+      label.className = 'confirm-dialog__select';
+      const copy = document.createElement('span');
+      copy.textContent = opts.selectLabel ?? '';
+      const select = document.createElement('select');
+      select.className = 'form-input';
+      for (const option of opts.selectOptions) select.appendChild(new Option(option.label, option.value));
+      label.append(copy, select);
+      body.appendChild(label);
+      this._select = select;
     }
     this.setBody(body);
 
@@ -131,7 +146,7 @@ export class ConfirmDialog extends JinModal {
     confirmBtn.className = variant === 'danger' ? 'btn-danger' : 'btn-primary';
     confirmBtn.textContent = confirmLabel;
     confirmBtn.addEventListener('click', () => {
-      this._onConfirm?.(this._checkbox?.checked ?? false);
+      this._onConfirm?.(this._checkbox?.checked ?? false, this._select?.value);
       this.close();
     });
 

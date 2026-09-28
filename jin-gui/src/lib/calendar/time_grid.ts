@@ -1,4 +1,4 @@
-import type { EventDto } from '../../types/dto';
+import type { CalendarRangeEntryDto, EventDto } from '../../types/dto';
 
 export const MINUTES_PER_DAY = 24 * 60;
 export const MIN_EVENT_VISUAL_MINUTES = 44;
@@ -313,4 +313,246 @@ export function initialScrollMinute(model: TimeGridModel): number {
     });
   });
   return earliest === null ? 8 * 60 : Math.max(0, earliest - 60);
+}
+
+
+// ── Display-time slots (DST / projection) ─────────────────────────────────────
+
+export type DisplaySlotState = 'exact' | 'nonexistent' | 'ambiguous_earlier';
+
+export interface DisplayTimeSlot {
+  date: string;
+  minute: number;
+  state: DisplaySlotState;
+  /** Nonexistent spring-forward slots are not selectable for create. */
+  selectable: boolean;
+}
+
+interface ZoneParts {
+  date: string;
+  minute: number;
+}
+
+function zoneParts(utcMs: number, timeZone: string): ZoneParts | null {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(new Date(utcMs));
+    const map = Object.fromEntries(
+      parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]),
+    );
+    const year = Number(map.year);
+    const month = Number(map.month);
+    const day = Number(map.day);
+    const hour = Number(map.hour);
+    const minute = Number(map.minute);
+    if (![year, month, day, hour, minute].every(Number.isFinite)) return null;
+    return {
+      date: `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+      minute: hour * 60 + minute,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function zoneOffsetMs(utcMs: number, timeZone: string): number | null {
+  const parts = zoneParts(utcMs, timeZone);
+  if (!parts) return null;
+  const [y, m, d] = parts.date.split('-').map(Number);
+  const asUtc = Date.UTC(y, m - 1, d, Math.floor(parts.minute / 60), parts.minute % 60, 0);
+  return asUtc - utcMs;
+}
+
+/**
+ * Classify a display-timezone wall slot.
+ * Fall-back overlaps are earlier-only (selectable once); spring gaps are not.
+ */
+export function classifyDisplaySlot(
+  date: string,
+  minute: number,
+  timeZone: string,
+): DisplaySlotState {
+  const [y, m, d] = date.split('-').map(Number);
+  const hour = Math.floor(minute / 60);
+  const min = minute % 60;
+  if (!Number.isFinite(y) || hour > 23 || min > 59) return 'nonexistent';
+
+  const localAsUtc = Date.UTC(y, m - 1, d, hour, min, 0);
+  let offset = zoneOffsetMs(localAsUtc, timeZone);
+  if (offset === null) return 'exact';
+  let utc = localAsUtc - offset;
+  offset = zoneOffsetMs(utc, timeZone);
+  if (offset === null) return 'exact';
+  utc = localAsUtc - offset;
+
+  const roundTrip = zoneParts(utc, timeZone);
+  if (!roundTrip || roundTrip.date !== date || roundTrip.minute !== minute) {
+    return 'nonexistent';
+  }
+
+  for (const candidate of [utc - 3_600_000, utc + 3_600_000]) {
+    const alt = zoneParts(candidate, timeZone);
+    if (alt && alt.date === date && alt.minute === minute && candidate !== utc) {
+      return 'ambiguous_earlier';
+    }
+  }
+  return 'exact';
+}
+
+export function buildDisplayDaySlots(
+  date: string,
+  timeZone: string,
+  stepMinutes = 15,
+): DisplayTimeSlot[] {
+  const slots: DisplayTimeSlot[] = [];
+  for (let minute = 0; minute < MINUTES_PER_DAY; minute += stepMinutes) {
+    const state = classifyDisplaySlot(date, minute, timeZone);
+    slots.push({
+      date,
+      minute,
+      state,
+      selectable: state !== 'nonexistent',
+    });
+  }
+  return slots;
+}
+
+function synthesizeEvent(entry: CalendarRangeEntryDto): EventDto {
+  return {
+    id: entry.event_id,
+    title: entry.title,
+    description: null,
+    location: null,
+    start: entry.is_all_day ? entry.start_date : entry.start_display,
+    end: entry.is_all_day
+      ? (() => {
+          const ordinal = dateOrdinal(entry.end_date);
+          if (ordinal === null) return entry.end_date;
+          const next = new Date((ordinal + 1) * 86_400_000);
+          return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-${String(next.getUTCDate()).padStart(2, '0')}`;
+        })()
+      : entry.end_display,
+    is_all_day: entry.is_all_day,
+    start_tzid: entry.start_tzid,
+    end_tzid: entry.end_tzid,
+    floating: entry.floating,
+    status: 'confirmed',
+    source: 'jin',
+    authority: 'jin',
+    ical_uid: `${entry.event_id}@jin`,
+    derived_from: null,
+    recurrence: [],
+    recurring_event_id: null,
+    original_start: null,
+    master_id: null,
+    recurrence_unexpanded: false,
+    sequence: 0,
+    created: '',
+    updated: '',
+    backlinks: [],
+  };
+}
+
+function eventForEntry(
+  entry: CalendarRangeEntryDto,
+  eventsById: ReadonlyMap<string, EventDto>,
+): EventDto {
+  return eventsById.get(entry.event_id) ?? synthesizeEvent(entry);
+}
+
+/**
+ * Build Day/Week geometry from core's display-timezone projection entries.
+ * Timed placement uses start_display/end_display — not raw list_events walls.
+ */
+export function buildTimeGridFromProjection(
+  entries: readonly CalendarRangeEntryDto[],
+  eventsById: ReadonlyMap<string, EventDto>,
+  requestedDates: string[],
+): TimeGridModel {
+  const dates: string[] = [];
+  const ordinals: number[] = [];
+  for (const date of requestedDates) {
+    const ordinal = dateOrdinal(date);
+    if (ordinal === null || dates.includes(date)) continue;
+    dates.push(date);
+    ordinals.push(ordinal);
+  }
+  const timedByDate = new Map<string, TimedSegment[]>(dates.map(date => [date, []]));
+  const allDayEvents: EventDto[] = [];
+
+  for (const entry of entries) {
+    const event = eventForEntry(entry, eventsById);
+    if (entry.is_all_day || entry.slot_state === 'all_day') {
+      // Projection end_date is inclusive; all-day spans expect exclusive end.
+      const exclusiveEndOrdinal = dateOrdinal(entry.end_date);
+      const exclusiveEnd = exclusiveEndOrdinal === null
+        ? entry.end_date
+        : (() => {
+            const next = new Date((exclusiveEndOrdinal + 1) * 86_400_000);
+            return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}-${String(next.getUTCDate()).padStart(2, '0')}`;
+          })();
+      allDayEvents.push({
+        ...event,
+        is_all_day: true,
+        start: entry.start_date,
+        end: exclusiveEnd,
+      });
+      continue;
+    }
+
+    const start = parseStoredWallTime(entry.start_display);
+    const end = parseStoredWallTime(entry.end_display);
+    if (!start || !end || absoluteMinute(end) <= absoluteMinute(start)) continue;
+    const absoluteStart = absoluteMinute(start);
+    const absoluteEnd = absoluteMinute(end);
+
+    dates.forEach((date, index) => {
+      const dayStart = ordinals[index] * MINUTES_PER_DAY;
+      const dayEnd = dayStart + MINUTES_PER_DAY;
+      const clippedStart = Math.max(absoluteStart, dayStart);
+      const clippedEnd = Math.min(absoluteEnd, dayEnd);
+      if (clippedEnd <= clippedStart) return;
+      const semanticStartMinute = clippedStart - dayStart;
+      const semanticEndMinute = clippedEnd - dayStart;
+      timedByDate.get(date)?.push({
+        event,
+        date,
+        semanticStartMinute,
+        semanticEndMinute,
+        visualStartMinute: semanticStartMinute,
+        visualEndMinute: Math.max(semanticEndMinute, semanticStartMinute + MIN_EVENT_VISUAL_MINUTES),
+        continuesBefore: absoluteStart < dayStart,
+        continuesAfter: absoluteEnd > dayEnd,
+        overlapColumn: 0,
+        overlapColumnCount: 1,
+      });
+    });
+  }
+
+  timedByDate.forEach(assignTimedColumns);
+  return { dates, timedByDate, allDaySpans: buildAllDaySpans(allDayEvents, dates, ordinals) };
+}
+
+/** Occupancy list for temporal cursor Enter / agenda bypass. */
+export function occupancyFromModel(model: TimeGridModel): Map<string, Array<{ eventId: string; startMinute: number; endMinute: number }>> {
+  const map = new Map<string, Array<{ eventId: string; startMinute: number; endMinute: number }>>();
+  model.timedByDate.forEach((segments, date) => {
+    map.set(
+      date,
+      segments.map(segment => ({
+        eventId: segment.event.id,
+        startMinute: segment.semanticStartMinute,
+        endMinute: segment.semanticEndMinute,
+      })),
+    );
+  });
+  return map;
 }

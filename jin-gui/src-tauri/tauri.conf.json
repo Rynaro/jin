@@ -26,11 +26,15 @@
   "app": {
     "windows": [
       {
+        "label": "main",
+        "create": false,
         "title": "Jin",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
         "minHeight": 600,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
         "dragDropEnabled": false
       }
     ],

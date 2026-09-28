@@ -39,6 +39,7 @@ import CalendarViewController from './controllers/calendar_view_controller';
 import CaptureController from './controllers/capture_controller';
 import ActionsController from './controllers/actions_controller';
 import SettingsController from './controllers/settings_controller';
+import GoogleStatusController from './controllers/google_status_controller';
 import SidebarController from './controllers/sidebar_controller';
 import ListsController from './controllers/lists_controller';
 import CalendarController from './controllers/calendar_controller';
@@ -47,6 +48,15 @@ import NotificationsController from './controllers/notifications_controller';
 import FirstRunController from './controllers/first_run_controller';
 import { getLaunchState } from './invoke';
 import { applyLaunchMode } from './lib/launch_bootstrap';
+import { isTauri } from '@tauri-apps/api/core';
+import { installExternalLinkService } from './lib/ui/externalLinks';
+
+installExternalLinkService();
+
+// The overlay webview occupies the native titlebar only on macOS Tauri.
+if (isTauri() && /Macintosh|Mac OS X/i.test(navigator.userAgent)) {
+  document.documentElement.dataset.nativeMacosOverlay = 'true';
+}
 
 const stimulusApp = Application.start();
 
@@ -69,6 +79,7 @@ function startReadyApp(): void {
   stimulusApp.register('capture', CaptureController);
   stimulusApp.register('actions', ActionsController);
   stimulusApp.register('settings', SettingsController);
+  stimulusApp.register('google-status', GoogleStatusController);
   stimulusApp.register('sidebar', SidebarController);
   stimulusApp.register('lists', ListsController);
   stimulusApp.register('calendar', CalendarController);

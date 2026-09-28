@@ -259,6 +259,7 @@ fn setup_invitation(
                 name: "Personal".to_string(),
                 primary: true,
                 access_role: GoogleAccessRole::Writer,
+                allowed_conference_solution_types: vec!["hangoutsMeet".to_string()],
             }],
         )
         .unwrap();
@@ -641,7 +642,35 @@ mod event_capabilities {
             &fixture.event_id,
         )
         .unwrap();
-        assert_eq!(before, after);
+        // RSVP changes the shared ledger projection, never the general event
+        // edit/delete authority or canonical attendee state.
+        assert_eq!(before.can_edit, after.can_edit);
+        assert_eq!(before.can_delete, after.can_delete);
+        assert_eq!(before.read_only_reason, after.read_only_reason);
+        assert_eq!(
+            before
+                .collaboration
+                .invitation
+                .as_ref()
+                .unwrap()
+                .provider_response,
+            after
+                .collaboration
+                .invitation
+                .as_ref()
+                .unwrap()
+                .provider_response,
+        );
+        assert_eq!(
+            after
+                .collaboration
+                .invitation
+                .as_ref()
+                .unwrap()
+                .requested_response
+                .as_deref(),
+            Some("accepted"),
+        );
     }
 }
 
@@ -2006,12 +2035,13 @@ mod invitation_reconcile {
     }
 
     #[test]
-    fn bootstrap_skips_ended_cancelled_and_already_answered_invitations() {
+    fn bootstrap_keeps_future_answered_invitations_actionable_but_skips_ended_and_cancelled() {
         let answered = setup_invitation("accepted", false, 1, None);
         reset_center(&answered);
         jin_core::notification_center::reconcile_calendar_invitations(answered.tmp.path(), now())
             .unwrap();
-        assert!(all_items(&answered).is_empty());
+        let answered_item = all_items(&answered).pop().unwrap();
+        assert_eq!(answered_item.status, NotificationStatus::Active);
 
         let cancelled = setup_invitation("needsAction", false, 1, None);
         let cancelled_path = jin_core::store::fs::find_event_path(
@@ -2137,6 +2167,7 @@ mod invitation_reconcile {
                     name: "Work".to_string(),
                     primary: true,
                     access_role: GoogleAccessRole::Writer,
+                    allowed_conference_solution_types: vec!["hangoutsMeet".to_string()],
                 }],
             )
             .unwrap();
@@ -2341,11 +2372,8 @@ mod invitation_reconcile {
         jin_core::notification_center::reconcile_calendar_invitations(fixture.tmp.path(), now())
             .unwrap();
         let item = all_items(&fixture).pop().unwrap();
-        assert_eq!(item.status, NotificationStatus::Acted);
-        assert_eq!(
-            item.resolution_origin,
-            Some(jin_core::notification_center::ResolutionOrigin::External)
-        );
+        assert_eq!(item.status, NotificationStatus::Active);
+        assert_eq!(item.resolution_origin, None);
     }
 
     #[test]
@@ -2721,4 +2749,267 @@ mod invitation_reconcile {
             0
         );
     }
+}
+
+#[test]
+fn scoped_event_delivery_leaves_unrelated_outbox_work_untouched() {
+    let fixture = setup_invitation("needsAction", false, 1, None);
+    fixture.queue("unrelated-scoped-delivery", InvitationResponse::Allow);
+    let config = jin_core::Config::load(fixture.tmp.path()).unwrap();
+    let account = config
+        .google_registry
+        .account(&fixture.target.account_id)
+        .unwrap();
+    let calendar = config
+        .google_registry
+        .calendars
+        .iter()
+        .find(|calendar| {
+            calendar.account_id == fixture.target.account_id
+                && calendar.calendar_id == fixture.target.calendar_id
+        })
+        .unwrap();
+    let conn = state::open_sync_db(&config.sync_dir()).unwrap();
+    let http = MockHttpClient::new(vec![]);
+    let pushed = jin_core::google::multi_sync::drain_destination_event(
+        fixture.tmp.path(),
+        &conn,
+        &fixture.target,
+        account.auth_generation,
+        calendar.route_generation,
+        &tokens(),
+        &http,
+        Some("another-event"),
+    )
+    .unwrap();
+    assert_eq!(pushed, 0);
+    assert!(http.requested_urls().is_empty());
+    assert_eq!(
+        state::get_outbox_operation(&conn, "unrelated-scoped-delivery")
+            .unwrap()
+            .unwrap()
+            .state,
+        "pending"
+    );
+}
+
+#[test]
+fn scoped_meet_delivery_imports_link_and_preserves_jin_origin() {
+    let fixture = setup_invitation("needsAction", false, 1, None);
+    fixture.queue("unrelated-meet-delivery", InvitationResponse::Allow);
+    let config = jin_core::Config::load(fixture.tmp.path()).unwrap();
+    let mut event = jin_core::store::fs::read_event(
+        &jin_core::store::fs::find_event_path(&config.events_dir(), &fixture.event_id).unwrap(),
+    )
+    .unwrap();
+    let event_id = jin_core::id::new_ulid();
+    event.frontmatter.id = event_id.clone();
+    event.frontmatter.source = jin_core::model::event::EventSource::Jin;
+    event.frontmatter.authority = jin_core::model::event::EventSource::Jin;
+    event.frontmatter.conference_data = Some(serde_json::from_value(serde_json::json!({
+        "pendingCreateRequest": {"requestId": "fresh-meet", "conferenceSolutionKey": {"type": "hangoutsMeet"}}
+    })).unwrap());
+    event.body = "Private local note".to_string();
+    jin_core::store::fs::write_event(&config.events_dir(), &event).unwrap();
+    EventMutationService::new(fixture.tmp.path())
+        .unwrap()
+        .publish_existing(&event_id, fixture.target.clone(), "chosen-meet-delivery")
+        .unwrap();
+    let account = config
+        .google_registry
+        .account(&fixture.target.account_id)
+        .unwrap();
+    let calendar = config
+        .google_registry
+        .calendars
+        .iter()
+        .find(|calendar| {
+            calendar.account_id == fixture.target.account_id
+                && calendar.calendar_id == fixture.target.calendar_id
+        })
+        .unwrap();
+    let mut resource = invitation_resource(
+        "created-meeting",
+        "created-etag",
+        "accepted",
+        false,
+        1,
+        None,
+    );
+    resource["hangoutLink"] = serde_json::json!("https://meet.google.com/abc-defg-hij");
+    resource["conferenceData"] = serde_json::json!({"entryPoints": [{"entryPointType": "video", "uri": "https://meet.google.com/abc-defg-hij"}]});
+    let http = MockHttpClient::new(vec![
+        response(200, resource.clone()),
+        response(200, resource),
+    ]);
+    let conn = state::open_sync_db(&config.sync_dir()).unwrap();
+    assert_eq!(
+        jin_core::google::multi_sync::drain_destination_event(
+            fixture.tmp.path(),
+            &conn,
+            &fixture.target,
+            account.auth_generation,
+            calendar.route_generation,
+            &tokens(),
+            &http,
+            Some(&event_id),
+        )
+        .unwrap(),
+        1
+    );
+    jin_core::ops::google_accounts::refresh_event_details(
+        fixture.tmp.path(),
+        &event_id,
+        &fixture.target.account_id,
+        &fixture.target.calendar_id,
+        "access",
+        &http,
+    )
+    .unwrap();
+    let actual = jin_core::store::fs::read_event(
+        &jin_core::store::fs::find_event_path(&config.events_dir(), &event_id).unwrap(),
+    )
+    .unwrap();
+    let posts = http.requested_posts();
+    assert_eq!(posts.len(), 1);
+    let (url, body) = &posts[0];
+    assert!(url.contains("conferenceDataVersion=1"));
+    assert!(url.contains("sendUpdates=all"));
+    assert_eq!(
+        body["id"],
+        jin_core::google::client::ulid_to_google_event_id(&event_id).unwrap()
+    );
+    assert!(
+        body.get("iCalUID").is_none(),
+        "Google forbids id and iCalUID together on insert"
+    );
+    assert!(body.get("_jinGuestUpdatePolicy").is_none());
+    assert_eq!(
+        body["conferenceData"]["createRequest"]["conferenceSolutionKey"]["type"],
+        "hangoutsMeet"
+    );
+    assert!(body["conferenceData"].get("pendingCreateRequest").is_none());
+    assert!(
+        state::get_outbox_operation(&conn, "chosen-meet-delivery")
+            .unwrap()
+            .unwrap()
+            .payload
+            .unwrap()
+            .get("iCalUID")
+            .is_some(),
+        "repair old persisted payloads at the wire boundary"
+    );
+    assert_eq!(
+        actual.frontmatter.hangout_link.as_deref(),
+        Some("https://meet.google.com/abc-defg-hij")
+    );
+    assert_eq!(
+        actual.frontmatter.source,
+        jin_core::model::event::EventSource::Jin
+    );
+    assert_eq!(actual.body, "Private local note");
+    assert_eq!(
+        state::get_outbox_operation(&conn, "unrelated-meet-delivery")
+            .unwrap()
+            .unwrap()
+            .state,
+        "pending"
+    );
+    assert_eq!(http.requested_urls().len(), 2);
+}
+
+#[test]
+fn rejected_meet_insert_keeps_google_reason_and_retries_same_event_after_review() {
+    let fixture = setup_invitation("needsAction", false, 1, None);
+    let config = jin_core::Config::load(fixture.tmp.path()).unwrap();
+    let mut event = jin_core::store::fs::read_event(
+        &jin_core::store::fs::find_event_path(&config.events_dir(), &fixture.event_id).unwrap(),
+    )
+    .unwrap();
+    event.frontmatter.id = jin_core::id::new_ulid();
+    event.frontmatter.title = "Meet recovery".into();
+    event.frontmatter.source = jin_core::model::event::EventSource::Jin;
+    event.frontmatter.authority = jin_core::model::event::EventSource::Jin;
+    event.frontmatter.conference_data = Some(serde_json::from_value(serde_json::json!({
+        "pendingCreateRequest": {"requestId": "stable-meet-request", "conferenceSolutionKey": {"type": "hangoutsMeet"}}
+    })).unwrap());
+    jin_core::store::fs::write_event(&config.events_dir(), &event).unwrap();
+    let id = event.id();
+    EventMutationService::new(fixture.tmp.path())
+        .unwrap()
+        .publish_existing(id, fixture.target.clone(), "retry-rejected-meet")
+        .unwrap();
+    let account = config
+        .google_registry
+        .account(&fixture.target.account_id)
+        .unwrap();
+    let calendar = config
+        .google_registry
+        .calendars
+        .iter()
+        .find(|calendar| calendar.account_id == fixture.target.account_id)
+        .unwrap();
+    let conn = state::open_sync_db(&config.sync_dir()).unwrap();
+    let failure = MockHttpClient::new(vec![response(
+        400,
+        serde_json::json!({"error": {"message": "Invalid conference type value."}}),
+    )]);
+    let error = jin_core::google::multi_sync::drain_destination_event(
+        fixture.tmp.path(),
+        &conn,
+        &fixture.target,
+        account.auth_generation,
+        calendar.route_generation,
+        &tokens(),
+        &failure,
+        Some(id),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("Invalid conference type value."));
+    assert!(error.to_string().contains("Meet recovery"));
+    let paused = jin_core::ops::sync::list_quarantined_operations(fixture.tmp.path()).unwrap();
+    assert_eq!(paused.len(), 1);
+    assert_eq!(paused[0].event_title, "Meet recovery");
+    assert_eq!(
+        paused[0].pause_reason,
+        "provider_http_400: Invalid conference type value."
+    );
+    jin_core::ops::sync::review_quarantined_operation(
+        fixture.tmp.path(),
+        "google",
+        fixture.target.account_id.as_str(),
+        &fixture.target.calendar_id,
+        "retry-rejected-meet",
+        true,
+    )
+    .unwrap();
+    let resource = invitation_resource("recovered-meet", "etag", "accepted", false, 1, None);
+    let success = MockHttpClient::new(vec![response(200, resource)]);
+    assert_eq!(
+        jin_core::google::multi_sync::drain_destination_event(
+            fixture.tmp.path(),
+            &conn,
+            &fixture.target,
+            account.auth_generation,
+            calendar.route_generation,
+            &tokens(),
+            &success,
+            Some(id)
+        )
+        .unwrap(),
+        1
+    );
+    assert_eq!(
+        failure.requested_posts()[0].1["id"],
+        success.requested_posts()[0].1["id"]
+    );
+    assert_eq!(
+        failure.requested_posts()[0].1["conferenceData"],
+        success.requested_posts()[0].1["conferenceData"]
+    );
+    assert!(
+        jin_core::ops::sync::list_quarantined_operations(fixture.tmp.path())
+            .unwrap()
+            .is_empty()
+    );
 }

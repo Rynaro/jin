@@ -126,7 +126,7 @@ import {
   GCP_WIZARD_STEPS,
   GCP_WIZARD_GUIDANCE,
   formatAuthStatus,
-  formatSyncResult,
+  formatSyncResult, formatCalendarPauseReason,
   formatSyncError,
   isSyncAuthError,
   isSyncOfflineError,
@@ -276,6 +276,10 @@ describe('settings pane navigation', () => {
     }, [account]);
 
     expect(list.querySelector('.google-account-card')?.closest('[data-settings-pane-key]')).toBe(pane);
+    expect(Array.from(list.querySelectorAll('button')).find(button => button.textContent === 'Reconnect')?.hidden).toBe(false);
+    renderGoogleAccounts.call({ hasGoogleAccountsListTarget: true, googleAccountsListTarget: list, colorPickers: new Map() }, [{ ...account, state: 'needs_reauth' }]);
+    expect(list.textContent).toContain('Access expired');
+    expect(list.textContent).toContain('Calendar sync is paused');
   });
 
   it('restores notification action focus while Notifications remains selected', () => {
@@ -1110,7 +1114,7 @@ describe('runSync() — invoke args', () => {
   it('dispatches the shared events mutation only after a successful sync', async () => {
     mockInvoke.mockResolvedValue(makeSyncSummary({ pulled: 1 }));
     const dispatch = vi.fn();
-    const context = { syncElements: makeSyncElements(), dispatch };
+    const context = { syncElements: makeSyncElements(), dispatch, loadGoogleAccounts: vi.fn().mockResolvedValue(undefined) };
 
     await SettingsController.prototype.runSync.call(
       context as unknown as SettingsController,
@@ -1126,7 +1130,7 @@ describe('runSync() — invoke args', () => {
   it('does not dispatch an events mutation when sync fails', async () => {
     mockInvoke.mockRejectedValue(makeJinErrorDto({ code: 6, kind: 'offline' }));
     const dispatch = vi.fn();
-    const context = { syncElements: makeSyncElements(), dispatch };
+    const context = { syncElements: makeSyncElements(), dispatch, loadGoogleAccounts: vi.fn().mockResolvedValue(undefined) };
 
     await SettingsController.prototype.runSync.call(
       context as unknown as SettingsController,
@@ -1486,5 +1490,61 @@ describe('renderExportIdle', () => {
     el.exportBtn.disabled = true;
     renderExportIdle(el);
     expect(el.exportBtn.disabled).toBe(false);
+  });
+});
+
+
+describe('expired account sync feedback', () => {
+  it('shows the recovery error alongside a zero-count result', () => {
+    const el = makeSyncElements();
+    renderSyncResult(el, formatSyncResult(makeSyncSummary({
+      status: 'error', pulled: 0, pushed: 0,
+      errors: ['Personal: Google access expired. Reconnect this account in Settings.'],
+    })));
+    expect(el.syncError.classList.contains('hidden')).toBe(false);
+    expect(el.syncError.textContent).toContain('Reconnect this account');
+    expect(el.syncStatus.textContent).not.toBe('Sync complete');
+  });
+});
+
+
+describe('calendar rejection recovery', () => {
+  const operation = { provider: 'google', account_id: 'personal', calendar_id: 'primary', operation_id: 'retry-1', jin_id: 'event-1', event_title: 'Mais meets', operation: 'insert', account_alias: 'Personal', calendar_name: 'Calendar', pause_reason: 'provider_http_400: Invalid conference type value.' };
+
+  it('shows the event title and provider explanation instead of internal identifiers', () => {
+    const list = document.createElement('div');
+    const render = (SettingsController.prototype as any).renderQuarantinedOperations;
+    render.call({ hasQuarantinedOperationsListTarget: true, quarantinedOperationsListTarget: list }, [operation]);
+    expect(list.textContent).toContain('Mais meets');
+    expect(list.textContent).toContain('Invalid conference type value.');
+    expect(list.textContent).not.toContain('provider_http_400');
+    expect(list.textContent).not.toContain('event-1');
+    expect(list.textContent).toContain('Retry sync');
+  });
+
+  it('retries only the selected event and opens its confirmed detail', async () => {
+    mockInvoke.mockImplementation(async command => command === 'sync_calendar_event' ? 1 : []);
+    const context = { loadQuarantinedOperations: vi.fn(), showQuarantinedOperationsError: vi.fn(), dispatch: vi.fn() };
+    await (SettingsController.prototype as any).reviewQuarantinedOperation.call(context, operation, true);
+    expect(mockInvoke).toHaveBeenCalledWith('sync_calendar_event', { event_id: 'event-1' });
+    expect(mockInvoke).not.toHaveBeenCalledWith('run_sync', expect.anything());
+    expect(context.dispatch).toHaveBeenCalledWith('navigate', expect.objectContaining({ detail: { kind: 'events', id: 'event-1' } }));
+  });
+
+  it('keeps a failed retry on the review page with the Google error', async () => {
+    mockInvoke.mockImplementation(async command => {
+      if (command === 'sync_calendar_event') throw { code: 2, kind: 'usage', retriable: false, message: 'Google rejected the meeting: Invalid conference type value.' };
+      return [];
+    });
+    const context = { loadQuarantinedOperations: vi.fn(), showQuarantinedOperationsError: vi.fn(), dispatch: vi.fn() };
+    await (SettingsController.prototype as any).reviewQuarantinedOperation.call(context, operation, true);
+    expect(context.loadQuarantinedOperations).toHaveBeenCalled();
+    expect(context.showQuarantinedOperationsError).toHaveBeenCalledWith(expect.stringContaining('Invalid conference type value.'));
+    expect(context.dispatch).not.toHaveBeenCalledWith('navigate', expect.anything());
+  });
+
+  it('explains an older HTTP-only rejection and never hides new Google details', () => {
+    expect(formatCalendarPauseReason('provider_http_400')).toContain('Google rejected the event data');
+    expect(formatCalendarPauseReason(operation.pause_reason)).toContain('Invalid conference type value.');
   });
 });

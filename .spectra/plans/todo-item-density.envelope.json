@@ -1,0 +1,70 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "01a0e7bf-a4b0-7f3d-a412-567521a38c37",
+  "thread_id": "01a0e7bf-a4b0-76a8-b0d2-3625882d2558",
+  "parent_id": null,
+  "from": {
+    "eidolon": "ramza",
+    "version": "0.1.0"
+  },
+  "to": {
+    "eidolon": "apivr",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Implement compact, readable task items, richer inspector and lifecycle-safe movement selection protection.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/todo-item-density.md",
+    "sha256": "c7ceb47a0fc35faf3550a41c18caf02fa0b72a1cde85c37447742d557a12eb31",
+    "size_bytes": 14431
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 4500,
+    "input_handles": [],
+    "summary": "Adaptive single-line rows, priority glyphs, concise truthful due dates, shared task completion, grouped inspector and selection guard at real gesture activation."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "ise": {
+    "assertion_grade": "self-attested",
+    "provenance": {
+      "methodology_version": "ramza-0.1.0",
+      "tool_surface": [
+        "Read",
+        "ramza-rightsize",
+        "ramza-score",
+        "ramza-lint",
+        "ramza-ears-lint",
+        "ramza-freeze"
+      ],
+      "lateral_consults": [
+        "atlas"
+      ]
+    },
+    "receiver_authorization": {
+      "auto_route": true,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "confidence": 0.93,
+  "integrity": {
+    "method": "sha256",
+    "value": "c7ceb47a0fc35faf3550a41c18caf02fa0b72a1cde85c37447742d557a12eb31"
+  },
+  "trace": {
+    "ts": "2026-09-28T11:21:31.568219+00:00",
+    "host": "codex",
+    "model": "gpt-6-astra",
+    "tier": "standard"
+  },
+  "x_ramza_acceptance_criteria": {
+    "path": ".spectra/plans/todo-item-density.criteria.md",
+    "sha256": "240c2e26c6d3b9b8976a989754713d7af4fd4ce0801bd101ad6a4ead81d6f5c0"
+  }
+}

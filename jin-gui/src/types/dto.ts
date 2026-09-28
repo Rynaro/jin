@@ -195,6 +195,7 @@ export interface TaskDto {
   // P2 fields
   /** Section within the task's list (null = "No Section"). Added in P2. */
   section_id?: string | null;
+  board_column_id?: string | null;
   /** Tag slugs attached to this task. Added in P2. */
   tags?: string[];
   /** Fractional position key for manual sort. Added in P2. */
@@ -232,6 +233,9 @@ export interface ListDto {
   parent_id: string | null;
   view: string;
   sort_mode: string;
+  workflow_kind: 'checklist' | 'board' | null;
+  columns: Array<{ id: string; name: string; position: string; type: 'queue' | 'none' | 'in_progress' | 'done' }>;
+  initial_column_id: string | null;
   is_default: boolean;
   task_count: number;
   sections: SectionDto[];
@@ -376,6 +380,7 @@ export interface EventSyncContextDto {
   calendar_id: string;
   calendar_name: string;
   access_role: 'owner' | 'writer' | 'reader' | 'freeBusyReader' | string;
+  allowed_conference_solution_types: string[];
   writable: boolean;
   state: string;
 }
@@ -390,6 +395,8 @@ export interface GoogleCalendarDto {
   enabled: boolean;
   available: boolean;
   route_generation: number;
+  /** Provider-advertised conference types for this exact destination. */
+  allowed_conference_solution_types: string[];
 }
 
 export interface GoogleAccountDto {
@@ -402,6 +409,7 @@ export interface GoogleAccountDto {
 }
 
 export interface QuarantinedSyncOperationDto {
+  event_title?: string;
   operation_id: string;
   provider: string;
   operation: 'insert' | 'patch' | 'delete';
@@ -437,6 +445,35 @@ export interface EventDetailCapabilitiesDto {
   recurrence_scopes?: Array<'this_occurrence' | 'entire_series'>;
   can_return_task_to_flexible: boolean;
   originating_task: OriginatingTaskRefDto | null;
+  collaboration?: EventCollaborationCapabilitiesDto;
+}
+
+export interface InvitationActionRefDto {
+  notification_item_id: string;
+  expected_item_version: number;
+}
+
+export interface EventInvitationCapabilitiesDto {
+  action_ref: InvitationActionRefDto;
+  provider_response: string;
+  requested_response: string | null;
+  state: 'idle' | 'queued' | 'sending' | 'confirmed' | 'failed' | 'obsolete' | string;
+  can_respond: boolean;
+  recurrence_scopes: InvitationRecurrenceScope[];
+  disabled_reason: string | null;
+}
+
+export interface EventCollaborationCapabilitiesDto {
+  invitation: EventInvitationCapabilitiesDto | null;
+  can_edit_schedule: boolean;
+  can_append_attendees: boolean;
+  can_remove_attendees: boolean;
+  can_change_attendee_roles: boolean;
+  can_cancel_meeting: boolean;
+  can_add_conference: boolean;
+  can_remove_conference: boolean;
+  allowed_conference_solution_types: string[];
+  disabled_reasons: Record<string, string>;
 }
 
 export interface EventDetailDto {
@@ -453,6 +490,108 @@ export interface EditEventResultDto {
 export interface RemoveTimeBlockResultDto {
   event: EventDto;
   originating_task: TaskDto | null;
+}
+
+// ── S2: display-timezone range projection + temporal preview ───────────────────
+//
+// Mirrors jin-core/src/dto/event.rs. Core owns the timezone truth; these types
+// exist so no surface re-derives geometry from raw list_events rows.
+
+/** Mirrors jin_core::dto::event::TemporalResolutionKind */
+export type TemporalResolutionKind = 'exact' | 'ambiguous_earlier' | 'nonexistent_shifted_forward';
+
+/** Mirrors jin_core::dto::event::TemporalDisabledReason */
+export type TemporalDisabledReason =
+  | 'ambiguous_wall_time'
+  | 'unresolvable_local_time'
+  | 'invalid_timezone';
+
+/** Mirrors jin_core::dto::event::CalendarSlotState */
+export type CalendarSlotState = 'all_day' | 'floating' | 'anchored';
+
+/** Mirrors jin_core::dto::event::CalendarRangeProjectionInput */
+export interface CalendarRangeProjectionInput {
+  /** Inclusive first display date, YYYY-MM-DD. */
+  from: string;
+  /** Inclusive last display date, YYYY-MM-DD. */
+  to: string;
+}
+
+/** Mirrors jin_core::dto::event::CalendarRangeEntryDto */
+export interface CalendarRangeEntryDto {
+  event_id: string;
+  title: string;
+  slot_state: CalendarSlotState;
+  start_date: string;
+  end_date: string;
+  start_display: string;
+  end_display: string;
+  start_utc: string | null;
+  end_utc: string | null;
+  continuation_dates: string[];
+  elapsed_minutes: number;
+  start_tzid: string | null;
+  end_tzid: string | null;
+  is_all_day: boolean;
+  floating: boolean;
+  start_resolution: TemporalResolutionKind | null;
+  end_resolution: TemporalResolutionKind | null;
+  temporal_editable: boolean;
+  temporal_disabled_reason: TemporalDisabledReason | null;
+}
+
+/** Mirrors jin_core::dto::event::CalendarRangeProjectionDto */
+export interface CalendarRangeProjectionDto {
+  from: string;
+  to: string;
+  display_tz: string;
+  entries: CalendarRangeEntryDto[];
+}
+
+/** Mirrors jin_core::dto::event::EventTemporalPreviewInput */
+export interface EventTemporalPreviewInput {
+  start: string;
+  end: string;
+  is_all_day?: boolean;
+  floating?: boolean;
+  start_tzid?: string | null;
+  end_tzid?: string | null;
+}
+
+/** Mirrors jin_core::dto::event::TemporalPreviewStatus */
+export type TemporalPreviewStatus =
+  | 'ok'
+  | 'unresolvable_local_time'
+  | 'invalid_timezone'
+  | 'invalid_value'
+  | 'non_positive_duration';
+
+/** Mirrors jin_core::dto::event::TemporalFieldErrorDto */
+export interface TemporalFieldErrorDto {
+  /** start | end | start_tzid | end_tzid | duration */
+  field: string;
+  code: TemporalPreviewStatus;
+  message: string;
+}
+
+/** Mirrors jin_core::dto::event::EventTemporalPreviewDto */
+export interface EventTemporalPreviewDto {
+  status: TemporalPreviewStatus;
+  schedulable: boolean;
+  errors: TemporalFieldErrorDto[];
+  start_resolution: TemporalResolutionKind | null;
+  end_resolution: TemporalResolutionKind | null;
+  start_utc: string | null;
+  end_utc: string | null;
+  start_display: string;
+  end_display: string;
+  start_tzid: string | null;
+  end_tzid: string | null;
+  is_all_day: boolean;
+  floating: boolean;
+  elapsed_minutes: number | null;
+  start_note: string | null;
+  end_note: string | null;
 }
 
 // ── AgendaDto ──────────────────────────────────────────────────────────────────

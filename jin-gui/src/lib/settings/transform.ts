@@ -162,6 +162,7 @@ export function formatAuthStatus(dto: AuthStatusDto): AuthStatusView {
 // ── Sync result view ───────────────────────────────────────────────────────────
 
 export interface SyncResultView {
+  errors?: string[];
   status: string;
   pulled: number;
   pushed: number;
@@ -187,10 +188,12 @@ export function formatSyncResult(dto: SyncSummary): SyncResultView {
     queued: 'Changes queued — sync when online',
     conflict: 'Sync complete with conflicts',
     error: 'Sync encountered errors',
+    partial: 'Some calendars could not sync',
   };
 
   return {
     status: dto.status,
+    errors: dto.errors ?? [],
     pulled: dto.pulled,
     pushed: dto.pushed,
     conflicts: dto.conflicts,
@@ -304,4 +307,25 @@ export interface AppearanceControlsState {
   increaseContrast: boolean;
   reduceMotion: boolean;
   textSizeScale: number;
+}
+
+
+export function formatCalendarPauseReason(reason: string): string {
+  if (reason.startsWith('provider_http_')) {
+    const match = /^provider_http_(\d+)(?:: (.*))?$/.exec(reason);
+    const detail = match?.[2];
+    if (detail) return `Google rejected this change: ${detail}`;
+    if (match?.[1] === '400') return 'Google rejected the event data. Retry with the updated app; if it is rejected again, the response will appear here.';
+    return 'Google could not save this change. Retry to check its current status.';
+  }
+  const messages: Record<string, string> = {
+    timezone_required: 'Choose a valid timezone in the event editor before retrying Google sync.',
+    credentials_revoked: 'Google access expired. Reconnect the account before retrying.',
+    account_disconnected: 'This account was disconnected. Reconnect it before retrying.',
+    provider_permission_changed: 'Account or calendar access changed. Review the destination before retrying.',
+    interrupted_provider_write_requires_review: 'The previous sync was interrupted. Google may already have received the change.',
+    canonical_superseded: 'This event changed after it was queued. Review the latest event before syncing.',
+    route_disabled: 'Sync is disabled for this calendar. Enable it before retrying.',
+  };
+  return messages[reason] ?? 'This change is paused. Check the event and its calendar before retrying.';
 }

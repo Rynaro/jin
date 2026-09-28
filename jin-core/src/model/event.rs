@@ -317,6 +317,17 @@ pub struct EventFrontmatter {
     pub hangout_link: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reminders: Option<EventReminderSettings>,
+    /// Google collaboration permissions are provider facts, not UI guesses.
+    /// They are retained locally so every surface and mutation path reaches the
+    /// same authorization decision after sync.
+    #[serde(default)]
+    pub guests_can_modify: bool,
+    #[serde(default)]
+    pub guests_can_invite_others: bool,
+    #[serde(default)]
+    pub guests_can_see_other_guests: bool,
+    #[serde(default)]
+    pub locked: bool,
 
     // --- source / authority (DEC-09) ---
     #[serde(default)]

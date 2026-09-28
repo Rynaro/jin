@@ -384,6 +384,19 @@
   min-height: 0;
 }
 
+:root[data-text-scale="accessibility"] .tasks-detail-pane .task-detail__title-row {
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: start;
+}
+
+:root[data-text-scale="accessibility"] .tasks-detail-pane .task-completion.jin-check,
+:root[data-text-scale="accessibility"] .tasks-detail-pane :is(.tasks-detail-pane__close-btn, .tasks-detail-pane__delete-btn).jin-control {
+  inline-size: 44px;
+  block-size: 44px;
+  min-inline-size: 44px;
+  min-block-size: 44px;
+}
+
 :root[data-text-scale="accessibility"] .tasks-detail-pane :is(
   .task-detail__fields .form-select,
   .task-detail__due-btn.jin-control,
@@ -480,8 +493,7 @@
   }
 }
 
-/* Notes uses the existing rail reveal control as deliberate one-layer navigation
- * on phones and at AX5. Content rows grow with their title, metadata and links. */
+/* Notes content grows at phone widths; navigation uses the shared drawer. */
 @media (max-width: 640px) {
   .notes-paned,
   .notes-paned.detail-open,
@@ -489,27 +501,6 @@
   .notes-paned.detail-open.rail-collapsed {
     grid-template-columns: minmax(0, 1fr);
     min-width: 0;
-  }
-
-  .notes-paned:not(.rail-collapsed) .notes-folder-rail {
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    inline-size: 100%;
-    max-inline-size: 100%;
-  }
-
-  .notes-paned.rail-collapsed .notes-folder-rail {
-    display: none;
-  }
-
-  /* Keep the Notes rail affordance clear of the global navigation handle. */
-  .notes-rail-reveal {
-    width: var(--coarse-hit-target);
-    height: var(--coarse-hit-target);
-    min-width: var(--coarse-hit-target);
-    min-height: var(--coarse-hit-target);
-    margin-inline-start: var(--coarse-hit-target);
   }
 
   .notes-list-pane,
@@ -614,6 +605,32 @@
   inline-size: 100%;
   box-sizing: border-box;
 }
+
+:root[data-text-scale="accessibility"] .notes-explorer__toolbar,
+:root[data-text-scale="accessibility"] .notes-explorer__controls {
+  flex-wrap: wrap;
+}
+
+:root[data-text-scale="accessibility"] .notes-explorer__controls,
+:root[data-text-scale="accessibility"] .notes-list-pane__header .notes-search,
+:root[data-text-scale="accessibility"] .notes-list-pane__header .notes-new-note-btn {
+  inline-size: 100%;
+}
+
+:root[data-text-scale="accessibility"] .notes-explorer__view-switch { inline-size: 100%; }
+:root[data-text-scale="accessibility"] .notes-explorer__view-button { flex: 1; white-space: normal; overflow-wrap: anywhere; }
+:root[data-text-scale="accessibility"] .notes-explorer__view-button > svg { display: none; }
+:root[data-text-scale="accessibility"] .notes-list-pane__header .notes-new-note-btn { justify-content: center; block-size: auto; min-block-size: 44px; padding-block: 8px; white-space: normal; }
+:root[data-text-scale="accessibility"] .notes-list-pane__header .notes-search__input { block-size: auto; min-block-size: 44px; }
+:root[data-text-scale="accessibility"] .notes-explorer__identity { flex-wrap: wrap; }
+:root[data-text-scale="accessibility"] .note-row .browse-row__inner.jin-list-row { grid-template-columns: minmax(0, 1fr); }
+:root[data-text-scale="accessibility"] .note-row__glyph { display: none; }
+:root[data-text-scale="accessibility"] .note-row__aside.browse-row__meta { grid-column: 1; align-items: flex-start; text-align: start; }
+:root[data-text-scale="accessibility"] .note-row .browse-row__title,
+:root[data-text-scale="accessibility"] .note-row__snippet,
+:root[data-text-scale="accessibility"] .note-row__folder,
+:root[data-text-scale="accessibility"] .note-row__tags { display: block; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; -webkit-line-clamp: unset; }
+:root[data-text-scale="accessibility"] .notes-explorer__body > .browse-list.notes-explorer__cards { grid-template-columns: minmax(0, 1fr); }
 
 :root[data-text-scale="accessibility"] .note-row__preview,
 :root[data-text-scale="accessibility"] .note-row .browse-row__meta {

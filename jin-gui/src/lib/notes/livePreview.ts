@@ -106,6 +106,44 @@ export class CheckboxWidget extends WidgetType {
   }
 }
 
+/** Inactive authored link cards occupy one legal CM block widget. */
+export class LinkCardWidget extends WidgetType {
+  constructor(readonly label: string, readonly href: string, readonly from: number) { super(); }
+
+  toDOM(view: EditorView): HTMLElement {
+    const card = document.createElement('div');
+    card.className = 'cm-link-card-widget';
+    const edit = document.createElement('button');
+    edit.type = 'button'; edit.className = 'cm-link-card-widget__edit';
+    edit.dataset.cmLinkFocus = String(this.from);
+    edit.setAttribute('aria-label', `Edit link card: ${this.label}`);
+    edit.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      event.stopPropagation();
+      view.dispatch({ selection: { anchor: this.from + 1 }, scrollIntoView: true });
+      view.focus();
+    });
+    const title = document.createElement('strong'); title.textContent = this.label;
+    const address = document.createElement('span'); address.textContent = this.href;
+    edit.append(title, address);
+    const open = document.createElement('button');
+    open.type = 'button'; open.className = 'cm-link-card-widget__open';
+    open.dataset.cmLinkOpen = this.href;
+    open.dataset.cmLinkFocus = String(this.from);
+    open.textContent = '↗';
+    open.setAttribute('aria-label', 'Open link in browser');
+    card.append(edit, open);
+    return card;
+  }
+
+  eq(other: WidgetType): boolean {
+    return other instanceof LinkCardWidget && other.label === this.label && other.href === this.href && other.from === this.from;
+  }
+
+  ignoreEvent(): boolean { return false; }
+}
+
 // ── Core pure function ────────────────────────────────────────────────────────
 
 /**
@@ -187,11 +225,16 @@ export function buildLivePreviewDecorations(
           const urlText = state.doc.sliceString(urlNode.from, urlNode.to);
           if (!SAFE_LINK_SCHEME.test(urlText)) return; // unsafe scheme → raw
 
+          const line = state.doc.lineAt(node.from);
+          const wholeLine = line.text.trim() === state.doc.sliceString(node.from, node.to);
+          if (cardMarker && wholeLine && SAFE_LINK_SCHEME.test(urlText)) {
+            const label = state.doc.sliceString(lf, lt);
+            builder.add(line.from, line.to, Decoration.replace({ widget: new LinkCardWidget(label, urlText, line.from), block: true }));
+            return false;
+          }
           // Emit 3 decorations in strictly ascending from-order (critical for
           // RangeSetBuilder — any out-of-order add throws).
           builder.add(node.from, open.to, Decoration.replace({}));           // hide '['
-          const line = state.doc.lineAt(node.from);
-          const wholeLine = line.text.trim() === state.doc.sliceString(node.from, node.to);
           const labelClass = cardMarker && wholeLine
             ? 'cm-link-label cm-link-card-label'
             : 'cm-link-label';
@@ -478,46 +521,30 @@ export const taskCheckboxClickHandler = EditorView.domEventHandlers({
   },
 });
 
-// ── ViewPlugin wrapper ────────────────────────────────────────────────────────
+// ── StateField wrapper ────────────────────────────────────────────────────────
 
 /**
  * jinLivePreview() — returns the CM6 Extension that wires the decoration layer
  * and the atomicRanges facet.
  *
- * Decorations are rebuilt on docChanged | viewportChanged | selectionSet.
- * Only view.visibleRanges are iterated (perf).
+ * A StateField is required because authored cards are legal block widgets;
+ * ViewPlugin decorations cannot change vertical geometry in CodeMirror.
+ * Decorations are rebuilt on document or selection changes.
  *
  * atomicRanges == the SAME replace DecorationSet (single source of truth).
  * Active-line markers are absent from the set → never atomic → no caret trap.
  */
 export function jinLivePreview() {
-  const plugin = ViewPlugin.fromClass(
-    class {
-      decorations: DecorationSet;
-
-      constructor(view: EditorView) {
-        this.decorations = buildLivePreviewDecorations(view.state, view.visibleRanges);
-      }
-
-      update(update: ViewUpdate) {
-        if (update.docChanged || update.viewportChanged || update.selectionSet) {
-          this.decorations = buildLivePreviewDecorations(
-            update.view.state,
-            update.view.visibleRanges,
-          );
-        }
-      }
+  return StateField.define<DecorationSet>({
+    create: state => buildLivePreviewDecorations(state),
+    update(value, transaction) {
+      return transaction.docChanged || transaction.selection ? buildLivePreviewDecorations(transaction.state) : value;
     },
-    {
-      decorations: (v) => v.decorations,
-      provide: (p) =>
-        EditorView.atomicRanges.of((view) =>
-          atomicDecorationsOf(view.plugin(p)?.decorations ?? Decoration.none),
-        ),
-    },
-  );
-
-  return plugin;
+    provide: field => [
+      EditorView.decorations.from(field),
+      EditorView.atomicRanges.of(view => atomicDecorationsOf(view.state.field(field))),
+    ],
+  });
 }
 
 class TableWidget extends WidgetType {
@@ -560,8 +587,18 @@ const MANAGED_IMAGE_LINE = /^\s*!\[((?:\\.|[^\]])*)\]\(jin-asset:\/\/sha256\/([a
 export function jinManagedImagePreview() {
   const make = (state: EditorState): DecorationSet => {
     const builder = new RangeSetBuilder<Decoration>();
+    const codeRanges: Array<{ from: number; to: number }> = [];
+    syntaxTree(state).iterate({
+      enter(node) {
+        if (node.name === 'FencedCode' || node.name === 'CodeBlock' || node.name === 'IndentedCode') {
+          codeRanges.push({ from: node.from, to: node.to });
+          return false;
+        }
+      },
+    });
     for (let n = 1; n <= state.doc.lines; n++) {
       const line = state.doc.line(n);
+      if (codeRanges.some(range => range.from <= line.from && range.to >= line.to)) continue;
       const match = MANAGED_IMAGE_LINE.exec(line.text);
       const active = state.selection.ranges.some((range) => range.from <= line.to && range.to >= line.from);
       if (!match || active) continue;

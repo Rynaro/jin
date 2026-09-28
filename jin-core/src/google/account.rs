@@ -180,6 +180,8 @@ pub struct GoogleCalendar {
     #[serde(default)]
     pub primary: bool,
     pub access_role: GoogleAccessRole,
+    #[serde(default)]
+    pub allowed_conference_solution_types: Vec<String>,
     #[serde(default = "default_true")]
     pub enabled: bool,
     #[serde(default = "default_true")]
@@ -208,6 +210,7 @@ pub struct DiscoveredCalendar {
     pub name: String,
     pub primary: bool,
     pub access_role: GoogleAccessRole,
+    pub allowed_conference_solution_types: Vec<String>,
 }
 
 impl GoogleRegistry {
@@ -338,6 +341,7 @@ impl GoogleRegistry {
                 existing.name = item.name;
                 existing.primary = item.primary;
                 existing.access_role = item.access_role;
+                existing.allowed_conference_solution_types = item.allowed_conference_solution_types;
                 existing.available = true;
                 existing.refreshed_at = now;
                 if lost_write {
@@ -350,6 +354,7 @@ impl GoogleRegistry {
                     name: item.name,
                     primary: item.primary,
                     access_role: item.access_role,
+                    allowed_conference_solution_types: item.allowed_conference_solution_types,
                     enabled: true,
                     available: true,
                     route_generation: 0,

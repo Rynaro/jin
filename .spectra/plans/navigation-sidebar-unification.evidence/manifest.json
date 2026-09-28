@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "baseline_revision": "44dff1549095580305f2b44fac4f7c958bda3ec3",
+  "result": "pass",
+  "artifacts": [
+    { "acceptance_criteria": ["AC-NAV-001", "AC-NAV-003", "AC-NAV-004", "AC-NAV-005", "AC-NAV-006", "AC-NAV-007", "AC-NAV-008", "AC-NAV-011", "AC-NAV-034"], "viewport": "1280x800", "mode": "light-standard", "surface": "main-expanded", "result": "pass", "path": "screenshots/AC-NAV-034-main-1280x800-light.png" },
+    { "acceptance_criteria": ["AC-NAV-024"], "viewport": "1280x800", "mode": "light-standard", "surface": "main-collapsed", "result": "pass", "path": "screenshots/AC-NAV-024-main-collapsed-1280x800-light.png" },
+    { "acceptance_criteria": ["AC-NAV-009", "AC-NAV-013", "AC-NAV-015", "AC-NAV-020", "AC-NAV-021", "AC-NAV-025", "AC-NAV-034"], "viewport": "1280x800", "mode": "light-standard", "surface": "notes-tree-depths-and-actions", "result": "pass", "path": "screenshots/AC-NAV-020-notes-tree-1280x800-light.png" },
+    { "acceptance_criteria": ["AC-NAV-014", "AC-NAV-016", "AC-NAV-017", "AC-NAV-018", "AC-NAV-021", "AC-NAV-026", "AC-NAV-034"], "viewport": "1280x800", "mode": "light-standard", "surface": "tasks-long-label-count-and-focused-actions", "result": "pass", "path": "screenshots/AC-NAV-016-018-tasks-actions-1280x800-light.png" },
+    { "acceptance_criteria": ["AC-NAV-012", "AC-NAV-023", "AC-NAV-034", "AC-NAV-036"], "viewport": "1280x800", "mode": "light-standard", "surface": "settings", "result": "pass", "path": "screenshots/AC-NAV-012-023-settings-1280x800-light.png" },
+    { "acceptance_criteria": ["AC-NAV-019", "AC-NAV-028"], "viewport": "1280x800", "mode": "coarse-pointer-light", "surface": "tasks-actions", "result": "pass", "path": "screenshots/AC-NAV-019-028-tasks-1280x800-coarse.png" },
+    { "acceptance_criteria": ["AC-NAV-029"], "viewport": "1280x800", "mode": "forced-colors-light", "surface": "settings-active-row", "result": "pass", "path": "screenshots/AC-NAV-029-settings-1280x800-forced-colors.png" },
+    { "acceptance_criteria": ["AC-NAV-029", "AC-NAV-030"], "viewport": "1280x800", "mode": "increased-contrast-reduced-transparency", "surface": "tasks", "result": "pass", "path": "screenshots/AC-NAV-029-030-tasks-1280x800-contrast-transparency.png" },
+    { "acceptance_criteria": ["AC-NAV-027"], "viewport": "1280x800", "mode": "light-ax3.1", "surface": "notes", "result": "pass", "path": "screenshots/AC-NAV-027-notes-1280x800-ax3_1.png" },
+    { "acceptance_criteria": ["AC-NAV-027", "AC-NAV-035"], "viewport": "390x844", "mode": "light-ax3.1", "surface": "settings", "result": "pass", "path": "screenshots/AC-NAV-027-settings-390x844-ax3_1.png" },
+    { "acceptance_criteria": ["AC-NAV-035"], "viewport": "720x800", "mode": "light-standard", "surface": "settings", "result": "pass", "path": "screenshots/AC-NAV-035-settings-720x800-light.png" },
+    { "acceptance_criteria": ["AC-NAV-035"], "viewport": "390x844", "mode": "light-standard", "surface": "notes", "result": "pass", "path": "screenshots/AC-NAV-035-notes-390x844-light.png" },
+    { "acceptance_criteria": ["AC-NAV-035"], "viewport": "390x844", "mode": "light-standard", "surface": "tasks", "result": "pass", "path": "screenshots/AC-NAV-035-tasks-390x844-light.png" },
+    { "acceptance_criteria": ["AC-NAV-008", "AC-NAV-034"], "viewport": "1280x800", "mode": "dark-standard", "surface": "tasks", "result": "pass", "path": "screenshots/AC-NAV-034-tasks-1280x800-dark.png" },
+    { "acceptance_criteria": ["AC-NAV-022", "AC-NAV-024", "AC-NAV-025"], "viewport": "1280x800", "mode": "light-standard-accessibility-tree", "surface": "main", "result": "pass", "path": "accessibility/AC-NAV-034-main-1280x800-light.yml" },
+    { "acceptance_criteria": ["AC-NAV-034"], "viewport": "1280x800", "mode": "computed-geometry", "surface": "all-eligible-navigation", "result": "pass", "path": "geometry.json" },
+    { "acceptance_criteria": ["AC-NAV-036"], "viewport": "not-applicable", "mode": "source-and-test-preservation", "surface": "settings", "result": "pass", "path": "settings-preservation.json" },
+    { "acceptance_criteria": ["AC-NAV-037"], "viewport": "all-listed", "mode": "browser-console", "surface": "all-browser-scenarios", "result": "pass", "path": "console.json" }
+  ]
+}
