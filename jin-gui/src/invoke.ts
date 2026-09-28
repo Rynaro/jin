@@ -10,6 +10,11 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+
+/** Open one confirmed HTTP(S) destination with the OS default browser. */
+export function openExternalUrl(url: string): Promise<void> {
+  return invoke<void>('open_external_url', { url });
+}
 import type {
   AgendaDto,
   TodayProjectionDto,
@@ -27,6 +32,10 @@ import type {
   EventConferenceDataDto,
   EventReminderSettingsDto,
   EditEventResultDto,
+  CalendarRangeProjectionDto,
+  CalendarRangeProjectionInput,
+  EventTemporalPreviewDto,
+  EventTemporalPreviewInput,
   ExportResultDto,
   FolderDto,
   GoogleAccountDto,
@@ -266,6 +275,7 @@ export function createTask(input: {
   priority?: string;
   due?: string;
   list?: string;
+  board_column_id?: string;
   /** P4: tag slugs to attach on creation. */
   tags?: string[];
   /** P10: initial reminders. Omit to use auto-reminder logic. */
@@ -316,14 +326,16 @@ export function deleteTask(id: string): Promise<TaskDto> {
  */
 export function moveTask(
   id: string,
-  input: { listId: string; sectionId?: string | null; position: string }
+  input: { listId: string; sectionId?: string | null; boardColumnId?: string | null; position: string; confirmDoingToChecklist?: boolean }
 ): Promise<TaskDto> {
   return invoke<TaskDto>('move_task', {
     id,
     input: {
       list_id: input.listId,
       section_id: input.sectionId ?? null,
+      board_column_id: input.boardColumnId ?? null,
       position: input.position,
+      confirm_doing_to_checklist: input.confirmDoingToChecklist ?? false,
     },
   });
 }
@@ -364,8 +376,48 @@ export function createList(input: {
   name: string;
   color: string;
   icon: string;
+  workflow_kind?: 'checklist' | 'board';
 }): Promise<ListDto> {
   return invoke<ListDto>('create_list', { input });
+}
+
+export interface WorkflowSetupPreview {
+  list_id: string;
+  target: 'checklist' | 'board';
+  snapshot: string;
+  todo: number;
+  doing: number;
+  done: number;
+  cancelled: number;
+  subtasks: number;
+}
+
+export function previewWorkflowSetup(id: string, target: 'checklist' | 'board'): Promise<WorkflowSetupPreview> {
+  return invoke<WorkflowSetupPreview>('preview_workflow_setup', { id, target });
+}
+
+export function applyWorkflowSetup(id: string, target: 'checklist' | 'board', snapshot: string, operationId: string): Promise<ListDto> {
+  return invoke<ListDto>('apply_workflow_setup', { id, target, snapshot, operation_id: operationId });
+}
+
+export type BoardColumnType = 'queue' | 'none' | 'in_progress' | 'done';
+export function setInitialBoardColumn(id: string, columnId: string): Promise<ListDto> {
+  return invoke<ListDto>('set_initial_board_column', { id, column_id: columnId });
+}
+export function createBoardColumn(id: string, name: string, columnType: BoardColumnType): Promise<ListDto> {
+  return invoke<ListDto>('create_board_column', { id, name, column_type: columnType });
+}
+export function renameBoardColumn(id: string, columnId: string, name: string): Promise<ListDto> {
+  return invoke<ListDto>('rename_board_column', { id, column_id: columnId, name });
+}
+export function reorderBoardColumn(id: string, columnId: string, position: string): Promise<ListDto> {
+  return invoke<ListDto>('reorder_board_column', { id, column_id: columnId, position });
+}
+export function changeBoardColumnType(id: string, columnId: string, columnType: BoardColumnType): Promise<ListDto> {
+  return invoke<ListDto>('change_board_column_type', { id, column_id: columnId, column_type: columnType });
+}
+export function deleteBoardColumn(id: string, columnId: string, replacementId?: string): Promise<ListDto> {
+  return invoke<ListDto>('delete_board_column', { id, column_id: columnId, replacement_id: replacementId ?? null });
 }
 
 /** edit_list(id, input) -> ListDto — rename / recolor / reicon / view / sort_mode. */
@@ -394,8 +446,8 @@ export function reorderList(id: string, position: string): Promise<ListDto> {
  * Refuses to delete the inbox (returns error code 9).
  * Tasks belonging to the deleted list are reassigned to inbox.
  */
-export function deleteList(id: string): Promise<void> {
-  return invoke<void>('delete_list', { id });
+export function deleteList(id: string, confirmDoing = false): Promise<void> {
+  return invoke<void>('delete_list', { id, confirm_doing: confirmDoing });
 }
 
 // ── Sections (P5) ─────────────────────────────────────────────────────────────
@@ -510,6 +562,81 @@ export function editEvent(input: {
   recurrence_scope?: RecurrenceMutationScope;
 }): Promise<EditEventResultDto> {
   return invoke<EditEventResultDto>('edit_event', { input });
+}
+
+// ── S2: sparse edits, range projection, temporal preview ──────────────────────
+
+/**
+ * The atomic temporal bundle. Either every field travels or none do — core
+ * rejects a partial bundle at deserialization, so there is no shape in which a
+ * client half-specifies a time.
+ */
+export interface EventTemporalDeltaInput {
+  start: string;
+  end: string;
+  is_all_day: boolean;
+  floating: boolean;
+  /** Required when neither all-day nor floating; forbidden otherwise. */
+  start_tzid?: string | null;
+  end_tzid?: string | null;
+}
+
+/**
+ * A sparse edit: omit what the user did not touch.
+ *
+ * Omitting a key preserves the canonical value. Sending `null` for
+ * `description`/`location` clears it. This is what lets a title-only edit leave
+ * an event's two distinct endpoint zones alone.
+ */
+export interface EventEditDeltaInput {
+  title?: string;
+  description?: string | null;
+  location?: string | null;
+  temporal?: EventTemporalDeltaInput;
+  recurrence?: RecurrenceDraft;
+  clear_recurrence?: boolean;
+  attendees?: EventAttendeeDto[];
+  attendees_omitted?: boolean;
+  conference_data?: EventConferenceDataDto;
+  clear_conference_data?: boolean;
+  reminders?: EventReminderSettingsDto;
+}
+
+export function editEventDelta(input: {
+  event_id: string;
+  edit_token: string;
+  operation_id: string;
+  delta: EventEditDeltaInput;
+  recurrence_scope?: RecurrenceMutationScope;
+}): Promise<EditEventResultDto> {
+  return invoke<EditEventResultDto>('edit_event_delta', { input });
+}
+
+export function editRoutedEventDelta(input: {
+  event_id: string;
+  edit_token: string;
+  operation_id: string;
+  delta: EventEditDeltaInput;
+  recurrence_scope?: RecurrenceMutationScope;
+  account_id: string;
+  calendar_id: string;
+  guest_update_policy?: 'all' | 'external_only' | 'none';
+}): Promise<EventDto> {
+  return invoke<EventDto>('edit_routed_event_delta', { input });
+}
+
+/** Read-only display-timezone geometry for one bounded, inclusive window. */
+export function calendarRangeProjection(
+  input: CalendarRangeProjectionInput,
+): Promise<CalendarRangeProjectionDto> {
+  return invoke<CalendarRangeProjectionDto>('calendar_range_projection', { input });
+}
+
+/** Resolve candidate temporal values without touching the vault. */
+export function eventTemporalPreview(
+  input: EventTemporalPreviewInput,
+): Promise<EventTemporalPreviewDto> {
+  return invoke<EventTemporalPreviewDto>('event_temporal_preview', { input });
 }
 
 export type RecurrenceMutationScope = 'this_occurrence' | 'entire_series';

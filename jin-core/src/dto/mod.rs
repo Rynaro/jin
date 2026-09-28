@@ -20,10 +20,13 @@ pub use agenda::{
 };
 pub use dangling::DanglingEdgeDto;
 pub use event::{
-    EditEventResultDto, EventCollaborationCapabilitiesDto, EventDetailCapabilitiesDto,
-    EventDetailDto, EventDisplayKind, EventDto, EventInvitationCapabilitiesDto,
-    EventReadOnlyReason, EventSyncContextDto, InvitationActionRefDto, OriginatingTaskRefDto,
-    RemoveTimeBlockResultDto,
+    CalendarRangeEntryDto, CalendarRangeProjectionDto, CalendarRangeProjectionInput,
+    CalendarSlotState, EditEventResultDto, EventCollaborationCapabilitiesDto,
+    EventDetailCapabilitiesDto, EventDetailDto, EventDisplayKind, EventDto,
+    EventInvitationCapabilitiesDto, EventReadOnlyReason, EventSyncContextDto,
+    EventTemporalPreviewDto, EventTemporalPreviewInput, InvitationActionRefDto,
+    OriginatingTaskRefDto, RemoveTimeBlockResultDto, TemporalDisabledReason, TemporalFieldErrorDto,
+    TemporalPreviewStatus, TemporalResolutionKind,
 };
 pub use folder::FolderDto;
 pub use google::{GoogleAccountDto, GoogleCalendarDto};

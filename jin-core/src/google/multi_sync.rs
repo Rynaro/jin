@@ -568,6 +568,7 @@ pub fn drain_destination<H: HttpClient>(
 
 /// Drain only the selected canonical event when invoked from its detail view.
 /// All claiming, generation, ETag and interrupted-write guards remain shared.
+#[allow(clippy::too_many_arguments)] // Provider routing and selection are independent call-site inputs.
 pub fn drain_destination_event<H: HttpClient>(
     root: &Path,
     conn: &Connection,

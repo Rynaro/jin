@@ -2,18 +2,21 @@
 //! This module is private to jin-core. No consumer may open index.sqlite directly.
 
 use rusqlite::{params, Connection, OptionalExtension, Result as SqlResult};
+use std::sync::Mutex;
+
+// Serialize schema setup within the process. SQLite serializes writes across
+// connections, but concurrent `journal_mode=WAL` changes can still return
+// SQLITE_BUSY before the migration transaction begins.
+static APPLY_LOCK: Mutex<()> = Mutex::new(());
 
 /// Sentinel stored in schema_meta to gate the one-time excerpt-populate rebuild (K1).
 /// Bump this value whenever a schema change requires a one-time rebuild.
 /// wave3-tasks-v1: adds lists/sections/tags/task_tags tables + 4 new tasks columns (P2).
 /// wave3-tasks-v2: S6 — adds the `parent` column to `tasks` (subtasks).
 /// calendar-m1-v1: adds explicit flexible agenda placement to tasks.
-pub(crate) const SCHEMA_VERSION: &str = "calendar-m1-v1";
+pub(crate) const SCHEMA_VERSION: &str = "tasks-workflows-v2";
 
 pub const SCHEMA_SQL: &str = r#"
-PRAGMA journal_mode=WAL;
-PRAGMA foreign_keys=ON;
-
 CREATE TABLE IF NOT EXISTS schema_meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -66,7 +69,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     position     TEXT NOT NULL DEFAULT '',   -- P2: fractional rank key (base-62)
     reminders    TEXT NOT NULL DEFAULT '[]', -- P2: JSON array of Reminder objects
     parent       TEXT,                     -- S6: parent task id (subtasks); NULL = top-level
-    agenda_bucket TEXT                     -- M1: explicit agenda placement; NULL = none
+    agenda_bucket TEXT,                    -- M1: explicit agenda placement; NULL = none
+    board_column_id TEXT                   -- Canonical board placement; NULL for checklists/legacy
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -144,6 +148,9 @@ CREATE TABLE IF NOT EXISTS lists (
     parent_id   TEXT,
     view        TEXT NOT NULL DEFAULT 'list',
     sort_mode   TEXT NOT NULL DEFAULT 'manual',
+    workflow_kind TEXT,                    -- NULL preserves unclassified legacy containers
+    columns     TEXT NOT NULL DEFAULT '[]', -- typed BoardColumn array; canonical source is file
+    initial_column_id TEXT,                -- Explicit new-task destination on Boards
     archived_at TEXT,
     created     TEXT NOT NULL,
     updated     TEXT NOT NULL,
@@ -203,41 +210,76 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
 /// pre-existing `index.sqlite` created before Wave 1 gets the new column without
 /// crashing.  The guard is PRAGMA-based and idempotent (safe to call many times).
 pub fn apply(conn: &Connection) -> SqlResult<()> {
-    conn.execute_batch(SCHEMA_SQL)?;
-    // R1 migration guard: add excerpt column to pre-existing index.sqlite.
-    // CREATE TABLE IF NOT EXISTS only adds the column to *new* databases.
-    if !has_column(conn, "notes", "excerpt")? {
-        conn.execute_batch("ALTER TABLE notes ADD COLUMN excerpt TEXT NOT NULL DEFAULT ''")?;
+    let _apply_guard = APPLY_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // Connections opened at startup can migrate the same existing index at
+    // once. Hold SQLite's write lock across the column checks and ALTERs so a
+    // second opener observes the completed migration instead of attempting a
+    // duplicate ADD COLUMN. Journal mode must be configured before BEGIN.
+    conn.busy_timeout(std::time::Duration::from_secs(30))?;
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result = (|| -> SqlResult<()> {
+        conn.execute_batch(SCHEMA_SQL)?;
+        // R1 migration guard: add excerpt column to pre-existing index.sqlite.
+        // CREATE TABLE IF NOT EXISTS only adds the column to *new* databases.
+        if !has_column(conn, "notes", "excerpt")? {
+            conn.execute_batch("ALTER TABLE notes ADD COLUMN excerpt TEXT NOT NULL DEFAULT ''")?;
+        }
+        // Wave 2A migration guard: add folder_path column to pre-existing index.sqlite.
+        if !has_column(conn, "notes", "folder_path")? {
+            conn.execute_batch(
+                "ALTER TABLE notes ADD COLUMN folder_path TEXT NOT NULL DEFAULT ''",
+            )?;
+        }
+        // P2 migration guards: add 4 new columns to the tasks table.
+        // CREATE TABLE IF NOT EXISTS will NOT add these to a pre-existing tasks table,
+        // so each column gets a guarded ALTER TABLE (§1.0 of the spec).
+        if !has_column(conn, "tasks", "section_id")? {
+            conn.execute_batch("ALTER TABLE tasks ADD COLUMN section_id TEXT")?;
+        }
+        if !has_column(conn, "tasks", "tags")? {
+            conn.execute_batch("ALTER TABLE tasks ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")?;
+        }
+        if !has_column(conn, "tasks", "position")? {
+            conn.execute_batch("ALTER TABLE tasks ADD COLUMN position TEXT NOT NULL DEFAULT ''")?;
+        }
+        if !has_column(conn, "tasks", "reminders")? {
+            conn.execute_batch(
+                "ALTER TABLE tasks ADD COLUMN reminders TEXT NOT NULL DEFAULT '[]'",
+            )?;
+        }
+        // S6 migration guard: add the `parent` column to a pre-existing tasks table
+        // (CREATE TABLE IF NOT EXISTS only adds it to *new* databases). SCHEMA_VERSION
+        // is also bumped (wave3-tasks-v1 -> wave3-tasks-v2) so a stale index rebuilds.
+        if !has_column(conn, "tasks", "parent")? {
+            conn.execute_batch("ALTER TABLE tasks ADD COLUMN parent TEXT")?;
+        }
+        if !has_column(conn, "tasks", "agenda_bucket")? {
+            conn.execute_batch("ALTER TABLE tasks ADD COLUMN agenda_bucket TEXT")?;
+        }
+        if !has_column(conn, "tasks", "board_column_id")? {
+            conn.execute_batch("ALTER TABLE tasks ADD COLUMN board_column_id TEXT")?;
+        }
+        if !has_column(conn, "lists", "workflow_kind")? {
+            conn.execute_batch("ALTER TABLE lists ADD COLUMN workflow_kind TEXT")?;
+        }
+        if !has_column(conn, "lists", "columns")? {
+            conn.execute_batch("ALTER TABLE lists ADD COLUMN columns TEXT NOT NULL DEFAULT '[]'")?;
+        }
+        if !has_column(conn, "lists", "initial_column_id")? {
+            conn.execute_batch("ALTER TABLE lists ADD COLUMN initial_column_id TEXT")?;
+        }
+        Ok(())
+    })();
+    match result {
+        Ok(()) => conn.execute_batch("COMMIT"),
+        Err(error) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(error)
+        }
     }
-    // Wave 2A migration guard: add folder_path column to pre-existing index.sqlite.
-    if !has_column(conn, "notes", "folder_path")? {
-        conn.execute_batch("ALTER TABLE notes ADD COLUMN folder_path TEXT NOT NULL DEFAULT ''")?;
-    }
-    // P2 migration guards: add 4 new columns to the tasks table.
-    // CREATE TABLE IF NOT EXISTS will NOT add these to a pre-existing tasks table,
-    // so each column gets a guarded ALTER TABLE (§1.0 of the spec).
-    if !has_column(conn, "tasks", "section_id")? {
-        conn.execute_batch("ALTER TABLE tasks ADD COLUMN section_id TEXT")?;
-    }
-    if !has_column(conn, "tasks", "tags")? {
-        conn.execute_batch("ALTER TABLE tasks ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")?;
-    }
-    if !has_column(conn, "tasks", "position")? {
-        conn.execute_batch("ALTER TABLE tasks ADD COLUMN position TEXT NOT NULL DEFAULT ''")?;
-    }
-    if !has_column(conn, "tasks", "reminders")? {
-        conn.execute_batch("ALTER TABLE tasks ADD COLUMN reminders TEXT NOT NULL DEFAULT '[]'")?;
-    }
-    // S6 migration guard: add the `parent` column to a pre-existing tasks table
-    // (CREATE TABLE IF NOT EXISTS only adds it to *new* databases). SCHEMA_VERSION
-    // is also bumped (wave3-tasks-v1 -> wave3-tasks-v2) so a stale index rebuilds.
-    if !has_column(conn, "tasks", "parent")? {
-        conn.execute_batch("ALTER TABLE tasks ADD COLUMN parent TEXT")?;
-    }
-    if !has_column(conn, "tasks", "agenda_bucket")? {
-        conn.execute_batch("ALTER TABLE tasks ADD COLUMN agenda_bucket TEXT")?;
-    }
-    Ok(())
 }
 
 /// Returns `true` when the stored schema_version sentinel matches SCHEMA_VERSION.
@@ -267,8 +309,7 @@ fn has_column(conn: &Connection, table: &str, column: &str) -> SqlResult<bool> {
     let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
     let names: Vec<String> = stmt
         .query_map([], |row| row.get::<_, String>(1))?
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<SqlResult<_>>()?;
     Ok(names.iter().any(|n| n == column))
 }
 
@@ -286,6 +327,58 @@ pub fn backlink_label(edge_type: &str) -> &'static str {
 mod tests {
     use super::*;
     use rusqlite::Connection;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+    use tempfile::TempDir;
+
+    #[test]
+    fn concurrent_open_migrates_existing_index_once_without_losing_rows() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("index.sqlite");
+        let old = Connection::open(&path).unwrap();
+        old.execute_batch(
+            "CREATE TABLE tasks (
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL,
+                priority TEXT NOT NULL, due TEXT, list_name TEXT NOT NULL,
+                completed_at TEXT, deleted_at TEXT, created TEXT NOT NULL,
+                updated TEXT NOT NULL, file_path TEXT NOT NULL,
+                section_id TEXT, tags TEXT NOT NULL DEFAULT '[]',
+                position TEXT NOT NULL DEFAULT '', reminders TEXT NOT NULL DEFAULT '[]',
+                parent TEXT, agenda_bucket TEXT
+            );
+            INSERT INTO tasks (id, title, status, priority, list_name, created, updated, file_path)
+            VALUES ('existing-task', 'Keep this task', 'todo', 'none', 'inbox',
+                    '2026-01-01', '2026-01-01', 'tasks/existing-task.md');",
+        )
+        .unwrap();
+        drop(old);
+
+        let barrier = Arc::new(Barrier::new(8));
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let path = path.clone();
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    let connection = Connection::open(path).unwrap();
+                    barrier.wait();
+                    apply(&connection)
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().unwrap().unwrap();
+        }
+
+        let migrated = Connection::open(path).unwrap();
+        assert!(has_column(&migrated, "tasks", "board_column_id").unwrap());
+        assert!(has_column(&migrated, "lists", "initial_column_id").unwrap());
+        let count: i64 = migrated.query_row(
+            "SELECT count(*) FROM tasks WHERE id = 'existing-task' AND title = 'Keep this task'",
+            [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 1);
+        apply(&migrated).unwrap();
+    }
 
     /// VG2.3 — Migration safety: an index WITHOUT the excerpt column opens,
     /// apply() adds the column, and list queries succeed without crashing.

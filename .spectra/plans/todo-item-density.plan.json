@@ -1,0 +1,31 @@
+{
+  "thread_id": "01a0e7bf-a4b0-76a8-b0d2-3625882d2558",
+  "tier": "standard",
+  "enforce": "fail-fast",
+  "executor": "container",
+  "steps": [
+    {
+      "step_id": "implement",
+      "from": {
+        "eidolon": "ramza",
+        "version": "0.1.0"
+      },
+      "to": {
+        "eidolon": "apivr",
+        "version": "n/a"
+      },
+      "performative": "DELEGATE",
+      "edge_origin": "roster",
+      "objective": "Implement todo-item-density.md using Sol 6 High and preserve existing branch work.",
+      "artifact": {
+        "kind": "spec",
+        "schema_version": "1.0",
+        "path": ".spectra/plans/todo-item-density.md"
+      },
+      "model_tier_hint": "reasoning-class",
+      "constraints": {
+        "trust_level": "standard"
+      }
+    }
+  ]
+}

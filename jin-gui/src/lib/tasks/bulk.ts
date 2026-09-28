@@ -7,7 +7,7 @@
  * deliberate `jin:tasks-changed` batch dispatch (Approach §8 / AC-S7-08).
  */
 
-import type { TaskDto } from '../../types/dto';
+import type { TaskDto, ListDto } from '../../types/dto';
 import { legalNextStatuses } from './transform';
 
 // ── AC-S7-02: the INTERSECTION of legal transitions, never the union ────────
@@ -26,9 +26,26 @@ import { legalNextStatuses } from './transform';
  * Empty selection -> []. A single-task selection reduces to that task's own
  * `legalNextStatuses` (the intersection of one set is itself).
  */
-export function intersectLegalNextStatuses(tasks: TaskDto[]): string[] {
+export function intersectLegalNextStatuses(
+  tasks: TaskDto[],
+  workflowByList: ReadonlyMap<string, ListDto['workflow_kind']> = new Map(),
+): string[] {
   if (tasks.length === 0) return [];
-  const sets = tasks.map((t) => new Set(legalNextStatuses(t.status)));
+  const sets = tasks.map((task) => {
+    const kind = workflowByList.get(task.list);
+    const base = legalNextStatuses(task.status);
+    if (kind === 'checklist') {
+      // Lists are binary. Older imported Doing/Cancelled tasks can still be
+      // restored explicitly, but cannot offer a fresh Doing/Cancelled action.
+      return new Set(base.filter((status) => status === 'todo' || status === 'done'));
+    }
+    if (kind === 'board') {
+      const options = base.filter((status) => status !== 'cancelled');
+      if (task.status === 'done') options.push('doing');
+      return new Set(options);
+    }
+    return new Set(base);
+  });
   const [first, ...rest] = sets;
   const result: string[] = [];
   for (const status of first) {

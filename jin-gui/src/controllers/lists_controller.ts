@@ -66,7 +66,7 @@
  */
 
 import { Controller } from '@hotwired/stimulus';
-import { listLists, listTasks, createList, editList, deleteList, reorderList } from '../invoke';
+import { listLists, listTasks, createList, editList, deleteList, reorderList, previewWorkflowSetup, applyWorkflowSetup, type WorkflowSetupPreview } from '../invoke';
 import { isJinErrorDto, toSyntheticErrorDto } from '../types/error';
 import { renderListsSidebar, renderSmartViews } from '../lib/lists/render';
 import { computeSidebarCounts, type SidebarCounts } from '../lib/lists/counts';
@@ -117,7 +117,11 @@ export default class ListsController extends Controller {
   private pendingEditId: string | null = null;
   private pendingEditColor: string = 'accent';
   private pendingDeleteId: string | null = null;
+  private pendingDeleteDoing = 0;
+  private pendingDeleteReady = false;
   private pendingCreateColor: string = 'accent';
+  private createSession = 0;
+  private createSavingSession: number | null = null;
 
   // ── S5: scope model (Approach §4) — the rail is the single source of truth
   // for "where the user is". Cached alongside the raw lists + client-side
@@ -130,11 +134,24 @@ export default class ListsController extends Controller {
   // ── S4: JinModal instances (in-place; dialog elements stay in the lists rail) ──
   /** JinModal wrapper for the New List creation dialog. */
   private _createModal: JinModal | null = null;
+  // The create dialog lives in the shared modal root so the workspace's New
+  // list or board action works while the navigation drawer is hidden/inert.
+  // Keep element references before relocation; Stimulus targets cannot cross
+  // the controller's original DOM boundary.
+  private createElements: {
+    dialog: HTMLDialogElement;
+    name: HTMLInputElement;
+    colors: HTMLElement;
+    error: HTMLElement;
+  } | null = null;
   /** JinModal wrapper for the Edit List dialog. */
   private _editModalInstance: JinModal | null = null;
   /** JinModal wrapper for the Delete List confirm dialog. */
   private _deleteModal: JinModal | null = null;
   private readonly _colorPickers = new Map<HTMLElement, JinColorPicker>();
+  private _setupModal: JinModal | null = null;
+  private setupRequestVersion = 0;
+  private setupBusy = false;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -144,8 +161,15 @@ export default class ListsController extends Controller {
     // createNameInputTarget remain accessible) while gaining the JinModal lifecycle
     // (header, close button, backdrop/Escape handling) and the action-dialog CSS.
     if (this.hasCreateDialogTarget) {
-      this._createModal = JinModal.fromElement(this.createDialogTarget, {
-        host: 'in-place',
+      const dialog = this.createDialogTarget;
+      this.createElements = {
+        dialog,
+        name: this.createNameInputTarget,
+        colors: this.createColorPickerTarget,
+        error: this.createErrorTarget,
+      };
+      this._createModal = JinModal.fromElement(dialog, {
+        host: 'modal-root',
         onPrimary: () => void this.saveCreate(),
         onSecondary: () => this.closeCreate(),
       });
@@ -174,10 +198,14 @@ export default class ListsController extends Controller {
   }
 
   disconnect(): void {
+    this.setupRequestVersion++;
+    this._setupModal?.destroy();
+    this._setupModal = null;
     this._colorPickers.forEach(picker => picker.destroy());
     this._colorPickers.clear();
     this._createModal?.destroy();
     this._createModal = null;
+    this.createElements = null;
     this._editModalInstance?.destroy();
     this._editModalInstance = null;
     this._deleteModal?.destroy();
@@ -243,6 +271,7 @@ export default class ListsController extends Controller {
         onSelect: (listId) => this.selectScope({ kind: 'list', id: listId }),
         onEditRequest: (list) => this.openEditDialog(list),
         onDeleteRequest: (list) => this.openDeleteDialog(list),
+        onSetupRequest: (list) => this.openSetupDialog(list),
         onReorder: (listId, position) => void this.handleReorder(listId, position),
       });
     }
@@ -306,34 +335,146 @@ export default class ListsController extends Controller {
     void this.loadLists();
   }
 
+  private openSetupDialog(list: ListDto): void {
+    if (list.workflow_kind) return;
+    this.setupRequestVersion++;
+    this._setupModal?.destroy();
+    this.setupBusy = false;
+    const modal = new JinModal({ title: `Set up ${list.name}`, ariaLabel: `Set up ${list.name}` });
+    this._setupModal = modal;
+    const body = document.createElement('div');
+    body.className = 'tasks-workflow-setup';
+    const intro = document.createElement('p');
+    intro.textContent = 'Choose how this existing work should be organized. Your tasks and groups are kept.';
+    body.append(intro);
+    const choices = document.createElement('fieldset');
+    choices.className = 'tasks-workflow-choices';
+    const legend = document.createElement('legend');
+    legend.textContent = 'Workflow';
+    choices.append(legend);
+    const radioName = `setup-kind-${list.id}`;
+    for (const [value, title, description] of [
+      ['checklist', 'List', 'A simple unchecked and completed list. In Progress tasks become unchecked.'],
+      ['board', 'Board', 'Queue, In Progress, and Done columns. Task statuses stay where they are.'],
+    ] as const) {
+      if (list.id === 'inbox' && value === 'board') continue;
+      const label = document.createElement('label');
+      label.className = 'tasks-workflow-choice';
+      const input = document.createElement('input');
+      input.type = 'radio'; input.name = radioName; input.value = value;
+      input.checked = value === 'checklist';
+      const copy = document.createElement('span');
+      const strong = document.createElement('strong'); strong.textContent = title;
+      const detail = document.createElement('small'); detail.textContent = description;
+      copy.append(strong, detail); label.append(input, copy); choices.append(label);
+    }
+    body.append(choices);
+    const summary = document.createElement('p');
+    summary.className = 'tasks-workflow-setup__summary';
+    summary.setAttribute('aria-live', 'polite');
+    body.append(summary);
+    const error = document.createElement('p');
+    error.className = 'form-error';
+    error.setAttribute('role', 'alert');
+    body.append(error);
+    modal.setBody(body);
+    const footer = document.createElement('div');
+    footer.className = 'tasks-workflow-setup__actions';
+    const cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.className = 'btn-secondary'; cancel.textContent = 'Cancel';
+    const apply = document.createElement('button');
+    apply.type = 'button'; apply.className = 'btn-primary'; apply.textContent = 'Set up'; apply.disabled = true;
+    footer.append(cancel, apply); modal.setFooter(footer);
+    cancel.addEventListener('click', () => { this.setupRequestVersion++; modal.close(); });
+    let preview: WorkflowSetupPreview | null = null;
+    const refresh = async (preserveApplyError = false): Promise<void> => {
+      const version = ++this.setupRequestVersion;
+      const target = choices.querySelector<HTMLInputElement>('input:checked')?.value === 'board' ? 'board' : 'checklist';
+      apply.disabled = true; preview = null;
+      if (!preserveApplyError) error.textContent = '';
+      summary.textContent = 'Checking existing tasks…';
+      try {
+        const next = await previewWorkflowSetup(list.id, target);
+        if (version !== this.setupRequestVersion || this._setupModal !== modal) return;
+        preview = next;
+        const mapping = target === 'checklist' && next.doing ? ` ${next.doing} In Progress task${next.doing === 1 ? '' : 's'} will become unchecked.` : '';
+        summary.textContent = `${next.todo} unchecked · ${next.doing} in progress · ${next.done} done · ${next.cancelled} cancelled · ${next.subtasks} subtasks.${mapping}`;
+        apply.disabled = false;
+      } catch (cause) {
+        if (version !== this.setupRequestVersion || this._setupModal !== modal) return;
+        summary.textContent = '';
+        error.textContent = isJinErrorDto(cause) ? cause.message
+          : toSyntheticErrorDto(cause, 'Could not inspect this list.').message;
+      }
+    };
+    choices.addEventListener('change', () => void refresh());
+    apply.addEventListener('click', () => void (async () => {
+      if (!preview || this.setupBusy) return;
+      const selected = preview;
+      const version = this.setupRequestVersion;
+      this.setupBusy = true; apply.disabled = true; cancel.disabled = true;
+      error.textContent = ''; summary.textContent = 'Setting up your workflow…';
+      try {
+        await applyWorkflowSetup(list.id, selected.target, selected.snapshot, crypto.randomUUID());
+        if (version !== this.setupRequestVersion || this._setupModal !== modal) return;
+        modal.close(); this._setupModal = null; modal.destroy();
+        await this.loadLists();
+        this.dispatch('tasks-changed', { prefix: 'jin', bubbles: true });
+      } catch (cause) {
+        if (version !== this.setupRequestVersion || this._setupModal !== modal) return;
+        error.textContent = isJinErrorDto(cause) ? cause.message
+          : toSyntheticErrorDto(cause, 'Could not set up this workflow. Try again.').message;
+        await refresh(true);
+      } finally {
+        if (this._setupModal === modal) {
+          this.setupBusy = false; cancel.disabled = false;
+          apply.disabled = preview === null;
+        }
+      }
+    })());
+    modal.open();
+    void refresh();
+  }
+
   // ── Create ────────────────────────────────────────────────────────────────
 
   openCreate(): void {
     // S4: use _createModal instead of createDialogTarget.showModal()
-    if (!this._createModal) return;
+    if (!this._createModal || !this.createElements) return;
+    ++this.createSession;
+    const { dialog, name, colors, error } = this.createElements;
     this.pendingCreateColor = 'accent';
-    this.createNameInputTarget.value = '';
-    this.createErrorTarget.textContent = '';
-    this.createErrorTarget.classList.add('hidden');
-    this.renderColorPicker(this.createColorPickerTarget, this.pendingCreateColor, (color) => {
+    name.value = '';
+    dialog.querySelector<HTMLInputElement>('input[name="lists-create-kind"][value="checklist"]')!.checked = true;
+    error.textContent = '';
+    error.classList.add('hidden');
+    this.renderColorPicker(colors, this.pendingCreateColor, (color) => {
       this.pendingCreateColor = color;
     });
     this._createModal.open();
   }
 
   closeCreate(): void {
+    ++this.createSession;
     this._createModal?.close();
   }
 
   async saveCreate(event?: Event): Promise<void> {
     event?.preventDefault();
-    // Dialog stays in-place, so Stimulus targets (createNameInputTarget, etc.) still work.
-    const name = this.createNameInputTarget.value.trim();
+    if (!this.createElements) return;
+    const { dialog, error } = this.createElements;
+    const name = this.createElements.name.value.trim();
     if (!name) {
-      this.createErrorTarget.textContent = 'List name cannot be empty.';
-      this.createErrorTarget.classList.remove('hidden');
+      error.textContent = 'List name cannot be empty.';
+      error.classList.remove('hidden');
       return;
     }
+
+    const session = this.createSession;
+    if (this.createSavingSession === session) return;
+    this.createSavingSession = session;
+    const createButton = dialog.querySelector<HTMLButtonElement>('.btn-primary');
+    if (createButton) createButton.disabled = true;
 
     try {
       // Bridge contract requires both color AND icon (CreateListInput has no
@@ -341,18 +482,26 @@ export default class ListsController extends Controller {
       // the canonical non-default list icon: lib/lists/render.ts already
       // draws every non-inbox list with it, and jin-core's own tests
       // (ops/lists.rs) use the same literal.
-      await createList({ name, color: this.pendingCreateColor, icon: 'list' });
-      this.closeCreate();
-      void this.loadLists();
+      const kind = dialog.querySelector<HTMLInputElement>('input[name="lists-create-kind"]:checked')?.value === 'board' ? 'board' : 'checklist';
+      const created = await createList({ name, color: this.pendingCreateColor, icon: kind === 'board' ? 'layout-grid' : 'list', workflow_kind: kind });
+      const stillCurrent = this.createSession === session && dialog.open;
+      if (stillCurrent) this.closeCreate();
+      await this.loadLists();
+      if (stillCurrent && this.createSession === session + 1 && created?.id) {
+        this.selectScope({ kind: 'list', id: created.id });
+      }
     } catch (err: unknown) {
       // Inline form error (JinErrorDto) beats a generic toast — the user is
       // mid-form. The non-JinErrorDto branch still must not swallow silently.
-      if (isJinErrorDto(err)) {
-        this.createErrorTarget.textContent = err.message;
-        this.createErrorTarget.classList.remove('hidden');
-      } else {
+      if (this.createSession === session && isJinErrorDto(err)) {
+        error.textContent = err.message;
+        error.classList.remove('hidden');
+      } else if (this.createSession === session) {
         this.dispatch('error', { detail: toSyntheticErrorDto(err, 'saveCreate'), prefix: 'app', bubbles: true });
       }
+    } finally {
+      if (this.createSavingSession === session) this.createSavingSession = null;
+      if (createButton) createButton.disabled = false;
     }
   }
 
@@ -407,26 +556,41 @@ export default class ListsController extends Controller {
 
   // ── Delete ────────────────────────────────────────────────────────────────
 
-  private openDeleteDialog(list: ListDto): void {
+  private async openDeleteDialog(list: ListDto): Promise<void> {
     // S4: use _deleteModal instead of deleteDialogTarget.showModal()
     if (!this._deleteModal) return;
     this.pendingDeleteId = list.id;
-    this.deleteMessageTarget.textContent =
-      `Delete "${list.name}"? Tasks in this list will be moved to Inbox.`;
+    this.pendingDeleteDoing = 0;
+    this.pendingDeleteReady = false;
+    const deleteButton = this.deleteDialogTarget.querySelector<HTMLButtonElement>('.btn-danger');
+    if (deleteButton) deleteButton.disabled = true;
+    this.deleteMessageTarget.textContent = `Checking tasks in "${list.name}"…`;
     this._deleteModal.open();
+    try {
+      const members = await listTasks({ list: list.id });
+      if (this.pendingDeleteId !== list.id) return;
+      this.pendingDeleteDoing = members.filter((task) => task.status === 'doing').length;
+      this.deleteMessageTarget.textContent = `Delete "${list.name}"? Tasks in this list will be moved to Inbox.`;
+      if (this.pendingDeleteDoing) this.deleteMessageTarget.textContent += ` ${this.pendingDeleteDoing} In Progress task${this.pendingDeleteDoing === 1 ? '' : 's'} will become unchecked.`;
+      this.pendingDeleteReady = true;
+      if (deleteButton) deleteButton.disabled = false;
+    } catch (cause) {
+      if (this.pendingDeleteId === list.id) this.deleteMessageTarget.textContent = cause instanceof Error ? cause.message : 'Could not inspect tasks. Try again.';
+    }
   }
 
   closeDelete(): void {
     this.pendingDeleteId = null;
+    this.pendingDeleteReady = false;
     this._deleteModal?.close();
   }
 
   async confirmDelete(): Promise<void> {
-    if (!this.pendingDeleteId) return;
+    if (!this.pendingDeleteId || !this.pendingDeleteReady) return;
     const id = this.pendingDeleteId;
     this.closeDelete();
 
-    const result = await this.guarded(() => deleteList(id), 'confirmDelete');
+    const result = await this.guarded(() => deleteList(id, this.pendingDeleteDoing > 0), 'confirmDelete');
     if (result === undefined) return;
     void this.loadLists();
   }

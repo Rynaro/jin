@@ -1,0 +1,11 @@
+from: ramza
+to: vivi
+model: gpt-6-sol
+reasoning_effort: high
+spec: .spectra/plans/todo-item-density.md
+criteria: .spectra/plans/todo-item-density.criteria.md
+order: [S1, S2, S3, S4]
+product_writer: sole
+preserve_existing_edits: true
+new_dependencies: false
+native_verification_separate: true

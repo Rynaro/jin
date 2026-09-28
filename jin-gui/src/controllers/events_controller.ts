@@ -36,8 +36,8 @@ import { Controller } from '@hotwired/stimulus';
 import {
   listEvents,
   getEventDetailById,
-  editEvent,
-  editRoutedEvent,
+  editEventDelta,
+  editRoutedEventDelta,
   deleteEvent,
   deleteRoutedEvent,
   removeTimeBlock,
@@ -64,11 +64,14 @@ import { ConfirmDialog } from '../lib/ui/confirm_dialog';
 import { eventMessage, resolveEventLocale } from '../lib/events/locale';
 import {
   draftFromEvent,
-  inputFromDraft,
-  isValidEventEditDraft,
-  renderEventEditor,
-  type EventEditDraft,
-} from '../lib/events/edit';
+  editPayloadFromDraft,
+  routedEditPayloadFromDraft,
+  setConferenceIntent,
+  validateDraft,
+  type EventDraft,
+} from '../lib/events/draft';
+import { EventCompanion, type CompanionSaveResult } from '../lib/ui/companion';
+import type { SupportedRecurrenceScope } from '../lib/events/recurrence_scope';
 
 export default class EventsController extends Controller {
   // ── Targets ───────────────────────────────────────────────────────────────
@@ -96,11 +99,7 @@ export default class EventsController extends Controller {
   private returnScrollTop = 0;
   private returnFocusId: string | null = null;
   private pendingContextSuccessId: string | null = null;
-  private editDraft: EventEditDraft | null = null;
-  private editLatest: EventDetailDto | null = null;
-  private editMessage: string | undefined;
-  private editPending = false;
-  private editFocusTitle = false;
+  private companion: EventCompanion | null = null;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -110,6 +109,8 @@ export default class EventsController extends Controller {
   }
 
   disconnect(): void {
+    this.companion?.close(true);
+    this.companion = null;
     this.removalDialog?.destroy();
   }
 
@@ -164,10 +165,10 @@ export default class EventsController extends Controller {
    * data-action="click->events#showList" on the back button.
    */
   showList(): void {
+    this.companion?.close(true);
+    this.companion = null;
     this.detailPanelTarget.classList.add('hidden');
     this.currentDetail = null;
-    this.editDraft = null;
-    this.editLatest = null;
     this.setGlobalAddHidden(false);
     this.dispatch('calendar-return', {
       detail: { scrollTop: this.returnScrollTop, focusEventId: this.returnFocusId },
@@ -184,16 +185,18 @@ export default class EventsController extends Controller {
     if (label) label.textContent = eventMessage('calendar', locale);
     this.detailLoadingStateTarget.textContent = eventMessage('loading', locale);
     this.detailNotFoundStateTarget.textContent = eventMessage('notFound', locale);
-    if (this.currentDetail) {
-      if (this.editDraft) this.renderEditor();
-      else this.renderDetail(this.currentDetail);
+    if (this.currentDetail && !(this.companion?.isOpen())) {
+      this.renderDetail(this.currentDetail);
     }
   }
 
   handleMutation(event?: Event): void {
     if ((event as CustomEvent<{ source?: string }> | undefined)?.detail?.source === 'events') return;
-    if (this.currentDetail) void this.loadDetail(this.currentDetail.event.id);
-    else void this.loadList();
+    if (this.currentDetail) {
+      void this.loadDetail(this.currentDetail.event.id, undefined, this.companion?.isOpen() === true);
+    } else {
+      void this.loadList();
+    }
   }
 
   contextAttached(event: Event): void {
@@ -227,13 +230,15 @@ export default class EventsController extends Controller {
     try {
       const detail = await getEventDetailById(id);
       this.currentDetail = detail;
-      this.editDraft = null;
-      this.editLatest = null;
 
       el.detailLoadingState.classList.add('hidden');
       el.detailContent.classList.remove('hidden');
 
-      this.renderDetail(detail);
+      if (this.companion?.isOpen()) {
+        this.companion.applyRecoveredDetail(detail);
+      } else {
+        this.renderDetail(detail);
+      }
       const contextualSuccess = this.pendingContextSuccessId === id
         ? eventMessage('attachedOnly')
         : undefined;
@@ -326,32 +331,21 @@ export default class EventsController extends Controller {
     const route = detail.event.sync_context;
     const capability = detail.capabilities.collaboration;
     if (!route || !capability || (action === 'remove' ? !capability.can_remove_conference : !capability.can_add_conference)) return;
-    const conference_data = action === 'remove' ? undefined : {
-      pendingCreateRequest: {
-        // Core owns the durable request id. This sentinel is replaced before
-        // validation, persistence, and any provider write.
-        requestId: 'generated-by-jin-core',
-        conferenceSolutionKey: { type: 'hangoutsMeet' },
-      },
-    };
     try {
-      await editRoutedEvent({
-        event_id: detail.event.id,
-        edit_token: detail.edit_token,
-        operation_id: newOperationId(`meet-${action}`),
-        title: detail.event.title,
-        start: detail.event.start,
-        end: detail.event.end,
-        tzid: detail.event.start_tzid ?? undefined,
-        is_all_day: detail.event.is_all_day,
-        description: detail.event.description ?? undefined,
-        location: detail.event.location ?? undefined,
-        conference_data,
-        clear_conference_data: action === 'remove',
-        account_id: route.account_id,
-        calendar_id: route.calendar_id,
-        guest_update_policy: 'all',
-      });
+      const draft = draftFromEvent(detail.event, detail.edit_token);
+      setConferenceIntent(
+        draft,
+        action === 'remove'
+          ? { kind: 'remove' }
+          : { kind: 'add', solution_type: 'hangoutsMeet' },
+      );
+      await editRoutedEventDelta(
+        routedEditPayloadFromDraft(
+          draft,
+          { account_id: route.account_id, calendar_id: route.calendar_id },
+          newOperationId(`meet-${action}`),
+        ),
+      );
       await this.loadDetail(detail.event.id);
       this.dispatch('events-mutated', { prefix: 'jin', bubbles: true });
       this.showOperationStatus(action === 'remove' ? 'Google Meet removal queued.' : 'Google Meet request queued.');
@@ -398,143 +392,81 @@ export default class EventsController extends Controller {
   }
 
   private beginEdit(detail: EventDetailDto): void {
-    if (!detail.capabilities.can_edit || this.editPending) return;
+    if (!detail.capabilities.can_edit) return;
+    if (this.companion?.getOperationState() === 'persisting') return;
     this.currentDetail = detail;
-    this.editDraft = draftFromEvent(detail.event);
-    this.editLatest = null;
-    this.editMessage = undefined;
-    this.editFocusTitle = true;
-    this.renderEditor();
+    const draft = draftFromEvent(detail.event, detail.edit_token);
+    const scopes = (detail.capabilities.recurrence_scopes ?? []).filter(
+      (scope): scope is SupportedRecurrenceScope =>
+        scope === 'this_occurrence' || scope === 'entire_series',
+    );
+    this.ensureCompanion();
+    this.companion?.setContentBox(this.detailPanelTarget.getBoundingClientRect().width || 720);
+    this.companion?.openEdit(draft, detail, {
+      recurrenceScopes: scopes,
+      recurrencePatternSupported: detail.capabilities.recurrence_pattern_supported === true,
+    });
   }
 
-  private renderEditor(): void {
-    if (!this.currentDetail || !this.editDraft) return;
-    renderEventEditor(this.detailContentTarget, this.currentDetail, this.editDraft, {
+  private ensureCompanion(): void {
+    if (this.companion) return;
+    const workspace = this.detailPanelTarget;
+    this.companion = new EventCompanion({
+      workspace,
+      presentation: 'modal',
+      field: this.detailContentTarget,
       locale: resolveEventLocale(),
-      today: this.localToday(),
-      pending: this.editPending,
-      message: this.editMessage,
-      latest: this.editLatest ?? undefined,
-      focusTitle: this.editFocusTitle,
-      onDraftChange: draft => {
-        this.editDraft = draft;
-        this.editMessage = undefined;
-        this.renderEditor();
-      },
-      onSave: draft => { void this.saveEdit(draft); },
-      onCancel: () => this.cancelEdit(),
-      onUseLatest: () => this.useLatest(),
-      onReviewDraft: () => {
-        this.editLatest = null;
-        this.editMessage = eventMessage('editRetry');
-        this.renderEditor();
+      onSave: async (draft) => this.saveCompanionDraft(draft),
+      onClose: () => {
+        if (this.currentDetail) {
+          this.renderDetail(this.currentDetail);
+          this.focusEdit();
+        }
       },
     });
-    this.editFocusTitle = false;
+    // Full detail always hosts Composer as a modal (compact density).
+    this.companion.setContentBox(Math.min(workspace.getBoundingClientRect().width || 720, 900));
   }
 
-  private cancelEdit(): void {
-    if (!this.currentDetail || this.editPending) return;
-    const detail = this.currentDetail;
-    this.editDraft = null;
-    this.editLatest = null;
-    this.editMessage = undefined;
-    this.editFocusTitle = false;
-    this.renderDetail(detail);
-    this.focusEdit();
-  }
-
-  private useLatest(): void {
-    if (!this.editLatest) return;
-    this.currentDetail = this.editLatest;
-    this.editDraft = draftFromEvent(this.editLatest.event);
-    this.editLatest = null;
-    this.editMessage = undefined;
-    this.editFocusTitle = false;
-    this.renderEditor();
-  }
-
-  private async saveEdit(draft: EventEditDraft): Promise<void> {
-    if (!this.currentDetail || this.editPending) return;
-    this.editDraft = draft;
-    const patch = inputFromDraft(draft);
-    if (!isValidEventEditDraft(draft)) {
-      this.editMessage = eventMessage('editValidation');
-      this.renderEditor();
-      return;
+  private async saveCompanionDraft(draft: EventDraft): Promise<CompanionSaveResult> {
+    const validation = validateDraft(draft);
+    if (!validation.valid) {
+      throw new Error(eventMessage('editValidation'));
     }
-    const eventId = this.currentDetail.event.id;
-    const editToken = this.currentDetail.edit_token;
-    this.editPending = true;
-    this.editMessage = undefined;
-    this.renderEditor();
-    try {
-      const route = this.currentDetail.event.sync_context;
-      const operationId = newOperationId('edit');
-      const result = route
-        ? { event: await editRoutedEvent({
-          event_id: eventId,
-          edit_token: editToken,
-          operation_id: operationId,
-          ...patch,
-          account_id: route.account_id,
-          calendar_id: route.calendar_id,
-          recurrence_scope: this.isRecurring(this.currentDetail.event) ? draft.recurrence_scope : undefined,
-          guest_update_policy: draft.guest_update_policy,
-        }), no_op: false }
-        : await editEvent({
-          event_id: eventId,
-          edit_token: editToken,
-          operation_id: operationId,
-          ...patch,
-        });
-      // The mutation result is not the reading projection. Refetch canonical
-      // detail (including capabilities/token/backlinks) before feedback.
-      const canonical = await getEventDetailById(result.event.id);
-      this.currentDetail = canonical;
-      this.editDraft = null;
-      this.editLatest = null;
-      this.editMessage = undefined;
-      this.renderDetail(canonical);
-      if (!result.no_op) this.showOperationStatus(eventMessage('eventSaved'));
-      if (!result.no_op) {
-        this.dispatch('event-edited', { detail: { event: canonical.event }, prefix: 'jin', bubbles: true });
-        this.dispatch('refresh-today', { prefix: 'jin', bubbles: true });
-      }
-      this.focusEdit();
-    } catch (error: unknown) {
-      const details: JinErrorDetails | undefined = isJinErrorDto(error) ? error.details : undefined;
-      if (details?.type === 'stale_event') {
-        try {
-          const latest = await getEventDetailById(eventId);
-          this.currentDetail = latest;
-          this.editLatest = latest;
-          this.editMessage = eventMessage('eventChangedCopy');
-        } catch {
-          this.editMessage = eventMessage('editRetry');
-        }
-      } else if (details?.type === 'validation') {
-        this.editMessage = eventMessage('editValidation');
-      } else if (details?.type === 'operation_blocked') {
-        this.editMessage = eventMessage('editBlocked');
-      } else {
-        this.editMessage = eventMessage('editRetry');
-      }
-    } finally {
-      this.editPending = false;
-      if (this.editDraft) this.renderEditor();
+    const operationId = newOperationId('edit');
+    const route = this.currentDetail?.event.sync_context;
+    let noOp = false;
+    if (route?.provider === 'google' && route.account_id && route.calendar_id) {
+      await editRoutedEventDelta(
+        routedEditPayloadFromDraft(
+          draft,
+          { account_id: route.account_id, calendar_id: route.calendar_id },
+          operationId,
+        ),
+      );
+    } else {
+      const result = await editEventDelta(editPayloadFromDraft(draft, operationId));
+      noOp = result.no_op === true;
     }
+    if (!draft.event_id) throw new Error(eventMessage('failedSaveEvent'));
+    const canonical = await getEventDetailById(draft.event_id);
+    this.currentDetail = canonical;
+    if (!noOp) {
+      this.dispatch('event-edited', { detail: { event: canonical.event }, prefix: 'jin', bubbles: true });
+      this.dispatch('refresh-today', { prefix: 'jin', bubbles: true });
+      this.showOperationStatus(eventMessage('eventSaved'));
+    }
+    return {
+      detail: canonical,
+      outcome: route?.provider === 'google' ? 'sync_pending' : 'local',
+      closeAfterSave: true,
+    };
   }
 
   private focusEdit(): void {
     queueMicrotask(() => {
       this.detailContentTarget.querySelector<HTMLButtonElement>('.event-detail__edit')?.focus();
     });
-  }
-
-  private localToday(): string {
-    const date = new Date();
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   }
 
   private confirmRemoval(detail: EventDetailDto): void {

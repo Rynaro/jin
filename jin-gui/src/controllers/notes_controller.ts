@@ -54,6 +54,8 @@ import {
   renameCollection as renameCollectionInvoke,
   deleteCollection as deleteCollectionInvoke,
   evaluateCollection,
+  updateCollectionQuery,
+  listTags,
   importAttachment,
   listNoteRevisions,
   previewNoteRevision,
@@ -91,6 +93,7 @@ import {
   loadFolderTreePrefs,
   saveFolderTreePrefs,
 } from '../lib/notes/folderTreePrefs';
+import { loadNotesExplorerView, saveNotesExplorerView, type NotesExplorerView } from '../lib/notes/explorerPrefs';
 
 export default class NotesController extends Controller {
   // ── Targets ───────────────────────────────────────────────────────────────
@@ -119,8 +122,12 @@ export default class NotesController extends Controller {
     'deleteFolderMessage',
     // Search + declarative collections
     'searchInput',
-    'searchCount',
+    'resultCount',
+    'explorerBody',
+    'listViewButton',
+    'cardsViewButton',
     'scopeTitle',
+    'scopeDescription',
     'collectionList',
     'allNotesButton',
     'collectionModal',
@@ -130,6 +137,8 @@ export default class NotesController extends Controller {
     'collectionSortInput',
     'collectionDirectionInput',
     'collectionError',
+    'collectionTagSuggestions',
+    'collectionRuleSummary',
     'renameCollectionModal',
     'renameCollectionInput',
     'renameCollectionError',
@@ -139,6 +148,7 @@ export default class NotesController extends Controller {
     'historyModal',
     'historyStatus',
     'historyRevisionList',
+    'historyRevisionSelect',
     'historyPreview',
     'restoreRevisionButton',
     'restoreRevisionConfirmModal',
@@ -174,8 +184,12 @@ export default class NotesController extends Controller {
   declare deleteFolderModalTarget: HTMLDialogElement;
   declare deleteFolderMessageTarget: HTMLElement;
   declare searchInputTarget: HTMLInputElement;
-  declare searchCountTarget: HTMLElement;
+  declare resultCountTarget: HTMLElement;
+  declare explorerBodyTarget: HTMLElement;
+  declare listViewButtonTarget: HTMLButtonElement;
+  declare cardsViewButtonTarget: HTMLButtonElement;
   declare scopeTitleTarget: HTMLHeadingElement;
+  declare scopeDescriptionTarget: HTMLElement;
   declare collectionListTarget: HTMLElement;
   declare allNotesButtonTarget: HTMLButtonElement;
   declare collectionModalTarget: HTMLDialogElement;
@@ -185,6 +199,8 @@ export default class NotesController extends Controller {
   declare collectionSortInputTarget: HTMLSelectElement;
   declare collectionDirectionInputTarget: HTMLSelectElement;
   declare collectionErrorTarget: HTMLElement;
+  declare collectionTagSuggestionsTarget: HTMLDataListElement;
+  declare collectionRuleSummaryTarget: HTMLElement;
   declare renameCollectionModalTarget: HTMLDialogElement;
   declare renameCollectionInputTarget: HTMLInputElement;
   declare renameCollectionErrorTarget: HTMLElement;
@@ -193,6 +209,7 @@ export default class NotesController extends Controller {
   declare historyModalTarget: HTMLDialogElement;
   declare historyStatusTarget: HTMLElement;
   declare historyRevisionListTarget: HTMLElement;
+  declare historyRevisionSelectTarget: HTMLSelectElement;
   declare historyPreviewTarget: HTMLElement;
   declare restoreRevisionButtonTarget: HTMLButtonElement;
   declare restoreRevisionConfirmModalTarget: HTMLDialogElement;
@@ -210,7 +227,12 @@ export default class NotesController extends Controller {
   private currentCollectionId: string | null = null;
   private collections: CollectionDto[] = [];
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
-  private searchRequestId = 0;
+  private listRequestId = 0;
+  private scopeSelectionId = 0;
+  private explorerView: NotesExplorerView = 'list';
+  private returnNoteId: string | null = null;
+  private returnScrollTop = 0;
+  private returnScopeKey = '';
 
   /** ID of the note currently shown in the detail panel. */
   private currentNoteId: string | null = null;
@@ -238,6 +260,28 @@ export default class NotesController extends Controller {
   private noteMutation: Promise<void> = Promise.resolve();
   private collectionRenameTarget: CollectionDto | null = null;
   private collectionDeleteTarget: CollectionDto | null = null;
+  private collectionEditTarget: CollectionDto | null = null;
+  private collectionSessionId = 0;
+  private collectionSubmitting = false;
+  private openCollectionMenu: HTMLElement | null = null;
+  private collectionMenuTrigger: HTMLButtonElement | null = null;
+  private onCollectionOutsidePointer = (event: PointerEvent): void => {
+    if (this.openCollectionMenu && !this.openCollectionMenu.contains(event.target as Node) && !this.collectionMenuTrigger?.contains(event.target as Node)) this.closeCollectionMenu();
+  };
+  private onNoteAttachmentUpdated = (event: Event): void => {
+    const noteId = (event as CustomEvent<{ noteId: string }>).detail?.noteId;
+    if (!noteId || noteId !== this.currentNoteId) return;
+    void this.loadDetail(noteId).then(() => {
+      if (this.currentNoteId !== noteId) return;
+      const status = document.createElement('span');
+      status.className = 'notes-attach-feedback';
+      status.setAttribute('role', 'status');
+      status.textContent = 'Attached to event.';
+      this.detailActionsTarget.append(status);
+      this.detailActionsTarget.querySelector<HTMLButtonElement>('[data-note-id]')?.focus({ preventScroll: true });
+      setTimeout(() => status.remove(), 4000);
+    });
+  };
 
   // ── Tree state (Wave 2B) ──────────────────────────────────────────────────
 
@@ -271,16 +315,17 @@ export default class NotesController extends Controller {
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   connect(): void {
+    document.addEventListener('pointerdown', this.onCollectionOutsidePointer);
+    window.addEventListener('jin:note-attachment-updated', this.onNoteAttachmentUpdated);
     // ── Restore tree prefs (D-PERSIST) ────────────────────────────────────
     const prefs = loadFolderTreePrefs();
     this.expandedFolders = new Set(prefs.expanded);
-    this.paneCollapsed = prefs.paneCollapsed;
-    // At phone widths and AX5 there is room for one Notes layer at a time.
-    // Start on the index; the existing reveal control keeps the real tree available.
-    if (this.isCompactNotesViewport()) this.paneCollapsed = true;
-    if (this.paneCollapsed) {
-      this.element.classList.add('rail-collapsed');
-    }
+    // The shared navigation host now owns visibility. Legacy paneCollapsed is
+    // deliberately ignored while folder expansion and selection remain intact.
+    this.paneCollapsed = false;
+    this.element.classList.remove('rail-collapsed');
+    this.explorerView = loadNotesExplorerView();
+    this.applyExplorerView();
     this.updateScopeTitle();
 
     void this.loadFolders();
@@ -303,6 +348,10 @@ export default class NotesController extends Controller {
     this.collectionModalTarget.addEventListener('click', (e: MouseEvent) => {
       if (e.target === this.collectionModalTarget) this.closeCollection();
     });
+    this.collectionModalTarget.addEventListener('cancel', (event: Event) => {
+      event.preventDefault();
+      this.closeCollection();
+    });
     this.renameCollectionModalTarget.addEventListener('click', (e: MouseEvent) => {
       if (e.target === this.renameCollectionModalTarget) this.closeRenameCollection();
     });
@@ -312,6 +361,19 @@ export default class NotesController extends Controller {
     this.historyModalTarget.addEventListener('click', (e: MouseEvent) => {
       if (e.target === this.historyModalTarget) this.closeHistory();
     });
+    this.historyModalTarget.addEventListener('cancel', (event: Event) => {
+      event.preventDefault();
+      this.closeHistory();
+    });
+  }
+
+  disconnect(): void {
+    this.listRequestId += 1;
+    this.scopeSelectionId += 1;
+    if (this.searchTimer !== null) clearTimeout(this.searchTimer);
+    document.removeEventListener('pointerdown', this.onCollectionOutsidePointer);
+    window.removeEventListener('jin:note-attachment-updated', this.onNoteAttachmentUpdated);
+    this.closeCollectionMenu();
   }
 
   // ── Folder rail actions (Wave 2A) ──────────────────────────────────────────
@@ -368,8 +430,11 @@ export default class NotesController extends Controller {
    * while detailPanel stays on screen — the click looks dead.
    */
   async selectFolder(path: string): Promise<void> {
-    if (!(await this.leaveDetailForScope())) return;
+    const selectionId = ++this.scopeSelectionId;
+    if (!(await this.leaveDetailForScope(selectionId))) return;
+    if (selectionId !== this.scopeSelectionId) return;
 
+    this.clearExplorerSearch();
     this.currentFolder = path;
     this.currentCollectionId = null;
     this.updateScopeTitle();
@@ -383,7 +448,10 @@ export default class NotesController extends Controller {
 
   /** Select the default all-notes scope without discarding a paused conflict draft. */
   async selectAllNotes(): Promise<void> {
-    if (!(await this.leaveDetailForScope())) return;
+    const selectionId = ++this.scopeSelectionId;
+    if (!(await this.leaveDetailForScope(selectionId))) return;
+    if (selectionId !== this.scopeSelectionId) return;
+    this.clearExplorerSearch();
     this.currentFolder = undefined;
     this.currentCollectionId = null;
     this.updateScopeTitle();
@@ -484,18 +552,7 @@ export default class NotesController extends Controller {
    * and the always-reachable reveal button in list/detail panes.
    */
   togglePane(): void {
-    const wasCollapsed = this.paneCollapsed;
-    this.paneCollapsed = !this.paneCollapsed;
-    this.element.classList.toggle('rail-collapsed', this.paneCollapsed);
-    this.saveTreePrefs();
-    if (wasCollapsed) {
-      this.folderRailTarget.querySelector<HTMLElement>('.notes-folder-rail__collapse-btn')?.focus();
-    } else {
-      const activePane = this.detailPanelTarget.classList.contains('hidden')
-        ? this.listPanelTarget
-        : this.detailPanelTarget;
-      activePane.querySelector<HTMLElement>('.notes-rail-reveal')?.focus();
-    }
+    window.dispatchEvent(new CustomEvent('jin:sidebar-toggle'));
   }
 
   // ── Private tree-pref helper ──────────────────────────────────────────────
@@ -843,6 +900,7 @@ export default class NotesController extends Controller {
    * exposes filters through the dialog controls, never a raw query language.
    */
   private renderCollections(): void {
+    this.closeCollectionMenu();
     this.collectionListTarget.replaceChildren();
     const allNotesActive = this.currentCollectionId === null && this.currentFolder === undefined;
     this.allNotesButtonTarget.classList.toggle('is-active', allNotesActive);
@@ -871,30 +929,93 @@ export default class NotesController extends Controller {
       }
       select.addEventListener('click', () => { void this.selectCollection(collection.id); });
 
-      const rename = document.createElement('button');
-      rename.type = 'button';
-      rename.className = 'notes-collection-action jin-control jin-control--icon';
-      rename.setAttribute('aria-label', `Rename ${collection.name}`);
-      rename.textContent = 'Rename';
-      rename.addEventListener('click', () => this.renameCollection(collection.id));
-
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'notes-collection-action jin-control jin-control--icon';
-      remove.setAttribute('aria-label', `Delete ${collection.name}`);
-      remove.textContent = 'Delete';
-      remove.addEventListener('click', () => this.deleteCollection(collection.id));
-
       const actions = document.createElement('div');
       actions.className = 'notes-collection-actions jin-navigation-row__actions';
-      actions.append(rename, remove);
+      const menuButton = document.createElement('button');
+      menuButton.type = 'button';
+      menuButton.className = 'notes-collection-action jin-control jin-control--icon';
+      menuButton.setAttribute('aria-label', `More options for ${collection.name}`);
+      menuButton.setAttribute('aria-haspopup', 'menu');
+      menuButton.setAttribute('aria-expanded', 'false');
+      const glyph = document.createElement('i');
+      glyph.setAttribute('data-lucide', 'ellipsis-vertical');
+      glyph.setAttribute('aria-hidden', 'true');
+      menuButton.append(glyph);
+      const menu = document.createElement('div');
+      menu.className = 'notes-collection-menu';
+      menu.setAttribute('role', 'menu');
+      menu.setAttribute('aria-label', `${collection.name} actions`);
+      menu.hidden = true;
+      const menuAction = (label: string, run: () => void): HTMLButtonElement => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.role = 'menuitem';
+        button.textContent = label;
+        button.addEventListener('click', (event) => {
+          event.stopPropagation();
+          this.closeCollectionMenu();
+          run();
+        });
+        menu.append(button);
+        return button;
+      };
+      menuAction('Edit rules', () => this.editCollection(collection.id));
+      menuAction('Rename', () => this.renameCollection(collection.id));
+      menuAction('Delete collection', () => this.deleteCollection(collection.id));
+      menuButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (this.openCollectionMenu === menu) { this.closeCollectionMenu(true); return; }
+        this.closeCollectionMenu();
+        document.body.append(menu);
+        menu.hidden = false;
+        const viewportWidth = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
+        const anchor = menuButton.getBoundingClientRect();
+        const bounds = menu.getBoundingClientRect();
+        menu.style.left = `${Math.max(8, Math.min(viewportWidth - bounds.width - 8, anchor.right - bounds.width))}px`;
+        menu.style.top = `${anchor.bottom + bounds.height + 8 <= window.innerHeight
+          ? anchor.bottom + 4
+          : Math.max(8, anchor.top - bounds.height - 4)}px`;
+        menuButton.setAttribute('aria-expanded', 'true');
+        this.openCollectionMenu = menu;
+        this.collectionMenuTrigger = menuButton;
+        menu.querySelector<HTMLButtonElement>('button')?.focus();
+      });
+      menu.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          this.closeCollectionMenu(true);
+          return;
+        }
+        const buttons = Array.from(menu.querySelectorAll<HTMLButtonElement>('button'));
+        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          buttons[(index + (event.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length]?.focus();
+        }
+      });
+      actions.append(menuButton, menu);
       item.append(select, actions);
       this.collectionListTarget.appendChild(item);
     }
   }
 
+  private closeCollectionMenu(restoreFocus = false): void {
+    if (this.openCollectionMenu) {
+      this.openCollectionMenu.hidden = true;
+      this.openCollectionMenu.remove();
+    }
+    this.collectionMenuTrigger?.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) this.collectionMenuTrigger?.focus({ preventScroll: true });
+    this.openCollectionMenu = null;
+    this.collectionMenuTrigger = null;
+  }
+
   async selectCollection(id: string): Promise<void> {
-    if (!(await this.leaveDetailForScope())) return;
+    const selectionId = ++this.scopeSelectionId;
+    if (!(await this.leaveDetailForScope(selectionId))) return;
+    if (selectionId !== this.scopeSelectionId) return;
+    this.clearExplorerSearch();
     this.currentCollectionId = id;
     this.currentFolder = undefined;
     this.updateScopeTitle();
@@ -905,18 +1026,107 @@ export default class NotesController extends Controller {
   }
 
   newCollection(): void {
+    this.collectionSessionId += 1;
+    this.collectionSubmitting = false;
+    this.collectionEditTarget = null;
+    for (const control of [this.collectionNameInputTarget, this.collectionFilterInputTarget, this.collectionFilterValueInputTarget, this.collectionSortInputTarget, this.collectionDirectionInputTarget]) control.disabled = false;
+    this.collectionModalTarget.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled = false;
+    this.collectionModalTarget.setAttribute('aria-label', 'Create collection');
+    this.collectionModalTarget.querySelector('.action-dialog__title')!.textContent = 'New Collection';
+    this.collectionModalTarget.querySelector<HTMLButtonElement>('button[type="submit"]')!.textContent = 'Create';
     this.collectionNameInputTarget.value = '';
     this.collectionFilterInputTarget.value = 'all';
     this.collectionFilterValueInputTarget.value = '';
     this.collectionSortInputTarget.value = 'updated';
     this.collectionDirectionInputTarget.value = 'desc';
+    this.collectionRuleSummaryTarget.textContent = 'All notes';
+    this.onCollectionFilterChange();
     clearFormError(this.collectionErrorTarget);
     this.collectionModalTarget.showModal();
+    void this.populateCollectionTags();
     this.collectionNameInputTarget.focus();
+  }
+
+  private static simpleCollectionFilter(filter: CollectionFilterDto): filter is Extract<CollectionFilterDto, { op: 'all' | 'tag' | 'status' | 'body_contains' }> {
+    return filter.op === 'tag' || filter.op === 'status' || filter.op === 'body_contains' || (filter.op === 'all' && filter.clauses.length === 0);
+  }
+
+  private collectionRuleDescription(filter: CollectionFilterDto): string {
+    switch (filter.op) {
+      case 'all': return filter.clauses.length ? 'Advanced saved rules' : 'All notes';
+      case 'tag': return `Tagged ${filter.value}`;
+      case 'status': return `${filter.value === 'archived' ? 'Archived' : 'Active'} notes`;
+      case 'body_contains': return `Contains “${filter.value}”`;
+      default: return 'Advanced saved rules';
+    }
+  }
+
+  editCollection(id: string): void {
+    const target = this.collections.find(candidate => candidate.id === id);
+    if (!target) return;
+    this.collectionSessionId += 1;
+    this.collectionSubmitting = false;
+    this.collectionEditTarget = target;
+    this.collectionModalTarget.setAttribute('aria-label', `Edit ${target.name} collection rules`);
+    this.collectionModalTarget.querySelector('.action-dialog__title')!.textContent = 'Edit Collection';
+    const submit = this.collectionModalTarget.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    submit.textContent = 'Save changes';
+    this.collectionNameInputTarget.value = target.name;
+    const filter = target.query.filter;
+    const simple = NotesController.simpleCollectionFilter(filter)
+      && target.query.version === 1
+      && target.query.sort.length === 1
+      && ['created', 'updated', 'title'].includes(target.query.sort[0].field)
+      && (target.query.limit === null || target.query.limit === undefined);
+    this.collectionFilterInputTarget.value = simple ? filter.op : 'all';
+    this.collectionFilterValueInputTarget.value = simple && filter.op !== 'all' ? filter.value : '';
+    this.collectionSortInputTarget.value = simple ? target.query.sort[0].field : 'updated';
+    this.collectionDirectionInputTarget.value = simple ? target.query.sort[0].direction : 'desc';
+    this.collectionRuleSummaryTarget.textContent = simple
+      ? this.collectionRuleDescription(filter)
+      : 'This collection uses advanced rules. They can’t be changed in this editor; Rename and Delete remain available.';
+    for (const control of [this.collectionNameInputTarget, this.collectionFilterInputTarget, this.collectionFilterValueInputTarget, this.collectionSortInputTarget, this.collectionDirectionInputTarget]) control.disabled = !simple;
+    submit.disabled = !simple;
+    clearFormError(this.collectionErrorTarget);
+    this.collectionModalTarget.showModal();
+    void this.populateCollectionTags();
+    (simple ? this.collectionNameInputTarget : this.collectionModalTarget.querySelector<HTMLButtonElement>('.modal-close-btn')!)?.focus();
+    this.onCollectionFilterChange();
+  }
+
+  onCollectionFilterChange(): void {
+    const kind = this.collectionFilterInputTarget.value;
+    const group = this.collectionFilterValueInputTarget.closest<HTMLElement>('.form-group');
+    if (group) group.hidden = kind === 'all' || this.collectionFilterInputTarget.disabled;
+    if (kind === 'status') {
+      this.collectionFilterValueInputTarget.setAttribute('list', 'collection-tag-suggestions');
+      this.collectionTagSuggestionsTarget.replaceChildren(new Option('Active', 'active'), new Option('Archived', 'archived'));
+      this.collectionFilterValueInputTarget.placeholder = 'active or archived';
+    } else {
+      if (kind === 'tag') {
+        this.collectionFilterValueInputTarget.setAttribute('list', 'collection-tag-suggestions');
+        void this.populateCollectionTags();
+      }
+      else this.collectionFilterValueInputTarget.removeAttribute('list');
+      this.collectionFilterValueInputTarget.placeholder = kind === 'tag' ? 'Tag name' : 'Text in note';
+    }
+    if (!this.collectionEditTarget) this.collectionRuleSummaryTarget.textContent = kind === 'all' ? 'All notes' : 'This view updates as matching notes change.';
+  }
+
+  private async populateCollectionTags(): Promise<void> {
+    try {
+      const tags = await listTags();
+      if (!this.collectionModalTarget.open || this.collectionFilterInputTarget.value !== 'tag') return;
+      this.collectionTagSuggestionsTarget.replaceChildren(...tags.map(tag => new Option(tag.slug, tag.slug)));
+    } catch { this.collectionTagSuggestionsTarget.replaceChildren(); }
   }
 
   async submitCollection(event: Event): Promise<void> {
     event.preventDefault();
+    if (this.collectionSubmitting) return;
+    if (this.collectionEditTarget && this.collectionFilterInputTarget.disabled) return;
+    const sessionId = this.collectionSessionId;
+    const editTarget = this.collectionEditTarget;
     const name = this.collectionNameInputTarget.value.trim();
     const filterKind = this.collectionFilterInputTarget.value;
     const filterValue = this.collectionFilterValueInputTarget.value.trim();
@@ -928,6 +1138,10 @@ export default class NotesController extends Controller {
       renderFormError(this.collectionErrorTarget, 'Enter a value for this filter.');
       return;
     }
+    if (filterKind === 'status' && !['active', 'archived'].includes(filterValue)) {
+      renderFormError(this.collectionErrorTarget, 'Choose active or archived status.');
+      return;
+    }
 
     const filter: CollectionFilterDto = filterKind === 'all'
       ? { op: 'all', clauses: [] }
@@ -937,6 +1151,7 @@ export default class NotesController extends Controller {
           ? { op: 'status', value: filterValue }
           : { op: 'body_contains', value: filterValue };
     const query: CollectionQueryDto = {
+      ...(this.collectionEditTarget?.query ?? {}),
       version: 1,
       filter,
       sort: [{
@@ -947,20 +1162,45 @@ export default class NotesController extends Controller {
     };
 
     try {
+      this.collectionSubmitting = true;
+      this.collectionModalTarget.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled = true;
+      if (editTarget) {
+        const target = editTarget;
+        await updateCollectionQuery(target.id, query);
+        if (name !== target.name) await renameCollectionInvoke(target.id, name);
+        await this.loadCollections();
+        if (sessionId !== this.collectionSessionId) return;
+        this.collectionEditTarget = null;
+        this.collectionModalTarget.close();
+        if (this.currentCollectionId === target.id) await this.loadActiveList();
+        return;
+      }
       const created = await createCollection({ name, query });
-      this.collectionModalTarget.close();
       await this.loadCollections();
+      if (sessionId !== this.collectionSessionId) return;
+      this.collectionModalTarget.close();
       this.updateScopeTitle();
       await this.selectCollection(created.id);
     } catch (err: unknown) {
+      if (sessionId !== this.collectionSessionId) return;
       renderFormError(
         this.collectionErrorTarget,
         isJinErrorDto(err) ? err.message : 'Could not create the collection.'
       );
+    } finally {
+      if (sessionId === this.collectionSessionId) {
+        this.collectionSubmitting = false;
+        this.collectionModalTarget.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled = false;
+      }
     }
   }
 
   closeCollection(): void {
+    this.collectionSessionId += 1;
+    this.collectionSubmitting = false;
+    this.collectionEditTarget = null;
+    for (const control of [this.collectionNameInputTarget, this.collectionFilterInputTarget, this.collectionFilterValueInputTarget, this.collectionSortInputTarget, this.collectionDirectionInputTarget]) control.disabled = false;
+    this.collectionModalTarget.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled = false;
     this.collectionModalTarget.close();
   }
 
@@ -1045,18 +1285,27 @@ export default class NotesController extends Controller {
    * Called on connect and when filters change.
    */
   async loadList(filter: NotesFilter): Promise<void> {
+    if (this.searchInputTarget.value.trim()) {
+      await this.runSearch(this.searchInputTarget.value.trim(), ++this.listRequestId);
+      return;
+    }
+    const requestId = ++this.listRequestId;
     const el = this.viewElements;
     showListLoading(el);
+    this.resultCountTarget.textContent = 'Loading…';
 
     try {
       const notes = await listNotes({ tag: filter.tag, folder: filter.folder });
+      if (requestId !== this.listRequestId) return;
       hideListLoading(el);
 
       const filtered = filterNotesList(notes, filter);
       const sorted = sortNotesList(filtered);
       this.renderList(sorted);
     } catch (err: unknown) {
+      if (requestId !== this.listRequestId) return;
       hideListLoading(el);
+      this.resultCountTarget.textContent = 'Unavailable';
       if (isJinErrorDto(err)) {
         this.dispatch('error', { detail: err, prefix: 'app', bubbles: true });
       } else {
@@ -1067,17 +1316,26 @@ export default class NotesController extends Controller {
 
   /** Reload the selected collection or the selected folder/all-notes list. */
   private async loadActiveList(): Promise<void> {
+      const query = this.searchInputTarget.value.trim();
+      if (query) {
+        await this.runSearch(query, ++this.listRequestId);
+        return;
+      }
       if (this.currentCollectionId) {
+        const requestId = ++this.listRequestId;
         const collectionId = this.currentCollectionId;
         const el = this.viewElements;
         showListLoading(el);
+        this.resultCountTarget.textContent = 'Loading…';
         try {
           const notes = await evaluateCollection(collectionId);
-          if (this.currentCollectionId !== collectionId) return;
+          if (requestId !== this.listRequestId || this.currentCollectionId !== collectionId) return;
           hideListLoading(el);
           this.renderList(notes);
         } catch (err: unknown) {
+          if (requestId !== this.listRequestId) return;
           hideListLoading(el);
+          this.resultCountTarget.textContent = 'Unavailable';
           if (isJinErrorDto(err)) {
             this.dispatch('error', { detail: err, prefix: 'app', bubbles: true });
           } else {
@@ -1090,30 +1348,57 @@ export default class NotesController extends Controller {
     }
 
     private renderList(notes: Parameters<typeof renderNotesList>[2]): void {
+      const searching = Boolean(this.searchInputTarget.value.trim());
+      const count = `${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`;
+      const collection = this.collections.find(candidate => candidate.id === this.currentCollectionId);
+      this.resultCountTarget.textContent = count;
+      this.updateScopeTitle();
+      this.scopeDescriptionTarget.textContent = searching
+        ? 'Across all notes'
+        : collection
+          ? this.collectionRuleDescription(collection.query.filter)
+          : this.currentFolder !== undefined
+            ? `Folder · ${this.currentFolder || 'Notes'}`
+            : '';
+      this.scopeDescriptionTarget.hidden = !this.scopeDescriptionTarget.textContent;
+      this.emptyStateTarget.querySelector('p')!.textContent = searching
+        ? 'No notes match this search.'
+        : collection
+          ? 'No notes match this collection yet.'
+          : this.currentFolder !== undefined
+            ? 'No notes in this folder yet.'
+            : 'No notes yet.';
       renderNotesList(this.viewElements, this.viewTemplates, notes, (kind, id) => {
         if (kind === 'notes') {
+          this.returnNoteId = id;
+          this.returnScrollTop = this.explorerBodyTarget.scrollTop;
+          this.returnScopeKey = this.explorerScopeKey();
           void this.loadDetail(id);
         } else {
           this.navigateTo(kind, id);
         }
-      });
+      }, { showFolder: searching || this.currentFolder === undefined || Boolean(collection) });
       initIcons();
     }
 
     /** Debounce literal-only FTS requests; stale responses never repaint the list. */
     onSearchInput(): void {
       const query = this.searchInputTarget.value.trim();
-      const requestId = ++this.searchRequestId;
+      const requestId = ++this.listRequestId;
       if (this.searchTimer !== null) {
         clearTimeout(this.searchTimer);
         this.searchTimer = null;
       }
       if (!query) {
-        this.searchCountTarget.textContent = '';
+        this.updateScopeTitle();
         void this.loadActiveList();
         return;
       }
-      this.searchCountTarget.textContent = 'Searching…';
+      this.updateScopeTitle();
+      this.scopeDescriptionTarget.hidden = false;
+      this.scopeDescriptionTarget.textContent = 'Across all notes';
+      this.resultCountTarget.textContent = 'Searching…';
+      showListLoading(this.viewElements);
       this.searchTimer = setTimeout(() => {
         this.searchTimer = null;
         void this.runSearch(query, requestId);
@@ -1130,16 +1415,20 @@ export default class NotesController extends Controller {
     }
 
     private async runSearch(query: string, requestId: number): Promise<void> {
+      if (requestId !== this.listRequestId || this.searchInputTarget.value.trim() !== query) return;
+      showListLoading(this.viewElements);
+      this.resultCountTarget.textContent = 'Searching…';
       try {
         const notes = await searchNotes(query);
         // The user may have typed, cleared, or switched scope while the bridge
         // request was in flight. Do not let an old result replace their list.
-        if (requestId !== this.searchRequestId || this.searchInputTarget.value.trim() !== query) return;
+        if (requestId !== this.listRequestId || this.searchInputTarget.value.trim() !== query) return;
+        hideListLoading(this.viewElements);
         this.renderList(sortNotesList(filterNotesList(notes, {})));
-        this.searchCountTarget.textContent = `${notes.length} ${notes.length === 1 ? 'note' : 'notes'} found`;
       } catch (err: unknown) {
-        if (requestId !== this.searchRequestId) return;
-        this.searchCountTarget.textContent = 'Search unavailable';
+        if (requestId !== this.listRequestId) return;
+        hideListLoading(this.viewElements);
+        this.resultCountTarget.textContent = 'Search unavailable';
         if (isJinErrorDto(err)) {
           this.dispatch('error', { detail: err, prefix: 'app', bubbles: true });
         } else {
@@ -1173,30 +1462,49 @@ export default class NotesController extends Controller {
     this.detailPanelTarget.classList.add('hidden');
     this.element.classList.remove('detail-open');
     this.listPanelTarget.classList.remove('hidden');
+    const noteId = this.returnNoteId;
+    const scrollTop = this.returnScrollTop;
+    const scopeKey = this.returnScopeKey;
+    this.returnNoteId = null;
+    if (noteId && scopeKey === this.explorerScopeKey()) {
+      requestAnimationFrame(() => {
+        if (scopeKey !== this.explorerScopeKey() || !this.element.isConnected || this.listPanelTarget.classList.contains('hidden') || this.element.classList.contains('hidden')) return;
+        this.explorerBodyTarget.scrollTop = scrollTop;
+        const row = Array.from(this.listTarget.querySelectorAll<HTMLButtonElement>('[data-note-id]'))
+          .find(candidate => candidate.dataset.noteId === noteId);
+        (row ?? this.scopeTitleTarget).focus({ preventScroll: true });
+      });
+    }
   }
 
   /**
    * Leave a detail view only when it is safe to do so. A stale-write panel owns
    * an unsaved local draft, so navigation cannot silently discard it.
    */
-  private async leaveDetailForScope(): Promise<boolean> {
+  private async leaveDetailForScope(selectionId?: number): Promise<boolean> {
     if (this.conflictActive) {
       this.conflictStatusTarget.textContent = 'Resolve the conflict before changing note scope.';
       this.conflictPanelTarget.focus();
       return false;
     }
     this.detailRequestId += 1;
-    if (this.editorHandle) {
-      await this.editorHandle.flush();
+    const editor = this.editorHandle;
+    if (editor) {
+      await editor.flush();
+      if (selectionId !== undefined && selectionId !== this.scopeSelectionId) return false;
       // Give metadata handlers that were already awaiting the same flush a
       // chance to register their mutation before we replace note identity.
       await Promise.resolve();
       await this.noteMutation;
-      this.editorHandle.destroy();
+      if (selectionId !== undefined && selectionId !== this.scopeSelectionId) return false;
+      if (this.editorHandle !== editor) return false;
+      editor.destroy();
       this.editorHandle = null;
       this.currentNoteId = null;
       this.lastSavedBody = '';
     }
+    if (selectionId !== undefined && selectionId !== this.scopeSelectionId) return false;
+    this.returnNoteId = null;
     this.showList();
     return true;
   }
@@ -1508,8 +1816,10 @@ export default class NotesController extends Controller {
     this.revokeHistoryMedia = null;
     this.restoreRevisionButtonTarget.disabled = true;
     this.historyRevisionListTarget.replaceChildren();
+    this.historyRevisionSelectTarget.replaceChildren(new Option('Choose a revision', ''));
     this.historyPreviewTarget.textContent = '';
     this.historyStatusTarget.textContent = 'Loading revisions…';
+    delete this.historyStatusTarget.dataset.previewReady;
     this.historyModalTarget.showModal();
     try {
       const revisions = await listNoteRevisions(noteId);
@@ -1517,11 +1827,13 @@ export default class NotesController extends Controller {
       this.historyStatusTarget.textContent = revisions.length
         ? 'Select a revision to preview it before restoring.'
         : 'No saved revisions are available.';
-      for (const revision of [...revisions].reverse()) {
+      for (const revision of [...revisions].sort((a, b) => b - a)) {
+        this.historyRevisionSelectTarget.append(new Option(`Revision ${revision}`, String(revision)));
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'notes-history__revision btn-secondary';
         button.textContent = `Revision ${revision}`;
+        button.setAttribute('aria-current', 'false');
         button.addEventListener('click', () => { void this.previewHistoryRevision(noteId, revision); });
         this.historyRevisionListTarget.appendChild(button);
       }
@@ -1536,14 +1848,22 @@ export default class NotesController extends Controller {
   private async previewHistoryRevision(noteId: string, revision: number): Promise<void> {
     const requestId = ++this.historyRequestId;
     this.selectedHistoryRevision = revision;
+    this.historyRevisionSelectTarget.value = String(revision);
     this.restoreRevisionButtonTarget.disabled = true;
+    this.revokeHistoryMedia?.();
+    this.revokeHistoryMedia = null;
+    this.historyPreviewTarget.replaceChildren();
+    for (const button of this.historyRevisionListTarget.querySelectorAll<HTMLButtonElement>('.notes-history__revision')) {
+      button.setAttribute('aria-current', String(button.textContent === `Revision ${revision}`));
+    }
+    this.historyStatusTarget.textContent = `Loading revision ${revision} snapshot…`;
+    delete this.historyStatusTarget.dataset.previewReady;
     try {
       const preview = await previewNoteRevision(noteId, revision);
       if (this.selectedHistoryRevision !== revision || requestId !== this.historyRequestId || !this.historyModalTarget.open) return;
       this.restoreRevisionButtonTarget.disabled = false;
       // Markdown passes the same sanitizer chokepoint as Reading view. Assets
       // can only hydrate through the verified image-byte bridge.
-      this.revokeHistoryMedia?.();
       const heading = document.createElement('h1');
       heading.textContent = preview.title;
       const metadata = document.createElement('p');
@@ -1556,7 +1876,8 @@ export default class NotesController extends Controller {
           else revoke();
         });
       }
-      this.historyStatusTarget.textContent = `Previewing revision ${revision}.`;
+      this.historyStatusTarget.textContent = `Previewing revision ${revision} snapshot.`;
+      this.historyStatusTarget.dataset.previewReady = 'true';
     } catch (err: unknown) {
       if (
         requestId !== this.historyRequestId ||
@@ -1565,10 +1886,23 @@ export default class NotesController extends Controller {
         !this.historyModalTarget.open
       ) return;
       this.selectedHistoryRevision = null;
+      delete this.historyStatusTarget.dataset.previewReady;
+      this.historyRevisionSelectTarget.value = '';
+      for (const button of this.historyRevisionListTarget.querySelectorAll<HTMLButtonElement>('.notes-history__revision')) button.setAttribute('aria-current', 'false');
       this.historyStatusTarget.textContent = isJinErrorDto(err)
         ? err.message
         : 'Could not preview this revision.';
     }
+  }
+
+  selectHistoryRevision(): void {
+    const revision = Number(this.historyRevisionSelectTarget.value);
+    if (!this.historyRevisionSelectTarget.value || !Number.isInteger(revision) || !this.currentNoteId) {
+      this.selectedHistoryRevision = null;
+      this.restoreRevisionButtonTarget.disabled = true;
+      return;
+    }
+    void this.previewHistoryRevision(this.currentNoteId, revision);
   }
 
   closeHistory(): void {
@@ -1582,7 +1916,7 @@ export default class NotesController extends Controller {
   }
 
   requestRestoreRevision(): void {
-    if (this.selectedHistoryRevision === null) return;
+    if (this.selectedHistoryRevision === null || this.restoreRevisionButtonTarget.disabled) return;
     this.restoreRevisionMessageTarget.textContent =
       `Restore revision ${this.selectedHistoryRevision}? The current note is preserved as a new revision.`;
     this.restoreRevisionConfirmModalTarget.showModal();
@@ -1753,9 +2087,17 @@ export default class NotesController extends Controller {
     });
   }
 
-  private openAttachDialog(noteId: string, targetId: string): void {
+  private async openAttachDialog(noteId: string, targetId: string): Promise<void> {
+    if (this.conflictActive || noteId !== this.currentNoteId) {
+      if (this.conflictActive) this.conflictPanelTarget.focus();
+      return;
+    }
+    await this.editorHandle?.flush();
+    await this.noteMutation;
+    if (this.conflictActive || noteId !== this.currentNoteId) return;
+    const noteTitle = this.detailContentTarget.querySelector<HTMLTextAreaElement>('.browse-detail__title')?.value || 'Untitled';
     this.dispatch('open-attach', {
-      detail: { noteId, targetId },
+      detail: { noteId, targetId, noteTitle, context: 'note-event' },
       prefix: 'jin',
       bubbles: true,
     });
@@ -1786,6 +2128,10 @@ export default class NotesController extends Controller {
 
   /** Reflect the selected real folder or collection without changing search feedback. */
   private updateScopeTitle(): void {
+    if (this.searchInputTarget.value.trim()) {
+      this.scopeTitleTarget.textContent = 'Search results';
+      return;
+    }
     if (this.currentCollectionId) {
       const collection = this.collections.find((candidate) => candidate.id === this.currentCollectionId);
       this.scopeTitleTarget.textContent = collection?.name ?? 'All Notes';
@@ -1794,15 +2140,36 @@ export default class NotesController extends Controller {
     this.scopeTitleTarget.textContent = this.currentFolder || 'All Notes';
   }
 
-  private isCompactNotesViewport(): boolean {
-    return (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 640px)').matches)
-      || (document.documentElement.dataset.textScale === 'accessibility' && window.innerWidth < 760);
+  private clearExplorerSearch(): void {
+    this.searchInputTarget.value = '';
+    if (this.searchTimer !== null) clearTimeout(this.searchTimer);
+    this.searchTimer = null;
+    this.listRequestId += 1;
+  }
+
+  private explorerScopeKey(): string {
+    return `${this.currentCollectionId ?? ''}\u0000${this.currentFolder ?? '<all>'}\u0000${this.searchInputTarget.value.trim()}\u0000${this.explorerView}`;
+  }
+
+  showListView(): void { this.setExplorerView('list'); }
+  showCardsView(): void { this.setExplorerView('cards'); }
+
+  private setExplorerView(view: NotesExplorerView): void {
+    if (this.explorerView === view) return;
+    this.explorerView = view;
+    saveNotesExplorerView(view);
+    this.applyExplorerView();
+  }
+
+  private applyExplorerView(): void {
+    this.listTarget.classList.toggle('notes-explorer__cards', this.explorerView === 'cards');
+    this.listViewButtonTarget.setAttribute('aria-pressed', String(this.explorerView === 'list'));
+    this.cardsViewButtonTarget.setAttribute('aria-pressed', String(this.explorerView === 'cards'));
+    this.listTarget.setAttribute('aria-label', this.explorerView === 'cards' ? 'Notes cards' : 'Notes list');
   }
 
   private collapsePaneForCompactNavigation(): void {
-    if (!this.isCompactNotesViewport()) return;
-    this.paneCollapsed = true;
-    this.element.classList.add('rail-collapsed');
+    window.dispatchEvent(new CustomEvent('jin:sidebar-selection'));
   }
 
   private get viewTemplates(): NotesTemplates {

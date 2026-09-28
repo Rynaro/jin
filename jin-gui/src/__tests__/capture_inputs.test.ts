@@ -100,7 +100,7 @@ describe('JinSelectField', () => {
     expect(document.querySelectorAll('[role="combobox"]')).toHaveLength(1);
   });
 
-  it('portals the popup outside scrolling form content and fits compact viewport height', () => {
+  it('keeps dialog-portaled options inside the dialog hit area even when the viewport has space', () => {
     document.body.innerHTML = '<dialog open><div class="scroll"><label for="priority">Priority</label><select id="priority"><option>None</option><option>High</option><option>Medium</option><option>Low</option></select></div></dialog>';
     const dialog = document.querySelector('dialog')!;
     const select = document.querySelector('select')!;
@@ -114,14 +114,35 @@ describe('JinSelectField', () => {
       x: 20, y: 20, left: 20, top: 20, right: 300, bottom: 260, width: 280, height: 240,
       toJSON: () => ({}),
     } as DOMRect);
-    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(260);
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(800);
 
     trigger.click();
     const popup = document.getElementById(trigger.getAttribute('aria-controls')!)!;
     expect(popup.parentElement).toBe(dialog);
     expect(popup.dataset.placement).toBe('top');
-    expect(parseFloat(popup.style.top)).toBeGreaterThanOrEqual(-12);
-    expect(parseFloat(popup.style.maxHeight)).toBeLessThanOrEqual(162);
+    const popupTop = dialog.getBoundingClientRect().top + parseFloat(popup.style.top);
+    expect(popupTop).toBeGreaterThanOrEqual(dialog.getBoundingClientRect().top + 8);
+    expect(popupTop + parseFloat(popup.style.maxHeight)).toBeLessThanOrEqual(dialog.getBoundingClientRect().bottom - 8);
+    expect(parseFloat(popup.style.maxHeight)).toBeGreaterThan(0);
+    expect(parseFloat(popup.style.left)).toBeGreaterThanOrEqual(8);
+  });
+
+  it('keeps an option available through trigger blur until its pointer click commits selection', async () => {
+    document.body.innerHTML = '<dialog open><select aria-label="Calendar"><option value="">Choose</option><option value="acct-work">Work</option></select></dialog>';
+    const select = document.querySelector('select')!;
+    JinSelectField.enhance(select);
+    const trigger = document.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+    trigger.focus();
+    trigger.click();
+    const option = document.querySelectorAll<HTMLButtonElement>('.jin-select-field__option')[1];
+    option.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    trigger.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: document.querySelector('dialog') }));
+    await Promise.resolve();
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    option.dispatchEvent(new Event('pointerup', { bubbles: true }));
+    option.click();
+    expect(select.value).toBe('acct-work');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
 });
 

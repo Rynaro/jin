@@ -55,7 +55,11 @@
  *   ✓ clears all [data-form-error] elements in a container
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { Application } from '@hotwired/stimulus';
+import CaptureController from '../controllers/capture_controller';
+import { listGoogleAccounts } from '../invoke';
+import { draftFromCapture, createInputFromDraft } from '../lib/events/draft';
 import type { JinErrorDto } from '../types/error';
 import {
   validateCaptureForm,
@@ -595,5 +599,145 @@ describe('clearAllFormErrors', () => {
     form.appendChild(other);
     clearAllFormErrors(form);
     expect(other.textContent).toBe('Unrelated');
+  });
+});
+
+
+vi.mock('../invoke', () => ({
+  capture: vi.fn(),
+  createNote: vi.fn(),
+  createTask: vi.fn(),
+  createEvent: vi.fn(),
+  createRoutedEvent: vi.fn(),
+  listGoogleAccounts: vi.fn(async () => []),
+  listLists: vi.fn(async () => []),
+  newOperationId: vi.fn(() => 'create-op'),
+  getEventDetailById: vi.fn(),
+}));
+vi.mock('../lib/icons', () => ({ initIcons: vi.fn() }));
+vi.mock('../lib/notes/editor', () => ({
+  mountCompactEditor: () => ({ setDoc: vi.fn(), getDoc: () => '', destroy: vi.fn() }),
+}));
+
+describe('CaptureController event_draft_handoff (AC-CALX-028)', () => {
+  let app: Application;
+
+  beforeEach(() => {
+    vi.mocked(listGoogleAccounts).mockResolvedValue([]);
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
+      configurable: true, value() { this.setAttribute('open', ''); },
+    });
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', {
+      configurable: true, value() { this.removeAttribute('open'); },
+    });
+    document.body.innerHTML = `
+      <div data-controller="capture">
+        <dialog data-capture-target="modal" open>
+          <h2 data-capture-target="modeTitle"></h2>
+          <p data-capture-target="modeSubtitle"></p>
+          <button data-capture-target="tabCapture"></button>
+          <button data-capture-target="tabNote"></button>
+          <button data-capture-target="tabTask"></button>
+          <button data-capture-target="tabEvent"></button>
+          <div data-capture-target="formCapture"></div>
+          <div data-capture-target="formNote" class="hidden">
+            <div data-capture-target="noteEditor"></div>
+            <input data-capture-target="noteTags" />
+            <p data-capture-target="noteError" data-form-error></p>
+            <button data-capture-target="noteSubmit"></button>
+          </div>
+          <div data-capture-target="formTask" class="hidden">
+            <input data-capture-target="taskTitle" />
+            <select data-capture-target="taskPriority"><option value=""></option></select>
+            <input data-capture-target="taskDue" />
+            <button data-capture-target="taskDueTrigger"></button>
+            <span data-capture-target="taskDueLabel"></span>
+            <select data-capture-target="taskList"><option value="inbox">Inbox</option></select>
+            <p data-capture-target="taskError" data-form-error></p>
+            <button data-capture-target="taskSubmit"></button>
+          </div>
+          <div data-capture-target="formEvent" class="hidden">
+            <input data-capture-target="eventTitle" />
+            <input type="hidden" data-capture-target="eventWhen" value="2026-09-23T14:00" />
+            <button data-capture-target="eventWhenTrigger"></button>
+            <span data-capture-target="eventWhenLabel"></span>
+            <select data-capture-target="eventDestination"><option value="local">Jin only</option></select>
+            <input data-capture-target="eventLocation" />
+            <p data-capture-target="eventError" data-form-error></p>
+            <button data-capture-target="eventMoreOptions" data-action="click->capture#openMoreEventOptions">More event options</button>
+            <div data-capture-target="eventDiscard" class="hidden" hidden></div>
+            <button data-capture-target="eventSubmit"></button>
+          </div>
+          <textarea data-capture-target="captureText"></textarea>
+          <input type="checkbox" data-capture-target="captureAsTask" />
+          <select data-capture-target="captureList"><option value="inbox">Inbox</option></select>
+          <p data-capture-target="captureError" data-form-error></p>
+          <button data-capture-target="captureSubmit"></button>
+        </dialog>
+      </div>`;
+    app = Application.start();
+    app.register('capture', CaptureController);
+  });
+
+  afterEach(() => {
+    app.stop();
+    document.body.innerHTML = '';
+  });
+
+  it('More event options hands the same title/when/location/destination into Composer', async () => {
+    await Promise.resolve();
+    const host = document.querySelector<HTMLElement>('[data-controller="capture"]')!;
+    const controller = app.getControllerForElementAndIdentifier(host, 'capture') as CaptureController;
+    controller.selectEvent();
+    const title = document.querySelector<HTMLInputElement>('[data-capture-target="eventTitle"]')!;
+    const location = document.querySelector<HTMLInputElement>('[data-capture-target="eventLocation"]')!;
+    title.value = 'Capture handoff';
+    location.value = 'Studio';
+    document.querySelector<HTMLInputElement>('[data-capture-target="eventWhen"]')!.value = '2026-09-23T14:00';
+
+    controller.openMoreEventOptions();
+    await Promise.resolve();
+
+    const composerTitle = document.querySelector<HTMLInputElement>('#event-composer-title');
+    expect(composerTitle?.value).toBe('Capture handoff');
+    const draft = (controller as unknown as { handedOffDraft: ReturnType<typeof draftFromCapture> | null }).handedOffDraft;
+    expect(draft).toBeTruthy();
+    expect(draft!.title).toBe('Capture handoff');
+    expect(draft!.location).toBe('Studio');
+    expect(draft!.temporal.start_date).toBe('2026-09-23');
+    expect(draft!.temporal.start_time).toBe('14:00');
+    expect(createInputFromDraft(draft!)).toMatchObject({
+      title: 'Capture handoff',
+      location: 'Studio',
+      start: '2026-09-23T14:00:00',
+    });
+  });
+
+  it('carries the exact selected account/calendar through Capture and Composer', async () => {
+    const calendar = (accountId: string) => ({
+      account_id: accountId, calendar_id: 'team-primary', name: 'Team Calendar',
+      primary: true, access_role: 'owner', writable: true, enabled: true, available: true,
+      route_generation: 1, allowed_conference_solution_types: [],
+    });
+    vi.mocked(listGoogleAccounts).mockResolvedValue([
+      { id: 'acct-home', alias: 'Home', principal: null, state: 'connected', auth_generation: 1, calendars: [calendar('acct-home')] },
+      { id: 'acct-work', alias: 'Work', principal: null, state: 'connected', auth_generation: 1, calendars: [calendar('acct-work')] },
+    ]);
+    const host = document.querySelector<HTMLElement>('[data-controller="capture"]')!;
+    const controller = app.getControllerForElementAndIdentifier(host, 'capture') as CaptureController;
+    await (controller as unknown as { populateEventDestinations: () => Promise<void> }).populateEventDestinations();
+    controller.selectEvent();
+    document.querySelector<HTMLInputElement>('[data-capture-target="eventTitle"]')!.value = 'Capture handoff review';
+    const native = document.querySelector<HTMLSelectElement>('[data-capture-target="eventDestination"]')!;
+    const combobox = native.parentElement!.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+    combobox.click();
+    const work = Array.from(document.querySelectorAll<HTMLButtonElement>('.jin-select-field__option'))
+      .find(option => option.textContent === 'Work · Team Calendar')!;
+    work.click();
+    expect(native.value).toBe('acct-work\u0000team-primary');
+
+    controller.openMoreEventOptions();
+    expect(document.querySelector<HTMLSelectElement>('#event-composer-destination')?.selectedOptions[0].text)
+      .toBe('Work · Team Calendar');
   });
 });

@@ -25,21 +25,20 @@ body {
   flex-direction: row;
   height: 100%;
   width: 100%;
-  background-color: var(--agenda-canvas);
+  background-color: var(--workspace-canvas);
   overflow: hidden;
 }
 
-/* The capture action is the single warm entry point in the quiet shell. */
 .jin-capture-btn {
-  background-color: var(--capture-vermilion) !important;
-  color: var(--capture-on-vermilion) !important;
-  box-shadow: var(--seal-shadow);
+  background-color: var(--control-surface);
+  color: var(--label);
+  box-shadow: var(--control-shadow);
 }
 
 .jin-capture-btn:hover,
 .jin-capture-btn:active {
-  background-color: var(--capture-vermilion-hover) !important;
-  color: var(--capture-on-vermilion) !important;
+  background-color: var(--control-track);
+  color: var(--label);
 }
 
 /* ── Sidebar — nanquim washi-paper panel ─────────────────────────────────────
@@ -76,21 +75,7 @@ body {
 /* Enso watermark — a faint sumi-brush ring echoing the logo's circle.
  * Purely decorative; sits behind the nav at very low opacity. The conic mask
  * cuts the brush "gap" so it reads as an ensō, not a clean ring. */
-.jin-sidebar::before {
-  content: "";
-  position: absolute;
-  inset-block-start: 34%;
-  inset-inline-start: -30%;
-  width: 210px;
-  height: 210px;
-  border-radius: 50%;
-  border: 11px solid var(--seal);
-  opacity: 0.06;
-  -webkit-mask-image: conic-gradient(from 205deg, transparent 0 40deg, rgba(0, 0, 0, 1) 62deg 360deg);
-          mask-image: conic-gradient(from 205deg, transparent 0 40deg, rgba(0, 0, 0, 1) 62deg 360deg);
-  pointer-events: none;
-  z-index: -1;
-}
+.jin-sidebar::before { content: none; }
 
 /* Sidebar header — wordmark + seal chop. The wordmark is deliberately isolated:
  * neither the collapse toggle, the capture action, nor settings restyle it. */
@@ -190,39 +175,14 @@ body {
   padding: var(--space-half) var(--space-2) var(--space-2);
 }
 
-/* Capture affordance — a cozy cinnabar "seal" button: warm vertical gradient,
- * generous rounding, soft press shadow, and a gentle lift on hover. */
+/* Capture stays prominent through placement and a quiet elevated capsule. */
 .jin-capture-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: var(--space-1);
   width: 100%;
-  padding: var(--space-1) var(--space-2);
-  min-block-size: var(--space-5); /* 40px — roomy/cozy (relaxes tap-target 44px) */
-  background-image: linear-gradient(180deg, var(--seal), var(--seal-strong));
-  color: var(--seal-on);
-  border-radius: var(--radius-lg);
-  font-size: var(--text-subheadline-size);
-  font-weight: 600;
-  line-height: var(--text-subheadline-line);
-  letter-spacing: 0.01em;
   cursor: pointer;
-  border: none;
-  font-family: inherit;
-  box-shadow: var(--seal-shadow);
-  transition:
-    transform var(--duration-fast) var(--ease-standard),
-    filter var(--duration-fast) var(--ease-standard);
-}
-
-.jin-capture-btn:hover {
-  transform: translateY(-1px);
-  filter: saturate(1.08) brightness(1.03);
-}
-
-.jin-capture-btn:active {
-  transform: translateY(0) scale(0.98);
+  font-family: var(--font-text);
 }
 
 .jin-capture-btn svg {
@@ -632,6 +592,7 @@ body {
   width: var(--icon-size-standard);
   height: var(--icon-size-standard);
   stroke-width: 1.75;
+  color: var(--accent);
 }
 
 .jin-sidebar-actions {
@@ -642,12 +603,12 @@ body {
   min-height: var(--rail-row-height);
   padding: 0 10px;
   justify-content: flex-start;
-  border: 0;
-  border-radius: var(--radius-sm);
-  color: var(--label-secondary);
-  background: transparent;
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-capsule);
+  color: var(--label);
+  background: var(--control-surface);
   background-image: none;
-  box-shadow: none;
+  box-shadow: var(--control-shadow);
   font-size: var(--text-footnote-size);
   line-height: var(--text-footnote-line);
 }
@@ -655,7 +616,7 @@ body {
 .jin-capture-btn:hover,
 .jin-capture-btn:active {
   color: var(--label);
-  background: var(--workspace-row-hover);
+  background: var(--control-track);
   transform: none;
   filter: none;
 }
@@ -702,7 +663,7 @@ body {
 }
 
 .jin-sidebar.is-collapsed .jin-capture-btn {
-  border-radius: var(--radius-sm);
+  border-radius: 50%;
 }
 
 .jin-sidebar.is-collapsed .jin-settings-btn > span {
@@ -767,18 +728,7 @@ body {
 }
 
 /* One dry-brush gesture for the whole application rail, kept away from text. */
-.jin-sidebar-header::after {
-  content: '';
-  position: absolute;
-  inset-inline-start: 10px;
-  inset-block-end: 1px;
-  width: 34px;
-  height: 2px;
-  background: linear-gradient(90deg, var(--ink-dry), var(--ink-bleed), transparent);
-  clip-path: polygon(0 18%, 77% 0, 100% 45%, 69% 70%, 0 100%);
-  transform: rotate(-1deg);
-  pointer-events: none;
-}
+.jin-sidebar-header::after { content: none; }
 
 .jin-brand-mark {
   width: 20px;

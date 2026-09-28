@@ -1132,16 +1132,20 @@ describe('Link-collapse gates (LPK-1 / LPK-2)', () => {
     expect(state.doc.sliceString(3, 8), 'Label text in buffer must still be "label"').toBe('label');
   });
 
-  it('renders the explicit card form as a card label and hides its source marker off-line', () => {
+  it('renders the explicit card form as one block widget and reveals source on the active line', () => {
     const doc = 'x\n[Project](https://example.com "jin-card")';
     const state = makeState(doc, 0);
     const items = collectDecos(buildLivePreviewDecorations(state));
-    expect(items.some((item) => item.class === 'cm-link-label cm-link-card-label')).toBe(true);
-    expect(items.find((item) => item.class === 'cm-link-label cm-link-card-label')?.attributes)
-      .toEqual({ 'data-link-host': 'example.com' });
-    const sourceTail = doc.indexOf('](');
-    expect(items.some((item) => item.from === sourceTail && item.to === doc.length && !item.class)).toBe(true);
+    expect(items.some((item) => item.from === 2 && item.to === doc.length && item.hasWidget)).toBe(true);
+    expect(collectDecos(buildLivePreviewDecorations(makeState(doc, 5))).some(item => item.hasWidget)).toBe(false);
     expect(state.doc.toString()).toBe(doc);
+  });
+
+  it('keeps URL-labeled cards and fenced lookalikes distinct', () => {
+    const urlCard = 'x\n[https://example.com](https://example.com "jin-card")';
+    expect(collectDecos(buildLivePreviewDecorations(makeState(urlCard, 0))).some(item => item.hasWidget)).toBe(true);
+    const fenced = 'x\n```md\n[Project](https://example.com "jin-card")\n```';
+    expect(collectDecos(buildLivePreviewDecorations(makeState(fenced, 0))).some(item => item.hasWidget)).toBe(false);
   });
 
   it('G-LP-LINK-COLLAPSE: two inline links on the same inactive line → correct ranges', () => {

@@ -128,11 +128,16 @@
 
   /* Accent + system colors */
   --accent: #007aff;
+  --accent-text: #005cbd;
   /* Text on filled-accent surfaces (buttons, selected tabs) */
   --color-on-accent: #ffffff;
+  --action-primary-fill: #005cbd;
+  --action-danger-fill: #bb2220;
   --system-red: #ff3b30;
   --system-green: #34c759;
   --system-orange: #ff9500;
+  --task-priority-high: #b42318;
+  --task-priority-medium: #925400;
   --system-yellow: #ffcc00;
   --system-indigo: #5856d6;
   --system-purple: #af52de;
@@ -149,12 +154,12 @@
   --chroma-black: #000000;
 
   /* Continuous workspace surfaces. Glass belongs to chrome/transient UI only. */
-  --workspace-canvas: #fbfaf8;
-  --workspace-chrome: rgba(245, 246, 248, 0.84);
-  --workspace-context: #f1f2f4;
+  --workspace-canvas: #ffffff;
+  --workspace-chrome: rgba(250, 250, 252, 0.94);
+  --workspace-context: #f5f5f7;
   --workspace-row-hover: rgba(60, 60, 67, 0.07);
-  --workspace-row-selected: rgba(33, 31, 28, 0.14);
-  --workspace-transient: rgba(255, 255, 255, 0.88);
+  --workspace-row-selected: rgba(0, 122, 255, 0.11);
+  --workspace-transient: rgba(255, 255, 255, 0.96);
   --workspace-edge-shadow: rgba(33, 31, 28, 0.08);
 
   /* Sparse nanquim grammar: text, selection stroke/bleed, and dry-brush marks. */
@@ -185,29 +190,29 @@
   --seal-shadow: 0 2px 8px rgba(181, 64, 47, 0.30); /* capture-button lift (the stamp press) */
 
   /* Living Agenda — paper, indigo time, and a warm vermilion entry point. */
-  --agenda-canvas: #f7f4ee;
-  --agenda-rail: #eeebe3;
-  --agenda-elevated: #fffdf8;
-  --agenda-indigo: #4355a6;
-  --agenda-indigo-tint: rgba(67, 85, 166, 0.12);
-  --agenda-timeline: rgba(67, 85, 166, 0.28);
-  --agenda-overlap-tint: rgba(67, 85, 166, 0.16);
+  --agenda-canvas: #ffffff;
+  --agenda-rail: #f5f5f7;
+  --agenda-elevated: #ffffff;
+  --agenda-indigo: #007aff;
+  --agenda-indigo-tint: rgba(0, 122, 255, 0.10);
+  --agenda-timeline: rgba(0, 122, 255, 0.24);
+  --agenda-overlap-tint: rgba(0, 122, 255, 0.08);
   --capture-vermilion: #dc6a55;
   --capture-vermilion-hover: #c95643;
   --capture-on-vermilion: #201b18;
 
   /* Tasks — paper ledger hierarchy. Components consume these roles only. */
-  --tasks-selected-wash: rgba(67, 85, 166, 0.12);
-  --tasks-selected-edge: #4355a6;
-  --tasks-board-paper: #fffdf8;
-  --tasks-detail-edge: rgba(67, 85, 166, 0.28);
+  --tasks-selected-wash: rgba(0, 122, 255, 0.10);
+  --tasks-selected-edge: #007aff;
+  --tasks-board-paper: #ffffff;
+  --tasks-detail-edge: rgba(0, 122, 255, 0.24);
   --tasks-meta: rgba(33, 31, 28, 0.58);
   --notes-selected-wash: var(--agenda-indigo-tint);
   --notes-selected-edge: var(--agenda-indigo);
   --notes-editor-paper: var(--agenda-canvas);
   --notes-meta: var(--tasks-meta);
   /* Notes editor — a quiet, continuous writing desk. */
-  --notes-writing-paper: #f7f4ee;
+  --notes-writing-paper: #ffffff;
   --notes-writing-ink: var(--ink-primary);
   --notes-writing-muted: var(--ink-muted);
   --notes-toolbar-wash: rgba(67, 85, 166, 0.055);
@@ -220,11 +225,15 @@
   --notes-save-failed: var(--seal);
   --notes-save-paused: var(--system-orange);
   --notes-prose-measure: 66ch;
-  --notes-prose-size: 1rem;
-  --notes-prose-line: 1.6;
+  --notes-detail-title-size: 1.625rem;
+  --notes-writing-column: min(calc(100% - var(--space-6)), var(--reading-width));
+  --notes-prose-size: .9375rem;
+  --notes-prose-line: 1.5;
 
   /* Desktop component geometry. Coarse pointers promote hit targets to 44px. */
-  --app-rail-width: 184px;
+  --app-rail-width: 248px;
+  --sidebar-width: var(--app-rail-width);
+  --sidebar-native-top: 0px;
   --app-rail-collapsed-width: 52px;
   --navigation-rail-width: var(--app-rail-width);
   --context-rail-width: var(--navigation-rail-width);
@@ -261,10 +270,23 @@
 /* Whole-app editorial material roles. These stay narrow so accepted routes keep
  * their established hierarchy while remaining surfaces share one paper system. */
 :root {
+  --control-surface: var(--bg-elevated);
+  --control-track: var(--bg-secondary);
+  --control-edge: var(--separator);
+  --control-shadow: 0 1px 2px color-mix(in srgb, var(--label) 10%, transparent);
   --calendar-paper: var(--workspace-canvas);
   --calendar-rule: var(--separator);
-  --calendar-selected-wash: color-mix(in srgb, var(--agenda-indigo) 12%, var(--workspace-canvas));
-  --operational-wash: color-mix(in srgb, var(--agenda-indigo) 9%, var(--workspace-canvas));
+  --calendar-canvas: var(--workspace-canvas);
+  --calendar-toolbar: var(--bg-elevated);
+  --calendar-inspector: var(--bg-elevated);
+  --calendar-segment: var(--control-track);
+  --calendar-segment-selected: var(--bg-elevated);
+  --calendar-adjacent: color-mix(in srgb, var(--calendar-canvas) 95%, var(--label-secondary));
+  --calendar-today: var(--system-red);
+  --calendar-today-ink: #fff;
+  --calendar-selection: var(--accent);
+  --calendar-selected-wash: color-mix(in srgb, var(--accent) 12%, var(--workspace-canvas));
+  --operational-wash: color-mix(in srgb, var(--accent) 9%, var(--workspace-canvas));
   --dialog-paper: var(--bg-elevated);
   --dialog-elevation: var(--elevation-shadow);
   --state-warning-wash: color-mix(in srgb, var(--system-orange) 10%, var(--workspace-canvas));
@@ -299,9 +321,14 @@
     --fill-quaternary: rgba(116, 116, 128, 0.18);
 
     --accent: #0a84ff;
+    --accent-text: #6ab3ff;
+    --action-primary-fill: #0066d4;
+    --action-danger-fill: #c52b27;
     --system-red: #ff453a;
     --system-green: #30d158;
     --system-orange: #ff9f0a;
+    --task-priority-high: #ff7970;
+    --task-priority-medium: #ffc268;
     --system-yellow: #ffd60a;
     --system-indigo: #5e5ce6;
     --system-purple: #bf5af2;
@@ -336,15 +363,15 @@
     --agenda-canvas: #191a1d;
     --agenda-rail: #202126;
     --agenda-elevated: #24262b;
-    --agenda-indigo: #aebcff;
-    --agenda-indigo-tint: rgba(174, 188, 255, 0.15);
-    --agenda-timeline: rgba(174, 188, 255, 0.40);
-    --agenda-overlap-tint: rgba(174, 188, 255, 0.20);
+    --agenda-indigo: #0a84ff;
+    --agenda-indigo-tint: rgba(10, 132, 255, 0.15);
+    --agenda-timeline: rgba(10, 132, 255, 0.40);
+    --agenda-overlap-tint: rgba(10, 132, 255, 0.13);
     --capture-vermilion: #f08a72;
     --capture-vermilion-hover: #ffa18a;
     --capture-on-vermilion: #171313;
-    --tasks-selected-wash: rgba(174, 188, 255, 0.15);
-    --tasks-selected-edge: #aebcff;
+    --tasks-selected-wash: rgba(10, 132, 255, 0.15);
+    --tasks-selected-edge: #0a84ff;
     --tasks-board-paper: #24262b;
     --tasks-detail-edge: rgba(174, 188, 255, 0.40);
     --tasks-meta: rgba(240, 237, 231, 0.60);
@@ -393,9 +420,14 @@
   --fill-quaternary: rgba(116, 116, 128, 0.18);
 
   --accent: #0a84ff;
+  --accent-text: #6ab3ff;
+  --action-primary-fill: #0066d4;
+  --action-danger-fill: #c52b27;
   --system-red: #ff453a;
   --system-green: #30d158;
   --system-orange: #ff9f0a;
+  --task-priority-high: #ff7970;
+  --task-priority-medium: #ffc268;
   --system-yellow: #ffd60a;
   --system-indigo: #5e5ce6;
   --system-purple: #bf5af2;
@@ -430,15 +462,15 @@
   --agenda-canvas: #191a1d;
   --agenda-rail: #202126;
   --agenda-elevated: #24262b;
-  --agenda-indigo: #aebcff;
-  --agenda-indigo-tint: rgba(174, 188, 255, 0.15);
-  --agenda-timeline: rgba(174, 188, 255, 0.40);
-  --agenda-overlap-tint: rgba(174, 188, 255, 0.20);
+  --agenda-indigo: #0a84ff;
+  --agenda-indigo-tint: rgba(10, 132, 255, 0.15);
+  --agenda-timeline: rgba(10, 132, 255, 0.40);
+  --agenda-overlap-tint: rgba(10, 132, 255, 0.13);
   --capture-vermilion: #f08a72;
   --capture-vermilion-hover: #ffa18a;
   --capture-on-vermilion: #171313;
-  --tasks-selected-wash: rgba(174, 188, 255, 0.15);
-  --tasks-selected-edge: #aebcff;
+  --tasks-selected-wash: rgba(10, 132, 255, 0.15);
+  --tasks-selected-edge: #0a84ff;
   --tasks-board-paper: #24262b;
   --tasks-detail-edge: rgba(174, 188, 255, 0.40);
   --tasks-meta: rgba(240, 237, 231, 0.60);

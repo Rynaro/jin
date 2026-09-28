@@ -904,6 +904,7 @@ mod notification_center {
     fn complete_task_orders_source_before_item() {
         let tmp = TempDir::new().unwrap();
         jin_core::ops::init(tmp.path()).unwrap();
+        jin_core::ops::lists::ensure_default_list_for_root(tmp.path()).unwrap();
         let config = jin_core::Config::load(tmp.path()).unwrap();
         let task = jin_core::ops::tasks::create_task(
             &config.tasks_dir(),

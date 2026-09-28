@@ -1,0 +1,10 @@
+{
+  "baseline_revision": "44dff1549095580305f2b44fac4f7c958bda3ec3",
+  "browser": "repository Playwright MCP Chromium session",
+  "url": "http://127.0.0.1:1420/",
+  "result": "pass",
+  "errors": 0,
+  "warnings": 0,
+  "total_console_messages": 2,
+  "query": "fresh Playwright tab after Notes and Tasks navigation; error-level messages since navigation"
+}

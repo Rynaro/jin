@@ -48,17 +48,16 @@ import {
   type TodayViewElements,
   type TodayTemplates,
 } from '../lib/agenda/render';
-import { isValidEventEditDraft, type EventEditDraft } from '../lib/events/edit';
 
 const invokeMocks = vi.hoisted(() => ({
   todayProjection: vi.fn(), getTaskById: vi.fn(), setTaskStatus: vi.fn(), editTask: vi.fn(),
-  getEventDetailById: vi.fn(), editEvent: vi.fn(), editRoutedEvent: vi.fn(),
+  getEventDetailById: vi.fn(), editEvent: vi.fn(), editRoutedEvent: vi.fn(), editEventDelta: vi.fn(), editRoutedEventDelta: vi.fn(),
   newOperationId: vi.fn(() => 'preview-operation'),
 }));
 vi.mock('../invoke', () => ({
   todayProjection: invokeMocks.todayProjection, getTaskById: invokeMocks.getTaskById,
   setTaskStatus: invokeMocks.setTaskStatus, editTask: invokeMocks.editTask,
-  getEventDetailById: invokeMocks.getEventDetailById, editEvent: invokeMocks.editEvent,
+  getEventDetailById: invokeMocks.getEventDetailById, editEvent: invokeMocks.editEvent, editEventDelta: invokeMocks.editEventDelta, editRoutedEventDelta: invokeMocks.editRoutedEventDelta,
   editRoutedEvent: invokeMocks.editRoutedEvent, newOperationId: invokeMocks.newOperationId,
 }));
 vi.mock('../lib/icons', () => ({ initIcons: vi.fn() }));
@@ -1478,39 +1477,42 @@ describe('TodayController — task and event previews', () => {
     return { section: mounted.section, controller: mounted.controller };
   }
 
-  it('keeps Today visible, saves a compact event edit, and refreshes the rendered title', async () => {
+  it('shared_event_companion: opens shared Preview and keeps Today lanes after mutation (AC-CALX-048)', async () => {
     const first = makeProjection('2026-06-27', 'Preview event');
     const refreshed = makeProjection('2026-06-27', 'Renamed event');
     const detail = makePreviewDetail();
     const canonical = makePreviewDetail({ title: 'Renamed event', location: 'Library' });
     invokeMocks.todayProjection.mockResolvedValueOnce(first).mockResolvedValue(refreshed);
-    invokeMocks.getEventDetailById.mockResolvedValueOnce(detail).mockResolvedValueOnce(canonical);
-    invokeMocks.editEvent.mockResolvedValue({ event: canonical.event, no_op: false });
+    invokeMocks.getEventDetailById.mockResolvedValueOnce(detail).mockResolvedValue(canonical);
+    invokeMocks.editEventDelta.mockResolvedValue({ event: canonical.event, no_op: false });
     const mounted = await mountLifecycleController();
     app = mounted.app;
     await flushController();
 
     (mounted.section.querySelector('.today-event-row__title') as HTMLButtonElement).click();
     await flushController();
-    expect(document.querySelector('.today-preview__go')?.textContent).toBe('Go to event');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(document.querySelector('.event-preview, .event-companion')).toBeTruthy();
     expect(mounted.section.classList.contains('hidden')).toBe(false);
 
-    const title = document.querySelector<HTMLInputElement>('.today-preview [name="title"]')!;
-    const location = document.querySelector<HTMLInputElement>('.today-preview [name="location"]')!;
+    document.querySelector<HTMLButtonElement>('.event-preview__edit')?.click();
+    await flushController();
+    const title = document.querySelector<HTMLInputElement>('#event-composer-title')!;
     title.value = 'Renamed event';
-    location.value = 'Library';
-    document.querySelector<HTMLButtonElement>('.today-preview [name="event-save"]')!.focus();
-    document.querySelector<HTMLFormElement>('.today-preview__form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    title.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector<HTMLButtonElement>('.event-composer__save')!.click();
     await flushController();
     await flushController();
     await new Promise(resolve => setTimeout(resolve, 0));
 
-    expect(invokeMocks.editEvent).toHaveBeenCalledWith(expect.objectContaining({
-      event_id: 'event-preview', title: 'Renamed event', location: 'Library',
-      start: detail.event.start, end: detail.event.end, description: 'Keep this description',
-    }));
+    expect(invokeMocks.editEventDelta).toHaveBeenCalled();
+    const payload = invokeMocks.editEventDelta.mock.calls[0][0];
+    expect(payload.delta).toMatchObject({ title: 'Renamed event' });
+    expect(payload.delta.temporal).toBeUndefined();
     expect(mounted.section.querySelector('.today-event-row__title')?.textContent).toBe('Renamed event');
     expect(mounted.section.classList.contains('hidden')).toBe(false);
+    // Companion stays open on Preview after save (AC-048).
+    expect(document.querySelector('.event-preview, .event-companion')).toBeTruthy();
   });
 
   it('opens a task preview and keeps a failed task mutation visible for retry', async () => {
@@ -1534,100 +1536,7 @@ describe('TodayController — task and event previews', () => {
     expect(document.querySelector('#jin-modal-root dialog')).not.toBeNull();
   });
 
-  it('gates the editor from provider capabilities and ignores a detail result after close', async () => {
-    const projection = makeProjection('2026-06-27', 'Read-only event');
-    invokeMocks.todayProjection.mockResolvedValue(projection);
-    const pending = deferred<EventDetailDto>();
-    invokeMocks.getEventDetailById.mockReturnValueOnce(pending.promise);
-    const mounted = await mountLifecycleController();
-    app = mounted.app;
-    await flushController();
-    (mounted.section.querySelector('.today-event-row__title') as HTMLButtonElement).click();
-    await flushController();
-    (document.querySelector('.modal-close-btn') as HTMLButtonElement).click();
-    pending.resolve(makePreviewDetail({}, false));
-    await flushController();
-    await Promise.resolve();
 
-    expect(document.querySelector('#jin-modal-root dialog')).toBeNull();
-    expect(invokeMocks.editEvent).not.toHaveBeenCalled();
-  });
 
-  it('uses the exact routed edit identity and only a provider-allowed recurrence scope', async () => {
-    const detail = makePreviewDetail({
-      sync_context: {
-        provider: 'google', account_id: 'account-9', account_alias: 'Work', calendar_id: 'calendar-7',
-        calendar_name: 'Primary', access_role: 'writer', writable: true, state: 'synced',
-      },
-    });
-    detail.capabilities.recurrence_scopes = ['entire_series'];
-    invokeMocks.editRoutedEvent.mockResolvedValue(detail.event);
-    invokeMocks.getEventDetailById.mockResolvedValueOnce(detail).mockResolvedValueOnce(detail);
-    const { controller } = await openEventPreview(detail);
-    const preview = controller as unknown as {
-      previewDraft: EventEditDraft;
-      saveEventPreview(): Promise<void>;
-    };
-    preview.previewDraft.title = 'Routed rename';
 
-    await preview.saveEventPreview();
-
-    expect(invokeMocks.getEventDetailById).toHaveBeenCalledTimes(2);
-    expect(invokeMocks.editRoutedEvent).toHaveBeenCalledWith(expect.objectContaining({
-      event_id: 'event-preview', edit_token: 'event-preview:1', operation_id: 'preview-operation',
-      account_id: 'account-9', calendar_id: 'calendar-7', recurrence_scope: 'entire_series', title: 'Routed rename',
-    }));
-    expect(invokeMocks.editEvent).not.toHaveBeenCalled();
-  });
-
-  it('rebuilds a stale preview from canonical time and description while retaining only title and location edits', async () => {
-    const detail = makePreviewDetail({ description: 'Original description' });
-    const canonical = makePreviewDetail({
-      start: '2026-06-28T14:00:00Z', end: '2026-06-28T15:30:00Z',
-      description: 'Canonical description', location: 'Canonical room', title: 'Canonical title',
-    });
-    canonical.edit_token = 'event-preview:2';
-    invokeMocks.editEvent.mockRejectedValue({
-      code: 4, kind: 'sync_conflict', message: 'changed', retriable: false,
-      details: { type: 'stale_event', event_id: 'event-preview' },
-    });
-    invokeMocks.getEventDetailById.mockResolvedValueOnce(detail).mockResolvedValueOnce(canonical);
-    const { controller } = await openEventPreview(detail);
-    const preview = controller as unknown as {
-      previewDraft: EventEditDraft;
-      saveEventPreview(): Promise<void>;
-    };
-    preview.previewDraft.title = 'My title';
-    preview.previewDraft.location = 'My location';
-    expect(isValidEventEditDraft(preview.previewDraft)).toBe(true);
-
-    await preview.saveEventPreview();
-
-    expect(invokeMocks.editEvent).toHaveBeenCalledTimes(1);
-    expect(invokeMocks.getEventDetailById).toHaveBeenCalledTimes(2);
-    expect(preview.previewDraft).toMatchObject({
-      title: 'My title', location: 'My location', description: 'Canonical description',
-      baseline: { start: '2026-06-28T14:00:00Z', end: '2026-06-28T15:30:00Z' },
-    });
-  });
-
-  it('announces a committed save after close without reviving the preview', async () => {
-    const detail = makePreviewDetail();
-    const mutation = deferred<{ event: EventDetailDto['event']; no_op: boolean }>();
-    invokeMocks.editEvent.mockReturnValue(mutation.promise);
-    invokeMocks.getEventDetailById.mockResolvedValueOnce(detail).mockResolvedValueOnce(detail);
-    const { controller } = await openEventPreview(detail);
-    const eventsMutated = vi.fn();
-    window.addEventListener('jin:events-mutated', eventsMutated, { once: true });
-    const preview = controller as unknown as { saveEventPreview(): Promise<void> };
-    const save = preview.saveEventPreview();
-    await flushController();
-    (document.querySelector('.modal-close-btn') as HTMLButtonElement).click();
-    mutation.resolve({ event: detail.event, no_op: false });
-    await save;
-    await Promise.resolve();
-
-    expect(eventsMutated).toHaveBeenCalledTimes(1);
-    expect(document.querySelector('#jin-modal-root dialog')).toBeNull();
-  });
 });

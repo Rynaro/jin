@@ -16,7 +16,7 @@
  *   selectDate() → getEventsForDate() → renderDayEvents()
  *
  * Data flow (create event):
- *   openEventCreate() → showEventModal() → createEvent() → refreshCalendar()
+ *   openEventCreate() → EventCompanion Composer → createEvent() → refreshCalendar()
  *
  * Connect pattern: data-controller="calendar-view" on the calendar <section> element.
  *
@@ -26,31 +26,27 @@
  *   monthViewTarget  — where the month grid is rendered
  *   dayViewTarget    — where day events are listed
  *   createEventBtn   — button to create new event
- *   eventModal       — modal for creating/editing events
  */
 
 import { Controller } from '@hotwired/stimulus';
 import {
   listEvents, createEvent, createRoutedEvent, deleteEvent, promoteTask, syncCalendarEvent,
-  listGoogleAccounts, listTasks, newOperationId, previewRecurrence,
+  listGoogleAccounts, listTasks, newOperationId,
+  calendarRangeProjection, getEventDetailById, editEventDelta, editRoutedEventDelta,
 } from '../invoke';
-import type { MonthlyRecurrence, RecurrenceDraft, RecurrenceEnd, RecurrenceWeekday } from '../invoke';
 import { isJinErrorDto } from '../types/error';
-import type { EventAttendeeDto, EventConferenceDataDto, EventDto, TaskDto } from '../types/dto';
+import type {
+  CalendarRangeEntryDto, CalendarRangeProjectionDto, EventDetailDto, EventDto, GoogleAccountDto, TaskDto,
+} from '../types/dto';
 import { initIcons } from '../lib/icons';
-import { eventMessage, resolveEventLocale } from '../lib/events/locale';
-import { normalizeClockInput } from '../lib/calendar/clock';
-import CalendarController, { type CalendarSelection } from './calendar_controller';
-import {
-  formatNaturalDateResult,
-  naturalDateErrorMessage,
-  parseNaturalDateTime,
-  type NaturalDateErrorCode,
-  type NaturalDateResult,
-} from '../lib/calendar/natural_language';
+import { beginMovementSelection } from '../lib/ui/movement';
+import { eventMessage, eventMessageFormat, resolveEventLocale } from '../lib/events/locale';
 import {
   deriveNightExpansion,
   buildTimeGrid,
+  buildTimeGridFromProjection,
+  buildDisplayDaySlots,
+  occupancyFromModel,
   GRID_PX_PER_MINUTE,
   initialScrollMinute,
   projectedMinute,
@@ -58,8 +54,73 @@ import {
   type NightExpansion,
 } from '../lib/calendar/time_grid';
 import { calendarEventSourceLabel, renderTimeGrid, type RenderedTimeGrid } from '../lib/calendar/time_grid_render';
-import { normalizeRecurrenceDraft, recurrenceFromRepeatValue, recurrenceUiCopy } from '../lib/events/recurrence';
-import { applyCalendarColor, calendarColorForEvent, calendarProviderForEvent } from '../lib/calendar/colors';
+import { monthChipCapacity } from '../lib/calendar/month_capacity';
+import {
+  abortPointerLayer,
+  applyCursorKey,
+  applyGeometryToDraft,
+  applyTemporalKeyboard,
+  beginMonthDrag,
+  beginMoveDrag,
+  beginResizeDrag,
+  beginTimedDrag,
+  emptySlotCreate,
+  finalizeMonthDrag,
+  finalizeMoveDrag,
+  finalizeResizeDrag,
+  finalizeTimedDrag,
+  formatGeometryClock,
+  geometryFromProjectionEntry,
+  initTemporalCursor,
+  monthAllDayDraftSlot,
+  parseTemporalKeyboard,
+  pointerCreatePolicy,
+  rangeKey,
+  temporalHandlesAllowed,
+  updateMonthDrag,
+  updateMoveDrag,
+  updateResizeDrag,
+  updateTimedDrag,
+  type CursorMemory,
+  type CursorMoveKey,
+  type EventGeometry,
+  type PointerLayer,
+  type TemporalCursor,
+} from '../lib/calendar/interaction';
+import {
+  eventsFromProjectionForDate,
+  filterProjectionEntries,
+  projectionWindow,
+} from '../lib/calendar/projection_view';
+import {
+  applyCalendarColor,
+  calendarColor,
+  calendarMembershipIdentity,
+  googleCalendarKey,
+} from '../lib/calendar/colors';
+import {
+  areAllCalendarsHidden,
+  collectCalendarFilterIdentities,
+  filterEventsByVisibility,
+  isCalendarVisible,
+  loadCalendarVisibility,
+  resetCalendarVisibility,
+  setCalendarVisible,
+  type CalendarVisibilityMap,
+} from '../lib/calendar/visibility';
+import {
+  createInputFromDraft,
+  draftFromEvent,
+  draftFromSlot,
+  editPayloadFromDraft,
+  routedCreateInputFromDraft,
+  routedEditPayloadFromDraft,
+  type DraftSlot,
+  type EventDraft,
+} from '../lib/events/draft';
+import { EventCompanion, type CompanionSaveResult } from '../lib/ui/companion';
+import type { SupportedRecurrenceScope } from '../lib/events/recurrence_scope';
+import type { ComposerDestination } from '../lib/events/composer';
 
 /** Half-open projection of an event interval onto one local calendar day. */
 export function eventIntersectsDate(event: EventDto, dateStr: string): boolean {
@@ -88,88 +149,25 @@ interface CalendarMonth {
 
 export default class CalendarViewController extends Controller {
   static targets = [
+    'workspace',
+    'field',
     'monthView',
     'dayView',
     'monthViewContent',
     'dayViewContent',
     'createEventBtn',
-    'eventModal',
-    'eventTitle',
-    'eventDestination',
-    'eventGuests',
-    'eventGuestUpdates',
-    'eventGoogleMeet',
-    'eventCalendar',
-    'eventWhenInput',
-    'eventWhenPreview',
-    'eventWhenSummary',
-    'eventAllDay',
-    'eventStartTime',
-    'eventEndTime',
-    'eventTimezone',
-    'eventLocation',
-    'eventDescription',
-    'eventRepeat',
-    'eventRepeatCustom',
-    'eventRepeatInterval',
-    'eventRepeatFrequency',
-    'eventRepeatWeekdays',
-    'eventRepeatMonthlyMode',
-    'eventRepeatMonthDay',
-    'eventRepeatOrdinal',
-    'eventRepeatOrdinalWeekday',
-    'eventRepeatEndKind',
-    'eventRepeatUntil',
-    'eventRepeatCount',
-    'eventRepeatPreview',
-    'eventError',
-    'eventSubmit',
-    'timeGroup',
   ];
 
+  declare workspaceTarget: HTMLElement;
+  declare hasWorkspaceTarget: boolean;
+  declare fieldTarget: HTMLElement;
+  declare hasFieldTarget: boolean;
   declare monthViewTarget: HTMLElement;
   declare dayViewTarget: HTMLElement;
   declare monthViewContentTarget: HTMLElement;
   declare dayViewContentTarget: HTMLElement;
   declare createEventBtnTarget: HTMLButtonElement;
-  declare eventModalTarget: HTMLDialogElement;
-  declare eventTitleTarget: HTMLInputElement;
-  declare eventDestinationTarget: HTMLSelectElement;
-  declare readonly hasEventDestinationTarget: boolean;
-  declare eventGuestsTarget: HTMLInputElement;
-  declare eventGoogleMeetTarget: HTMLInputElement;
-  declare readonly hasEventGuestsTarget: boolean;
-  declare eventGuestUpdatesTarget: HTMLSelectElement;
-  declare readonly hasEventGuestUpdatesTarget: boolean;
-  declare readonly hasEventGoogleMeetTarget: boolean;
-  declare eventCalendarTarget: HTMLElement;
-  declare eventWhenInputTarget: HTMLInputElement;
-  declare eventWhenPreviewTarget: HTMLElement;
-  declare eventWhenSummaryTarget: HTMLElement;
-  declare eventAllDayTarget: HTMLInputElement;
-  declare eventStartTimeTarget: HTMLInputElement;
-  declare eventEndTimeTarget: HTMLInputElement;
-  declare eventTimezoneTarget: HTMLInputElement;
-  declare readonly hasEventTimezoneTarget: boolean;
-  declare eventLocationTarget: HTMLInputElement;
-  declare eventDescriptionTarget: HTMLTextAreaElement;
-  declare eventRepeatTarget: HTMLSelectElement;
-  declare readonly hasEventRepeatTarget: boolean;
-  declare eventRepeatCustomTarget: HTMLElement;
-  declare eventRepeatIntervalTarget: HTMLInputElement;
-  declare eventRepeatFrequencyTarget: HTMLSelectElement;
-  declare eventRepeatWeekdaysTarget: HTMLFieldSetElement;
-  declare eventRepeatMonthlyModeTarget: HTMLFieldSetElement;
-  declare eventRepeatMonthDayTarget: HTMLInputElement;
-  declare eventRepeatOrdinalTarget: HTMLSelectElement;
-  declare eventRepeatOrdinalWeekdayTarget: HTMLSelectElement;
-  declare eventRepeatEndKindTargets: HTMLInputElement[];
-  declare eventRepeatUntilTarget: HTMLInputElement;
-  declare eventRepeatCountTarget: HTMLInputElement;
-  declare eventRepeatPreviewTarget: HTMLElement;
-  declare eventErrorTarget: HTMLElement;
-  declare eventSubmitTarget: HTMLButtonElement;
-  declare timeGroupTarget: HTMLElement;
+  declare hasCreateEventBtnTarget: boolean;
 
   // Current calendar state
   private currentMonth: number = 0;
@@ -189,18 +187,34 @@ export default class CalendarViewController extends Controller {
   private timelineScrollFrame: number | null = null;
   private nowTimer: ReturnType<typeof setTimeout> | null = null;
   private connected = false;
-  private submitPending = false;
-  private cachedNaturalResult: Extract<NaturalDateResult, { ok: true }> | null = null;
-  private cachedNaturalError: NaturalDateErrorCode | null = null;
   private writableDestinationCount = 0;
-  private destinationRefresh: Promise<void> | null = null;
-  private destinationRevision = 0;
-  private recurrencePreviewRevision = 0;
+  private visibilityMap: CalendarVisibilityMap = {};
+  private filterAccounts: GoogleAccountDto[] = [];
+  private rangeProjection: CalendarRangeProjectionDto | null = null;
+  private companion: EventCompanion | null = null;
+  private addButton: HTMLButtonElement | null = null;
+  private workspaceObserver: ResizeObserver | null = null;
+  private monthGridObserver: ResizeObserver | null = null;
+  private monthGridResizeCleanup: (() => void) | null = null;
+  private temporalCursor: TemporalCursor | null = null;
+  private cursorMemory: CursorMemory | null = null;
+  private pointerLayer: PointerLayer | null = null;
+  private lastWritableDestination: ComposerDestination | null = null;
+  private pendingCreateDestination: ComposerDestination | null = null;
+  private detailRequestRevision = 0;
+  private loadGeneration = 0;
+  private selectedDetail: EventDetailDto | null = null;
+  private selectedDetailId: string | null = null;
+  private lastDisplayTz: string | null = null;
+  private interactionSelectable: ((date: string, minute: number) => boolean) | null = null;
+  private affordanceCleanups: Array<() => void> = [];
+  private static readonly LAST_DEST_KEY = 'jin:calendar-last-destination:v1';
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   connect(): void {
     this.connected = true;
+    this.addButton = this.hasCreateEventBtnTarget ? this.createEventBtnTarget : null;
     const today = new Date();
     this.currentYear = today.getFullYear();
     this.currentMonth = today.getMonth() + 1; // 1-12
@@ -208,9 +222,11 @@ export default class CalendarViewController extends Controller {
     if (savedMode === 'month' || savedMode === 'week' || savedMode === 'day') this.viewMode = savedMode;
     this.selectedDate = this.toISODate(today);
 
+    this.visibilityMap = loadCalendarVisibility();
+    this.restoreLastDestination();
+    this.ensureCompanion();
     this.localizeCalendarShell();
-    this.localizeEventEditor();
-    if (this.hasEventDestinationTarget) void this.populateEventDestinations();
+    void this.refreshWritableDestinationCount();
     document.addEventListener('visibilitychange', this.handleVisibilityChange);
     window.addEventListener('jin:calendar-colors-changed', this.handleCalendarColorsChanged);
     void this.loadCalendar();
@@ -218,18 +234,26 @@ export default class CalendarViewController extends Controller {
 
   disconnect(): void {
     this.connected = false;
+    this.invalidateDetailRequest();
     this.cancelNowTimer();
     this.cancelPendingTimelineScroll();
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     window.removeEventListener('jin:calendar-colors-changed', this.handleCalendarColorsChanged);
+    this.workspaceObserver?.disconnect();
+    this.workspaceObserver = null;
+    this.stopMonthGridMeasurement();
+    this.companion?.close(true);
+    this.companion = null;
     this.timeline = null;
     this.timelineIdentity = null;
     this.nightManual = {};
     this.nightMonotonic = { early: false, late: false };
+    this.selectedDetail = null;
+    this.selectedDetailId = null;
   }
 
   private readonly handleCalendarColorsChanged = (): void => {
-    if (this.connected) this.renderCurrentView();
+    if (this.connected) void this.renderCurrentView();
   };
 
   // ── Public actions ────────────────────────────────────────────────────────
@@ -240,15 +264,22 @@ export default class CalendarViewController extends Controller {
   }
 
   async loadCalendar(): Promise<void> {
+    const generation = ++this.loadGeneration;
     try {
       this.allEvents = await listEvents();
-      if (!this.connected) return;
+      if (!this.connected || generation !== this.loadGeneration) return;
+      try {
+        this.filterAccounts = await listGoogleAccounts();
+      } catch {
+        this.filterAccounts = [];
+      }
+      if (!this.connected || generation !== this.loadGeneration) return;
       this.allTasks = await listTasks();
-      if (!this.connected) return;
+      if (!this.connected || generation !== this.loadGeneration) return;
       // Refresh cached calendar data without navigating away from an event.
       // Check after the requests settle: detail may have opened in the meantime.
       if (!this.element.querySelector('[data-events-target="detailPanel"]:not(.hidden)')) {
-        this.renderCurrentView();
+        await this.renderCurrentView();
       }
     } catch (err: unknown) {
       if (isJinErrorDto(err)) {
@@ -268,11 +299,13 @@ export default class CalendarViewController extends Controller {
   }
 
   goToToday(): void {
+    this.invalidateDetailRequest();
     const today = new Date();
     this.currentYear = today.getFullYear();
     this.currentMonth = today.getMonth() + 1;
     this.selectedDate = this.toISODate(today);
-    this.renderCurrentView();
+    this.paintCurrentView();
+    void this.renderCurrentView();
   }
 
   handleDateClick(event: Event): void {
@@ -288,26 +321,40 @@ export default class CalendarViewController extends Controller {
 
   selectDate(dateStr: string): void {
     if (this.viewMode === 'month' || this.viewMode === 'week') this.previousBrowseMode = this.viewMode;
+    this.invalidateDetailRequest();
     this.selectedDate = dateStr;
     this.viewMode = 'day';
     localStorage.setItem('jin:calendar-view', this.viewMode);
-    this.renderDayView(dateStr);
-
-    // Switch to day view
     this.monthViewTarget.classList.add('hidden');
     this.dayViewTarget.classList.remove('hidden');
+    const before = this.projectionFingerprint();
+    this.paintCurrentView();
+    void this.refreshRangeProjection().then(() => {
+      if (!this.connected || this.viewMode !== 'day' || this.selectedDate !== dateStr) return;
+      if (this.projectionFingerprint() === before && this.timeline) return;
+      this.paintCurrentView();
+    });
   }
 
   backToMonthView(): void {
     this.resetTimelineIdentity();
     this.viewMode = this.previousBrowseMode;
     localStorage.setItem('jin:calendar-view', this.viewMode);
-    this.renderCurrentView();
+    void this.renderCurrentView();
   }
 
   restoreActiveView(event?: Event): void {
     const savedTimelineScroll = { ...this.timelineScroll };
-    this.renderCurrentView();
+    void this.renderCurrentView().then(() => {
+      if (!this.connected) return;
+      this.applyRestoredTimeline(savedTimelineScroll, event);
+    });
+  }
+
+  private applyRestoredTimeline(
+    savedTimelineScroll: { top: number; left: number; focusEventId: string | null; initialized: boolean },
+    event?: Event,
+  ): void {
     const detail = (event as CustomEvent<{ scrollTop?: number; focusEventId?: string }> | undefined)?.detail;
     if (this.timeline) {
       this.timelineScroll = savedTimelineScroll;
@@ -343,10 +390,11 @@ export default class CalendarViewController extends Controller {
   }
 
   localeChanged(): void {
+    this.invalidateDetailRequest();
     this.localizeCalendarShell();
-    this.localizeEventEditor();
     if (!this.element.querySelector('[data-events-target="detailPanel"]:not(.hidden)')) {
-      this.renderCurrentView();
+      this.paintCurrentView();
+      void this.renderCurrentView();
     }
   }
 
@@ -366,540 +414,43 @@ export default class CalendarViewController extends Controller {
 
   private localizeCalendarShell(locale = resolveEventLocale()): void {
     this.element.setAttribute('aria-label', eventMessage('calendar', locale));
-    this.createEventBtnTarget.textContent = `+ ${eventMessage('addEvent', locale)}`;
+    this.createEventBtnTarget.textContent = '+';
     this.createEventBtnTarget.setAttribute('aria-label', eventMessage('addEvent', locale));
   }
 
   async openEventCreate(): Promise<void> {
-    if (this.submitPending) return;
-    this.resetEventForm();
-    this.eventModalTarget.showModal();
-    this.eventTitleTarget.focus();
-    const refresh = this.populateEventDestinations();
-    this.destinationRefresh = refresh;
-    await refresh;
-    if (this.destinationRefresh === refresh) this.destinationRefresh = null;
-  }
-
-  toggleAllDay(): void {
-    const isAllDay = this.eventAllDayTarget.checked;
-    if (isAllDay) {
-      this.timeGroupTarget.classList.add('hidden');
-    } else {
-      this.timeGroupTarget.classList.remove('hidden');
-    }
-    void this.updateRecurrencePreview();
-  }
-
-  guestsChanged(): void {
-    const hasGuests = this.hasEventGuestsTarget && this.eventGuestsTarget.value.trim().length > 0;
-    const label = eventMessage(hasGuests ? 'createInvitation' : 'create', resolveEventLocale());
-    this.eventSubmitTarget.textContent = label;
-    this.eventSubmitTarget.setAttribute('aria-label', label);
-  }
-
-  closeEventDialog(): void {
-    this.eventModalTarget.close();
-    this.resetEventForm();
-  }
-
-  previewWhen(): void {
-    const locale = resolveEventLocale();
-    const result = parseNaturalDateTime({
-      input: this.eventWhenInputTarget.value,
-      today: this.toISODate(new Date()),
-      locale,
-    });
-    if (result.ok) {
-      this.cachedNaturalResult = result;
-      this.cachedNaturalError = null;
-      this.eventWhenPreviewTarget.textContent = formatNaturalDateResult(result, locale);
-      this.eventWhenPreviewTarget.dataset.state = 'valid';
-    } else {
-      this.cachedNaturalResult = null;
-      this.cachedNaturalError = result.code;
-      this.eventWhenPreviewTarget.textContent = naturalDateErrorMessage(result.code, locale);
-      this.eventWhenPreviewTarget.dataset.state = 'error';
-    }
-  }
-
-  applyWhen(event?: Event): void {
-    event?.preventDefault();
-    this.previewWhen();
-    const result = this.cachedNaturalResult;
-    if (!result) return;
-    let endDate = result.date;
-    if (result.time) {
-      const [hours, minutes] = result.time.split(':').map(Number);
-      const endMinutes = hours * 60 + minutes + 60;
-      this.eventAllDayTarget.checked = false;
-      this.eventStartTimeTarget.value = result.time;
-      this.eventEndTimeTarget.value = `${String(Math.floor((endMinutes % 1440) / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
-      if (endMinutes >= 1440) endDate = this.addDays(result.date, 1);
-      this.toggleAllDay();
-    }
-    this.setEventRange(result.date, endDate, endDate !== result.date);
-  }
-
-  calendarSelectionChanged(event: Event): void {
-    const selection = (event as CustomEvent<CalendarSelection>).detail;
-    if (selection.mode !== 'range') return;
-    this.eventCalendarTarget.dataset.pendingStart = selection.start;
-    this.eventCalendarTarget.dataset.pendingEnd = selection.end;
-    this.updateWhenSummary(selection.start, selection.end);
-    this.clearEventError();
-    if (this.hasEventRepeatTarget && this.eventRepeatTarget.value !== 'none') void this.updateRecurrencePreview();
-  }
-
-  repeatChanged(): void {
-    if (!this.hasEventRepeatTarget) return;
-    const custom = this.eventRepeatTarget.value === 'custom';
-    this.eventRepeatCustomTarget.classList.toggle('hidden', !custom);
-    if (custom) {
-      const frequency = this.eventRepeatFrequencyTarget.value;
-      this.eventRepeatWeekdaysTarget.classList.toggle('hidden', frequency !== 'weekly');
-      this.eventRepeatMonthlyModeTarget.classList.toggle('hidden', frequency !== 'monthly');
-    }
-    const enabled = this.eventRepeatTarget.value !== 'none';
-    this.eventRepeatPreviewTarget.classList.toggle('hidden', !enabled);
-    if (enabled) void this.updateRecurrencePreview();
-    else this.eventRepeatPreviewTarget.textContent = '';
-  }
-
-  normalizeEventTime(event: Event): void {
-    const input = event.currentTarget;
-    if (!(input instanceof HTMLInputElement)) return;
-    const normalized = normalizeClockInput(input.value);
-    if (normalized.ok && normalized.time) {
-      input.value = normalized.time;
-      this.clearEventError();
-      this.repeatChanged();
-    }
-  }
-
-  async submitEvent(): Promise<void> {
-    if (this.destinationRefresh) await this.destinationRefresh;
-    if (this.submitPending) return;
-    const title = this.eventTitleTarget.value.trim();
-    const { start: dateStr, end: endDateStr } = this.getEventSelection();
-    const isAllDay = this.eventAllDayTarget.checked;
-    const location = this.eventLocationTarget.value.trim();
-    const description = this.eventDescriptionTarget.value.trim();
-
-    if (!title || !dateStr || !endDateStr) {
-      this.showEventError(eventMessage('titleDateRequired'));
-      return;
-    }
-
-    const normalizedStart = normalizeClockInput(this.eventStartTimeTarget.value);
-    const normalizedEnd = normalizeClockInput(this.eventEndTimeTarget.value);
-    if (!isAllDay && (!normalizedStart.ok || !normalizedStart.time || !normalizedEnd.ok || !normalizedEnd.time)) {
-      this.showEventError(eventMessage('invalidTime'));
-      return;
-    }
-    const startTime = normalizedStart.ok ? normalizedStart.time ?? '' : '';
-    const endTime = normalizedEnd.ok ? normalizedEnd.time ?? '' : '';
-    if (!isAllDay) {
-      this.eventStartTimeTarget.value = startTime;
-      this.eventEndTimeTarget.value = endTime;
-    }
-
-    try {
-      const attendees = this.parseGuestDraft(this.hasEventGuestsTarget ? this.eventGuestsTarget.value : '');
-      this.submitPending = true;
-      this.eventSubmitTarget.disabled = true;
-      let start = dateStr;
-      let end = endDateStr;
-
-      if (isAllDay) {
-        end = this.addDays(endDateStr, 1);
-      } else {
-        start = `${dateStr}T${startTime}:00`;
-        end = `${endDateStr}T${endTime}:00`;
-      }
-
-      if (end <= start) {
-        this.showEventError(eventMessage('endAfterStart'));
-        return;
-      }
-
-      const recurrence = this.buildRecurrenceDraft();
-      const destination = this.selectedEventDestination();
-      const wantsMeet = this.hasEventGoogleMeetTarget && this.eventGoogleMeetTarget.checked;
-      if ((attendees.length > 0 || wantsMeet) && !destination) {
-        this.showEventError('Guests and Google Meet require an exact Google calendar.');
-        this.eventDestinationTarget.focus();
-        return;
-      }
-      if (wantsMeet && destination?.meetUnavailable) {
-        this.showEventError('Google Meet is unavailable for this calendar.');
-        this.eventGoogleMeetTarget.focus();
-        return;
-      }
-      if (recurrence && !destination) {
-        this.showEventError(recurrenceUiCopy(resolveEventLocale()).googleRequired);
-        if (this.hasEventDestinationTarget) this.eventDestinationTarget.focus();
-        return;
-      }
-      const input = {
-        title, start, end, is_all_day: isAllDay,
-        tzid: !isAllDay ? this.eventTimezone() : undefined,
-        location: location || undefined, description: description || undefined,
-        recurrence,
-        attendees: attendees.length ? attendees : undefined,
-        conference_data: wantsMeet ? this.newGoogleMeetRequest() : undefined,
-        guest_update_policy: this.guestUpdatePolicy(),
-      };
-      if (this.hasEventDestinationTarget && this.eventDestinationTarget.value === '') {
-        this.showEventError('ambiguous_destination: Choose an exact account and calendar.');
-        this.eventDestinationTarget.focus();
-        return;
-      }
-      if (destination) {
-        const created = await createRoutedEvent({
-          ...input,
-          account_id: destination.accountId,
-          calendar_id: destination.calendarId,
-          operation_id: newOperationId('create'),
-        });
-        // The durable create already succeeded. A delivery failure must never
-        // return to a submit flow that could create a duplicate event.
-        try {
-          await syncCalendarEvent(created.id);
-        } catch {
-          // The outbox retains the request; detail exposes its state and retry.
-        } finally {
-          window.dispatchEvent(new CustomEvent('jin:google-state-changed'));
-        }
-      } else {
-        await createEvent(input);
-      }
-      this.notifyMutation();
-
-      // Refresh calendar data and views
-      await this.loadCalendar();
-
-      // Re-render day view if we were viewing a specific day
-      if (this.selectedDate) {
-        this.renderDayView(this.selectedDate);
-      }
-
-      // Close modal and reset form
-      this.closeEventDialog();
-    } catch (err: unknown) {
-      if (isJinErrorDto(err)) {
-        this.showEventError(err.message || eventMessage('failedSaveEvent'));
-        this.dispatch('error', { detail: err, prefix: 'app', bubbles: true });
-      } else {
-        this.showEventError(err instanceof Error ? err.message : eventMessage('failedSaveEvent'));
-      }
-    } finally {
-      this.submitPending = false;
-      this.eventSubmitTarget.disabled = false;
-    }
-  }
-
-  private resetEventForm(): void {
-    const locale = resolveEventLocale();
-    this.eventTitleTarget.value = '';
+    // Companion already blocks Save while persisting; also refuse opening a new
+    // create while a write is in flight so the + button cannot double-start.
+    if (this.companion?.getOperationState() === 'persisting') return;
     const date = this.selectedDate || this.toISODate(new Date());
-    this.setEventRange(date, date, false);
-    this.eventWhenInputTarget.value = '';
-    this.cachedNaturalResult = null;
-    this.cachedNaturalError = null;
-    this.eventWhenPreviewTarget.textContent = eventMessage('relativeHint', locale);
-    this.eventWhenPreviewTarget.dataset.state = '';
-    this.eventAllDayTarget.checked = true;
-    this.eventStartTimeTarget.value = '09:00';
-    this.eventEndTimeTarget.value = '10:00';
-    if (this.hasEventTimezoneTarget) this.eventTimezoneTarget.value = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    this.eventLocationTarget.value = '';
-    this.eventDescriptionTarget.value = '';
-    if (this.hasEventGuestsTarget) this.eventGuestsTarget.value = '';
-    if (this.hasEventGuestUpdatesTarget) this.eventGuestUpdatesTarget.value = 'all';
-    if (this.hasEventGoogleMeetTarget) this.eventGoogleMeetTarget.checked = false;
-    if (this.hasEventRepeatTarget) {
-      this.eventRepeatTarget.value = 'none';
-      this.eventRepeatIntervalTarget.value = '1';
-      this.eventRepeatFrequencyTarget.value = 'weekly';
-      this.eventRepeatMonthDayTarget.value = String(Number(date.slice(8, 10)));
-      this.eventRepeatUntilTarget.value = this.addDays(date, 30);
-      this.eventRepeatCountTarget.value = '10';
-      this.eventRepeatEndKindTargets.forEach(input => { input.checked = input.value === 'never'; });
-      const dayIndex = (new Date(`${date}T12:00:00`).getDay() + 6) % 7;
-      this.eventRepeatWeekdaysTarget.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach((input, index) => { input.checked = index === dayIndex; });
-      this.eventRepeatOrdinalWeekdayTarget.value = ['mo', 'tu', 'we', 'th', 'fr', 'sa', 'su'][dayIndex];
-      this.repeatChanged();
-    }
-    this.eventErrorTarget.classList.add('hidden');
-    this.eventErrorTarget.textContent = '';
-    this.timeGroupTarget.classList.add('hidden');
-
-    // Reset modal to create mode
-    const title = document.getElementById('event-dialog-title');
-    if (title) title.textContent = eventMessage('newEvent', locale);
-    this.eventSubmitTarget.textContent = eventMessage('create', locale);
-    this.eventSubmitTarget.setAttribute('aria-label', eventMessage('createEvent', locale));
-    this.localizeEventEditor(locale);
-    this.eventModalTarget.removeAttribute('data-event-id');
-    delete this.eventModalTarget.dataset.originalStart;
-    delete this.eventModalTarget.dataset.originalEnd;
-    delete this.eventModalTarget.dataset.originalTzid;
-    delete this.eventModalTarget.dataset.originalAllDay;
-  }
-
-  private async populateEventDestinations(): Promise<void> {
-    if (!this.hasEventDestinationTarget) return;
-    const select = this.eventDestinationTarget;
-    const revision = ++this.destinationRevision;
-    select.disabled = true;
-    select.replaceChildren();
-    let destinations: Array<{ accountId: string; calendarId: string; label: string; canMeet: boolean; meetUnavailable: boolean }> = [];
-    try {
-      const accounts = await listGoogleAccounts();
-      destinations = accounts.flatMap(account => account.calendars
-        .filter(calendar => account.state === 'connected' && calendar.enabled && calendar.available && calendar.writable)
-        .map(calendar => ({
-          accountId: account.id,
-          calendarId: calendar.calendar_id,
-          label: `${account.alias} · ${calendar.name}`,
-          // An empty list is an unknown capability on older cached CalendarList
-          // data. Do not reject a valid Google calendar before Google has had a
-          // chance to accept its conference request; only an explicit list that
-          // excludes Meet is a negative capability.
-          canMeet: calendar.allowed_conference_solution_types.includes('hangoutsMeet'),
-          meetUnavailable: calendar.allowed_conference_solution_types.length > 0
-            && !calendar.allowed_conference_solution_types.includes('hangoutsMeet'),
-        })));
-    } catch {
-      // Account discovery errors must not make local-only event creation unavailable.
-    }
-    if (revision !== this.destinationRevision) return;
-    select.disabled = false;
-    this.writableDestinationCount = destinations.length;
-    if (destinations.length > 1) select.append(new Option('Choose a destination', '', true, true));
-    select.append(new Option('Jin only', 'local', destinations.length === 0, destinations.length === 0));
-    for (const destination of destinations) {
-      const option = new Option(destination.label, `${destination.accountId}\u0000${destination.calendarId}`);
-      option.dataset.accountId = destination.accountId;
-      option.dataset.calendarId = destination.calendarId;
-      option.dataset.canMeet = String(destination.canMeet);
-      option.dataset.meetUnavailable = String(destination.meetUnavailable);
-      if (destinations.length === 1) option.selected = true;
-      select.append(option);
-    }
-  }
-
-  private buildRecurrenceDraft(): RecurrenceDraft | undefined {
-    if (!this.hasEventRepeatTarget || this.eventRepeatTarget.value === 'none') return undefined;
-    if (this.eventRepeatTarget.value !== 'custom') {
-      return recurrenceFromRepeatValue(this.eventRepeatTarget.value);
-    }
-    const frequency = this.eventRepeatFrequencyTarget.value as RecurrenceDraft['frequency'];
-    const weekly_days = Array.from(
-      this.eventRepeatWeekdaysTarget.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked'),
-      input => input.value as RecurrenceWeekday,
-    );
-    let monthly: MonthlyRecurrence | undefined;
-    if (frequency === 'monthly') {
-      const mode = this.eventRepeatMonthlyModeTarget.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.value;
-      monthly = mode === 'nth_weekday'
-        ? {
-            kind: 'nth_weekday',
-            ordinal: Number(this.eventRepeatOrdinalTarget.value),
-            weekday: this.eventRepeatOrdinalWeekdayTarget.value as RecurrenceWeekday,
-          }
-        : { kind: 'day_of_month', day: Number(this.eventRepeatMonthDayTarget.value) };
-    }
-    const endKind = this.eventRepeatEndKindTargets.find(input => input.checked)?.value;
-    let end: RecurrenceEnd = { kind: 'never' };
-    if (endKind === 'until' && this.eventRepeatUntilTarget.value) {
-      end = { kind: 'until', date: this.eventRepeatUntilTarget.value };
-    } else if (endKind === 'count') {
-      end = { kind: 'count', count: Number(this.eventRepeatCountTarget.value) };
-    }
-    return normalizeRecurrenceDraft({
-      frequency,
-      interval: Number(this.eventRepeatIntervalTarget.value),
-      weekly_days,
-      monthly,
-      end,
-    });
-  }
-
-  private async updateRecurrencePreview(): Promise<void> {
-    const recurrence = this.buildRecurrenceDraft();
-    if (!recurrence) return;
-    const revision = ++this.recurrencePreviewRevision;
-    const { start: date } = this.getEventSelection();
-    const isAllDay = this.eventAllDayTarget.checked;
-    const start = isAllDay ? date : `${date}T${this.eventStartTimeTarget.value || '09:00'}:00`;
-    try {
-      const result = await previewRecurrence({
-        start,
-        tzid: isAllDay ? undefined : Intl.DateTimeFormat().resolvedOptions().timeZone,
-        is_all_day: isAllDay,
-        recurrence,
-      });
-      if (revision !== this.recurrencePreviewRevision) return;
-      const locale = resolveEventLocale();
-      const dates = result.occurrences.slice(0, 3).map(value => new Intl.DateTimeFormat(locale, {
-        dateStyle: 'medium', ...(!isAllDay ? { timeStyle: 'short' as const } : {}),
-      }).format(new Date(isAllDay && /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00` : value)));
-      this.eventRepeatPreviewTarget.textContent = `${recurrenceUiCopy(locale).preview}: ${dates.join(' · ')}`;
-    } catch {
-      if (revision === this.recurrencePreviewRevision) this.eventRepeatPreviewTarget.textContent = '';
-    }
-  }
-
-  private selectedEventDestination(): { accountId: string; calendarId: string; canMeet: boolean; meetUnavailable: boolean } | null {
-    if (!this.hasEventDestinationTarget) return null;
-    const option = this.eventDestinationTarget.selectedOptions[0];
-    if (!option || option.value === '' || option.value === 'local') return null;
-    const accountId = option.dataset.accountId;
-    const calendarId = option.dataset.calendarId;
-    return accountId && calendarId ? {
-      accountId,
-      calendarId,
-      canMeet: option.dataset.canMeet === 'true',
-      meetUnavailable: option.dataset.meetUnavailable === 'true',
-    } : null;
-  }
-
-  private eventTimezone(): string {
-    return this.hasEventTimezoneTarget
-      ? this.eventTimezoneTarget.value.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone
-      : Intl.DateTimeFormat().resolvedOptions().timeZone;
-  }
-
-  private parseGuestDraft(value: string): EventAttendeeDto[] {
-    const seen = new Set<string>();
-    const guests: EventAttendeeDto[] = [];
-    for (const raw of value.split(',')) {
-      const email = raw.trim();
-      if (!email) continue;
-      const key = email.toLocaleLowerCase();
-      if (seen.has(key)) continue;
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        throw new Error(`Enter a valid guest email: ${email}`);
-      }
-      seen.add(key);
-      guests.push({ email, responseStatus: 'needsAction' });
-    }
-    if (guests.length > 200) throw new Error('Google Calendar invitations support at most 200 guests in Jin.');
-    return guests;
-  }
-
-  private newGoogleMeetRequest(): EventConferenceDataDto {
-    return {
-      pendingCreateRequest: {
-        // EventMutationService replaces this sentinel at the mutation
-        // boundary and persists the resulting id for transport retries.
-        requestId: 'generated-by-jin-core',
-        conferenceSolutionKey: { type: 'hangoutsMeet' },
-      },
+    const slot: DraftSlot = {
+      date,
+      end_date: date,
+      start_time: '09:00',
+      end_time: '10:00',
+      is_all_day: false,
+      timezone: this.rangeProjection?.display_tz,
     };
-  }
-
-  private guestUpdatePolicy(): 'all' | 'external_only' | 'none' {
-    const value = this.hasEventGuestUpdatesTarget ? this.eventGuestUpdatesTarget.value : 'all';
-    return value === 'external_only' || value === 'none' ? value : 'all';
-  }
-
-  private showEventError(message: string): void {
-    this.eventErrorTarget.textContent = message;
-    this.eventErrorTarget.classList.remove('hidden');
-  }
-
-  private clearEventError(): void {
-    this.eventErrorTarget.textContent = '';
-    this.eventErrorTarget.classList.add('hidden');
-  }
-
-  private localizeEventEditor(locale = resolveEventLocale()): void {
-    const setLabel = (forId: string, key: Parameters<typeof eventMessage>[0]): void => {
-      const label = this.eventModalTarget.querySelector<HTMLLabelElement>(`label[for="${forId}"]`);
-      if (label) label.childNodes[0].textContent = `${eventMessage(key, locale)} `;
-    };
-    setLabel('event-title', 'title');
-    setLabel('event-start-time', 'startTime');
-    setLabel('event-end-time', 'endTime');
-    setLabel('event-location', 'location');
-    setLabel('event-description', 'description');
-    const dialogTitle = this.eventModalTarget.querySelector<HTMLElement>('#event-dialog-title');
-    if (dialogTitle) dialogTitle.textContent = eventMessage('newEvent', locale);
-    this.eventSubmitTarget.textContent = eventMessage('create', locale);
-    this.eventSubmitTarget.setAttribute('aria-label', eventMessage('createEvent', locale));
-    const allDay = this.eventAllDayTarget.closest('label')?.querySelector<HTMLSpanElement>('span:not(.jin-checkbox__mark)');
-    if (allDay) allDay.textContent = eventMessage('allDay', locale);
-    if (this.hasEventRepeatTarget) {
-      const copy = recurrenceUiCopy(locale);
-      const keys = ['repeat', 'every', 'onDays', 'monthlyOn', 'dayOfMonth', 'ends', 'never', 'onDate', 'after', 'occurrences'] as const;
-      for (const key of keys) {
-        const node = this.eventModalTarget.querySelector<HTMLElement>(`[data-recurrence-copy="${key}"]`);
-        if (node) node.textContent = copy[key];
-      }
-      const options = this.eventRepeatTarget.options;
-      [copy.none, copy.daily, copy.weekly, copy.monthly, copy.yearly, copy.custom].forEach((label, index) => {
-        if (options[index]) options[index].textContent = label;
-      });
-      Array.from(this.eventRepeatFrequencyTarget.options).forEach((option, index) => { option.textContent = copy.units[index]; });
-      this.eventRepeatWeekdaysTarget.querySelectorAll<HTMLSpanElement>('.event-repeat-weekdays span').forEach((node, index) => { node.textContent = copy.weekdays[index]; });
-      this.eventRepeatIntervalTarget.setAttribute('aria-label', copy.intervalLabel);
-      this.eventRepeatFrequencyTarget.setAttribute('aria-label', copy.unitLabel);
-      this.eventRepeatWeekdaysTarget.querySelector<HTMLElement>('.event-repeat-weekdays')?.setAttribute('aria-label', copy.weekdaysLabel);
-      this.eventRepeatMonthDayTarget.setAttribute('aria-label', copy.monthDayLabel);
-      this.eventRepeatOrdinalTarget.setAttribute('aria-label', copy.weekOfMonthLabel);
-      this.eventRepeatOrdinalWeekdayTarget.setAttribute('aria-label', copy.weekdayLabel);
-      this.eventRepeatCountTarget.setAttribute('aria-label', copy.countLabel);
-      Array.from(this.eventRepeatOrdinalTarget.options).forEach((option, index) => { option.textContent = copy.ordinals[index]; });
-      Array.from(this.eventRepeatOrdinalWeekdayTarget.options).forEach((option, index) => { option.textContent = copy.weekdayNames[index]; });
-    }
-    this.eventTitleTarget.placeholder = eventMessage('eventTitle', locale);
-    this.eventLocationTarget.placeholder = eventMessage('location', locale);
-    this.eventDescriptionTarget.placeholder = eventMessage('eventDescription', locale);
-    this.eventWhenInputTarget.placeholder = eventMessage('relativePlaceholder', locale);
-    this.eventModalTarget.querySelector<HTMLElement>('[data-event-copy="when"]')!.childNodes[0].textContent = `${eventMessage('when', locale)} `;
-    const dateTime = this.eventModalTarget.querySelector<HTMLElement>('[data-event-copy="dateTime"]');
-    if (dateTime) dateTime.textContent = eventMessage('dateTime', locale);
-    const use = this.eventModalTarget.querySelector<HTMLButtonElement>('[data-event-copy="use"]');
-    if (use) use.textContent = eventMessage('use', locale);
-    this.getEventCalendar()?.setPresentation(locale, {
-      today: eventMessage('today', locale), clear: eventMessage('clear', locale),
-      commit: eventMessage('useDates', locale), chooseDate: eventMessage('chooseDate', locale),
-      previousMonth: eventMessage('previousMonth', locale), nextMonth: eventMessage('nextMonth', locale),
-      previousYear: eventMessage('previousYear', locale), nextYear: eventMessage('nextYear', locale),
-    });
-    const range = this.getEventSelection();
-    this.updateWhenSummary(range.start, range.end);
-    if (this.cachedNaturalResult) {
-      this.eventWhenPreviewTarget.textContent = formatNaturalDateResult(this.cachedNaturalResult, locale);
-      this.eventWhenPreviewTarget.dataset.state = 'valid';
-    } else if (this.cachedNaturalError) {
-      this.eventWhenPreviewTarget.textContent = naturalDateErrorMessage(this.cachedNaturalError, locale);
-      this.eventWhenPreviewTarget.dataset.state = 'error';
-    } else if (!this.eventWhenInputTarget.value) {
-      this.eventWhenPreviewTarget.textContent = eventMessage('relativeHint', locale);
-    }
-    const cancel = this.eventModalTarget.querySelector<HTMLButtonElement>('.form-actions .btn-secondary');
-    if (cancel) {
-      cancel.textContent = eventMessage('cancel', locale);
-      cancel.setAttribute('aria-label', eventMessage('cancel', locale));
-    }
-    this.eventModalTarget.querySelector<HTMLButtonElement>('.modal-close-btn')
-      ?.setAttribute('aria-label', eventMessage('close', locale));
+    await this.openCompanionCreate(slot, this.addButton);
   }
 
   // ── Internal rendering methods ────────────────────────────────────────────
 
   private renderMonthView(): void {
+    this.stopMonthGridMeasurement();
     this.monthViewTarget.classList.remove('calendar-month-view--timeline');
-    const monthGrid = this.buildMonthGrid(this.currentYear, this.currentMonth);
     this.monthViewContentTarget.innerHTML = '';
 
     // Render header with navigation
     const header = this.createMonthHeader();
     this.monthViewContentTarget.appendChild(header);
+
+    if (this.isFilterFullyHidden()) {
+      this.monthViewContentTarget.appendChild(this.createFilterEmptyState());
+      return;
+    }
+
+    const monthGrid = this.buildMonthGrid(this.currentYear, this.currentMonth);
 
     // One presentational region keeps large-text calendar columns readable
     // without putting navigation controls inside the horizontal scroll surface.
@@ -917,9 +468,17 @@ export default class CalendarViewController extends Controller {
     const grid = this.createDayGrid(monthGrid);
     gridScroller.appendChild(grid);
     this.monthViewContentTarget.appendChild(gridScroller);
+    this.measureMonthGrid(grid, gridScroller);
   }
 
-  private renderCurrentView(): void {
+  private async renderCurrentView(): Promise<void> {
+    await this.refreshRangeProjection();
+    if (!this.connected) return;
+    this.paintCurrentView();
+  }
+
+  private paintCurrentView(): void {
+    if (this.viewMode !== 'month') this.stopMonthGridMeasurement();
     if (this.viewMode === 'day') {
       this.monthViewTarget.classList.add('hidden');
       this.dayViewTarget.classList.remove('hidden');
@@ -941,16 +500,22 @@ export default class CalendarViewController extends Controller {
   }
 
   private setViewMode(mode: 'month' | 'week' | 'day'): void {
+    this.invalidateDetailRequest();
     if (mode !== this.viewMode) this.resetTimelineIdentity();
     if (mode === 'day' && (this.viewMode === 'month' || this.viewMode === 'week')) {
       this.previousBrowseMode = this.viewMode;
     }
     this.viewMode = mode;
     localStorage.setItem('jin:calendar-view', mode);
-    this.renderCurrentView();
+    this.paintCurrentView();
+    void this.refreshRangeProjection().then(() => {
+      if (!this.connected || this.viewMode !== mode) return;
+      this.paintCurrentView();
+    });
   }
 
   private navigateBy(direction: -1 | 1): void {
+    this.invalidateDetailRequest();
     if (this.viewMode === 'month') {
       const month = new Date(this.currentYear, this.currentMonth - 1 + direction, 1);
       this.currentYear = month.getFullYear();
@@ -963,7 +528,8 @@ export default class CalendarViewController extends Controller {
       this.currentYear = selected.getFullYear();
       this.currentMonth = selected.getMonth() + 1;
     }
-    this.renderCurrentView();
+    this.paintCurrentView();
+    void this.renderCurrentView();
   }
 
   private createViewSwitch(): HTMLElement {
@@ -994,6 +560,10 @@ export default class CalendarViewController extends Controller {
     this.monthViewContentTarget.innerHTML = '';
     const header = this.createMonthHeader();
     this.monthViewContentTarget.appendChild(header);
+    if (this.isFilterFullyHidden()) {
+      this.monthViewContentTarget.appendChild(this.createFilterEmptyState());
+      return;
+    }
     const anchor = new Date(`${this.selectedDate || this.toISODate(new Date())}T00:00:00`);
     anchor.setDate(anchor.getDate() - anchor.getDay());
     const dates: string[] = [];
@@ -1010,27 +580,13 @@ export default class CalendarViewController extends Controller {
     this.dayViewTarget.classList.add('calendar-day-view--timeline');
     this.dayViewContentTarget.innerHTML = '';
 
-    // Render back button
-    const backBtn = document.createElement('button');
-    backBtn.type = 'button';
-    backBtn.className = 'calendar-back-btn tap-target';
-    backBtn.setAttribute('aria-label', `${eventMessage('back')} ${eventMessage('calendar')}`);
-    backBtn.addEventListener('click', () => this.backToMonthView());
-    backBtn.innerHTML = `<i data-lucide="arrow-left" aria-hidden="true"></i><span>${eventMessage('calendar')}</span>`;
-    this.dayViewContentTarget.appendChild(backBtn);
-    this.dayViewContentTarget.appendChild(this.createViewSwitch());
+    this.dayViewContentTarget.appendChild(this.createMonthHeader());
 
-    // Render date heading
-    const dateHeading = document.createElement('h2');
-    dateHeading.className = 'calendar-day-heading calendar-day-heading--editorial';
-    const dateObj = new Date(dateStr + 'T00:00:00');
-    dateHeading.textContent = dateObj.toLocaleDateString(resolveEventLocale(), {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-    });
-    this.dayViewContentTarget.appendChild(dateHeading);
+    if (this.isFilterFullyHidden()) {
+      this.dayViewContentTarget.appendChild(this.createFilterEmptyState());
+      initIcons();
+      return;
+    }
 
     const timeline = this.createTimeline([dateStr], 'day');
     this.dayViewContentTarget.appendChild(timeline);
@@ -1055,12 +611,29 @@ export default class CalendarViewController extends Controller {
       this.nightManual = {};
       this.nightMonotonic = { early: false, late: false };
       this.timelineScroll = { top: 0, left: 0, focusEventId: null, initialized: false };
+      this.temporalCursor = initTemporalCursor({
+        dates,
+        todayDate: this.toISODate(new Date()),
+        nowMinute: new Date().getHours() * 60 + new Date().getMinutes(),
+        memory: this.cursorMemory,
+      });
+      this.cursorMemory = { rangeKey: rangeKey(dates), cursor: this.temporalCursor };
     }
 
     const now = new Date();
     const todayDate = this.toISODate(now);
     const nowMinute = now.getHours() * 60 + now.getMinutes();
-    const model = buildTimeGrid(this.allEvents, dates);
+    const eventsById = new Map(this.allEvents.map(event => [event.id, event]));
+    const entries = filterProjectionEntries(this.rangeProjection, this.allEvents, this.visibilityMap);
+    const model = this.rangeProjection
+      ? buildTimeGridFromProjection(entries, eventsById, dates)
+      : buildTimeGrid(this.visibleEvents(), dates);
+    const displayTz = this.rangeProjection?.display_tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const displaySlots = new Map(dates.map(date => [date, buildDisplayDaySlots(date, displayTz)]));
+    const selectable = (date: string, minute: number): boolean => {
+      const slot = displaySlots.get(date)?.find(item => item.minute === minute);
+      return slot ? slot.selectable : true;
+    };
     const derived = deriveNightExpansion(model, todayDate, nowMinute);
     this.nightMonotonic = {
       early: this.nightMonotonic.early || derived.early,
@@ -1068,24 +641,36 @@ export default class CalendarViewController extends Controller {
     };
     const expansion = this.effectiveNightExpansion();
     const rendered = renderTimeGrid({
-      events: this.allEvents,
+      model,
       dates,
       mode,
       locale: resolveEventLocale(),
       todayDate,
       nowMinute,
       expansion,
+      displaySlots,
+      cursor: this.temporalCursor,
       onEvent: (id, control) => {
         this.timelineScroll.focusEventId = id;
         this.captureTimelineState(true);
         control.dataset.eventId = id;
-        this.openEventDetail(id);
+        this.openEventDetail(id, control);
       },
       onDate: date => this.selectDate(date),
       onNightToggle: band => this.toggleNightBand(band),
+      onEmptySlot: (date, minute) => {
+        const slot = emptySlotCreate(date, minute, selectable, displayTz);
+        if (slot) this.openCompanionCreate(slot, rendered.root.querySelector<HTMLElement>(`.calendar-timegrid__day[data-date="${date}"]`));
+      },
+      onAgendaSelect: id => this.openEventDetail(id, document.activeElement instanceof HTMLElement ? document.activeElement : null),
     });
+    this.interactionSelectable = selectable;
+    this.wireTimelineInteraction(rendered, dates, mode, selectable, displayTz);
     this.cancelPendingTimelineScroll();
     this.timeline = rendered;
+    if (this.selectedDetail && this.selectedDetailId === this.selectedDetail.event.id) {
+      this.installTemporalAffordances(this.selectedDetail.event.id, this.selectedDetail);
+    }
     const restoreExistingScroll = this.timelineScroll.initialized;
     const targetScrollTop = restoreExistingScroll
       ? this.timelineScroll.top
@@ -1277,20 +862,113 @@ export default class CalendarViewController extends Controller {
     container.appendChild(section);
   }
 
+
+  private visibleEvents(): EventDto[] {
+    return filterEventsByVisibility(this.allEvents, this.visibilityMap);
+  }
+
+  private filterIdentities() {
+    return collectCalendarFilterIdentities(
+      this.allEvents,
+      this.filterAccounts,
+      eventMessage('jinCalendarName'),
+    );
+  }
+
+  private isFilterFullyHidden(): boolean {
+    const keys = this.filterIdentities().map(identity => identity.key);
+    return areAllCalendarsHidden(keys, this.visibilityMap);
+  }
+
+  private createCalendarFilter(): HTMLElement {
+    const details = document.createElement('details');
+    details.className = 'calendar-filter';
+    const summary = document.createElement('summary');
+    summary.className = 'calendar-filter__summary';
+    summary.textContent = eventMessage('calendarsFilter');
+    details.appendChild(summary);
+
+    const list = document.createElement('div');
+    list.className = 'calendar-filter__list';
+    list.setAttribute('role', 'group');
+    list.setAttribute('aria-label', eventMessage('calendarsFilter'));
+
+    for (const identity of this.filterIdentities()) {
+      const row = document.createElement('label');
+      row.className = 'form-label jin-checkbox calendar-filter__row';
+
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = isCalendarVisible(identity.key, this.visibilityMap);
+      input.dataset.calendarKey = identity.key;
+      input.addEventListener('change', () => {
+        this.invalidateDetailRequest();
+        this.visibilityMap = setCalendarVisible(identity.key, input.checked);
+        this.paintCurrentView();
+        void this.renderCurrentView();
+      });
+
+      const mark = document.createElement('span');
+      mark.className = 'jin-checkbox__mark';
+      mark.setAttribute('aria-hidden', 'true');
+
+      const swatch = document.createElement('span');
+      swatch.className = 'calendar-filter__swatch';
+      swatch.setAttribute('aria-hidden', 'true');
+      applyCalendarColor(swatch, identity.color);
+
+      const name = document.createElement('span');
+      name.className = 'calendar-filter__name';
+      name.textContent = identity.accountAlias
+        ? `${identity.label} · ${identity.accountAlias}`
+        : identity.label;
+
+      row.append(input, mark, swatch, name);
+      list.appendChild(row);
+    }
+
+    details.appendChild(list);
+    return details;
+  }
+
+  private createFilterEmptyState(): HTMLElement {
+    const empty = document.createElement('div');
+    empty.className = 'calendar-filter-empty';
+    empty.setAttribute('role', 'status');
+    const copy = document.createElement('p');
+    copy.className = 'calendar-filter-empty__copy';
+    copy.textContent = eventMessage('allCalendarsHidden');
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'btn-secondary calendar-filter-empty__reset tap-target';
+    reset.textContent = eventMessage('resetFilter');
+    reset.addEventListener('click', () => {
+      this.invalidateDetailRequest();
+      this.visibilityMap = resetCalendarVisibility();
+      this.paintCurrentView();
+      void this.renderCurrentView();
+      void this.renderCurrentView();
+    });
+    empty.append(copy, reset);
+    return empty;
+  }
+
   private createMonthHeader(): HTMLElement {
     const header = document.createElement('div');
     header.className = 'calendar-month-header';
 
     const identity = document.createElement('div');
     identity.className = 'calendar-month-identity';
-    const eyebrow = document.createElement('p');
-    eyebrow.className = 'calendar-month-eyebrow';
-    eyebrow.textContent = eventMessage('calendar');
     const monthYearLabel = document.createElement('h2');
     monthYearLabel.className = 'calendar-month-label';
-    monthYearLabel.textContent = new Date(this.currentYear, this.currentMonth - 1, 1)
-      .toLocaleDateString(resolveEventLocale(), { month: 'long', year: 'numeric' });
-    identity.append(eyebrow, monthYearLabel);
+    const selected = new Date(`${this.selectedDate || this.toISODate(new Date())}T12:00:00`);
+    monthYearLabel.textContent = this.viewMode === 'day'
+      ? selected.toLocaleDateString(resolveEventLocale(), { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+      : this.viewMode === 'week'
+        ? selected.toLocaleDateString(resolveEventLocale(), { month: 'long', year: 'numeric' })
+        : new Date(this.currentYear, this.currentMonth - 1, 1)
+          .toLocaleDateString(resolveEventLocale(), { month: 'long', year: 'numeric' });
+    identity.append(monthYearLabel);
 
     const navContainer = document.createElement('div');
     navContainer.className = 'calendar-month-nav';
@@ -1317,13 +995,26 @@ export default class CalendarViewController extends Controller {
     nextBtn.setAttribute('data-action', 'click->calendar-view#navigateNextMonth');
     nextBtn.innerHTML = '<i data-lucide="chevron-right" aria-hidden="true"></i>';
 
+    navContainer.appendChild(todayBtn);
     navContainer.appendChild(prevBtn);
     navContainer.appendChild(nextBtn);
-    navContainer.appendChild(todayBtn);
 
     const controls = document.createElement('div');
     controls.className = 'calendar-month-controls';
-    controls.append(navContainer, this.createViewSwitch());
+    const leading = document.createElement('div');
+    leading.className = 'calendar-month-leading';
+    if (this.viewMode === 'day') {
+      const back = document.createElement('button');
+      back.type = 'button';
+      back.className = 'calendar-back-btn tap-target';
+      back.setAttribute('aria-label', `${eventMessage('back')} ${eventMessage('calendar')}`);
+      back.addEventListener('click', () => this.backToMonthView());
+      back.innerHTML = '<i data-lucide="arrow-left" aria-hidden="true"></i>';
+      leading.append(back);
+    }
+    leading.append(this.createCalendarFilter());
+    if (this.addButton) leading.appendChild(this.addButton);
+    controls.append(leading, this.createViewSwitch(), navContainer);
     header.append(identity, controls);
     return header;
   }
@@ -1369,42 +1060,124 @@ export default class CalendarViewController extends Controller {
         dayButton.textContent = String(day.day);
         dayButton.setAttribute('type', 'button');
         dayButton.setAttribute('data-date', day.date);
+        if (day.isToday) dayButton.setAttribute('aria-current', 'date');
         const eventCount = `${day.events.length} ${eventMessage(day.events.length === 1 ? 'event' : 'events').toLocaleLowerCase(resolveEventLocale())}`;
         dayButton.setAttribute('aria-label', `${day.day} (${eventCount})`);
         dayButton.addEventListener('click', () => this.selectDate(day.date));
 
         dayCell.appendChild(dayButton);
 
+        const addOnDate = document.createElement('button');
+        addOnDate.type = 'button';
+        addOnDate.className = 'calendar-day-add tap-target';
+        const locale = resolveEventLocale();
+        const localized = new Date(`${day.date}T12:00:00`).toLocaleDateString(locale, {
+          month: 'short', day: 'numeric',
+        });
+        addOnDate.textContent = '+';
+        addOnDate.setAttribute('aria-label', eventMessageFormat('addOnDate', { date: localized }, locale));
+        addOnDate.addEventListener('click', click => {
+          click.stopPropagation();
+          this.openCompanionCreate(monthAllDayDraftSlot(day.date, this.rangeProjection?.display_tz), addOnDate);
+        });
+        dayCell.appendChild(addOnDate);
+
         // Show event indicators
         const eventsList = document.createElement('div');
         eventsList.className = 'calendar-day-events';
 
-        day.events.slice(0, 3).forEach(event => {
+        day.events.forEach(event => {
           const eventButton = document.createElement('button');
           eventButton.type = 'button';
           eventButton.className = 'calendar-event-chip';
+          eventButton.classList.add(event.is_all_day ? 'calendar-event-chip--all-day' : 'calendar-event-chip--timed');
           eventButton.dataset.eventId = event.id;
-          eventButton.dataset.source = calendarProviderForEvent(event);
-          applyCalendarColor(eventButton, calendarColorForEvent(event));
-          eventButton.textContent = event.title;
+          const membership = calendarMembershipIdentity(event, eventMessage('jinCalendarName'));
+          eventButton.dataset.source = membership.provider;
+          applyCalendarColor(eventButton, membership.color);
+          const eventTitle = document.createElement('span');
+          eventTitle.className = 'calendar-event-chip__title';
+          eventTitle.textContent = event.title;
+          eventButton.appendChild(eventTitle);
+          const clock = !event.is_all_day ? this.monthStartClock(event.id, day.date) : null;
+          if (clock) {
+            const time = document.createElement('time');
+            time.className = 'calendar-event-chip__time';
+            time.textContent = clock;
+            eventButton.appendChild(time);
+          }
           const calendarLabel = calendarEventSourceLabel(event, resolveEventLocale());
           eventButton.title = `${event.title} · ${calendarLabel}`;
-          eventButton.setAttribute('aria-label', `${eventMessage('view')} ${event.title}, ${calendarLabel}`);
+          eventButton.setAttribute('aria-label', `${eventMessage('view')} ${event.title}${clock ? `, ${clock}` : ''}, ${calendarLabel}`);
           eventButton.addEventListener('click', click => {
             click.stopPropagation();
-            this.openEventDetail(event.id);
+            this.openEventDetail(event.id, eventButton);
           });
           eventsList.appendChild(eventButton);
         });
 
-        if (day.events.length > 3) {
-          const more = document.createElement('div');
-          more.className = 'calendar-event-more';
-          more.textContent = `+${day.events.length - 3}`;
-          eventsList.appendChild(more);
+        if (day.events.length > 0) {
+          const moreBtn = document.createElement('button');
+          moreBtn.type = 'button';
+          moreBtn.className = 'calendar-event-more tap-target';
+          moreBtn.textContent = `+${Math.max(0, day.events.length - 3)}`;
+          moreBtn.setAttribute('aria-label', `${Math.max(0, day.events.length - 3)} ${eventMessage('more')} ${eventMessage('events')}`);
+          moreBtn.hidden = day.events.length <= 3;
+          moreBtn.addEventListener('click', click => {
+            click.stopPropagation();
+            this.selectDate(day.date);
+          });
+          eventsList.appendChild(moreBtn);
         }
 
         dayCell.appendChild(eventsList);
+
+        dayCell.addEventListener('click', click => {
+          const target = click.target as HTMLElement;
+          if (target.closest('.calendar-day-button, .calendar-event-chip, .calendar-day-add, .calendar-event-more')) {
+            return;
+          }
+          this.openCompanionCreate(monthAllDayDraftSlot(day.date, this.rangeProjection?.display_tz), dayCell);
+        });
+
+        dayCell.addEventListener('pointerdown', event => {
+          if (event.pointerType === 'touch' || event.pointerType === 'pen') return;
+          if ((event.target as HTMLElement).closest('.calendar-day-button, .calendar-event-chip, .calendar-day-add, .calendar-event-more')) {
+            return;
+          }
+          if (pointerCreatePolicy('fine') !== 'tap-and-drag') return;
+          this.pointerLayer = beginMonthDrag(day.date);
+          let releaseSelection: (() => void) | null = null;
+          const onMove = (move: PointerEvent): void => {
+            const el = document.elementFromPoint(move.clientX, move.clientY) as HTMLElement | null;
+            const cell = el?.closest('.calendar-day-cell') as HTMLElement | null;
+            const dateBtn = cell?.querySelector<HTMLElement>('.calendar-day-button[data-date]');
+            const nextDate = dateBtn?.getAttribute('data-date');
+            if (nextDate && this.pointerLayer?.kind === 'month-range') {
+              if (!releaseSelection) releaseSelection = beginMovementSelection(dayCell);
+              this.pointerLayer = updateMonthDrag(this.pointerLayer, nextDate);
+            }
+          };
+          const finish = (up: PointerEvent): void => {
+            releaseSelection?.();
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', finish);
+            window.removeEventListener('pointercancel', cancel);
+            if (up.type === 'pointercancel' || !this.pointerLayer || this.pointerLayer.kind !== 'month-range') {
+              abortPointerLayer(this.pointerLayer);
+              this.pointerLayer = null;
+              return;
+            }
+            const slot = finalizeMonthDrag(this.pointerLayer, this.rangeProjection?.display_tz);
+            this.pointerLayer = null;
+            this.openCompanionCreate(slot);
+          };
+          const cancel = (ev: PointerEvent): void => finish(ev);
+          window.addEventListener('pointermove', onMove);
+          window.addEventListener('pointerup', finish);
+          window.addEventListener('pointercancel', cancel);
+        });
+
         weekRow.appendChild(dayCell);
       });
 
@@ -1412,6 +1185,80 @@ export default class CalendarViewController extends Controller {
     });
 
     return grid;
+  }
+
+  private monthStartClock(eventId: string, date: string): string | null {
+    // Projection display values are already resolved in the chosen display timezone.
+    const entry = this.rangeProjection?.entries.find(item => item.event_id === eventId && item.start_date === date);
+    const wall = entry?.start_display.match(/T(\d{2}):(\d{2})/);
+    if (!wall) return null;
+    const hour = Number(wall[1]);
+    const minute = Number(wall[2]);
+    if (hour > 23 || minute > 59) return null;
+    return new Intl.DateTimeFormat(resolveEventLocale(), { hour: 'numeric', minute: '2-digit' })
+      .format(new Date(2026, 0, 1, hour, minute));
+  }
+
+  private stopMonthGridMeasurement(): void {
+    this.monthGridObserver?.disconnect();
+    this.monthGridObserver = null;
+    this.monthGridResizeCleanup?.();
+    this.monthGridResizeCleanup = null;
+  }
+
+  private measureMonthGrid(grid: HTMLElement, scroller: HTMLElement): void {
+    const update = (): void => {
+      if (!grid.isConnected) return;
+      const cells = [...grid.querySelectorAll<HTMLElement>('.calendar-day-cell')];
+      const maxEvents = Math.max(0, ...cells.map(cell => cell.querySelectorAll('.calendar-event-chip').length));
+      if (maxEvents === 0) return;
+      const sample = cells.find(cell => cell.querySelector('.calendar-event-chip'))!;
+      const date = sample.querySelector<HTMLElement>('.calendar-day-button')!;
+      const chip = sample.querySelector<HTMLElement>('.calendar-event-chip')!;
+      const more = sample.querySelector<HTMLElement>('.calendar-event-more')!;
+      const events = sample.querySelector<HTMLElement>('.calendar-day-events')!;
+      const cellStyle = getComputedStyle(sample);
+      const capacity = getComputedStyle(events).flexDirection === 'row'
+        ? 3
+        : monthChipCapacity({
+          row: sample.getBoundingClientRect().height,
+          date: date.getBoundingClientRect().height + (parseFloat(getComputedStyle(date).marginBottom) || 0),
+          chip: chip.getBoundingClientRect().height || parseFloat(getComputedStyle(chip).minHeight) || 20,
+          more: more.getBoundingClientRect().height || parseFloat(getComputedStyle(more).minHeight) || 28,
+          gap: parseFloat(getComputedStyle(events).rowGap) || 2,
+          padding: (parseFloat(cellStyle.paddingTop) || 0) + (parseFloat(cellStyle.paddingBottom) || 0),
+          maxEvents,
+        });
+      if (grid.dataset.chipCapacity === String(capacity)) return;
+      grid.dataset.chipCapacity = String(capacity);
+      for (const cell of cells) {
+        const chips = [...cell.querySelectorAll<HTMLButtonElement>('.calendar-event-chip')];
+        const moreButton = cell.querySelector<HTMLButtonElement>('.calendar-event-more');
+        const hiddenCount = Math.max(0, chips.length - capacity);
+        if (hiddenCount === 0 && moreButton === document.activeElement) {
+          cell.querySelector<HTMLButtonElement>('.calendar-day-button')?.focus({ preventScroll: true });
+        }
+        if (moreButton) moreButton.hidden = hiddenCount === 0;
+        if (document.activeElement instanceof HTMLElement && chips.slice(capacity).includes(document.activeElement as HTMLButtonElement)) {
+          moreButton?.focus({ preventScroll: true });
+        }
+        chips.forEach((button, index) => { button.hidden = index >= capacity; });
+        if (moreButton) {
+          moreButton.textContent = `+${hiddenCount}`;
+          moreButton.setAttribute('aria-label', `${hiddenCount} ${eventMessage('more')} ${eventMessage('events')}`);
+        }
+      }
+    };
+    update();
+    if (typeof ResizeObserver !== 'undefined') {
+      this.monthGridObserver = new ResizeObserver(update);
+      this.monthGridObserver.observe(scroller);
+      const firstDate = grid.querySelector<HTMLElement>('.calendar-day-button');
+      if (firstDate) this.monthGridObserver.observe(firstDate);
+    } else {
+      window.addEventListener('resize', update);
+      this.monthGridResizeCleanup = () => window.removeEventListener('resize', update);
+    }
   }
 
   private buildMonthGrid(year: number, month: number): CalendarMonth {
@@ -1433,7 +1280,9 @@ export default class CalendarViewController extends Controller {
         const isCurrentMonth = currentDate.getMonth() + 1 === month;
         const isToday = currentDate.getTime() === today.getTime();
 
-        const dayEvents = this.allEvents.filter(e => this.eventIntersectsDate(e, dateStr));
+        const dayEvents = this.rangeProjection
+          ? eventsFromProjectionForDate(this.rangeProjection, this.allEvents, this.visibilityMap, dateStr)
+          : this.visibleEvents().filter(e => this.eventIntersectsDate(e, dateStr));
 
         week.push({
           date: dateStr,
@@ -1456,50 +1305,6 @@ export default class CalendarViewController extends Controller {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
-  }
-
-  private addDays(dateStr: string, days: number): string {
-    const date = new Date(`${dateStr}T00:00:00`);
-    date.setDate(date.getDate() + days);
-    return this.toISODate(date);
-  }
-
-  private getEventCalendar(): CalendarController | null {
-    return this.application.getControllerForElementAndIdentifier(
-      this.eventCalendarTarget, 'calendar',
-    ) as CalendarController | null;
-  }
-
-  private setEventRange(start: string, end: string, complete: boolean): void {
-    const normalizedEnd = end || start;
-    this.eventCalendarTarget.dataset.pendingStart = start;
-    this.eventCalendarTarget.dataset.pendingEnd = normalizedEnd;
-    this.getEventCalendar()?.setSelection({ mode: 'range', start, end: normalizedEnd, complete });
-    this.updateWhenSummary(start, normalizedEnd);
-  }
-
-  private getEventSelection(): { start: string; end: string } {
-    const selection = this.getEventCalendar()?.getSelection();
-    if (selection?.mode === 'range') return { start: selection.start, end: selection.end };
-    const start = this.eventCalendarTarget.dataset.pendingStart ?? '';
-    return { start, end: this.eventCalendarTarget.dataset.pendingEnd || start };
-  }
-
-  private updateWhenSummary(start: string, end: string): void {
-    const locale = resolveEventLocale();
-    if (!start) {
-      this.eventWhenSummaryTarget.textContent = eventMessage('chooseAtLeastOneDay', locale);
-      return;
-    }
-    const format = (iso: string): string => {
-      const [year, month, day] = iso.split('-').map(Number);
-      return new Intl.DateTimeFormat(locale, {
-        weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
-      }).format(new Date(year, month - 1, day));
-    };
-    this.eventWhenSummaryTarget.textContent = end && end !== start
-      ? `${format(start)} – ${format(end)}`
-      : format(start);
   }
 
   private eventIntersectsDate(event: EventDto, dateStr: string): boolean {
@@ -1556,8 +1361,655 @@ export default class CalendarViewController extends Controller {
     }
   }
 
-  private openEventDetail(id: string): void {
-    this.dispatch('navigate', { detail: { kind: 'events', id }, prefix: 'jin', bubbles: true });
+  private openEventDetail(id: string, anchor: HTMLElement | null = null): void {
+    void this.openEventPreview(id, anchor);
+  }
+
+  private async openEventPreview(id: string, anchor: HTMLElement | null = null): Promise<void> {
+    if (this.companion?.isOpen() && !await this.companion.prepareReplacement()) return;
+    this.captureTimelineState(true);
+    const fieldScroll = this.timeline?.scroller.scrollTop ?? 0;
+    this.clearTemporalAffordances();
+    this.selectedDetailId = id;
+    this.selectedDetail = null;
+    const revision = ++this.detailRequestRevision;
+    try {
+      const detail = await getEventDetailById(id);
+      // AC-016: stale responses must not update Preview or install handles.
+      if (!this.connected || revision !== this.detailRequestRevision) return;
+      if (this.selectedDetailId !== id) return;
+      this.selectedDetail = detail;
+      const entry = this.projectionEntryFor(id);
+      this.ensureCompanion();
+      this.companion?.setAnchor(anchor);
+      this.companion?.openPreview(detail, {
+        temporalDisabledReason: entry?.temporal_editable === false
+          ? entry.temporal_disabled_reason
+          : null,
+        recurrenceScopes: (detail.capabilities.recurrence_scopes ?? []).filter(
+          (scope): scope is SupportedRecurrenceScope =>
+            scope === 'this_occurrence' || scope === 'entire_series',
+        ),
+      });
+      this.installTemporalAffordances(id, detail);
+      if (this.timeline) {
+        this.timeline.scroller.scrollTop = this.timelineScroll.top || fieldScroll;
+        this.timeline.scroller.scrollLeft = this.timelineScroll.left;
+      }
+    } catch (err: unknown) {
+      if (!this.connected || revision !== this.detailRequestRevision) return;
+      if (isJinErrorDto(err)) {
+        this.dispatch('error', { detail: err, prefix: 'app', bubbles: true });
+      } else {
+        this.dispatch('error', {
+          detail: { message: err instanceof Error ? err.message : eventMessage('failedLoadEvent') },
+          prefix: 'app',
+          bubbles: true,
+        });
+      }
+    }
+  }
+
+  private invalidateDetailRequest(): void {
+    this.detailRequestRevision += 1;
+    this.clearTemporalAffordances();
+    this.selectedDetail = null;
+    this.selectedDetailId = null;
+  }
+
+  private projectionEntryFor(eventId: string): CalendarRangeEntryDto | null {
+    return this.rangeProjection?.entries.find(entry => entry.event_id === eventId) ?? null;
+  }
+
+  private clearTemporalAffordances(): void {
+    for (const cleanup of this.affordanceCleanups) cleanup();
+    this.affordanceCleanups = [];
+    this.timeline?.root.querySelectorAll('.calendar-timegrid__event--temporal').forEach(el => {
+      el.classList.remove('calendar-timegrid__event--temporal');
+      el.querySelectorAll('.calendar-timegrid__resize-handle').forEach(handle => handle.remove());
+    });
+  }
+
+  private installTemporalAffordances(eventId: string, detail: EventDetailDto): void {
+    this.clearTemporalAffordances();
+    const entry = this.projectionEntryFor(eventId);
+    if (!temporalHandlesAllowed({ pointerKind: 'fine', detail, entry })) return;
+    const geometry = entry ? geometryFromProjectionEntry(entry) : null;
+    if (!geometry || !this.timeline) return;
+
+    const buttons = this.timeline.root.querySelectorAll<HTMLButtonElement>(
+      `.calendar-timegrid__event[data-event-id="${eventId.replace(/"/g, '')}"]`,
+    );
+    for (const button of buttons) {
+      button.classList.add('calendar-timegrid__event--temporal');
+      const handle = document.createElement('span');
+      handle.className = 'calendar-timegrid__resize-handle';
+      handle.setAttribute('aria-hidden', 'true');
+      button.appendChild(handle);
+
+      const onMovePointer = (event: PointerEvent): void => {
+        if (event.pointerType === 'touch' || event.pointerType === 'pen') return;
+        if ((event.target as HTMLElement).closest('.calendar-timegrid__resize-handle')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.beginEventMoveGesture(geometry, button, event);
+      };
+      const onResizePointer = (event: PointerEvent): void => {
+        if (event.pointerType === 'touch' || event.pointerType === 'pen') return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.beginEventResizeGesture(geometry, button, event);
+      };
+      const onKey = (event: KeyboardEvent): void => {
+        const action = parseTemporalKeyboard(event);
+        if (!action) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.commitTemporalKeyboard(geometry, action);
+      };
+      button.addEventListener('pointerdown', onMovePointer);
+      handle.addEventListener('pointerdown', onResizePointer);
+      button.addEventListener('keydown', onKey);
+      this.affordanceCleanups.push(() => {
+        button.removeEventListener('pointerdown', onMovePointer);
+        handle.removeEventListener('pointerdown', onResizePointer);
+        button.removeEventListener('keydown', onKey);
+        handle.remove();
+        button.classList.remove('calendar-timegrid__event--temporal');
+      });
+    }
+  }
+
+  private currentInteractionRange(
+    dates: string[],
+    mode: 'day' | 'week',
+  ): {
+    dates: string[];
+    mode: 'day' | 'week';
+    bandStart: number;
+    bandEnd: number;
+    occupancy: Map<string, Array<{ eventId: string; startMinute: number; endMinute: number }>>;
+    isSelectable: (date: string, minute: number) => boolean;
+  } {
+    const selectable = this.interactionSelectable ?? (() => true);
+    return {
+      dates,
+      mode,
+      bandStart: 0,
+      bandEnd: 24 * 60,
+      occupancy: this.timeline ? occupancyFromModel(this.timeline.model) : new Map(),
+      isSelectable: selectable,
+    };
+  }
+
+  private minuteFromClientY(dayEl: HTMLElement, clientY: number): number {
+    const rect = dayEl.getBoundingClientRect();
+    const y = clientY - rect.top;
+    let bestMinute = 0;
+    let bestDist = Number.POSITIVE_INFINITY;
+    const expansion = this.effectiveNightExpansion();
+    for (let minute = 0; minute < 24 * 60; minute += 15) {
+      const projected = projectedMinute(minute, expansion) * GRID_PX_PER_MINUTE;
+      const dist = Math.abs(projected - y);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestMinute = minute;
+      }
+    }
+    return bestMinute;
+  }
+
+  private beginEventMoveGesture(
+    origin: EventGeometry,
+    button: HTMLButtonElement,
+    down: PointerEvent,
+  ): void {
+    if (!this.timeline) return;
+    const selectable = this.interactionSelectable ?? (() => true);
+    const day = button.closest('.calendar-timegrid__day') as HTMLElement | null;
+    if (!day?.dataset.date) return;
+    this.pointerLayer = beginMoveDrag(origin);
+    let moved = false;
+    let releaseSelection: (() => void) | null = null;
+    const onMove = (move: PointerEvent): void => {
+      if (!this.pointerLayer || this.pointerLayer.kind !== 'move') return;
+      if (!releaseSelection) releaseSelection = beginMovementSelection(button);
+      const el = document.elementFromPoint(move.clientX, move.clientY) as HTMLElement | null;
+      const targetDay = el?.closest('.calendar-timegrid__day') as HTMLElement | null;
+      const date = targetDay?.dataset.date ?? day.dataset.date!;
+      const minute = this.minuteFromClientY(targetDay ?? day, move.clientY);
+      this.pointerLayer = updateMoveDrag(this.pointerLayer, date, minute, selectable);
+      moved = true;
+      const g = this.pointerLayer.current;
+      this.timeline?.setGhostSelection(g.startDate, g.startMinute, g.startMinute + Math.min(g.elapsedMinutes, 24 * 60 - g.startMinute));
+    };
+    const finish = (up: PointerEvent): void => {
+      releaseSelection?.();
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', cancel);
+      this.timeline?.clearGhostSelection();
+      if (up.type === 'pointercancel' || !this.pointerLayer || this.pointerLayer.kind !== 'move') {
+        abortPointerLayer(this.pointerLayer);
+        this.pointerLayer = null;
+        return;
+      }
+      if (!moved) {
+        abortPointerLayer(this.pointerLayer);
+        this.pointerLayer = null;
+        return;
+      }
+      const geometry = finalizeMoveDrag(this.pointerLayer);
+      this.pointerLayer = null;
+      this.openCompanionGeometricEdit(origin, geometry);
+    };
+    const cancel = (ev: PointerEvent): void => finish(ev);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', cancel);
+    void down;
+  }
+
+  private beginEventResizeGesture(
+    origin: EventGeometry,
+    button: HTMLButtonElement,
+    down: PointerEvent,
+  ): void {
+    if (!this.timeline) return;
+    const selectable = this.interactionSelectable ?? (() => true);
+    const day = button.closest('.calendar-timegrid__day') as HTMLElement | null;
+    if (!day?.dataset.date) return;
+    this.pointerLayer = beginResizeDrag(origin);
+    let moved = false;
+    let releaseSelection: (() => void) | null = null;
+    const onMove = (move: PointerEvent): void => {
+      if (!this.pointerLayer || this.pointerLayer.kind !== 'resize-end') return;
+      if (!releaseSelection) releaseSelection = beginMovementSelection(button);
+      const el = document.elementFromPoint(move.clientX, move.clientY) as HTMLElement | null;
+      const targetDay = el?.closest('.calendar-timegrid__day') as HTMLElement | null;
+      const date = targetDay?.dataset.date ?? origin.endDate;
+      const minute = this.minuteFromClientY(targetDay ?? day, move.clientY);
+      this.pointerLayer = updateResizeDrag(this.pointerLayer, date, minute, selectable);
+      moved = true;
+      const g = this.pointerLayer.current;
+      const ghostEnd = g.endDate === g.startDate ? g.endMinute : 24 * 60;
+      this.timeline?.setGhostSelection(g.startDate, g.startMinute, ghostEnd);
+    };
+    const finish = (up: PointerEvent): void => {
+      releaseSelection?.();
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', cancel);
+      this.timeline?.clearGhostSelection();
+      if (up.type === 'pointercancel' || !this.pointerLayer || this.pointerLayer.kind !== 'resize-end') {
+        abortPointerLayer(this.pointerLayer);
+        this.pointerLayer = null;
+        return;
+      }
+      if (!moved) {
+        abortPointerLayer(this.pointerLayer);
+        this.pointerLayer = null;
+        return;
+      }
+      const geometry = finalizeResizeDrag(this.pointerLayer);
+      this.pointerLayer = null;
+      this.openCompanionGeometricEdit(origin, geometry);
+    };
+    const cancel = (ev: PointerEvent): void => finish(ev);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', cancel);
+    void down;
+  }
+
+  private commitTemporalKeyboard(
+    origin: EventGeometry,
+    action: ReturnType<typeof parseTemporalKeyboard>,
+  ): void {
+    if (!action || !this.timeline) return;
+    const dates = [...this.timeline.model.dates];
+    const mode = dates.length === 1 ? 'day' : 'week';
+    const result = applyTemporalKeyboard(origin, action, this.currentInteractionRange(dates, mode));
+    if (result.kind === 'rejected' || result.kind === 'noop') {
+      this.timeline.announce(result.kind === 'rejected' ? result.reason : result.announcement);
+      return;
+    }
+    this.openCompanionGeometricEdit(origin, result.geometry);
+  }
+
+  private openCompanionGeometricEdit(before: EventGeometry, after: EventGeometry): void {
+    const detail = this.selectedDetail;
+    if (!detail || detail.event.id !== after.eventId) return;
+    const draft = draftFromEvent(detail.event, detail.edit_token);
+    applyGeometryToDraft(draft, after);
+    // Recurring: leave scope unresolved when multiple supported scopes (AC-034).
+    const scopes = (detail.capabilities.recurrence_scopes ?? []).filter(
+      (scope): scope is SupportedRecurrenceScope =>
+        scope === 'this_occurrence' || scope === 'entire_series',
+    );
+    this.ensureCompanion();
+    this.companion?.openEdit(draft, detail, {
+      changeSummary: {
+        before: formatGeometryClock(before),
+        after: formatGeometryClock(after),
+      },
+      recurrenceScopes: scopes,
+      recurrencePatternSupported: detail.capabilities.recurrence_pattern_supported === true,
+    });
+  }
+
+  private projectionFingerprint(): string {
+    const projection = this.rangeProjection;
+    if (!projection) return '';
+    return `${projection.from}:${projection.to}:${projection.entries.map(entry => entry.event_id).join(',')}`;
+  }
+
+  private async refreshRangeProjection(): Promise<void> {
+    const dates = this.visibleDatesForProjection();
+    const window = projectionWindow(dates);
+    if (!window) {
+      this.rangeProjection = null;
+      return;
+    }
+    try {
+      const next = await calendarRangeProjection({ from: window.from, to: window.to });
+      if (this.lastDisplayTz && this.lastDisplayTz !== next.display_tz) {
+        this.invalidateDetailRequest();
+      }
+      this.lastDisplayTz = next.display_tz;
+      this.rangeProjection = next;
+    } catch (err: unknown) {
+      this.rangeProjection = null;
+      if (isJinErrorDto(err)) {
+        this.dispatch('error', { detail: err, prefix: 'app', bubbles: true });
+      }
+    }
+  }
+
+  private visibleDatesForProjection(): string[] {
+    if (this.viewMode === 'day') {
+      const date = this.selectedDate || this.toISODate(new Date());
+      return [date];
+    }
+    if (this.viewMode === 'week') {
+      const anchor = new Date(`${this.selectedDate || this.toISODate(new Date())}T00:00:00`);
+      anchor.setDate(anchor.getDate() - anchor.getDay());
+      const dates: string[] = [];
+      for (let index = 0; index < 7; index++) {
+        const date = new Date(anchor);
+        date.setDate(anchor.getDate() + index);
+        dates.push(this.toISODate(date));
+      }
+      return dates;
+    }
+    const monthGrid = this.buildMonthGrid(this.currentYear, this.currentMonth);
+    return monthGrid.weeks.flatMap(week => week.map(day => day.date));
+  }
+
+  private ensureCompanion(): void {
+    if (this.companion) return;
+    const field = this.hasFieldTarget ? this.fieldTarget : this.monthViewTarget;
+    const workspace = (this.hasWorkspaceTarget ? this.workspaceTarget : this.element) as HTMLElement;
+    this.companion = new EventCompanion({
+      workspace,
+      field,
+      locale: resolveEventLocale(),
+      destination: this.lastWritableDestination ?? undefined,
+      onDestinationChange: destination => {
+        this.pendingCreateDestination = destination;
+      },
+      onOpenFullDetails: (eventId) => {
+        this.dispatch('navigate', { detail: { kind: 'events', id: eventId }, prefix: 'jin', bubbles: true });
+      },
+      onSave: async (draft) => this.saveCompanionDraft(draft),
+      onClose: () => {
+        this.pointerLayer = null;
+        this.pendingCreateDestination = null;
+        this.invalidateDetailRequest();
+      },
+    });
+    if (typeof ResizeObserver !== 'undefined') {
+      this.workspaceObserver = new ResizeObserver(entries => {
+        const width = entries[0]?.contentRect.width ?? this.element.getBoundingClientRect().width;
+        this.companion?.setContentBox(width);
+      });
+      this.workspaceObserver.observe(workspace);
+      this.companion.setContentBox(workspace.getBoundingClientRect().width || 1280);
+    } else {
+      this.companion.setContentBox(workspace.getBoundingClientRect().width || 1280);
+    }
+  }
+
+  private async openCompanionCreate(slot: DraftSlot, anchor: HTMLElement | null = null): Promise<void> {
+    if (this.companion?.isOpen() && !await this.companion.prepareReplacement()) return;
+    this.ensureCompanion();
+    this.companion?.setAnchor(anchor);
+    const draft = draftFromSlot(slot);
+    const destinations = this.createDestinations();
+    const remembered = this.destinationForCreate();
+    const destination = remembered
+      ? destinations.find(choice => choice.accountId === remembered.accountId
+        && choice.calendarId === remembered.calendarId)
+      : undefined;
+    this.pendingCreateDestination = destination ?? (!remembered && destinations.length === 1 ? destinations[0] : null);
+    this.companion?.openCreate(draft, this.pendingCreateDestination ?? undefined, destinations);
+  }
+
+  private createDestinations(): ComposerDestination[] {
+    const local: ComposerDestination = { name: eventMessage('jinCalendarName'), color: calendarColor('jin') };
+    const routed = this.filterAccounts.flatMap(account => account.calendars
+      .filter(calendar => account.state === 'connected' && calendar.enabled && calendar.available && calendar.writable)
+      .map(calendar => ({
+        name: calendar.name,
+        alias: account.alias,
+        accountId: account.id,
+        calendarId: calendar.calendar_id,
+        allowedConferenceSolutionTypes: calendar.allowed_conference_solution_types,
+        color: calendarColor(googleCalendarKey(account.id, calendar.calendar_id)),
+      })));
+    return [local, ...routed];
+  }
+
+  private destinationForCreate(): ComposerDestination | null {
+    // Filter must not silently select a hidden destination.
+    return this.lastWritableDestination;
+  }
+
+  private restoreLastDestination(): void {
+    try {
+      const raw = localStorage.getItem(CalendarViewController.LAST_DEST_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as ComposerDestination;
+      if (parsed && typeof parsed.name === 'string') this.lastWritableDestination = parsed;
+    } catch {
+      this.lastWritableDestination = null;
+    }
+  }
+
+
+  private async refreshWritableDestinationCount(): Promise<void> {
+    try {
+      const accounts = await listGoogleAccounts();
+      this.writableDestinationCount = accounts.reduce((count, account) => (
+        count + account.calendars.filter(calendar => (
+          account.state === 'connected' && calendar.enabled && calendar.available && calendar.writable
+        )).length
+      ), 0);
+    } catch {
+      this.writableDestinationCount = 0;
+    }
+  }
+
+  private rememberDestination(destination: ComposerDestination): void {
+    this.lastWritableDestination = destination;
+    localStorage.setItem(CalendarViewController.LAST_DEST_KEY, JSON.stringify(destination));
+  }
+
+  private async saveCompanionDraft(draft: EventDraft): Promise<CompanionSaveResult> {
+    if (draft.event_id && draft.edit_token) {
+      const event = this.allEvents.find(item => item.id === draft.event_id) ?? this.selectedDetail?.event;
+      const sync = event?.sync_context;
+      const operationId = newOperationId('edit');
+      if (sync?.provider === 'google' && sync.account_id && sync.calendar_id) {
+        await editRoutedEventDelta(
+          routedEditPayloadFromDraft(
+            draft,
+            { account_id: sync.account_id, calendar_id: sync.calendar_id },
+            operationId,
+          ),
+        );
+      } else {
+        await editEventDelta(editPayloadFromDraft(draft, operationId));
+      }
+      this.allEvents = await listEvents();
+      await this.refreshRangeProjection();
+      void this.renderCurrentView();
+      this.notifyMutation();
+      const detail = await getEventDetailById(draft.event_id);
+      return {
+        detail,
+        outcome: sync?.provider === 'google' ? 'sync_pending' : 'local',
+      };
+    }
+    const destination = this.pendingCreateDestination;
+    if (!destination) throw new Error(eventMessage('chooseExactDestination'));
+    const emails = draft.attendees?.map(attendee => attendee.email ?? '').filter(Boolean) ?? [];
+    const invalidEmail = emails.find(email => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+    if (invalidEmail) throw new Error(eventMessageFormat('invalidGuestEmail', { email: invalidEmail }));
+    if (emails.length > 200) throw new Error(eventMessage('tooManyGuests'));
+    if (!destination.accountId && (emails.length > 0 || draft.conference_intent.kind !== 'preserve' || Boolean(draft.recurrence))) {
+      throw new Error(eventMessage('googleDestinationRequired'));
+    }
+    if (destination?.accountId || destination?.calendarId) {
+      if (!destination.accountId || !destination.calendarId) {
+        throw new Error(eventMessage('chooseExactDestination'));
+      }
+      const accounts = await listGoogleAccounts();
+      const account = accounts.find(item => item.id === destination.accountId && item.state === 'connected');
+      const calendar = account?.calendars.find(item => item.calendar_id === destination.calendarId);
+      if (!calendar?.enabled || !calendar.available || !calendar.writable) {
+        throw new Error(eventMessage('destinationNoLongerWritable'));
+      }
+      if (draft.conference_intent.kind === 'add'
+        && calendar.allowed_conference_solution_types.length > 0
+        && !calendar.allowed_conference_solution_types.includes('hangoutsMeet')) {
+        throw new Error(eventMessage('destinationNoMeet'));
+      }
+    }
+    const route = destination?.accountId && destination?.calendarId
+      ? { account_id: destination.accountId, calendar_id: destination.calendarId }
+      : null;
+    const created = route
+      ? await createRoutedEvent(
+        routedCreateInputFromDraft(draft, route, newOperationId('create')),
+      )
+      : await createEvent(createInputFromDraft(draft));
+    if (destination) this.rememberDestination(destination);
+    else this.rememberDestination({ name: eventMessage('jinCalendarName') });
+    if (route) {
+      try {
+        await syncCalendarEvent(created.id);
+      } catch {
+        // Outbox retains the request; detail exposes retry.
+      } finally {
+        window.dispatchEvent(new CustomEvent('jin:google-state-changed'));
+      }
+    }
+    this.allEvents = await listEvents();
+    await this.refreshRangeProjection();
+    void this.renderCurrentView();
+    this.notifyMutation();
+    const detail = await getEventDetailById(created.id);
+    return { detail, outcome: route ? 'sync_pending' : 'local' };
+  }
+
+  private wireTimelineInteraction(
+    rendered: RenderedTimeGrid,
+    dates: string[],
+    mode: 'day' | 'week',
+    selectable: (date: string, minute: number) => boolean,
+    displayTz: string,
+  ): void {
+    const occupancy = occupancyFromModel(rendered.model);
+    const range = {
+      dates,
+      mode,
+      bandStart: 0,
+      bandEnd: 24 * 60,
+      occupancy,
+      isSelectable: selectable,
+    };
+
+    rendered.scroller.addEventListener('keydown', event => {
+      const key = event.key as CursorMoveKey;
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter', 'Escape'].includes(key)) {
+        return;
+      }
+      event.preventDefault();
+      if (key === 'Escape' && this.pointerLayer) {
+        abortPointerLayer(this.pointerLayer);
+        this.pointerLayer = null;
+        rendered.clearGhostSelection();
+        rendered.announce(eventMessage('cancel'));
+        return;
+      }
+      const result = applyCursorKey(this.temporalCursor, key, range);
+      if (result.kind === 'clear') {
+        this.temporalCursor = null;
+        rendered.setCursor(null);
+        rendered.announce('');
+        return;
+      }
+      if (result.kind === 'cursor') {
+        this.temporalCursor = result.cursor;
+        this.cursorMemory = { rangeKey: rangeKey(dates), cursor: result.cursor };
+        rendered.setCursor(result.cursor);
+        rendered.announce(result.announcement);
+        return;
+      }
+      if (result.kind === 'noop') {
+        rendered.announce(result.announcement);
+        return;
+      }
+      if (result.kind === 'create') {
+        this.openCompanionCreate({ ...result.slot, timezone: displayTz });
+        return;
+      }
+      if (result.kind === 'open') {
+        this.openEventDetail(result.eventId);
+      }
+    });
+
+    // Fine-pointer drag on empty time — never install custom touch drag.
+    rendered.scroller.addEventListener('pointerdown', event => {
+      if (event.pointerType === 'touch' || event.pointerType === 'pen') return;
+      if (pointerCreatePolicy('fine') !== 'tap-and-drag') return;
+      const target = event.target as HTMLElement;
+      if (target.closest('.calendar-timegrid__event, .calendar-timegrid__all-day-event, .calendar-timegrid__night-toggle, .calendar-timegrid__date')) {
+        return;
+      }
+      const day = target.closest('.calendar-timegrid__day') as HTMLElement | null;
+      const date = day?.dataset.date;
+      if (!date || !day) return;
+      const rect = day.getBoundingClientRect();
+      const y = event.clientY - rect.top;
+      let bestMinute = 0;
+      let bestDist = Number.POSITIVE_INFINITY;
+      const expansion = this.effectiveNightExpansion();
+      for (let minute = 0; minute < 24 * 60; minute += 15) {
+        const projected = projectedMinute(minute, expansion) * GRID_PX_PER_MINUTE;
+        const dist = Math.abs(projected - y);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestMinute = minute;
+        }
+      }
+      if (!selectable(date, bestMinute)) return;
+      event.preventDefault();
+      this.pointerLayer = beginTimedDrag(date, bestMinute);
+      rendered.setGhostSelection(date, bestMinute, bestMinute + 15);
+      let releaseSelection: (() => void) | null = null;
+      const onMove = (move: PointerEvent): void => {
+        if (!this.pointerLayer || this.pointerLayer.kind !== 'timed-range') return;
+        if (!releaseSelection) releaseSelection = beginMovementSelection(rendered.scroller);
+        const moveY = move.clientY - rect.top;
+        let minute = bestMinute;
+        let dist = Number.POSITIVE_INFINITY;
+        for (let candidate = 0; candidate < 24 * 60; candidate += 15) {
+          const projected = projectedMinute(candidate, expansion) * GRID_PX_PER_MINUTE;
+          const nextDist = Math.abs(projected - moveY);
+          if (nextDist < dist) {
+            dist = nextDist;
+            minute = candidate;
+          }
+        }
+        this.pointerLayer = updateTimedDrag(this.pointerLayer, minute);
+        rendered.setGhostSelection(
+          this.pointerLayer.date,
+          this.pointerLayer.originMinute,
+          this.pointerLayer.currentMinute,
+        );
+      };
+      const finish = (up: PointerEvent): void => {
+        releaseSelection?.();
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', finish);
+        window.removeEventListener('pointercancel', cancel);
+        rendered.clearGhostSelection();
+        if (up.type === 'pointercancel' || !this.pointerLayer || this.pointerLayer.kind !== 'timed-range') {
+          abortPointerLayer(this.pointerLayer);
+          this.pointerLayer = null;
+          return;
+        }
+        const slot = finalizeTimedDrag(this.pointerLayer, displayTz);
+        this.pointerLayer = null;
+        this.openCompanionCreate(slot);
+      };
+      const cancel = (ev: PointerEvent): void => finish(ev);
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', finish);
+      window.addEventListener('pointercancel', cancel);
+    });
   }
 
   private notifyMutation(): void {

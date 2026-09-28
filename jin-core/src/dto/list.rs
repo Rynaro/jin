@@ -1,5 +1,6 @@
 //! DTO projections for Lists and Sections (P2 storage contract; P3 surface).
 
+use crate::model::list::{BoardColumn, WorkflowKind};
 use serde::{Deserialize, Serialize};
 
 /// DTO projection of a Section (derived from `list.sections[]`).
@@ -30,6 +31,10 @@ pub struct ListDto {
     pub view: String,
     /// Sort mode: "manual" | "due" | "priority" | "title" | "created".
     pub sort_mode: String,
+    /// Missing on legacy files until an explicit workflow setup.
+    pub workflow_kind: Option<WorkflowKind>,
+    pub columns: Vec<BoardColumn>,
+    pub initial_column_id: Option<String>,
     /// True when `id == "inbox"` (the stable default list that cannot be deleted).
     pub is_default: bool,
     /// Number of non-deleted tasks in this list (query-time COUNT; 0 until P3 wires it).

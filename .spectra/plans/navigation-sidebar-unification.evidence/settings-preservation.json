@@ -1,0 +1,31 @@
+{
+  "baseline_revision": "44dff1549095580305f2b44fac4f7c958bda3ec3",
+  "baseline_patch_sha256": "37dd062ce806c021a7a75c1a5b0151873f5bc52313b37fac5caa03fecda369cb",
+  "result": "pass",
+  "preserved": {
+    "pane_keys": ["calendars", "data-storage", "general", "notifications"],
+    "stimulus_targets": ["settingsNavItem", "settingsPane", "settingsWorkspace"],
+    "current_semantics": "one aria-current=page; inactive items omit aria-current",
+    "persistence_and_fallback": "jin.settings.pane with General fallback",
+    "desktop_scroll": "bounded route; workspace-owned vertical scroll; category change resets workspace scrollTop",
+    "compact_ax_scroll": "route-owned natural vertical scroll; workspace overflow visible",
+    "focus": "category button retains focus after pane switch",
+    "account_and_quarantine_behavior": "unchanged"
+  },
+  "intentional_navigation_unification_delta": [
+    "Settings category buttons add jin-navigation-row and jin-navigation-row__label anatomy.",
+    "Settings rail and list add jin-navigation-rail and jin-navigation-list anatomy.",
+    "Settings-local duplicate row geometry, selected wash, and marker rules were removed in favor of navigation.css."
+  ],
+  "focused_verification": {
+    "command": "npm test -- --run notes_visual_system lists_controller notes_controller settings_controller",
+    "result": "pass",
+    "tests": 403
+  },
+  "full_verification": {
+    "command": "npm test",
+    "result": "pass",
+    "test_files": 51,
+    "tests": 1873
+  }
+}

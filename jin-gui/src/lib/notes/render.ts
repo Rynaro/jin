@@ -10,10 +10,11 @@
 
 import type { NoteDto, BacklinkDto, FolderDto, LinkDto } from '../../types/dto';
 import { noteStatusLabel, noteStatusGlyph, noteStatusTooltip, formatNoteDate, noteDisplayTitle } from './transform';
+import { guardNativeDrag } from '../ui/movement';
 
 let statusInfoSequence = 0;
 import { mountEditor, type EditorHandle } from './editor';
-import type { TreeNode } from './folderTree';
+import { flattenVisible, type TreeNode } from './folderTree';
 
 // ── Interface types ───────────────────────────────────────────────────────────
 
@@ -109,7 +110,9 @@ export function renderFolderTree(
 
   // Determine the initial focused path for roving tabindex.
   // Preference order: explicitly set focusedPath → activeFolder → first node.
-  const effectiveFocused = view.focusedPath ?? view.activeFolder ?? null;
+  const visiblePaths = flattenVisible(tree, view.expanded).map((node) => node.path);
+  const effectiveFocused = [view.focusedPath, view.activeFolder].find((path) => path != null && visiblePaths.includes(path))
+    ?? visiblePaths[0] ?? null;
 
   function buildNode(node: TreeNode): HTMLElement {
     const frag = templates.folderRow.content.cloneNode(true) as DocumentFragment;
@@ -117,7 +120,7 @@ export function renderFolderTree(
 
     const btn = li.querySelector<HTMLElement>('.folder-row__btn');
     const chevronEl = li.querySelector<HTMLElement>('.folder-row__chevron');
-    const nameEl = li.querySelector('.folder-row__name');
+    const nameEl = li.querySelector<HTMLElement>('.folder-row__name');
     const countEl = li.querySelector('.folder-row__count');
     const groupEl = li.querySelector<HTMLElement>('.folder-row__group');
 
@@ -141,6 +144,7 @@ export function renderFolderTree(
       btn.dataset.folderPath = node.path;
       // Depth-based indent via CSS custom property.
       btn.style.setProperty('--tree-depth', String(node.depth));
+      btn.style.setProperty('--tree-depth-visual', String(Math.min(node.depth, 4)));
       // Row-body click → select (fires via both mouse and programmatic .click()).
       btn.addEventListener('click', (e) => {
         // If the click originated from the chevron it has already been stopped;
@@ -236,7 +240,10 @@ export function renderFolderTree(
     }
 
     // ── Text content ─────────────────────────────────────────────────────────
-    if (nameEl) nameEl.textContent = node.name;
+    if (nameEl) {
+      nameEl.textContent = node.name;
+      nameEl.title = node.name;
+    }
     if (countEl) countEl.textContent = node.note_count > 0 ? String(node.note_count) : '';
 
     // ── Children (rendered eagerly; visibility controlled by [hidden]) ───────
@@ -368,7 +375,8 @@ export function renderNotesList(
   el: NotesViewElements,
   templates: NotesTemplates,
   notes: NoteDto[],
-  onNavigate: BrowseNavigateCallback
+  onNavigate: BrowseNavigateCallback,
+  options: { showFolder?: boolean } = {}
 ): void {
   el.list.innerHTML = '';
 
@@ -381,7 +389,7 @@ export function renderNotesList(
   el.list.classList.remove('hidden');
 
   for (const note of notes) {
-    el.list.appendChild(buildNoteRow(templates, note, onNavigate));
+    el.list.appendChild(buildNoteRow(templates, note, onNavigate, options));
   }
 }
 
@@ -533,19 +541,50 @@ export function renderNoteDetail(
     }
   });
 
+  const intrinsicTitleSize = typeof CSS !== 'undefined' && CSS.supports?.('field-sizing', 'content');
   const resizeTitle = (): void => {
+    // Browsers with intrinsic textarea sizing track font metrics and wrapping
+    // through an accessibility-scale transition without an observer race.
+    if (intrinsicTitleSize) {
+      titleEl.style.height = '';
+      return;
+    }
     titleEl.style.height = 'auto';
     titleEl.style.height = `${titleEl.scrollHeight}px`;
   };
   titleEl.addEventListener('input', resizeTitle);
   const titleResizeFrame = requestAnimationFrame(resizeTitle);
-  // A long title can wrap after a narrow pane, text-scale, or reading-mode
-  // layout change. Keep the textarea's visible height in sync with its width.
+  // Re-measure wrapping when the field width or root text scale changes. Width
+  // only avoids a ResizeObserver loop from our own height adjustment.
   let titleResizeObserver: ResizeObserver | null = null;
   if (typeof ResizeObserver !== 'undefined') {
-    titleResizeObserver = new ResizeObserver(resizeTitle);
-    titleResizeObserver.observe(titleRowEl);
+    let lastWidth = -1;
+    titleResizeObserver = new ResizeObserver(([entry]) => {
+      const width = entry?.contentRect.width ?? 0;
+      if (Math.abs(width - lastWidth) < 0.5) return;
+      lastWidth = width;
+      resizeTitle();
+    });
+    titleResizeObserver.observe(titleEl);
   }
+  // For older WebKit builds, observe an independent font-metric box. Its
+  // natural height changes only after the scaled font has actually settled.
+  let titleFontObserver: ResizeObserver | null = null;
+  if (!intrinsicTitleSize && typeof ResizeObserver !== 'undefined') {
+    const probe = document.createElement('span');
+    probe.className = 'browse-detail__title-scale-probe';
+    probe.textContent = 'M';
+    probe.setAttribute('aria-hidden', 'true');
+    titleRowEl.appendChild(probe);
+    titleFontObserver = new ResizeObserver(resizeTitle);
+    titleFontObserver.observe(probe);
+  }
+  let titleScaleFrame = 0;
+  const titleScaleObserver = new MutationObserver(() => {
+    cancelAnimationFrame(titleScaleFrame);
+    titleScaleFrame = requestAnimationFrame(resizeTitle);
+  });
+  titleScaleObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-text-scale', 'style'] });
 
   titleEl.addEventListener('blur', () => {
     if (committing) return;
@@ -568,67 +607,175 @@ export function renderNoteDetail(
   // Status badge is now in the title row; only tags live in metaEl.
   const metaEl = document.createElement('div');
   metaEl.className = 'browse-detail__meta';
-
+  const tagsEl = document.createElement('div');
+  tagsEl.className = 'note-detail__tags text-caption1';
+  tagsEl.setAttribute('role', 'group');
+  const tagsHeading = document.createElement('strong');
+  tagsHeading.className = 'note-detail__tags-heading';
+  tagsHeading.textContent = 'Tags';
+  const chips = document.createElement('div');
+  chips.className = 'note-detail__tag-chips';
+  const emptyTags = document.createElement('p');
+  emptyTags.className = 'note-detail__tag-empty';
+  emptyTags.textContent = 'No tags on this note.';
+  const tagForm = document.createElement('div');
+  tagForm.className = 'note-detail__tag-form';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'note-detail__tag-input';
+  input.placeholder = 'Add tag';
+  input.setAttribute('aria-label', 'Add tag');
+  const addTagButton = document.createElement('button');
+  addTagButton.type = 'button';
+  addTagButton.className = 'note-detail__tag-add btn-secondary';
+  addTagButton.textContent = 'Add';
+  const cancelRename = document.createElement('button');
+  cancelRename.type = 'button';
+  cancelRename.className = 'note-detail__tag-cancel btn-secondary hidden';
+  cancelRename.textContent = 'Cancel rename';
+  const tagError = document.createElement('p');
+  tagError.className = 'note-detail__tag-error hidden';
+  tagError.setAttribute('role', 'alert');
+  tagForm.append(input, addTagButton, cancelRename);
+  tagsEl.append(tagsHeading, chips, emptyTags, tagForm, tagError);
+  metaEl.append(tagsEl);
+  let tagsDestroyed = false;
+  let tagPending = false;
+  let tagTrigger: HTMLButtonElement | null = null;
+  let disposeTooltips = () => {};
+  const updateTagTrigger = (): void => {
+    tagTrigger?.setAttribute('aria-label', `Manage tags${note.tags.length ? ` (${note.tags.length})` : ''}`);
+  };
+  const resetRename = (): void => {
+    delete input.dataset.replaceTag;
+    input.value = '';
+    input.placeholder = 'Add tag';
+    input.setAttribute('aria-label', 'Add tag');
+    addTagButton.textContent = 'Add';
+    cancelRename.classList.add('hidden');
+  };
+  const mutateTags = async (add: string[], remove: string[], restore: 'input' | 'chip'): Promise<void> => {
+    if (tagPending || tagsDestroyed || !onTagsChange) return;
+    tagPending = true;
+    input.disabled = true;
+    addTagButton.disabled = true;
+    chips.querySelectorAll<HTMLButtonElement>('button').forEach(button => { button.disabled = true; });
+    tagError.classList.add('hidden');
+    try {
+      await onTagsChange(add, remove);
+      if (tagsDestroyed) return;
+      note.tags = note.tags.filter(value => !remove.includes(value));
+      for (const value of add) if (!note.tags.includes(value)) note.tags.push(value);
+      resetRename();
+      renderTags();
+      positionTagPopover();
+      updateTagTrigger();
+      input.disabled = false;
+      addTagButton.disabled = false;
+      if (metaEl.classList.contains('is-open')) {
+        if (restore === 'input') input.focus({ preventScroll: true });
+        else (chips.querySelector<HTMLButtonElement>('button') ?? input).focus({ preventScroll: true });
+      }
+    } catch {
+      if (!tagsDestroyed) {
+        tagError.textContent = 'Could not update tags. Try again.';
+        tagError.classList.remove('hidden');
+        input.disabled = false;
+        if (metaEl.classList.contains('is-open')) input.focus({ preventScroll: true });
+      }
+    } finally {
+      tagPending = false;
+      if (!tagsDestroyed) {
+        input.disabled = false;
+        addTagButton.disabled = false;
+        chips.querySelectorAll<HTMLButtonElement>('button').forEach(button => { button.disabled = false; });
+      }
+    }
+  };
   const renderTags = (): void => {
-    metaEl.replaceChildren();
-    const tagsEl = document.createElement('div');
-    tagsEl.className = 'note-detail__tags text-caption1';
+    chips.replaceChildren();
     tagsEl.setAttribute('aria-label', note.tags.length ? `Tags: ${note.tags.join(', ')}` : 'No tags');
+    emptyTags.hidden = note.tags.length > 0;
     for (const tag of note.tags) {
+      const group = document.createElement('span');
+      group.className = 'note-detail__tag-group';
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'note-detail__tag-chip';
       chip.textContent = `#${tag}`;
       chip.setAttribute('aria-label', `Rename tag ${tag}`);
-      chip.title = `Rename ${tag}`;
       chip.addEventListener('click', () => {
-        const input = tagsEl.querySelector<HTMLInputElement>('.note-detail__tag-input');
-        if (!input) return;
         input.value = tag;
         input.dataset.replaceTag = tag;
         input.placeholder = 'Rename tag';
         input.setAttribute('aria-label', `Rename tag ${tag}`);
+        addTagButton.textContent = 'Save';
+        cancelRename.classList.remove('hidden');
         input.focus();
+        input.select();
       });
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'note-detail__tag-remove';
       remove.textContent = '×';
       remove.setAttribute('aria-label', `Remove tag ${tag}`);
-      remove.addEventListener('click', () => {
-      void onTagsChange?.([], [tag]).then(() => {
-          note.tags = note.tags.filter((value) => value !== tag);
-          renderTags();
-          el.detailActions?.querySelector<HTMLButtonElement>('[data-tooltip="Manage tags"]')?.setAttribute('aria-label', `Manage tags${note.tags.length ? ` (${note.tags.length})` : ''}`);
-        }).catch(() => { /* controller has already surfaced the mutation error */ });
-      });
-      tagsEl.appendChild(chip);
-      tagsEl.appendChild(remove);
+      remove.addEventListener('click', () => { void mutateTags([], [tag], 'chip'); });
+      group.append(chip, remove);
+      chips.append(group);
     }
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'note-detail__tag-input';
-    input.placeholder = 'Add tag';
-    input.setAttribute('aria-label', 'Add tag');
-    input.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter') return;
-      event.preventDefault();
-      const tag = input.value.trim().replace(/^#/, '');
-      const replace = input.dataset.replaceTag;
-      if (!tag || note.tags.includes(tag) && tag !== replace) return;
-      if (tag === replace) { renderTags(); return; }
-      void onTagsChange?.([tag], replace ? [replace] : []).then(() => {
-        note.tags = replace ? note.tags.map(value => value === replace ? tag : value) : [...note.tags, tag];
-        input.value = '';
-        delete input.dataset.replaceTag;
-        renderTags();
-        el.detailActions?.querySelector<HTMLButtonElement>('[data-tooltip="Manage tags"]')?.setAttribute('aria-label', `Manage tags (${note.tags.length})`);
-      }).catch(() => { /* controller has already surfaced the mutation error */ });
-    });
-    tagsEl.appendChild(input);
-    metaEl.appendChild(tagsEl);
   };
+  const submitTag = (): void => {
+    if (tagPending) return;
+    const tag = input.value.trim().replace(/^#/, '');
+    const replace = input.dataset.replaceTag;
+    if (!tag || (note.tags.includes(tag) && tag !== replace)) return;
+    if (tag === replace) { resetRename(); input.focus(); return; }
+    void mutateTags([tag], replace ? [replace] : [], 'input');
+  };
+  addTagButton.addEventListener('click', submitTag);
+  input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    submitTag();
+  });
+  cancelRename.addEventListener('click', () => { resetRename(); input.focus(); });
   renderTags();
+  const positionTagPopover = (): void => {
+    if (!tagTrigger || !metaEl.classList.contains('is-open')) return;
+    const anchor = tagTrigger.getBoundingClientRect();
+    const viewportWidth = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth, window.visualViewport?.width ?? Infinity);
+    const width = Math.min(320, viewportWidth - 16);
+    tagsEl.style.inlineSize = `${width}px`;
+    const topSpace = anchor.top - 8;
+    const bottomSpace = window.innerHeight - anchor.bottom - 8;
+    const below = bottomSpace >= Math.min(280, tagsEl.scrollHeight) || bottomSpace >= topSpace;
+    const available = Math.max(80, (below ? bottomSpace : topSpace) - 8);
+    tagsEl.style.maxBlockSize = `${available}px`;
+    tagsEl.style.insetInlineStart = `${Math.max(8, Math.min(viewportWidth - width - 8, anchor.right - width))}px`;
+    tagsEl.style.insetBlockStart = below
+      ? `${anchor.bottom + 6}px`
+      : `${Math.max(8, anchor.top - Math.min(tagsEl.scrollHeight, available) - 6)}px`;
+  };
+  const closeTags = (restoreFocus = false): void => {
+    metaEl.classList.remove('is-open');
+    tagsEl.classList.remove('is-floating');
+    metaEl.append(tagsEl);
+    tagTrigger?.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) tagTrigger?.focus({ preventScroll: true });
+  };
+  const onTagOutside = (event: PointerEvent): void => {
+    if (metaEl.classList.contains('is-open') && !tagsEl.contains(event.target as Node) && !tagTrigger?.contains(event.target as Node)) closeTags();
+  };
+  const onTagEscape = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape' || !metaEl.classList.contains('is-open')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeTags(true);
+  };
+  document.addEventListener('pointerdown', onTagOutside);
+  document.addEventListener('keydown', onTagEscape, true);
+  window.addEventListener('resize', positionTagPopover);
+  window.addEventListener('scroll', positionTagPopover, true);
 
   // ── Body — CM6 source editor (S1/S2/S3 of spec) ─────────────────────────
   // mountEditor creates: formatting toolbar + scroll region + stats footer.
@@ -642,11 +789,25 @@ export function renderNoteDetail(
     onAddAttachment: () => onAddAttachment?.(note.id),
   });
   const destroyEditor = editorHandle.destroy.bind(editorHandle);
+  const toolbar = bodyEl.querySelector<HTMLElement>('.cm-toolbar');
   editorHandle.destroy = (): void => {
+    disposeTooltips();
+    tagsEl.remove();
+    tagsDestroyed = true;
+    document.removeEventListener('pointerdown', onTagOutside);
+    document.removeEventListener('keydown', onTagEscape, true);
+    window.removeEventListener('resize', positionTagPopover);
+    window.removeEventListener('scroll', positionTagPopover, true);
     cancelAnimationFrame(titleResizeFrame);
+    cancelAnimationFrame(titleScaleFrame);
     titleResizeObserver?.disconnect();
     titleResizeObserver = null;
+    titleFontObserver?.disconnect();
+    titleFontObserver = null;
+    titleScaleObserver.disconnect();
     closeStatusInfo();
+    // The full Notes shell hosts this existing node outside mountEditor's parent.
+    toolbar?.remove();
     destroyEditor();
   };
 
@@ -664,10 +825,10 @@ export function renderNoteDetail(
   // Get the scroll region created by mountEditor; fall back to bodyEl.
   const scrollRegion = bodyEl.querySelector('.cm-scroll-region') ?? bodyEl;
 
-  // The toolbar is document chrome, so it sits above the title. The title and
-  // editor then become one uninterrupted writing column below it.
-  const toolbar = bodyEl.querySelector<HTMLElement>('.cm-toolbar');
-  if (toolbar) el.detailContent.appendChild(toolbar);
+  // Keep the existing editor toolbar in fixed document chrome. Test/compact
+  // callers without the full Notes header retain the original fallback.
+  const formattingSlot = el.detailPanel.querySelector<HTMLElement>('.notes-detail-pane__formatting');
+  if (toolbar) (formattingSlot ?? el.detailContent).appendChild(toolbar);
   el.detailContent.appendChild(bodyEl);
   // Title is part of the same scrollable writing surface as the body.  The
   // toolbar stays above it as document chrome; tags live in their popover.
@@ -754,12 +915,19 @@ export function renderNoteDetail(
     tagsIcon.setAttribute('aria-hidden', 'true');
     tagsButton.appendChild(tagsIcon);
     tagsButton.addEventListener('click', () => {
+      tagTrigger = tagsButton;
       const open = metaEl.classList.toggle('is-open');
       tagsButton.setAttribute('aria-expanded', String(open));
-      if (open) metaEl.querySelector<HTMLInputElement>('input')?.focus();
+      if (open) {
+        tagsEl.classList.add('is-floating');
+        document.body.append(tagsEl);
+        positionTagPopover();
+        input.focus();
+      } else closeTags();
     });
     el.detailActions.appendChild(tagsButton);
     el.detailActions.appendChild(metaEl);
+    disposeTooltips = installNotesTooltips(el.detailPanel);
   } else {
     // Rendering helpers are also used outside the full Notes shell in tests and
     // previews; keep this truthful metadata reachable in that minimal host.
@@ -771,10 +939,78 @@ export function renderNoteDetail(
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
+/** One viewport-clamped, inert tooltip for the current Notes detail host. */
+function installNotesTooltips(root: HTMLElement): () => void {
+  const tooltip = document.createElement('div');
+  tooltip.className = 'notes-anchored-tooltip';
+  tooltip.role = 'tooltip';
+  tooltip.id = `jin-notes-tooltip-${++statusInfoSequence}`;
+  tooltip.hidden = true;
+  document.body.append(tooltip);
+  let anchor: HTMLElement | null = null;
+  let previousDescription: string | null = null;
+  const position = (): void => {
+    if (!anchor || tooltip.hidden) return;
+    const rect = anchor.getBoundingClientRect();
+    const tip = tooltip.getBoundingClientRect();
+    const x = Math.max(8, Math.min(window.innerWidth - tip.width - 8, rect.left + rect.width / 2 - tip.width / 2));
+    const below = rect.bottom + tip.height + 8 <= window.innerHeight;
+    tooltip.style.left = `${x}px`;
+    tooltip.style.top = `${below ? rect.bottom + 5 : Math.max(8, rect.top - tip.height - 5)}px`;
+  };
+  const hide = (): void => {
+    if (anchor) {
+      if (previousDescription === null) anchor.removeAttribute('aria-describedby');
+      else anchor.setAttribute('aria-describedby', previousDescription);
+    }
+    anchor = null;
+    tooltip.hidden = true;
+  };
+  const show = (target: EventTarget | null): void => {
+    const node = target instanceof Element ? target.closest<HTMLElement>('.has-tooltip[data-tooltip]') : null;
+    if (!node || !root.contains(node)) return;
+    if (anchor === node) { position(); return; }
+    hide();
+    anchor = node;
+    previousDescription = node.getAttribute('aria-describedby');
+    node.setAttribute('aria-describedby', previousDescription ? `${previousDescription} ${tooltip.id}` : tooltip.id);
+    tooltip.textContent = node.dataset.tooltip ?? '';
+    tooltip.hidden = false;
+    position();
+  };
+  const onOver = (event: Event): void => show(event.target);
+  const onOut = (event: Event): void => {
+    if (!anchor || !(event.target instanceof Node) || !anchor.contains(event.target)) return;
+    const related = (event as FocusEvent | PointerEvent).relatedTarget;
+    if (related instanceof Node && anchor.contains(related)) return;
+    hide();
+  };
+  const onEscape = (event: KeyboardEvent): void => { if (event.key === 'Escape') hide(); };
+  root.addEventListener('pointerover', onOver);
+  root.addEventListener('pointerout', onOut);
+  root.addEventListener('focusin', onOver);
+  root.addEventListener('focusout', onOut);
+  document.addEventListener('keydown', onEscape, true);
+  window.addEventListener('resize', position);
+  window.addEventListener('scroll', position, true);
+  return () => {
+    root.removeEventListener('pointerover', onOver);
+    root.removeEventListener('pointerout', onOut);
+    root.removeEventListener('focusin', onOver);
+    root.removeEventListener('focusout', onOut);
+    document.removeEventListener('keydown', onEscape, true);
+    window.removeEventListener('resize', position);
+    window.removeEventListener('scroll', position, true);
+    hide();
+    tooltip.remove();
+  };
+}
+
 function buildNoteRow(
   templates: NotesTemplates,
   note: NoteDto,
-  onNavigate: BrowseNavigateCallback
+  onNavigate: BrowseNavigateCallback,
+  options: { showFolder?: boolean } = {}
 ): HTMLElement {
   const frag = templates.noteRow.content.cloneNode(true) as DocumentFragment;
   const row = frag.firstElementChild as HTMLElement;
@@ -788,16 +1024,18 @@ function buildNoteRow(
   // S3: Apple-Notes list row additions
   const snippetEl = row.querySelector('.note-row__snippet');
   const dateEl = row.querySelector('.note-row__date');
+  const folderEl = row.querySelector('.note-row__folder');
 
   if (btnEl) {
     btnEl.dataset.noteId = note.id;
     // S4: store current folder so the drop-target same-folder guard can read it.
     btnEl.dataset.noteFolder = note.folder_path ?? '';
     // NN-1: use noteDisplayTitle so empty titles show "Untitled" in the list and aria-label.
-    btnEl.setAttribute('aria-label', noteDisplayTitle(note.title));
+    btnEl.setAttribute('aria-label', `${noteDisplayTitle(note.title)}${options.showFolder && note.folder_path ? `, ${note.folder_path}` : ''}`);
     // S4: make note rows draggable (D-DRAG-DATA)
     btnEl.setAttribute('draggable', 'true');
     btnEl.addEventListener('dragstart', (e: DragEvent) => {
+      guardNativeDrag(btnEl);
       if (e.dataTransfer) {
         e.dataTransfer.setData('application/x-jin-note-id', note.id);
         e.dataTransfer.setData('text/plain', note.id);
@@ -830,10 +1068,17 @@ function buildNoteRow(
 
   // S3: populate snippet (textContent = XSS-safe) and formatted date.
   if (snippetEl) {
-    snippetEl.textContent = note.excerpt ?? '';
+    snippetEl.textContent = note.excerpt?.trim() || 'No preview';
+    snippetEl.classList.toggle('is-empty', !note.excerpt?.trim());
   }
   if (dateEl) {
     dateEl.textContent = formatNoteDate(note.updated);
+    dateEl.setAttribute('datetime', note.updated);
+  }
+  if (folderEl) {
+    folderEl.textContent = options.showFolder ? note.folder_path || 'Notes' : '';
+    folderEl.setAttribute('title', folderEl.textContent ?? '');
+    folderEl.toggleAttribute('hidden', !options.showFolder);
   }
 
   return row;

@@ -47,6 +47,333 @@ impl GuestUpdatePolicy {
     }
 }
 
+// ── S2: sparse, token-guarded event edit ──────────────────────────────────────
+//
+// The full `EditEventPatch` is a *total* replacement: every field it carries
+// overwrites the canonical event. That forces a client to resend values it
+// never touched, which is how a browser ends up cloning one timezone over a
+// distinct baseline end zone. `EventEditDelta` is the sparse alternative:
+// absent means "leave it alone", and time is all-or-nothing.
+
+/// The atomic temporal bundle.
+///
+/// Either every temporal endpoint travels together or none of them do. A
+/// partial bundle — a `start` with no `end`, an anchored event missing one of
+/// its zones — is rejected at construction and at deserialization, because a
+/// half-specified time is exactly the shape that silently moves an event.
+///
+/// Fields are private so [`EventTemporalDelta::new`] is the only way to build
+/// one; there is no path that skips the completeness check.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct EventTemporalDelta {
+    start: String,
+    end: String,
+    is_all_day: bool,
+    floating: bool,
+    start_tzid: Option<String>,
+    end_tzid: Option<String>,
+}
+
+impl EventTemporalDelta {
+    /// Build a complete temporal bundle, or explain why it is not one.
+    ///
+    /// An anchored bundle (neither all-day nor floating) must name both of its
+    /// zones. An all-day or floating bundle must name neither — carrying a
+    /// zone there would be a contradiction, not a harmless extra.
+    pub fn new(
+        start: impl Into<String>,
+        end: impl Into<String>,
+        is_all_day: bool,
+        floating: bool,
+        start_tzid: Option<String>,
+        end_tzid: Option<String>,
+    ) -> std::result::Result<Self, String> {
+        let start = start.into();
+        let end = end.into();
+        if start.trim().is_empty() || end.trim().is_empty() {
+            return Err(
+                "a temporal bundle needs both start and end; send every temporal field or none"
+                    .to_string(),
+            );
+        }
+        if is_all_day && floating {
+            return Err("a bundle cannot be both all-day and floating".to_string());
+        }
+        let zoneless = is_all_day || floating;
+        if zoneless && (start_tzid.is_some() || end_tzid.is_some()) {
+            return Err("all-day and floating bundles must not carry a timezone".to_string());
+        }
+        if !zoneless && (start_tzid.is_none() || end_tzid.is_none()) {
+            return Err("an anchored bundle needs both start_tzid and end_tzid; \
+                 send every temporal field or none"
+                .to_string());
+        }
+        Ok(Self {
+            start,
+            end,
+            is_all_day,
+            floating,
+            start_tzid,
+            end_tzid,
+        })
+    }
+
+    pub fn start(&self) -> &str {
+        &self.start
+    }
+    pub fn end(&self) -> &str {
+        &self.end
+    }
+    pub fn is_all_day(&self) -> bool {
+        self.is_all_day
+    }
+    pub fn floating(&self) -> bool {
+        self.floating
+    }
+    pub fn start_tzid(&self) -> Option<&str> {
+        self.start_tzid.as_deref()
+    }
+    pub fn end_tzid(&self) -> Option<&str> {
+        self.end_tzid.as_deref()
+    }
+}
+
+/// Wire shape for a temporal bundle: every field optional so a partial payload
+/// parses far enough to be *rejected with a reason* rather than failing with an
+/// opaque missing-field error.
+#[derive(Debug, Deserialize)]
+struct RawEventTemporalDelta {
+    #[serde(default)]
+    start: Option<String>,
+    #[serde(default)]
+    end: Option<String>,
+    #[serde(default)]
+    is_all_day: Option<bool>,
+    #[serde(default)]
+    floating: Option<bool>,
+    #[serde(default)]
+    start_tzid: Option<String>,
+    #[serde(default)]
+    end_tzid: Option<String>,
+}
+
+impl TryFrom<RawEventTemporalDelta> for EventTemporalDelta {
+    type Error = String;
+
+    fn try_from(raw: RawEventTemporalDelta) -> std::result::Result<Self, Self::Error> {
+        let (Some(start), Some(end)) = (raw.start, raw.end) else {
+            return Err(
+                "a temporal bundle needs both start and end; send every temporal field or none"
+                    .to_string(),
+            );
+        };
+        let (Some(is_all_day), Some(floating)) = (raw.is_all_day, raw.floating) else {
+            return Err("a temporal bundle needs both is_all_day and floating; \
+                 send every temporal field or none"
+                .to_string());
+        };
+        Self::new(
+            start,
+            end,
+            is_all_day,
+            floating,
+            raw.start_tzid,
+            raw.end_tzid,
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for EventTemporalDelta {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = RawEventTemporalDelta::deserialize(deserializer)?;
+        Self::try_from(raw).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Distinguish "key absent" (leave the field alone) from "key present and
+/// null" (clear the field). Without this, a sparse payload cannot express
+/// clearing a description.
+fn double_option<'de, D, T>(deserializer: D) -> std::result::Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Deserialize::deserialize(deserializer).map(Some)
+}
+
+/// A sparse edit: only the fields the user actually touched.
+///
+/// Every absent field preserves the canonical value, which is what makes a
+/// title-only edit safe on an event whose endpoints live in different zones.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct EventEditDelta {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub description: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub location: Option<Option<String>>,
+    /// The all-or-nothing temporal bundle; absent leaves time untouched.
+    #[serde(default)]
+    pub temporal: Option<EventTemporalDelta>,
+    #[serde(default)]
+    pub recurrence: Option<crate::recurrence::RecurrenceDraft>,
+    #[serde(default)]
+    pub clear_recurrence: bool,
+    #[serde(default)]
+    pub attendees: Option<Vec<crate::model::event::EventAttendee>>,
+    #[serde(default)]
+    pub attendees_omitted: Option<bool>,
+    #[serde(default)]
+    pub conference_data: Option<crate::model::event::EventConferenceData>,
+    #[serde(default)]
+    pub clear_conference_data: bool,
+    #[serde(default)]
+    pub reminders: Option<crate::model::event::EventReminderSettings>,
+}
+
+impl EventEditDelta {
+    /// Whether this delta proposes any change to the event's time.
+    pub fn touches_time(&self) -> bool {
+        self.temporal.is_some()
+    }
+
+    /// Merge onto a canonical baseline, producing the full patch the existing
+    /// mutation path already knows how to apply.
+    ///
+    /// This is where sparseness becomes concrete: an absent temporal bundle
+    /// copies the baseline's endpoints *and both of its zones verbatim*, so a
+    /// distinct `end_tzid` survives a title-only edit untouched.
+    pub fn merge_into_patch(&self, baseline: &Event) -> crate::Result<EditEventPatch> {
+        use crate::model::event::{TemporalValue, ValueType};
+
+        let fm = &baseline.frontmatter;
+
+        let (
+            start,
+            end,
+            start_value_type,
+            end_value_type,
+            is_all_day,
+            start_tzid,
+            end_tzid,
+            floating,
+        ) = match &self.temporal {
+            Some(temporal) => {
+                if let Some(tzid) = temporal.start_tzid() {
+                    crate::time::validate_tzid(tzid).map_err(|reason| JinError::Validation {
+                        field: "temporal.start_tzid".to_string(),
+                        reason,
+                    })?;
+                }
+                if let Some(tzid) = temporal.end_tzid() {
+                    crate::time::validate_tzid(tzid).map_err(|reason| JinError::Validation {
+                        field: "temporal.end_tzid".to_string(),
+                        reason,
+                    })?;
+                }
+                if temporal.is_all_day() {
+                    (
+                        TemporalValue::Date(parse_delta_date(temporal.start(), "temporal.start")?),
+                        TemporalValue::Date(parse_delta_date(temporal.end(), "temporal.end")?),
+                        ValueType::Date,
+                        ValueType::Date,
+                        true,
+                        None,
+                        None,
+                        false,
+                    )
+                } else {
+                    (
+                        TemporalValue::DateTime(parse_delta_wall(
+                            temporal.start(),
+                            "temporal.start",
+                        )?),
+                        TemporalValue::DateTime(parse_delta_wall(temporal.end(), "temporal.end")?),
+                        ValueType::DateTime,
+                        ValueType::DateTime,
+                        false,
+                        temporal.start_tzid().map(str::to_string),
+                        temporal.end_tzid().map(str::to_string),
+                        temporal.floating(),
+                    )
+                }
+            }
+            None => (
+                fm.start.clone(),
+                fm.end.clone(),
+                fm.start_value_type.clone(),
+                fm.end_value_type.clone(),
+                fm.is_all_day,
+                fm.start_tzid.clone(),
+                fm.end_tzid.clone(),
+                fm.floating,
+            ),
+        };
+
+        // Recurrence is compiled against the *merged* start, so a rule and a
+        // new time cannot disagree about which instant anchors the series.
+        let recurrence = match (&self.recurrence, self.clear_recurrence) {
+            (Some(draft), _) => Some(crate::recurrence::compile(
+                draft,
+                &start,
+                start_tzid.as_deref(),
+            )?),
+            (None, true) => Some(Vec::new()),
+            (None, false) => None,
+        };
+
+        Ok(EditEventPatch {
+            title: self
+                .title
+                .as_ref()
+                .map(|title| title.trim().to_string())
+                .unwrap_or_else(|| fm.title.clone()),
+            start,
+            end,
+            start_value_type,
+            end_value_type,
+            is_all_day,
+            start_tzid,
+            end_tzid,
+            floating,
+            description: match &self.description {
+                Some(value) => value.clone(),
+                None => fm.description.clone(),
+            },
+            location: match &self.location {
+                Some(value) => value.clone(),
+                None => fm.location.clone(),
+            },
+            recurrence,
+            attendees: self.attendees.clone(),
+            attendees_omitted: self.attendees_omitted,
+            conference_data: self.conference_data.clone(),
+            clear_conference_data: self.clear_conference_data,
+            reminders: self.reminders.clone(),
+        })
+    }
+}
+
+fn parse_delta_date(value: &str, field: &str) -> crate::Result<chrono::NaiveDate> {
+    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|_| JinError::Validation {
+        field: field.to_string(),
+        reason: format!("invalid date '{}'; expected YYYY-MM-DD", value),
+    })
+}
+
+fn parse_delta_wall(value: &str, field: &str) -> crate::Result<chrono::NaiveDateTime> {
+    chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S")
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M"))
+        .map_err(|_| JinError::Validation {
+            field: field.to_string(),
+            reason: format!("invalid datetime '{}'; expected YYYY-MM-DDTHH:MM:SS", value),
+        })
+}
+
 #[derive(Debug, Clone)]
 pub struct InvitationResponseMutationRequest {
     pub event_id: String,
@@ -248,6 +575,68 @@ impl<'a> EventMutationService<'a> {
         )
     }
 
+    /// Load the canonical event only if `edit_token` still matches it.
+    ///
+    /// This runs *before* any merge and before any write. A stale token is a
+    /// statement that the client's baseline is not the current one — merging a
+    /// sparse delta onto a baseline the client never saw would silently adopt
+    /// whatever changed underneath it, so the operation stops here instead.
+    fn baseline_for_token(&self, event_id: &str, edit_token: &str) -> crate::Result<Event> {
+        crate::ops::api::recover_before_read(self.root)?;
+        let path = fs::find_event_path(&self.config.events_dir(), event_id)?;
+        let bytes = std::fs::read(&path)?;
+        if crate::ops::events::edit_token_for_bytes(&bytes) != edit_token {
+            return Err(JinError::StaleEvent {
+                event_id: event_id.to_string(),
+            });
+        }
+        fs::parse_event_bytes(&bytes)
+    }
+
+    /// Apply a sparse delta to a Jin-local (or route-owned) event.
+    ///
+    /// Order matters and is load-bearing: validate the token, *then* merge onto
+    /// the canonical baseline, then hand the resulting full patch to the
+    /// existing mutation path — which re-checks the token under the operation
+    /// lock, so this fast path never weakens the concurrency guarantee.
+    pub fn edit_sparse(
+        &self,
+        event_id: &str,
+        edit_token: &str,
+        delta: EventEditDelta,
+        scope: Option<RecurrenceMutationScope>,
+        operation_id: &str,
+    ) -> crate::Result<crate::ops::events::EditEventOutcome> {
+        let baseline = self.baseline_for_token(event_id, edit_token)?;
+        let patch = delta.merge_into_patch(&baseline)?;
+        self.edit_local_scoped(event_id, edit_token, patch, scope, operation_id)
+    }
+
+    /// Routed sibling of [`EventMutationService::edit_sparse`].
+    #[allow(clippy::too_many_arguments)] // Mirrors the routed full-patch mutation boundary.
+    pub fn edit_sparse_with_guest_update_policy(
+        &self,
+        event_id: &str,
+        edit_token: &str,
+        delta: EventEditDelta,
+        target: EventSyncTarget,
+        scope: Option<RecurrenceMutationScope>,
+        operation_id: &str,
+        guest_update_policy: GuestUpdatePolicy,
+    ) -> crate::Result<Event> {
+        let baseline = self.baseline_for_token(event_id, edit_token)?;
+        let patch = delta.merge_into_patch(&baseline)?;
+        self.edit_with_guest_update_policy(
+            event_id,
+            edit_token,
+            patch,
+            target,
+            scope,
+            operation_id,
+            guest_update_policy,
+        )
+    }
+
     /// Route a Jin-local delete through the root-aware mutation boundary.
     pub fn delete_local(&self, event_id: &str) -> crate::Result<Event> {
         self.delete_local_scoped(event_id, None)
@@ -362,6 +751,7 @@ impl<'a> EventMutationService<'a> {
         )
     }
 
+    #[allow(clippy::too_many_arguments)] // The public mutation boundary keeps token, target, scope, and policy explicit.
     pub fn edit_with_guest_update_policy(
         &self,
         event_id: &str,

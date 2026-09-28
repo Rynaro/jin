@@ -56,6 +56,13 @@ impl OperationEffects {
             enqueue_event: true,
         }
     }
+
+    pub const fn task() -> Self {
+        Self {
+            rebuild_index: true,
+            enqueue_event: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -756,6 +763,28 @@ where
         operation_id,
         kind,
         OperationEffects::event(),
+        false,
+        None,
+        build,
+    )
+}
+
+/// Canonical Task/List multi-file mutation with a replayable index rebuild.
+/// Unlike event operations this never enqueues provider work.
+pub fn execute_task_operation<F>(
+    root: &Path,
+    operation_id: &str,
+    kind: &str,
+    build: F,
+) -> Result<OperationOutcome>
+where
+    F: FnOnce() -> Result<(String, Vec<TargetPlan>)>,
+{
+    execute_operation_inner(
+        root,
+        operation_id,
+        kind,
+        OperationEffects::task(),
         false,
         None,
         build,

@@ -68,12 +68,19 @@ import {
   reorderSection,
   setTagColor,
   moveTask,
+  createBoardColumn,
+  setInitialBoardColumn,
+  renameBoardColumn,
+  reorderBoardColumn,
+  changeBoardColumnType,
+  deleteBoardColumn,
   reseedPositions,
 } from '../invoke';
 import { ConfirmDialog } from '../lib/ui/confirm_dialog';
 import { JinModal } from '../lib/ui/modal';
 import { TagColorDialog } from '../lib/ui/tag_color_dialog';
 import { JinSelect } from '../lib/ui/select';
+import { installNavigationGuard } from '../lib/ui/navigation_guard';
 import { between } from '../lib/tasks/rank';
 import { isJinErrorDto, toSyntheticErrorDto } from '../types/error';
 import {
@@ -81,6 +88,7 @@ import {
   sortTasksList,
   sortTasksForMode,
   computeSubtaskDisplayInfo,
+  partitionParentsAndChildren,
   type TasksFilter,
   type SubtaskDisplayInfo,
 } from '../lib/tasks/transform';
@@ -106,6 +114,7 @@ import {
   renderTaskPane,
   renderListViewWithSections,
   renderBoardView,
+  appendTaskDisclosure,
   renderBulkPanel,
 } from '../lib/tasks/render';
 import { initIcons } from '../lib/icons';
@@ -148,6 +157,7 @@ export default class TasksController extends Controller {
     'main',
     'listPanel',
     'workspaceTitle',
+    'workspaceCount',
     'railToggleBtn',
     'railCloseBtn',
     'list',
@@ -186,6 +196,8 @@ export default class TasksController extends Controller {
   declare hasListPanelTarget: boolean;
   declare workspaceTitleTarget: HTMLElement;
   declare hasWorkspaceTitleTarget: boolean;
+  declare workspaceCountTarget: HTMLElement;
+  declare hasWorkspaceCountTarget: boolean;
   declare railToggleBtnTarget: HTMLButtonElement;
   declare hasRailToggleBtnTarget: boolean;
   declare railCloseBtnTarget: HTMLButtonElement;
@@ -233,6 +245,8 @@ export default class TasksController extends Controller {
   // ── S8: tag color picker (AC-S8-02) ───────────────────────────────────────
   /** Lazily-initialized tag color picker modal, reused across every chip. */
   private _tagColorModal: TagColorDialog | null = null;
+  private _columnsModal: JinModal | null = null;
+  private _moveConfirmModal: ConfirmDialog | null = null;
   /** The tag slug the currently-open color picker is choosing a color for. */
   private _pendingTagColorSlug: string | null = null;
 
@@ -310,6 +324,19 @@ export default class TasksController extends Controller {
   private _boundFilterMediaChange: (() => void) | null = null;
   /** ID of the currently active list (null = a smart-view scope, no single list). */
   private currentListId: string | null = null;
+  private detailHydrationVersion = 0;
+  private detailTransitionVersion = 0;
+  private detailDraftTaskId: string | null = null;
+  private detailSavedTitle = '';
+  private detailSavedBody = '';
+  private pendingDetailSave: Promise<boolean> | null = null;
+  private scopeSelectionVersion = 0;
+  private taskNavigationGuardInstalled = false;
+  private detailMedia: MediaQueryList | null = null;
+  private detailMediaListener: (() => void) | null = null;
+  private get activeWorkflow(): ListDto | undefined {
+    return this.currentListId ? this.currentLists.find((list) => list.id === this.currentListId) : undefined;
+  }
   /**
    * S5 (Approach §4) — the rail's scope model; the single source of truth
    * for "where the user is". Defaults to the Inbox smart view; `connect()`
@@ -476,6 +503,10 @@ export default class TasksController extends Controller {
       };
       this._filterMedia.addEventListener('change', this._boundFilterMediaChange);
 
+      this.detailMedia = window.matchMedia('(max-width: 1100px)');
+      this.detailMediaListener = () => this.updateDetailOverlayAccessibility();
+      this.detailMedia.addEventListener('change', this.detailMediaListener);
+
     }
     this.updateFilterDisclosure();
     this.updateDetailOverlayAccessibility();
@@ -497,6 +528,7 @@ export default class TasksController extends Controller {
    */
   private async connectAutoSelect(): Promise<void> {
     const defaultListId = await this.resolveDefaultListId();
+    if (!this.element.isConnected) return;
     if (defaultListId) {
       this.currentScope = { kind: 'list', id: defaultListId };
     }
@@ -505,12 +537,18 @@ export default class TasksController extends Controller {
   }
 
   disconnect(): void {
+    ++this.loadGeneration;
+    ++this.detailTransitionVersion;
+    ++this.detailHydrationVersion;
+    if (this.taskNavigationGuardInstalled) installNavigationGuard(null);
+    this.taskNavigationGuardInstalled = false;
     if (this._boundKeyHandler) {
       document.removeEventListener('keydown', this._boundKeyHandler);
     }
     if (this._filterMedia && this._boundFilterMediaChange) {
       this._filterMedia.removeEventListener('change', this._boundFilterMediaChange);
     }
+    if (this.detailMedia && this.detailMediaListener) this.detailMedia.removeEventListener('change', this.detailMediaListener);
     if (this.hasListPanelTarget) {
       this.listPanelTarget.removeAttribute('inert');
       this.listPanelTarget.removeAttribute('aria-hidden');
@@ -525,11 +563,33 @@ export default class TasksController extends Controller {
     this._deleteSectionModal = null;
     this._tagColorModal?.destroy();
     this._tagColorModal = null;
+    this._columnsModal?.destroy();
+    this._columnsModal = null;
+    this._moveConfirmModal?.destroy();
+    this._moveConfirmModal = null;
   }
 
   private _boundKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
   private handleGlobalKeydown(e: KeyboardEvent): void {
+    const eventElement = e.target instanceof Element ? e.target : null;
+    if (eventElement?.closest('dialog') || document.querySelector('dialog[open]')) return;
+    const sheetOpen = this.hasMainTarget && this.mainTarget.classList.contains('tasks-main--detail-open')
+      && (this.detailMedia?.matches ?? false);
+    if (sheetOpen && !document.querySelector('dialog[open]')) {
+      if (e.key === 'Escape') { e.preventDefault(); this.closePane(); return; }
+      if (e.key === 'Tab') {
+        const focusable = Array.from(this.detailPanelTarget.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [contenteditable="true"], a[href], [tabindex]:not([tabindex="-1"])',
+        )).filter((node) => !node.hidden && node.getClientRects().length > 0);
+        const first = focusable[0]; const last = focusable.at(-1);
+        if (first && last && (!this.detailPanelTarget.contains(document.activeElement) || e.shiftKey && document.activeElement === first || !e.shiftKey && document.activeElement === last)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+          return;
+        }
+      }
+    }
     if (e.key === 'Escape' && this.hasFiltersToggleBtnTarget && this.isFiltersConstrained() && this.filtersExpanded) {
       this.filtersExpanded = false;
       this.updateFilterDisclosure();
@@ -571,7 +631,7 @@ export default class TasksController extends Controller {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       if (this.isTypingTarget(e.target)) return;
       e.preventDefault();
-      this.moveSelection(e.key === 'ArrowDown' ? 1 : -1);
+      void this.moveSelectionGuarded(e.key === 'ArrowDown' ? 1 : -1);
       return;
     }
 
@@ -628,29 +688,33 @@ export default class TasksController extends Controller {
   setScope(event: Event): void {
     const ce = event as CustomEvent<{ scope: TaskScope }>;
     if (!ce.detail?.scope) return;
-    this.selectedTaskId = null;
-    this.selectedTaskIds.clear();
-    this.selectionAnchorId = null;
-    this.setDetailOpen(false);
-    this.detailContentTarget.replaceChildren();
-    this.currentScope = ce.detail.scope;
-    this.setRailOpen(false);
-    this.updateWorkspaceTitle();
-    void this.loadList(this.currentFilter);
+    const version = ++this.scopeSelectionVersion;
+    ++this.detailTransitionVersion;
+    void (async () => {
+      if (!await this.flushDetailDraft()) {
+        this.dispatch('scope-set', { detail: { scope: this.currentScope }, prefix: 'jin', bubbles: true });
+        return;
+      }
+      if (version !== this.scopeSelectionVersion) return;
+      this.selectedTaskId = null;
+      this.selectedTaskIds.clear();
+      this.selectionAnchorId = null;
+      this.setDetailOpen(false);
+      this.detailContentTarget.replaceChildren();
+      this.detailDraftTaskId = null;
+      this.currentScope = ce.detail.scope;
+      this.setRailOpen(false);
+      this.updateWorkspaceTitle();
+      void this.loadList(this.currentFilter);
+    })();
   }
 
   toggleRail(): void {
-    this.setRailOpen(!this.element.classList.contains('tasks-rail-open'));
+    window.dispatchEvent(new CustomEvent('jin:sidebar-toggle'));
   }
 
   private setRailOpen(open: boolean): void {
-    const wasOpen = this.element.classList.contains('tasks-rail-open');
-    this.element.classList.toggle('tasks-rail-open', open);
-    if (this.hasRailToggleBtnTarget) {
-      this.railToggleBtnTarget.setAttribute('aria-expanded', String(open));
-      if (!open && wasOpen) this.railToggleBtnTarget.focus();
-    }
-    if (open && this.hasRailCloseBtnTarget) this.railCloseBtnTarget.focus();
+    if (!open) window.dispatchEvent(new CustomEvent('jin:sidebar-selection'));
   }
 
   // ── S1: view toggle (Approach §5 — GLOBAL preference, not per-list) ──────
@@ -663,6 +727,7 @@ export default class TasksController extends Controller {
    * this is never a no-op and the toggle is never disabled.
    */
   toggleView(): void {
+    if (this.activeWorkflow?.workflow_kind) return;
     const newView: 'list' | 'board' = this.currentView === 'list' ? 'board' : 'list';
     this.currentView = newView;
     savePersistedView(newView);
@@ -677,6 +742,7 @@ export default class TasksController extends Controller {
 
   /** Set an explicit List or Board choice from the native segmented control. */
   setView(event: Event): void {
+    if (this.activeWorkflow?.workflow_kind) return;
     const requested = (event.currentTarget as HTMLButtonElement).dataset.view;
     if (requested !== 'list' && requested !== 'board') return;
     if (requested === this.currentView) return;
@@ -703,6 +769,8 @@ export default class TasksController extends Controller {
 
   private updateViewToggleButton(): void {
     if (!this.hasViewToggleBtnTarget) return;
+    const segment = this.viewToggleBtnTargets[0]?.closest<HTMLElement>('.tasks-view-segment');
+    if (segment) segment.hidden = Boolean(this.activeWorkflow?.workflow_kind) || this.currentScope.kind !== 'list';
     for (const button of this.viewToggleBtnTargets) {
       const view = button.dataset.view;
       if (view === 'list' || view === 'board') {
@@ -753,6 +821,22 @@ export default class TasksController extends Controller {
     this.filterCountTarget.setAttribute('aria-label', `${count} active ${count === 1 ? 'filter' : 'filters'}`);
   }
 
+  private updateStatusChoices(): void {
+    const kind = this.activeWorkflow?.workflow_kind;
+    const choices: Array<[string, string]> = kind === 'checklist'
+      ? [['', 'Open with closed groups'], ['done', 'Completed only'], ['cancelled', 'Cancelled only']]
+      : kind === 'board'
+        ? [['', 'All columns'], ['cancelled', 'Cancelled only']]
+        : [['', 'All Statuses'], ['todo', 'To Do'], ['doing', 'In Progress'], ['done', 'Done'], ['cancelled', 'Cancelled']];
+    const signature = choices.map(([value]) => value).join('|');
+    if (this.statusFilterTarget.dataset.workflowChoices === signature) return;
+    const previous = this.statusFilterTarget.value;
+    this.statusFilterTarget.replaceChildren(...choices.map(([value, label]) => new Option(label, value)));
+    this.statusFilterTarget.value = choices.some(([value]) => value === previous) ? previous : '';
+    this.statusFilterTarget.dataset.workflowChoices = signature;
+    this.updateFilterCount();
+  }
+
   // ── P5: Section management ────────────────────────────────────────────────
 
   openAddSection(): void {
@@ -781,16 +865,11 @@ export default class TasksController extends Controller {
       this.closeAddSection();
       void this.loadList(this.currentFilter);
     } catch (err: unknown) {
-      // Inline form error (JinErrorDto) beats a generic toast here — the user
-      // is mid-form and the message ("name already exists" etc.) is precise.
-      // S1: the non-JinErrorDto branch no longer swallows — it must still
-      // surface, just on the app:error channel since there's no inline copy for it.
-      if (isJinErrorDto(err)) {
-        this.addSectionErrorTarget.textContent = err.message;
-        this.addSectionErrorTarget.classList.remove('hidden');
-      } else {
-        this.dispatch('error', { detail: toSyntheticErrorDto(err, 'saveAddSection'), prefix: 'app', bubbles: true });
-      }
+      // Keep both core and bridge failures next to the unfinished form. Tauri
+      // rejects argument mismatches as raw strings rather than Error objects.
+      this.addSectionErrorTarget.textContent = isJinErrorDto(err)
+        ? err.message : toSyntheticErrorDto(err, 'Could not add this section.').message;
+      this.addSectionErrorTarget.classList.remove('hidden');
     }
   }
 
@@ -1107,10 +1186,12 @@ export default class TasksController extends Controller {
     // smart-view scope didn't make pre-S5 ("All Lists" never looked it up);
     // cheap per Assumption A4 (personal-scale data).
     const lists = await this.guarded(() => listLists(), 'loadList:listLists');
-    if (generation !== this.loadGeneration) return;
+    if (generation !== this.loadGeneration || !this.element.isConnected) return;
     // S7: cache the full list set for the bulk panel's "Move to list" select.
     this.currentLists = lists ?? [];
     this.updateWorkspaceTitle();
+    this.updateStatusChoices();
+    filter.status = this.statusFilterTarget.value || undefined;
     if (selectedListId) {
       const activeList = lists?.find((l) => l.id === selectedListId);
       if (activeList) {
@@ -1129,7 +1210,7 @@ export default class TasksController extends Controller {
         }),
       'loadList:listTasks',
     );
-    if (generation !== this.loadGeneration) return;
+    if (generation !== this.loadGeneration || !this.element.isConnected) return;
     if (!preserveContent) hideTasksListLoading(el);
     if (tasks === undefined) return; // guarded() already surfaced app:error
 
@@ -1151,6 +1232,10 @@ export default class TasksController extends Controller {
 
     // P9: keep a snapshot so handleDrop can look up positions by id.
     this.currentTasks = filtered;
+    if (this.hasWorkspaceCountTarget) {
+      const open = filtered.filter((task) => task.status !== 'done' && task.status !== 'cancelled').length;
+      this.workspaceCountTarget.textContent = `${open} open`;
+    }
 
     this.renderList();
   }
@@ -1165,6 +1250,17 @@ export default class TasksController extends Controller {
   private renderList(): void {
     const el = this.viewElements;
     const filtered = this.currentTasks;
+    const checklist = this.activeWorkflow?.workflow_kind === 'checklist' && !this.statusFilterTarget.value;
+    // Route whole visible families by their root's status. A completed child
+    // stays beneath its open parent; a terminal parent carries its children
+    // into the disclosure. Missing/filtered parents are already standalone
+    // roots in partitionParentsAndChildren, so filters never insert tasks.
+    const families = checklist ? partitionParentsAndChildren(filtered) : null;
+    const familyTasks = (belongs: (root: TaskDto) => boolean): TaskDto[] =>
+      families?.topLevel.filter(belongs).flatMap((root) => [root, ...(families.childrenByParent.get(root.id) ?? [])]) ?? [];
+    const openTasks = checklist
+      ? familyTasks((root) => root.status !== 'done' && root.status !== 'cancelled')
+      : filtered;
     const selectedListId = this.currentListId;
 
     const callbacks: TaskRowCallbacks = {
@@ -1211,6 +1307,8 @@ export default class TasksController extends Controller {
       onStatusDrop: (taskId, targetStatus) => {
         void this.handleStatusDrop(taskId, targetStatus);
       },
+      onColumnDrop: (taskId, columnId) => { void this.handleColumnDrop(taskId, columnId); },
+      onColumnCreate: (columnId, title, due) => { void this.handleCreateTask(title, due, columnId); },
     };
 
     const sectionCallbacks: SectionCallbacks = {
@@ -1264,20 +1362,22 @@ export default class TasksController extends Controller {
         this.currentSubtaskDisplayInfo,
         this.selectedTaskIds,
       );
-    } else if (this.currentView === 'board') {
+    } else if (this.activeWorkflow?.workflow_kind === 'board' || (!this.activeWorkflow?.workflow_kind && this.currentScope.kind === 'list' && this.currentView === 'board')) {
       // Board view: Kanban by TaskStatus (Todo/Doing/Done), any scope.
       el.list.classList.remove('hidden');
       el.emptyState.classList.add('hidden');
       renderBoardView(
         el.list,
         this.viewTemplates,
-        filtered,
+        openTasks,
         this.currentSortMode,
         onNavigate,
         callbacks,
         this.selectedTaskId,
         this.currentSubtaskDisplayInfo,
         this.selectedTaskIds,
+        this.activeWorkflow?.workflow_kind === 'board' ? this.activeWorkflow.columns : undefined,
+        this.activeWorkflow?.workflow_kind === 'board' ? this.activeWorkflow.initial_column_id : undefined,
       );
     } else if (selectedListId && this.currentSections.length > 0) {
       // List view with sections.
@@ -1286,7 +1386,7 @@ export default class TasksController extends Controller {
       renderListViewWithSections(
         el.list,
         this.viewTemplates,
-        filtered,
+        openTasks,
         this.currentSections,
         this.currentSortMode,
         onNavigate,
@@ -1301,8 +1401,8 @@ export default class TasksController extends Controller {
       // immediately visible (manual → position asc via sortTasksForMode).
       // The "All Lists" aggregate view uses the global priority+updated sort.
       const sorted = selectedListId
-        ? sortTasksForMode(filtered, this.currentSortMode)
-        : sortTasksList(filtered);
+        ? sortTasksForMode(openTasks, this.currentSortMode)
+        : sortTasksList(openTasks);
       // S6 (AC-S6-13): nest children under their parent ONLY in a list scope
       // (a single list is selected) — "All Lists" renders every task standalone.
       renderTasksList(
@@ -1324,8 +1424,17 @@ export default class TasksController extends Controller {
       );
     }
 
+    if (checklist) {
+      appendTaskDisclosure(el.list, 'Completed', sortTasksForMode(familyTasks((root) => root.status === 'done'), this.currentSortMode),
+        this.viewTemplates, onNavigate, callbacks, this.selectedTaskId, this.selectedTaskIds);
+      appendTaskDisclosure(el.list, 'Cancelled', sortTasksForMode(familyTasks((root) => root.status === 'cancelled'), this.currentSortMode),
+        this.viewTemplates, onNavigate, callbacks, this.selectedTaskId, this.selectedTaskIds);
+    }
+
     // Update view toggle button state.
     this.updateViewToggleButton();
+    const manage = this.element.querySelector<HTMLButtonElement>('.tasks-manage-columns');
+    if (manage) manage.hidden = this.activeWorkflow?.workflow_kind !== 'board';
     if (this.hasSortModeSelectTarget) {
       this.sortModeSelectTarget.value = this.currentSortMode;
     }
@@ -1374,17 +1483,32 @@ export default class TasksController extends Controller {
    * reload (see lists_controller.ts's class doc comment).
    */
   private async handleOpenDetail(taskId: string): Promise<void> {
+    const transition = ++this.detailTransitionVersion;
+    if (taskId === this.selectedTaskId) return;
+    if (!await this.flushDetailDraft()) return;
     // S7: a deep link is always a single-task selection — abandon any active
     // bulk multi-selection so the invariant (exactly one of `selectedTaskId`
     // set / `selectedTaskIds.size >= 2`) holds regardless of entry point.
     this.selectedTaskIds.clear();
     const task = await this.fetchTaskForPane(taskId);
     if (task === undefined) return;
+    if (transition !== this.detailTransitionVersion) return;
+    // The existing inspector stays editable while a deep link is fetched.
+    // Persist any input made during that wait before changing ownership.
+    if (!await this.flushDetailDraft() || transition !== this.detailTransitionVersion) return;
     if (task.list !== this.currentListId) {
+      // Loading another list is the last asynchronous step. Prevent a new
+      // draft from forming while its old owner is about to be replaced.
+      this.detailContentTarget.inert = true;
       this.currentScope = { kind: 'list', id: task.list };
       this.updateWorkspaceTitle();
       this.dispatch('scope-set', { detail: { scope: this.currentScope }, prefix: 'jin', bubbles: true });
-      await this.loadList(this.currentFilter);
+      try {
+        await this.loadList(this.currentFilter);
+      } finally {
+        this.detailContentTarget.inert = false;
+      }
+      if (transition !== this.detailTransitionVersion) return;
     }
     this.selectedTaskId = taskId;
     this.renderList();
@@ -1398,6 +1522,9 @@ export default class TasksController extends Controller {
    * single click, with no intermediate back navigation (AC-S3-02).
    */
   private async selectTask(taskId: string): Promise<void> {
+    if (taskId === this.selectedTaskId && this.mainTarget.classList.contains('tasks-main--detail-open')) return;
+    const transition = ++this.detailTransitionVersion;
+    if (!await this.flushDetailDraft() || transition !== this.detailTransitionVersion) return;
     // S7: a plain single-item select always wins over any active bulk
     // multi-selection (same invariant as handleOpenDetail above).
     this.selectedTaskIds.clear();
@@ -1411,7 +1538,7 @@ export default class TasksController extends Controller {
     // made while this fetch was in flight (e.g. a rapid ctrl-click sequence
     // that moved on to bulk-select mode before this single-select's fetch
     // resolved) — same pattern `refreshPane` already uses below.
-    if (this.selectedTaskId !== taskId) return;
+    if (this.selectedTaskId !== taskId || transition !== this.detailTransitionVersion) return;
     await this.hydratePaneFromTask(task);
   }
 
@@ -1422,6 +1549,7 @@ export default class TasksController extends Controller {
    */
   private async refreshPane(taskId: string): Promise<void> {
     if (this.selectedTaskId !== taskId) return;
+    if (!await this.flushDetailDraft()) return;
     const task = await this.fetchTaskForPane(taskId);
     if (task === undefined) return;
     await this.hydratePaneFromTask(task);
@@ -1432,8 +1560,16 @@ export default class TasksController extends Controller {
    * the selection and collapses the pane.
    */
   private closePane(): void {
+    ++this.detailTransitionVersion;
+    void this.closePaneGuarded();
+  }
+
+  private async closePaneGuarded(): Promise<void> {
+    if (!await this.flushDetailDraft()) return;
+    this.detailHydrationVersion++;
     const closedTaskId = this.selectedTaskId;
     this.selectedTaskId = null;
+    this.detailDraftTaskId = null;
     this.setDetailOpen(false);
     this.viewElements.detailContent.innerHTML = '';
     this.renderList();
@@ -1450,6 +1586,21 @@ export default class TasksController extends Controller {
       this.mainTarget.classList.toggle('tasks-main--detail-open', open);
     }
     this.updateDetailOverlayAccessibility();
+    if (open && !this.taskNavigationGuardInstalled) {
+      installNavigationGuard(async (intent) => {
+        if (intent.kind === 'tasks') return true;
+        const saved = await this.flushDetailDraft();
+        if (saved) {
+          this.taskNavigationGuardInstalled = false;
+          installNavigationGuard(null);
+        }
+        return saved;
+      });
+      this.taskNavigationGuardInstalled = true;
+    } else if (!open && this.taskNavigationGuardInstalled) {
+      installNavigationGuard(null);
+      this.taskNavigationGuardInstalled = false;
+    }
     if (open && this.isFiltersConstrained()) this.filtersExpanded = false;
     this.updateFilterDisclosure();
   }
@@ -1461,13 +1612,68 @@ export default class TasksController extends Controller {
    */
   private updateDetailOverlayAccessibility(): void {
     if (!this.hasMainTarget || !this.hasListPanelTarget) return;
-    const covered = this.mainTarget.classList.contains('tasks-main--detail-open');
+    const covered = this.mainTarget.classList.contains('tasks-main--detail-open')
+      && (this.detailMedia?.matches ?? false);
     this.listPanelTarget.toggleAttribute('inert', covered);
+    if (covered) {
+      this.detailPanelTarget.setAttribute('role', 'dialog');
+      this.detailPanelTarget.setAttribute('aria-modal', 'true');
+      this.detailPanelTarget.setAttribute('aria-label', 'Task details');
+      if (!this.detailPanelTarget.contains(document.activeElement)) {
+        this.detailPanelTarget.querySelector<HTMLElement>('.tasks-detail-pane__close-btn')?.focus({ preventScroll: true });
+      }
+    } else {
+      this.detailPanelTarget.removeAttribute('role');
+      this.detailPanelTarget.removeAttribute('aria-modal');
+      this.detailPanelTarget.removeAttribute('aria-label');
+    }
     if (covered) {
       this.listPanelTarget.setAttribute('aria-hidden', 'true');
     } else {
       this.listPanelTarget.removeAttribute('aria-hidden');
     }
+  }
+
+  /** Save the current inspector title and notes before changing its owner. */
+  private async flushDetailDraft(): Promise<boolean> {
+    const taskId = this.detailDraftTaskId;
+    if (!taskId || this.selectedTaskId !== taskId) return true;
+    if (this.pendingDetailSave) {
+      if (!await this.pendingDetailSave) return false;
+    }
+    while (this.selectedTaskId === taskId) {
+      const titleNode = this.detailContentTarget.querySelector<HTMLElement>('.task-detail__title-editable');
+      const bodyNode = this.detailContentTarget.querySelector<HTMLTextAreaElement>('.task-detail__body');
+      if (!titleNode || !bodyNode) return true;
+      const title = (titleNode.textContent ?? '').trim();
+      const body = bodyNode.value;
+      const changedTitle = title !== this.detailSavedTitle;
+      const changedBody = body !== this.detailSavedBody;
+      if (!title) {
+        titleNode.setAttribute('aria-invalid', 'true');
+        titleNode.focus();
+        return false;
+      }
+      if (!changedTitle && !changedBody) return true;
+      const input: { title?: string; body?: string } = {};
+      if (changedTitle) input.title = title;
+      if (changedBody) input.body = body;
+      const promise = this.mutate(() => editTask(taskId, input), 'flushDetailDraft').then((result) => result !== undefined);
+      this.pendingDetailSave = promise;
+      const succeeded = await promise;
+      if (this.pendingDetailSave === promise) this.pendingDetailSave = null;
+      if (!succeeded) {
+        bodyNode.setAttribute('aria-invalid', String(changedBody));
+        titleNode.setAttribute('aria-invalid', String(Boolean(changedTitle)));
+        return false;
+      }
+      this.detailSavedTitle = title;
+      this.detailSavedBody = body;
+      bodyNode.removeAttribute('aria-invalid');
+      titleNode.removeAttribute('aria-invalid');
+      void this.loadList(this.currentFilter);
+    }
+    return true;
   }
 
   // ── S7: bulk multi-select (Approach: "click, shift-click range, cmd/ctrl-
@@ -1485,15 +1691,27 @@ export default class TasksController extends Controller {
    *     bulk selection, opens the ONE detail pane for this item)
    */
   private handleItemClick(taskId: string, event: MouseEvent): void {
-    if (event.shiftKey) {
-      this.selectRange(taskId);
-    } else if (event.ctrlKey || event.metaKey) {
-      this.toggleSelection(taskId);
-    } else {
-      this.selectedTaskIds.clear();
-      this.selectionAnchorId = taskId;
-      void this.selectTask(taskId);
+    if (event.shiftKey || event.ctrlKey || event.metaKey) {
+      const applySelection = () => {
+        if (event.shiftKey) this.selectRange(taskId);
+        else this.toggleSelection(taskId);
+      };
+      // A run of modifier clicks is one synchronous selection gesture when
+      // no inspector draft exists. Awaiting an already-resolved flush for
+      // every click let the next click supersede the previous selection.
+      if (!this.detailDraftTaskId) {
+        applySelection();
+        return;
+      }
+      const transition = ++this.detailTransitionVersion;
+      void (async () => {
+        if (!await this.flushDetailDraft() || transition !== this.detailTransitionVersion) return;
+        applySelection();
+      })();
+      return;
     }
+    this.selectionAnchorId = taskId;
+    void this.selectTask(taskId);
   }
 
   /**
@@ -1523,7 +1741,9 @@ export default class TasksController extends Controller {
     } else if (this.selectedTaskIds.size === 1) {
       const [onlyId] = this.selectedTaskIds;
       this.selectedTaskIds.clear();
-      void this.selectTask(onlyId);
+      this.selectedTaskId = onlyId;
+      this.setDetailOpen(false);
+      this.renderList();
     } else {
       this.clearSelection();
     }
@@ -1575,7 +1795,8 @@ export default class TasksController extends Controller {
   private updateBulkPanel(): void {
     const el = this.viewElements;
     const selected = this.currentTasks.filter((t) => this.selectedTaskIds.has(t.id));
-    const statusOptions = intersectLegalNextStatuses(selected);
+    const workflowByList = new Map(this.currentLists.map((list) => [list.id, list.workflow_kind] as const));
+    const statusOptions = intersectLegalNextStatuses(selected, workflowByList);
     const availableLists = this.currentLists.map((l) => ({ id: l.id, name: l.name }));
 
     const bulkCallbacks: BulkPanelCallbacks = {
@@ -1652,14 +1873,42 @@ export default class TasksController extends Controller {
    * cascade-skip applies here unconditionally (not gated on a target value,
    * unlike status — every move-to-list cascades).
    */
-  private async runBulkMoveToList(listId: string): Promise<void> {
+  private async runBulkMoveToList(listId: string, confirmedReset = false): Promise<void> {
     const ids = [...this.selectedTaskIds];
     if (ids.length === 0) return;
     const tasksById = new Map(this.currentTasks.map((t) => [t.id, t]));
+    const target = this.currentLists.find((list) => list.id === listId);
+    if (!target) return;
+    if (!confirmedReset) {
+      const moveSelect = this.detailContentTarget.querySelector<HTMLSelectElement>('.tasks-bulk-panel__list-select');
+      if (moveSelect) JinSelect.enhance(moveSelect).setValue('');
+    }
     const { toApply, cascaded } = partitionCascadingChildren(ids, tasksById);
 
+    const resetCount = ids.filter((id) => tasksById.get(id)?.status === 'doing'
+      && tasksById.get(id)?.list !== listId).length;
+    if (target.workflow_kind === 'checklist' && resetCount > 0 && !confirmedReset) {
+      this._moveConfirmModal?.destroy();
+      this._moveConfirmModal = new ConfirmDialog({
+        title: 'Move to List', ariaLabel: 'Confirm task move', confirmLabel: 'Move tasks',
+        message: `${resetCount} In Progress ${resetCount === 1 ? 'task' : 'tasks'} will become unchecked in ${target.name}. Move ${ids.length} selected ${ids.length === 1 ? 'task' : 'tasks'}?`,
+        onConfirm: () => { void this.runBulkMoveToList(listId, true); },
+      });
+      this._moveConfirmModal.open();
+      return;
+    }
+
     const { succeeded, failed } = await runBulkOperation(toApply, (id) =>
-      this.guarded(() => editTask(id, { list: listId }), 'runBulkMoveToList'),
+      this.guarded(() => {
+        const task = tasksById.get(id)!;
+        return moveTask(id, {
+          listId,
+          sectionId: null,
+          boardColumnId: null,
+          position: task.position || between(null, null),
+          confirmDoingToChecklist: confirmedReset,
+        });
+      }, 'runBulkMoveToList'),
     );
 
     this.finishBulkOperation('moved', ids.length, succeeded.length + cascaded.length, failed);
@@ -1768,6 +2017,12 @@ export default class TasksController extends Controller {
     this.focusItemElement(nextTask.id);
   }
 
+  private async moveSelectionGuarded(delta: number): Promise<void> {
+    const transition = ++this.detailTransitionVersion;
+    if (!await this.flushDetailDraft() || transition !== this.detailTransitionVersion) return;
+    this.moveSelection(delta);
+  }
+
   /** focusItemElement — real DOM focus (roving tabindex), not a CSS-only highlight. */
   private focusItemElement(taskId: string): void {
     const body = this.listTarget.querySelector<HTMLElement>(
@@ -1778,8 +2033,22 @@ export default class TasksController extends Controller {
 
   /** focusQuickAdd — `n` shortcut (AC-S7-07): focus the always-visible add-task input. */
   private focusQuickAdd(): void {
-    const input = this.listTarget.querySelector<HTMLInputElement>('.task-add-input');
+    const input = this.quickAddInput();
     input?.focus();
+  }
+
+  private quickAddInput(): HTMLInputElement | null {
+    const workflow = this.activeWorkflow;
+    if (workflow?.workflow_kind === 'board') {
+      const columns = [...workflow.columns].sort((a, b) => a.position.localeCompare(b.position) || a.id.localeCompare(b.id));
+      const initialId = workflow.initial_column_id
+        ?? columns.find((column) => column.type === 'queue')?.id
+        ?? columns.find((column) => column.type === 'none')?.id;
+      const initial = Array.from(this.listTarget.querySelectorAll<HTMLElement>('.tasks-board__column[data-board-column-id]'))
+        .find((column) => column.dataset.boardColumnId === initialId);
+      return initial?.querySelector<HTMLInputElement>('.task-add-input') ?? null;
+    }
+    return this.listTarget.querySelector<HTMLInputElement>('.task-add-input');
   }
 
   /** selectTaskAndFocusTitle — Enter (AC-S7-05): open the pane, then focus its title. */
@@ -1828,6 +2097,7 @@ export default class TasksController extends Controller {
    * beside the pane, in place (S3 action plan item 7).
    */
   private async hydratePaneFromTask(task: TaskDto): Promise<void> {
+    const hydrationVersion = ++this.detailHydrationVersion;
     const el = this.viewElements;
     el.detailNotFoundState.classList.add('hidden');
 
@@ -1837,12 +2107,13 @@ export default class TasksController extends Controller {
     // S8 (AC-S8-02): slug -> color, for the tag color picker's preselect and
     // the chip's own color dot.
     let tagColors: Record<string, string> = {};
+    let owningList: ListDto | undefined;
 
     const lists = await this.guarded(() => listLists(), 'hydratePane:listLists');
     if (lists !== undefined) {
       availableLists = lists.map((l) => ({ id: l.id, name: l.name }));
       const activeList = lists.find((l) => l.id === task.list);
-      if (activeList) availableSections = activeList.sections;
+      if (activeList) { availableSections = activeList.sections; owningList = activeList; }
     }
     const tags = await this.guarded(() => listTags(), 'hydratePane:listTags');
     if (tags !== undefined) {
@@ -1865,17 +2136,28 @@ export default class TasksController extends Controller {
       }
     }
 
+    if (hydrationVersion !== this.detailHydrationVersion || this.selectedTaskId !== task.id) return;
+
     const detailCbs: TaskDetailCallbacks = {
-      onSaveTitle: async (taskId, title) => {
-        const result = await this.mutate(() => editTask(taskId, { title }), 'onSaveTitle');
+      owningList,
+      onSaveColumn: async (taskId, columnId) => {
+        const target = owningList;
+        if (!target || target.workflow_kind !== 'board') return;
+        const result = await this.mutate(() => moveTask(taskId, {
+          listId: target.id,
+          sectionId: task.section_id ?? null,
+          boardColumnId: columnId,
+          position: task.position || between(null, null),
+        }), 'onSaveColumn');
         if (result === undefined) return;
         void this.loadList(this.currentFilter);
         void this.refreshPane(taskId);
       },
+      onSaveTitle: async (taskId, title) => {
+        if (taskId === this.selectedTaskId && title !== undefined) await this.flushDetailDraft();
+      },
       onSaveBody: async (taskId, body) => {
-        const result = await this.mutate(() => editTask(taskId, { body }), 'onSaveBody');
-        if (result === undefined) return;
-        void this.loadList(this.currentFilter);
+        if (taskId === this.selectedTaskId && body !== undefined) await this.flushDetailDraft();
       },
       onSaveStatus: async (taskId, status) => {
         const result = await this.mutate(() => setTaskStatus(taskId, status), 'onSaveStatus');
@@ -1906,10 +2188,35 @@ export default class TasksController extends Controller {
         void this.loadList(this.currentFilter);
       },
       onSaveList: async (taskId, listId) => {
-        const result = await this.mutate(() => editTask(taskId, { list: listId }), 'onSaveList');
-        if (result === undefined) return;
-        void this.loadList(this.currentFilter);
-        void this.refreshPane(taskId);
+        if (listId === task.list) return;
+        const target = this.currentLists.find((list) => list.id === listId);
+        const listSelect = this.detailContentTarget.querySelector<HTMLSelectElement>('.task-detail__list-select');
+        // Keep the current identity visible until the atomic move succeeds.
+        if (listSelect) JinSelect.enhance(listSelect).setValue(task.list);
+        if (!target) return;
+        const perform = async (confirmedReset: boolean) => {
+          const result = await this.mutate(() => moveTask(taskId, {
+            listId,
+            sectionId: null,
+            boardColumnId: null,
+            position: task.position || between(null, null),
+            confirmDoingToChecklist: confirmedReset,
+          }), 'onSaveList');
+          if (result === undefined) return;
+          void this.loadList(this.currentFilter);
+          void this.refreshPane(taskId);
+        };
+        if (target.workflow_kind === 'checklist' && task.status === 'doing') {
+          this._moveConfirmModal?.destroy();
+          this._moveConfirmModal = new ConfirmDialog({
+            title: 'Move to List', ariaLabel: 'Confirm task move', confirmLabel: 'Move task',
+            message: `“${task.title}” is In Progress. Moving it to ${target.name} will make it unchecked.`,
+            onConfirm: () => { void perform(true); },
+          });
+          this._moveConfirmModal.open();
+          return;
+        }
+        await perform(false);
       },
       onSaveSection: async (taskId, sectionId) => {
         const result = sectionId
@@ -1964,6 +2271,20 @@ export default class TasksController extends Controller {
       },
     };
 
+    if (this.detailDraftTaskId === task.id) {
+      const liveTitle = this.detailContentTarget.querySelector<HTMLElement>('.task-detail__title-editable')?.textContent;
+      const liveBody = this.detailContentTarget.querySelector<HTMLTextAreaElement>('.task-detail__body')?.value;
+      // A blur-save may finish while list/tag/subtask hydration is pending.
+      // The mounted editor still owns both fields even when its text now
+      // equals the updated saved baseline; stale fetched content cannot roll
+      // that successful edit back into the DOM.
+      if (liveTitle !== undefined && liveTitle !== null) task = { ...task, title: liveTitle };
+      if (liveBody !== undefined) task = { ...task, body: liveBody };
+    } else {
+      this.detailDraftTaskId = task.id;
+      this.detailSavedTitle = task.title;
+      this.detailSavedBody = task.body ?? '';
+    }
     renderTaskPane(
       el,
       this.viewTemplates,
@@ -1978,13 +2299,14 @@ export default class TasksController extends Controller {
 
     JinSelect.enhanceAll(el.detailContent);
     initIcons();
+    this.updateDetailOverlayAccessibility();
   }
 
   // ── P1 S1.1 — Status toggle (complete/reopen) ─────────────────────────────
 
   private async handleStatusToggle(taskId: string, currentStatus: string): Promise<boolean> {
     // legal transitions per task.rs:39-51
-    const nextStatus = currentStatus === 'done' ? 'todo' : 'done';
+    const nextStatus = currentStatus === 'done' || currentStatus === 'cancelled' ? 'todo' : 'done';
     const task = this.currentTasks.find((candidate) => candidate.id === taskId);
     if (this.pendingStatusVersions.has(taskId)) return false;
 
@@ -2044,6 +2366,149 @@ export default class TasksController extends Controller {
     void this.loadList(this.currentFilter);
   }
 
+  private async handleColumnDrop(taskId: string, columnId: string): Promise<void> {
+    const list = this.activeWorkflow;
+    if (!list || list.workflow_kind !== 'board') return;
+    const task = this.currentTasks.find((item) => item.id === taskId);
+    if (!task) return;
+    const peers = this.currentTasks.filter((item) => item.board_column_id === columnId && item.id !== taskId);
+    const last = peers.sort((a, b) => (a.position ?? '').localeCompare(b.position ?? '')).at(-1);
+    const result = await this.mutate(() => moveTask(taskId, {
+      listId: list.id,
+      sectionId: task.section_id ?? null,
+      boardColumnId: columnId,
+      position: between(last?.position ?? null, null),
+    }), 'handleColumnDrop');
+    if (result !== undefined) void this.loadList(this.currentFilter);
+  }
+
+  focusNewTask(): void {
+    this.quickAddInput()?.focus();
+  }
+
+  openNewContainer(): void {
+    window.dispatchEvent(new CustomEvent('jin:open-task-container'));
+  }
+
+  async manageColumns(): Promise<void> {
+    const list = this.activeWorkflow;
+    if (!list || list.workflow_kind !== 'board') return;
+    const loadedMembers = await this.guarded(() => listTasks({ list: list.id }), 'manageColumns:listTasks');
+    if (loadedMembers === undefined) return;
+    let members: TaskDto[] = loadedMembers;
+    this._columnsModal?.destroy();
+    const modal = new JinModal({ title: `${list.name} columns`, ariaLabel: 'Manage board columns' });
+    this._columnsModal = modal;
+    const body = document.createElement('div');
+    body.className = 'tasks-column-manager';
+    const feedback = document.createElement('p');
+    feedback.className = 'form-error'; feedback.setAttribute('role', 'alert');
+    const kindLabels: Record<string, string> = { queue: 'Queue', none: 'No status change', in_progress: 'In Progress', done: 'Done' };
+    let busy = false;
+    const run = async (operation: () => Promise<ListDto>, onError?: () => void) => {
+      if (busy) return;
+      busy = true; feedback.textContent = '';
+      try {
+        const updated = await operation();
+        members = await listTasks({ list: updated.id });
+        this.currentLists = this.currentLists.map((item) => item.id === updated.id ? updated : item);
+        draw(updated);
+        void this.loadList(this.currentFilter);
+      } catch (cause) {
+        feedback.textContent = isJinErrorDto(cause) ? cause.message
+          : toSyntheticErrorDto(cause, 'Could not change this column.').message;
+        onError?.();
+      } finally { busy = false; }
+    };
+    const draw = (current: ListDto) => {
+      body.replaceChildren();
+      const description = document.createElement('p');
+      description.textContent = 'Names describe your stages. Queue is unchecked, In Progress is underway, Done is complete, and No status change keeps open work as it is.';
+      body.append(description);
+      const columns = [...current.columns].sort((a, b) => a.position.localeCompare(b.position));
+      for (const [index, column] of columns.entries()) {
+        const row = document.createElement('div'); row.className = 'tasks-column-manager__row';
+        const identity = document.createElement('div'); identity.className = 'tasks-column-manager__identity';
+        const nameLabel = document.createElement('label'); nameLabel.textContent = 'Name';
+        const name = document.createElement('input'); name.className = 'form-input'; name.value = column.name; name.setAttribute('aria-label', `Column name: ${column.name}`);
+        nameLabel.append(name);
+        const saveName = () => { if (name.value.trim() && name.value.trim() !== column.name) void run(() => renameBoardColumn(current.id, column.id, name.value.trim())); };
+        name.addEventListener('change', saveName);
+        name.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); saveName(); } });
+        const typeLabel = document.createElement('label'); typeLabel.textContent = 'Type';
+        const type = document.createElement('select'); type.className = 'form-select'; type.setAttribute('aria-label', `${column.name} type`);
+        for (const [value, label] of Object.entries(kindLabels)) {
+          const option = new Option(label, value); type.add(option);
+        }
+        type.value = column.type;
+        type.addEventListener('change', () => void run(() => changeBoardColumnType(current.id, column.id, type.value as 'queue' | 'none' | 'in_progress' | 'done')));
+        typeLabel.append(type); identity.append(nameLabel, typeLabel);
+        const actions = document.createElement('div'); actions.className = 'tasks-column-manager__actions';
+        const resolvedInitial = current.initial_column_id
+          ?? columns.find((item) => item.type === 'queue')?.id
+          ?? columns.find((item) => item.type === 'none')?.id;
+        if (resolvedInitial === column.id) {
+          const marker = document.createElement('span'); marker.className = 'tasks-column-manager__initial'; marker.textContent = 'New tasks';
+          identity.append(marker);
+        } else if (column.type === 'queue' || column.type === 'none') {
+          const makeInitial = document.createElement('button'); makeInitial.type = 'button';
+          makeInitial.className = 'jin-control jin-control--secondary'; makeInitial.textContent = 'Use for new tasks';
+          makeInitial.setAttribute('aria-label', `Use ${column.name} for new tasks`);
+          makeInitial.addEventListener('click', () => void run(() => setInitialBoardColumn(current.id, column.id)));
+          actions.append(makeInitial);
+        }
+        const up = document.createElement('button'); up.type = 'button'; up.textContent = '←'; up.setAttribute('aria-label', `Move ${column.name} left`); up.className = 'jin-control jin-control--secondary jin-control--icon'; up.disabled = index === 0;
+        up.addEventListener('click', () => void run(() => reorderBoardColumn(current.id, column.id, between(columns[index - 2]?.position ?? null, columns[index - 1]?.position ?? null))));
+        const down = document.createElement('button'); down.type = 'button'; down.textContent = '→'; down.setAttribute('aria-label', `Move ${column.name} right`); down.className = 'jin-control jin-control--secondary jin-control--icon'; down.disabled = index === columns.length - 1;
+        down.addEventListener('click', () => void run(() => reorderBoardColumn(current.id, column.id, between(columns[index + 1]?.position ?? null, columns[index + 2]?.position ?? null))));
+        const replacement = document.createElement('select'); replacement.className = 'form-select'; replacement.setAttribute('aria-label', `Move ${column.name} tasks to`); replacement.hidden = true;
+        replacement.add(new Option('Choose destination', ''));
+        const assigned = members.filter((task) => task.board_column_id === column.id && task.deleted_at === null);
+        const candidates = columns.filter((peer) => peer.id !== column.id
+          && (resolvedInitial !== column.id || peer.type === 'queue' || peer.type === 'none')
+          && assigned.every((task) => task.status === 'todo'
+            ? peer.type === 'queue' || peer.type === 'none'
+            : task.status === 'doing' ? peer.type === 'in_progress' || peer.type === 'none'
+              : task.status === 'done' && peer.type === 'done'));
+        for (const peer of candidates) replacement.add(new Option(`${peer.name} · ${kindLabels[peer.type]}`, peer.id));
+        const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Delete'; remove.setAttribute('aria-label', `Delete ${column.name}`); remove.className = 'jin-control jin-control--secondary';
+        if (column.type === 'done' && columns.filter((item) => item.type === 'done').length === 1) {
+          remove.disabled = true;
+          remove.title = 'Keep at least one Done column';
+        } else if ((assigned.length > 0 || resolvedInitial === column.id) && candidates.length === 0) {
+          remove.disabled = true;
+          remove.title = 'Move tasks or choose another eligible initial column first';
+        }
+        remove.addEventListener('click', () => {
+          if ((assigned.length > 0 || resolvedInitial === column.id) && replacement.hidden) {
+            replacement.hidden = false; replacement.focus(); return;
+          }
+          if (!replacement.hidden && !replacement.value) { replacement.focus(); return; }
+          void run(() => deleteBoardColumn(current.id, column.id, replacement.value || undefined), () => {
+            if (candidates.length) { replacement.hidden = false; replacement.focus(); }
+          });
+        });
+        actions.append(up, down, remove);
+        row.append(identity, actions, replacement); body.append(row);
+      }
+      const add = document.createElement('div'); add.className = 'tasks-column-manager__add';
+      const newNameLabel = document.createElement('label'); newNameLabel.textContent = 'New column';
+      const newName = document.createElement('input'); newName.className = 'form-input'; newName.placeholder = 'Name'; newName.setAttribute('aria-label', 'New column name');
+      newNameLabel.append(newName);
+      const newTypeLabel = document.createElement('label'); newTypeLabel.textContent = 'Type';
+      const newType = document.createElement('select'); newType.className = 'form-select'; newType.setAttribute('aria-label', 'New column type');
+      for (const [value, label] of Object.entries(kindLabels)) newType.add(new Option(label, value));
+      newTypeLabel.append(newType);
+      const addButton = document.createElement('button'); addButton.type = 'button'; addButton.textContent = 'Add column'; addButton.className = 'jin-control jin-control--primary';
+      addButton.addEventListener('click', () => { if (newName.value.trim()) void run(() => createBoardColumn(current.id, newName.value.trim(), newType.value as 'queue' | 'none' | 'in_progress' | 'done')); });
+      add.append(newNameLabel, newTypeLabel, addButton); body.append(add, feedback);
+    };
+    draw(list); modal.setBody(body);
+    const footer = document.createElement('button'); footer.type = 'button'; footer.textContent = 'Done'; footer.className = 'jin-control jin-control--primary';
+    footer.addEventListener('click', () => modal.close()); modal.setFooter(footer);
+    modal.open();
+  }
+
   // ── P1 S1.3 — Delete task (S2: now uses ConfirmDialog) ───────────────────
 
   private openDeleteDialog(taskId: string, taskTitle: string): void {
@@ -2101,12 +2566,12 @@ export default class TasksController extends Controller {
   // Note: the static addTaskInput target is removed; creation is handled by the
   // dynamic buildAddTaskRow (onCreateTask callback) rendered per list/section.
 
-  private async handleCreateTask(title: string, due?: string): Promise<void> {
+  private async handleCreateTask(title: string, due?: string, columnId?: string): Promise<void> {
     // S6: pass currentListId so tasks created in-list land in the correct list.
     // currentListId holds the list id (never a display name — it comes from the
     // id-valued list filter / selection). null → undefined so the backend defaults.
     const result = await this.mutate(
-      () => createTask({ title, due, list: this.currentListId ?? undefined }),
+      () => createTask({ title, due, list: this.currentListId ?? undefined, board_column_id: columnId }),
       'handleCreateTask',
     );
     if (result === undefined) return;

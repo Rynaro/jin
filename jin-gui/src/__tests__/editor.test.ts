@@ -38,6 +38,9 @@ import { EditorView } from '@codemirror/view';
 import { insertNewlineContinueMarkup } from '@codemirror/lang-markdown';
 import { indentMore, indentLess, undo } from '@codemirror/commands';
 import { tags as lezerTags } from '@lezer/highlight';
+import { resolveImageAttachment } from '../invoke';
+
+vi.mock('../invoke', () => ({ resolveImageAttachment: vi.fn() }));
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
@@ -1485,6 +1488,13 @@ describe('G-TOGGLE-CARET-SAFE — toggling modes preserves EditorView identity +
 });
 
 describe('notes rich block previews — mounted EditorView regressions', () => {
+  const settleImages = async (): Promise<void> => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise(resolve => setTimeout(resolve, 0));
+  };
+  afterEach(() => { vi.mocked(resolveImageAttachment).mockReset(); });
+
   it('replaces an inactive managed-image source line with its live widget', async () => {
     const hash = 'a'.repeat(64);
     const source = `![jin-fixture-note-image.png](jin-asset://sha256/${hash})`;
@@ -1497,6 +1507,68 @@ describe('notes rich block previews — mounted EditorView regressions', () => {
     expect(container.querySelector('.cm-managed-image-placeholder')).not.toBeNull();
     expect(container.querySelector('.cm-content')?.textContent).not.toContain(source);
     handle.destroy();
+  });
+
+  it('hydrates a verified local image, reuses it after cursor movement, and revokes it on destroy', async () => {
+    const hash = 'b'.repeat(64);
+    const source = `![Map](jin-asset://sha256/${hash})`;
+    vi.mocked(resolveImageAttachment).mockResolvedValue({ mime: 'image/png', bytes: [137, 80, 78, 71] });
+    const createUrl = vi.fn().mockReturnValue('blob:managed-map');
+    const revokeUrl = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createUrl });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeUrl });
+    const handle = mountEditor(makeContainer(), { doc: `${source}\n\nend`, onSave: async () => {} });
+    const view = handle.getView();
+    view.dispatch({ selection: { anchor: view.state.doc.length } });
+    await settleImages();
+    expect(view.dom.querySelector<HTMLImageElement>('.cm-managed-image')?.alt).toBe('Map');
+    expect(handle.getDoc()).toContain(source);
+    view.dispatch({ selection: { anchor: 3 } });
+    await settleImages();
+    expect(view.dom.querySelector('.cm-managed-image')).toBeNull();
+    view.dispatch({ selection: { anchor: view.state.doc.length } });
+    await settleImages();
+    expect(view.dom.querySelector('.cm-managed-image')).not.toBeNull();
+    expect(resolveImageAttachment).toHaveBeenCalledTimes(1);
+    handle.destroy();
+    expect(revokeUrl).toHaveBeenCalledWith('blob:managed-map');
+  });
+
+  it('does not preview managed-image-looking text inside fenced code', async () => {
+    const hash = 'c'.repeat(64);
+    const handle = mountEditor(makeContainer(), { doc: `\`\`\`md\n![Fake](jin-asset://sha256/${hash})\n\`\`\`\n\nend`, onSave: async () => {} });
+    handle.getView().dispatch({ selection: { anchor: handle.getDoc().length } });
+    await settleImages();
+    expect(handle.getView().dom.querySelector('.cm-managed-image-placeholder')).toBeNull();
+    expect(resolveImageAttachment).not.toHaveBeenCalled();
+    handle.destroy();
+  });
+
+  it('releases a late image URL after its source line is removed and does not loop on failures', async () => {
+    const hash = 'd'.repeat(64);
+    const source = `![Late](jin-asset://sha256/${hash})`;
+    let resolveAsset!: (asset: { mime: string; bytes: number[] }) => void;
+    vi.mocked(resolveImageAttachment).mockReturnValue(new Promise(resolve => { resolveAsset = resolve; }));
+    const revokeUrl = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn().mockReturnValue('blob:late') });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeUrl });
+    const handle = mountEditor(makeContainer(), { doc: `${source}\n\nend`, onSave: async () => {} });
+    const view = handle.getView();
+    view.dispatch({ selection: { anchor: view.state.doc.length } });
+    await settleImages();
+    view.dispatch({ changes: { from: 0, to: source.length, insert: 'removed' } });
+    resolveAsset({ mime: 'image/png', bytes: [1, 2] });
+    await settleImages();
+    expect(revokeUrl).toHaveBeenCalledWith('blob:late');
+    handle.destroy();
+
+    vi.mocked(resolveImageAttachment).mockReset().mockRejectedValue(new Error('missing'));
+    const failed = mountEditor(makeContainer(), { doc: `${source}\n\nend`, onSave: async () => {} });
+    failed.getView().dispatch({ selection: { anchor: failed.getDoc().length } });
+    await settleImages();
+    await settleImages();
+    expect(resolveImageAttachment).toHaveBeenCalledTimes(1);
+    failed.destroy();
   });
 
   it('places typing after a checklist marker created on an empty line', () => {

@@ -6,10 +6,12 @@
 use chrono::Local;
 use std::path::Path;
 
+use super::recoverable_operations::{self, TargetPlan};
 use crate::dto::list::{ListDto, SectionDto};
 use crate::id::new_ulid;
 use crate::index::{self, query};
-use crate::model::list::{List, ListFrontmatter};
+use crate::model::list::{BoardColumn, List, ListFrontmatter, WorkflowKind};
+use crate::model::TaskStatus;
 use crate::order;
 use crate::store::fs;
 use crate::{Config, JinError, Result};
@@ -60,6 +62,32 @@ pub struct CreateListParams {
     pub color: String,
     pub icon: String,
     pub parent_id: Option<String>,
+    /// Omitted by older callers; new containers default to a checklist.
+    pub workflow_kind: Option<WorkflowKind>,
+}
+
+pub(crate) fn default_board_columns() -> Vec<BoardColumn> {
+    let mut previous: Option<String> = None;
+    [
+        ("Queue", crate::model::list::BoardColumnType::Queue),
+        (
+            "In Progress",
+            crate::model::list::BoardColumnType::InProgress,
+        ),
+        ("Done", crate::model::list::BoardColumnType::Done),
+    ]
+    .into_iter()
+    .map(|(name, column_type)| {
+        let position = order::between(previous.as_deref(), None);
+        previous = Some(position.clone());
+        BoardColumn {
+            id: new_ulid(),
+            name: name.to_string(),
+            position,
+            column_type,
+        }
+    })
+    .collect()
 }
 
 pub struct EditListParams {
@@ -84,6 +112,9 @@ fn list_to_dto(fm: &ListFrontmatter, task_count: u32) -> ListDto {
         parent_id: fm.parent_id.clone(),
         view: fm.view.clone(),
         sort_mode: fm.sort_mode.clone(),
+        workflow_kind: fm.workflow_kind,
+        columns: fm.columns.clone(),
+        initial_column_id: fm.initial_column_id.clone(),
         is_default: fm.id == INBOX_ID,
         task_count,
         sections: fm
@@ -113,6 +144,10 @@ fn last_list_position(conn: &rusqlite::Connection) -> Option<String> {
 /// Idempotently create `lists/inbox.md` with the stable id `"inbox"`.
 /// Called by `list_lists` and Tauri app init.
 pub fn ensure_default_list(lists_dir: &Path) -> Result<()> {
+    ensure_default_list_with_kind(lists_dir, Some(WorkflowKind::Checklist))
+}
+
+fn ensure_default_list_with_kind(lists_dir: &Path, kind: Option<WorkflowKind>) -> Result<()> {
     let inbox_path = lists_dir.join(fs::list_filename(INBOX_ID));
     if inbox_path.exists() {
         return Ok(());
@@ -130,6 +165,9 @@ pub fn ensure_default_list(lists_dir: &Path) -> Result<()> {
         view: "list".to_string(),
         sort_mode: "manual".to_string(),
         sections: vec![],
+        workflow_kind: kind,
+        columns: vec![],
+        initial_column_id: None,
         archived_at: None,
         created: now,
         updated: now,
@@ -142,6 +180,26 @@ pub fn ensure_default_list(lists_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Seed a missing Inbox without classifying pre-existing Inbox tasks. A vault
+/// can have task files but no list file, including a legacy Doing task.
+pub fn ensure_default_list_for_root(root: &Path) -> Result<()> {
+    let cfg = Config::load(root)?;
+    let path = cfg.lists_dir().join(fs::list_filename(INBOX_ID));
+    if path.exists() {
+        return Ok(());
+    }
+    let has_existing_inbox_tasks = fs::list_task_paths(&cfg.tasks_dir())?
+        .iter()
+        .filter_map(|path| fs::read_task(path).ok())
+        .any(|task| task.frontmatter.list == INBOX_ID);
+    if has_existing_inbox_tasks {
+        ensure_default_list_with_kind(&cfg.lists_dir(), None)?;
+    } else {
+        ensure_default_list(&cfg.lists_dir())?;
+    }
+    Ok(())
+}
+
 /// List all lists, ensuring the default Inbox list is seeded first.
 /// Returns `Vec<ListDto>` ordered by position (ascending).
 /// Each `ListDto.task_count` is a live COUNT from the index.
@@ -149,7 +207,7 @@ pub fn list_lists(root: &Path) -> Result<Vec<ListDto>> {
     let cfg = Config::load(root)?;
     let inbox_path = cfg.lists_dir().join(fs::list_filename(INBOX_ID));
     let inbox_existed = inbox_path.exists();
-    ensure_default_list(&cfg.lists_dir())?;
+    ensure_default_list_for_root(root)?;
     // If inbox was just created (first call), rebuild the index so the new
     // list file is reflected in the query results.
     if !inbox_existed {
@@ -174,6 +232,13 @@ pub fn list_lists(root: &Path) -> Result<Vec<ListDto>> {
             view: row.view.clone(),
             sort_mode: row.sort_mode.clone(),
             sections: vec![], // loaded separately below
+            workflow_kind: match row.workflow_kind.as_deref() {
+                Some("checklist") => Some(WorkflowKind::Checklist),
+                Some("board") => Some(WorkflowKind::Board),
+                _ => None,
+            },
+            columns: serde_json::from_str::<Vec<BoardColumn>>(&row.columns).unwrap_or_default(),
+            initial_column_id: row.initial_column_id.clone(),
             archived_at: None,
             created: Local::now().fixed_offset(), // not critical for DTO
             updated: Local::now().fixed_offset(),
@@ -208,7 +273,7 @@ pub fn list_lists(root: &Path) -> Result<Vec<ListDto>> {
 /// Create a new list with the given params; returns the created `ListDto`.
 pub fn create_list(root: &Path, params: CreateListParams) -> Result<ListDto> {
     let cfg = Config::load(root)?;
-    ensure_default_list(&cfg.lists_dir())?;
+    ensure_default_list_for_root(root)?;
 
     let conn = index::open(&cfg.index_path())?;
     let last_pos = last_list_position(&conn);
@@ -219,6 +284,13 @@ pub fn create_list(root: &Path, params: CreateListParams) -> Result<ListDto> {
     let position = order::between(last_pos.as_deref(), None);
 
     let color = normalize_color(&params.color)?;
+    let workflow_kind = params.workflow_kind.unwrap_or(WorkflowKind::Checklist);
+    let columns = if workflow_kind == WorkflowKind::Board {
+        default_board_columns()
+    } else {
+        vec![]
+    };
+    let initial_column_id = columns.first().map(|column| column.id.clone());
     let fm = ListFrontmatter {
         id: id.clone(),
         kind: "list".to_string(),
@@ -230,6 +302,9 @@ pub fn create_list(root: &Path, params: CreateListParams) -> Result<ListDto> {
         view: "list".to_string(),
         sort_mode: "manual".to_string(),
         sections: vec![],
+        workflow_kind: Some(workflow_kind),
+        columns,
+        initial_column_id,
         archived_at: None,
         created: now,
         updated: now,
@@ -310,6 +385,12 @@ pub fn reorder_list(root: &Path, id: &str, position: String) -> Result<ListDto> 
 /// Delete a list. Refuses if `id == "inbox"`.
 /// Reassigns all tasks whose `list == id` to `"inbox"`, then removes the list file.
 pub fn delete_list(root: &Path, id: &str) -> Result<()> {
+    delete_list_with_confirmation(root, id, false)
+}
+
+/// Delete a container and move its tasks to Inbox as one recoverable change.
+/// In Progress work requires explicit acknowledgement before becoming unchecked.
+pub fn delete_list_with_confirmation(root: &Path, id: &str, confirm_doing: bool) -> Result<()> {
     if id == INBOX_ID {
         return Err(JinError::InvalidInput(
             "The default Inbox list cannot be deleted.".to_string(),
@@ -318,24 +399,52 @@ pub fn delete_list(root: &Path, id: &str) -> Result<()> {
 
     let cfg = Config::load(root)?;
 
-    // Reassign tasks belonging to this list → "inbox".
-    let tasks_dir = cfg.tasks_dir();
-    let task_paths = fs::list_task_paths(&tasks_dir)?;
-    for path in &task_paths {
-        if let Ok(mut task) = fs::read_task(path) {
-            if task.frontmatter.list == id {
+    ensure_default_list_for_root(root)?;
+    recoverable_operations::execute_task_operation(
+        root,
+        &new_ulid(),
+        "delete_list_move_to_inbox",
+        || {
+            let inbox_path = fs::find_list_path(&cfg.lists_dir(), INBOX_ID)?;
+            let inbox = fs::read_list(&inbox_path)?;
+            let list_path = fs::find_list_path(&cfg.lists_dir(), id)?;
+            let mut plans = Vec::new();
+            for path in fs::list_task_paths(&cfg.tasks_dir())? {
+                let mut task = fs::read_task(&path)?;
+                if task.frontmatter.list != id {
+                    continue;
+                }
+                if task.frontmatter.status == TaskStatus::Doing
+                    && inbox.frontmatter.workflow_kind == Some(WorkflowKind::Checklist)
+                {
+                    if !confirm_doing {
+                        return Err(JinError::InvalidInput(
+                            "In Progress tasks will become unchecked in Inbox; confirm this move"
+                                .into(),
+                        ));
+                    }
+                    task.frontmatter.status = TaskStatus::Todo;
+                    task.frontmatter.completed_at = None;
+                }
+                let before = std::fs::read(&path)?;
                 task.frontmatter.list = INBOX_ID.to_string();
+                task.frontmatter.section_id = None;
+                task.frontmatter.board_column_id = None;
                 task.frontmatter.updated = Local::now().fixed_offset();
-                fs::write_task(&tasks_dir, &task)?;
+                plans.push(TargetPlan {
+                    canonical_path: path,
+                    before: Some(before),
+                    post: Some(fs::render_task_bytes(&task)?),
+                });
             }
-        }
-    }
-
-    // Remove the list file.
-    let list_path = fs::find_list_path(&cfg.lists_dir(), id)?;
-    std::fs::remove_file(&list_path)?;
-
-    crate::ops::api::refresh(root)?;
+            plans.push(TargetPlan {
+                canonical_path: list_path.clone(),
+                before: Some(std::fs::read(&list_path)?),
+                post: None,
+            });
+            Ok((id.to_string(), plans))
+        },
+    )?;
     Ok(())
 }
 
@@ -524,6 +633,8 @@ mod tests {
                 color: "#a3f".to_string(),
                 icon: "list".to_string(),
                 parent_id: None,
+
+                workflow_kind: None,
             },
         )
         .unwrap();
@@ -614,6 +725,8 @@ mod tests {
                 color: "sky".to_string(),
                 icon: "list".to_string(),
                 parent_id: None,
+
+                workflow_kind: None,
             },
         )
         .unwrap();
@@ -669,6 +782,8 @@ mod tests {
                 color: "accent".to_string(),
                 icon: "list".to_string(),
                 parent_id: None,
+
+                workflow_kind: None,
             },
         )
         .unwrap();
@@ -752,6 +867,8 @@ mod tests {
                 color: "accent".to_string(),
                 icon: "list".to_string(),
                 parent_id: None,
+
+                workflow_kind: None,
             },
         )
         .unwrap();
@@ -793,6 +910,8 @@ mod tests {
                 color: "accent".to_string(),
                 icon: "list".to_string(),
                 parent_id: None,
+
+                workflow_kind: None,
             },
         )
         .unwrap();
@@ -832,6 +951,8 @@ mod tests {
                 color: "accent".to_string(),
                 icon: "list".to_string(),
                 parent_id: None,
+
+                workflow_kind: None,
             },
         )
         .unwrap();
@@ -887,6 +1008,8 @@ mod tests {
                 color: "sky".to_string(),
                 icon: "list".to_string(),
                 parent_id: None,
+
+                workflow_kind: None,
             },
         )
         .unwrap();
@@ -959,6 +1082,8 @@ mod tests {
                 color: "accent".to_string(),
                 icon: "list".to_string(),
                 parent_id: None,
+
+                workflow_kind: None,
             },
         )
         .unwrap();
@@ -1069,6 +1194,8 @@ mod tests {
                 color: "sky".to_string(),
                 icon: "list".to_string(),
                 parent_id: None,
+
+                workflow_kind: None,
             },
         )
         .unwrap();

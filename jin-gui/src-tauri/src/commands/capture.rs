@@ -29,8 +29,8 @@ pub fn capture_fn(
     let cfg = Config::load(root).map_err(JinErrorDto::from)?;
 
     if as_task {
-        let task = tasks::create_task(
-            &cfg.tasks_dir(),
+        let task = jin_core::ops::workflows::create_task(
+            root,
             tasks::CreateTaskParams {
                 title: text,
                 body: String::new(),
@@ -41,6 +41,7 @@ pub fn capture_fn(
                 reminders: None,
                 parent: None,
             },
+            None,
         )
         .map_err(JinErrorDto::from)?;
         api::refresh(root).map_err(JinErrorDto::from)?;

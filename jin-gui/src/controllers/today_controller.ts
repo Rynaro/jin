@@ -37,8 +37,8 @@ import {
   setTaskStatus,
   editTask,
   getEventDetailById,
-  editEvent,
-  editRoutedEvent,
+  editEventDelta,
+  editRoutedEventDelta,
   newOperationId,
 } from '../invoke';
 import { isJinErrorDto } from '../types/error';
@@ -58,9 +58,16 @@ import {
 } from '../lib/agenda/render';
 import { initIcons } from '../lib/icons';
 import { JinModal } from '../lib/ui/modal';
-import { draftFromEvent, inputFromDraft, isValidEventEditDraft, type EventEditDraft } from '../lib/events/edit';
-import { formatEventDate, formatEventTime } from '../lib/events/transform';
+import {
+  editPayloadFromDraft,
+  routedEditPayloadFromDraft,
+  validateDraft,
+  type EventDraft,
+} from '../lib/events/draft';
+import { EventCompanion, type CompanionSaveResult } from '../lib/ui/companion';
+import type { SupportedRecurrenceScope } from '../lib/events/recurrence_scope';
 import { formatTaskDue } from '../lib/tasks/transform';
+import { resolveEventLocale } from '../lib/events/locale';
 
 class TodayPreviewModal extends JinModal {
   constructor(title: string, private readonly afterClose: () => void) {
@@ -147,11 +154,11 @@ export default class TodayController extends Controller {
   private previewId: string | null = null;
   private previewTask: TaskDto | null = null;
   private previewEvent: EventDetailDto | null = null;
-  private previewDraft: EventEditDraft | null = null;
   private previewPending = false;
   private previewMessage: string | null = null;
   private previewRestoreFocus = true;
   private previewReturnFocusName: string | null = null;
+  private eventCompanion: EventCompanion | null = null;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -183,6 +190,8 @@ export default class TodayController extends Controller {
     this.previewRestoreFocus = false;
     this.previewModal?.destroy();
     this.previewModal = null;
+    this.eventCompanion?.close(true);
+    this.eventCompanion = null;
   }
 
   // ── Date navigation actions ───────────────────────────────────────────────
@@ -388,28 +397,37 @@ export default class TodayController extends Controller {
   }
 
   private openPreview(kind: 'events' | 'tasks', id: string): void {
-    this.closePreview();
+    this.closePreview(false);
     const request = ++this.previewSequence;
     this.previewKind = kind;
     this.previewId = id;
     this.previewTask = null;
     this.previewEvent = null;
-    this.previewDraft = null;
     this.previewPending = false;
     this.previewMessage = null;
     this.previewRestoreFocus = true;
     this.previewReturnFocusName = null;
-    this.previewModal = new TodayPreviewModal(
-      kind === 'tasks' ? 'Task preview' : 'Event preview',
-      () => this.afterPreviewClose(),
-    );
-    this.previewModal.setBody(this.previewLoading());
-    this.previewModal.open();
-    if (kind === 'tasks') void this.loadTaskPreview(id, request);
-    else void this.loadEventPreview(id, request);
+    if (kind === 'tasks') {
+      this.previewModal = new TodayPreviewModal(
+        'Task preview',
+        () => this.afterPreviewClose(),
+      );
+      this.previewModal.setBody(this.previewLoading());
+      this.previewModal.open();
+      void this.loadTaskPreview(id, request);
+      return;
+    }
+    void this.openEventCompanion(id, request);
   }
 
   private closePreview(restoreFocus = true): void {
+    if (this.eventCompanion?.isOpen()) {
+      this.previewRestoreFocus = restoreFocus;
+      this.eventCompanion.close(true);
+      this.eventCompanion = null;
+      this.afterEventCompanionClose();
+      return;
+    }
     if (!this.previewModal) return;
     this.previewRestoreFocus = restoreFocus;
     this.previewModal.close({ restoreFocus });
@@ -426,12 +444,9 @@ export default class TodayController extends Controller {
     this.previewId = null;
     this.previewTask = null;
     this.previewEvent = null;
-    this.previewDraft = null;
     this.previewPending = false;
     this.previewMessage = null;
     this.previewReturnFocusName = null;
-    // Agenda refreshes replace the original button. Restore focus to its current
-    // equivalent after JinModal has attempted its normal prior-focus return.
     queueMicrotask(() => {
       modal?.destroy();
       if (!restoreFocus || !kind || !id || !this.connected) return;
@@ -446,8 +461,35 @@ export default class TodayController extends Controller {
     });
   }
 
+  private afterEventCompanionClose(): void {
+    const kind = this.previewKind;
+    const id = this.previewId;
+    const restoreFocus = this.previewRestoreFocus;
+    this.previewSequence += 1;
+    this.previewKind = null;
+    this.previewId = null;
+    this.previewEvent = null;
+    this.previewPending = false;
+    this.previewMessage = null;
+    queueMicrotask(() => {
+      if (!restoreFocus || !kind || !id || !this.connected) return;
+      const opener = this.element.querySelector<HTMLElement>(`[data-today-preview-kind="${kind}"][data-today-preview-id="${id}"]`);
+      if (opener) {
+        opener.focus();
+        return;
+      }
+      const heading = this.element.querySelector<HTMLElement>('.today-agenda-intro__title');
+      heading?.setAttribute('tabindex', '-1');
+      heading?.focus();
+    });
+  }
+
   private isCurrentPreview(request: number, kind: 'events' | 'tasks', id: string): boolean {
-    return this.connected && request === this.previewSequence && this.previewKind === kind && this.previewId === id && this.previewModal !== null;
+    if (!(this.connected && request === this.previewSequence && this.previewKind === kind && this.previewId === id)) {
+      return false;
+    }
+    if (kind === 'events') return this.eventCompanion?.isOpen() === true;
+    return this.previewModal !== null;
   }
 
   private previewLoading(): HTMLElement {
@@ -576,154 +618,84 @@ export default class TodayController extends Controller {
     }
   }
 
-  private async loadEventPreview(id: string, request: number): Promise<void> {
+  private async openEventCompanion(id: string, request: number): Promise<void> {
     try {
       const detail = await getEventDetailById(id);
-      if (!this.isCurrentPreview(request, 'events', id)) return;
+      if (!(this.connected && request === this.previewSequence && this.previewKind === 'events' && this.previewId === id)) {
+        return;
+      }
       this.previewEvent = detail;
-      this.previewDraft = draftFromEvent(detail.event);
-      this.setPreviewScope(detail);
-      this.renderEventPreview();
+      this.ensureEventCompanion();
+      const scopes = (detail.capabilities.recurrence_scopes ?? []).filter(
+        (scope): scope is SupportedRecurrenceScope =>
+          scope === 'this_occurrence' || scope === 'entire_series',
+      );
+      this.eventCompanion?.setContentBox(Math.min(this.element.getBoundingClientRect().width || 720, 900));
+      this.eventCompanion?.openPreview(detail, {
+        recurrenceScopes: scopes,
+        recurrencePatternSupported: detail.capabilities.recurrence_pattern_supported === true,
+      });
     } catch {
-      if (this.isCurrentPreview(request, 'events', id)) this.previewModal?.setBody(this.previewError('Could not load this event.'));
+      // Surface load failure via a short-lived modal so Today stays usable.
+      if (!(this.connected && request === this.previewSequence && this.previewKind === 'events' && this.previewId === id)) {
+        return;
+      }
+      this.previewModal = new TodayPreviewModal('Event preview', () => this.afterPreviewClose());
+      this.previewModal.setBody(this.previewError('Could not load this event.'));
+      this.previewModal.open();
     }
   }
 
-  private setPreviewScope(detail: EventDetailDto): void {
-    const allowed = detail.capabilities.recurrence_scopes ?? [];
-    if (!this.previewDraft || allowed.length === 0 || allowed.includes(this.previewDraft.recurrence_scope)) return;
-    this.previewDraft.recurrence_scope = allowed[0];
-  }
-
-  private renderEventPreview(): void {
-    const detail = this.previewEvent;
-    const draft = this.previewDraft;
-    if (!detail || !draft) return;
-    const restoreFocus = this.previewFocusName() ?? this.previewReturnFocusName;
-    const container = document.createElement('article');
-    container.className = 'today-preview';
-    container.append(this.previewGoButton('events', detail.event.id, 'Go to event'));
-    const title = document.createElement('h3');
-    title.className = 'today-preview__title';
-    title.textContent = detail.event.title;
-    const metadata = document.createElement('p');
-    metadata.className = 'today-preview__meta';
-    metadata.textContent = `${formatEventDate(detail.event.start, detail.event.is_all_day, detail.event.start_tzid)} · ${formatEventTime(detail.event.start, detail.event.end, detail.event.is_all_day, detail.event.floating, detail.event.start_tzid)}${detail.event.location ? ` · ${detail.event.location}` : ''}`;
-    container.append(title, metadata);
-    if (!detail.capabilities.can_edit) {
-      const readOnly = document.createElement('p');
-      readOnly.className = 'today-preview__message';
-      readOnly.textContent = 'This event is read-only.';
-      container.appendChild(readOnly);
-      this.previewModal?.setBody(container);
-      this.restorePreviewFocus(restoreFocus);
-      return;
-    }
-    const form = document.createElement('form');
-    form.className = 'today-preview__form';
-    const titleInput = document.createElement('input');
-    titleInput.name = 'title';
-    titleInput.className = 'form-input';
-    titleInput.required = true;
-    titleInput.value = draft.title;
-    titleInput.disabled = this.previewPending;
-    form.appendChild(this.previewField('Title', titleInput));
-    const locationInput = document.createElement('input');
-    locationInput.name = 'location';
-    locationInput.className = 'form-input';
-    locationInput.value = draft.location;
-    locationInput.disabled = this.previewPending;
-    form.appendChild(this.previewField('Location', locationInput));
-    const allowed = detail.capabilities.recurrence_scopes ?? [];
-    if (allowed.length > 0) {
-      const scope = document.createElement('select');
-      scope.name = 'recurrence_scope';
-      scope.className = 'form-input';
-      scope.disabled = this.previewPending;
-      for (const value of allowed) scope.appendChild(new Option(value === 'entire_series' ? 'Entire series' : 'This occurrence', value));
-      scope.value = draft.recurrence_scope;
-      form.appendChild(this.previewField('Apply changes to', scope));
-    }
-    const save = document.createElement('button');
-    save.type = 'submit';
-    save.name = 'event-save';
-    save.className = 'btn-primary';
-    save.disabled = this.previewPending;
-    save.textContent = this.previewPending ? 'Saving…' : 'Save changes';
-    form.appendChild(save);
-    form.addEventListener('submit', event => {
-      event.preventDefault();
-      draft.title = titleInput.value;
-      draft.location = locationInput.value;
-      const scope = form.querySelector<HTMLSelectElement>('[name="recurrence_scope"]');
-      if (scope && allowed.includes(scope.value as EventEditDraft['recurrence_scope'])) draft.recurrence_scope = scope.value as EventEditDraft['recurrence_scope'];
-      void this.saveEventPreview();
+  private ensureEventCompanion(): void {
+    if (this.eventCompanion) return;
+    this.eventCompanion = new EventCompanion({
+      workspace: this.element as HTMLElement,
+      presentation: 'modal',
+      field: this.element as HTMLElement,
+      locale: resolveEventLocale(),
+      onOpenFullDetails: (eventId) => {
+        this.previewRestoreFocus = false;
+        this.eventCompanion?.close(true);
+        this.eventCompanion = null;
+        this.afterEventCompanionClose();
+        this.navigateDirect('events', eventId);
+      },
+      onSave: async (draft) => this.saveEventCompanionDraft(draft),
+      onClose: () => {
+        this.afterEventCompanionClose();
+        this.eventCompanion = null;
+      },
     });
-    container.appendChild(form);
-    if (this.previewMessage) container.appendChild(this.previewFeedback(this.previewMessage));
-    this.previewModal?.setBody(container);
-    this.restorePreviewFocus(restoreFocus);
   }
 
-  private async saveEventPreview(): Promise<void> {
-    const detail = this.previewEvent;
-    const draft = this.previewDraft;
-    if (!detail || !draft || this.previewPending || !this.previewModal) return;
-    if (!isValidEventEditDraft(draft)) {
-      this.previewMessage = 'Enter a title and a valid event time.';
-      this.renderEventPreview();
-      return;
+  private async saveEventCompanionDraft(draft: EventDraft): Promise<CompanionSaveResult> {
+    const validation = validateDraft(draft);
+    if (!validation.valid) {
+      throw new Error('Enter a title and a valid event time.');
     }
-    const request = this.previewSequence;
-    this.previewReturnFocusName = 'event-save';
-    this.previewPending = true;
-    this.previewMessage = null;
-    this.renderEventPreview();
-    const patch = inputFromDraft(draft);
-    try {
-      const route = detail.event.sync_context;
-      const operationId = newOperationId('edit');
-      const allowed = detail.capabilities.recurrence_scopes ?? [];
-      const recurrence_scope = allowed.includes(draft.recurrence_scope) ? draft.recurrence_scope : undefined;
-      const result = route
-        ? { event: await editRoutedEvent({ event_id: detail.event.id, edit_token: detail.edit_token, operation_id: operationId, ...patch, account_id: route.account_id, calendar_id: route.calendar_id, recurrence_scope }), no_op: false }
-        : await editEvent({ event_id: detail.event.id, edit_token: detail.edit_token, operation_id: operationId, ...patch, recurrence_scope });
-      if (!result.no_op) {
-        this.dispatch('events-mutated', { prefix: 'jin', bubbles: true });
-      }
-      const canonical = await getEventDetailById(result.event.id);
-      if (!this.isCurrentPreview(request, 'events', detail.event.id)) return;
-      this.previewEvent = canonical;
-      this.previewDraft = draftFromEvent(canonical.event);
-      this.setPreviewScope(canonical);
-      this.previewMessage = result.no_op ? null : 'Event saved.';
-    } catch (error: unknown) {
-      if (!this.isCurrentPreview(request, 'events', detail.event.id)) return;
-      if (isJinErrorDto(error) && error.details?.type === 'stale_event') {
-        try {
-          const canonical = await getEventDetailById(detail.event.id);
-          if (!this.isCurrentPreview(request, 'events', detail.event.id)) return;
-          this.previewEvent = canonical;
-          const refreshedDraft = draftFromEvent(canonical.event);
-          // A stale retry can carry only the fields this compact preview owns.
-          // Times and description must come from canonical detail, never an old token.
-          refreshedDraft.title = draft.title;
-          refreshedDraft.location = draft.location;
-          this.previewDraft = refreshedDraft;
-          this.setPreviewScope(canonical);
-          this.previewMessage = 'This event changed. Review the current details and save again.';
-        } catch {
-          this.previewMessage = 'This event changed. Try again.';
-        }
-      } else {
-        this.previewMessage = 'Could not save this event. Try again.';
-      }
-    } finally {
-      if (this.isCurrentPreview(request, 'events', detail.event.id)) {
-        this.previewPending = false;
-        this.renderEventPreview();
-      }
+    const operationId = newOperationId('edit');
+    const route = this.previewEvent?.event.sync_context;
+    if (route?.provider === 'google' && route.account_id && route.calendar_id) {
+      await editRoutedEventDelta(
+        routedEditPayloadFromDraft(
+          draft,
+          { account_id: route.account_id, calendar_id: route.calendar_id },
+          operationId,
+        ),
+      );
+    } else {
+      await editEventDelta(editPayloadFromDraft(draft, operationId));
     }
+    if (!draft.event_id) throw new Error('Could not save this event. Try again.');
+    this.dispatch('events-mutated', { prefix: 'jin', bubbles: true });
+    const canonical = await getEventDetailById(draft.event_id);
+    this.previewEvent = canonical;
+    // Refresh Today lanes through the existing mutation signal path.
+    if (this.isActiveSection()) void this.loadAgenda((this.requestedDate ?? this.dateValue) || undefined);
+    return {
+      detail: canonical,
+      outcome: route?.provider === 'google' ? 'sync_pending' : 'local',
+    };
   }
 
   private previewGoButton(kind: 'events' | 'tasks', id: string, label: string): HTMLButtonElement {
@@ -737,15 +709,6 @@ export default class TodayController extends Controller {
       this.navigateDirect(kind, id);
     });
     return button;
-  }
-
-  private previewField(label: string, control: HTMLElement): HTMLLabelElement {
-    const field = document.createElement('label');
-    field.className = 'today-preview__field';
-    const text = document.createElement('span');
-    text.textContent = label;
-    field.append(text, control);
-    return field;
   }
 
   private previewFeedback(message: string): HTMLElement {

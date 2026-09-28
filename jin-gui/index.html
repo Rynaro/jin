@@ -99,16 +99,18 @@
     <div
       class="jin-shell"
       hidden
-      data-controller="router capture actions"
-      data-action="today:navigate->router#handleTodayNavigate jin:navigate->router#handleNavigate jin:open-promote->actions#openPromote jin:open-attach->actions#openAttach jin:open-link->actions#openLink"
+      data-controller="router capture actions sidebar"
+      data-active-section="today"
+      data-action="today:navigate->router#handleTodayNavigate jin:navigate->router#handleNavigate jin:open-promote->actions#openPromote jin:open-attach->actions#openAttach jin:open-link->actions#openLink jin:route-committed@window->sidebar#routeCommitted jin:sidebar-toggle@window->sidebar#toggle jin:sidebar-selection@window->sidebar#selectionCommitted"
     >
       <!-- ── Sidebar navigation ─────────────────────────────────────────── -->
       <aside
         class="jin-sidebar jin-navigation-rail jin-chrome"
         role="navigation"
         aria-label="Application navigation"
-        data-controller="sidebar"
+        data-sidebar-target="root"
       >
+        <div class="jin-native-drag-region" data-tauri-drag-region aria-hidden="true"></div>
         <div class="jin-sidebar-header">
           <span class="jin-app-name" aria-label="Jin">
             <svg class="jin-brand-mark" viewBox="0 0 22 16" aria-hidden="true" focusable="false">
@@ -145,7 +147,15 @@
           </button>
         </div>
 
-        <nav class="jin-nav" aria-label="Primary navigation">
+        <button type="button" class="jin-section-switcher tap-target"
+          data-sidebar-target="switcher" data-action="click->sidebar#toggleSwitcher"
+          aria-expanded="false" aria-controls="jin-nav-routes" aria-label="Today, choose section">
+          <span class="jin-section-switcher__label" data-sidebar-target="sectionLabel">Today</span>
+          <span class="jin-section-switcher__unread" aria-hidden="true"></span>
+          <i data-lucide="chevron-down" aria-hidden="true"></i>
+        </button>
+
+        <nav id="jin-nav-routes" class="jin-nav" aria-label="Application sections" data-sidebar-target="routes">
           <ul class="jin-nav-list jin-navigation-list" role="list">
             <li role="none">
               <a
@@ -226,27 +236,21 @@
               </a>
             </li>
 
+            <li role="none">
+              <a href="#settings" class="jin-settings-btn jin-navigation-row tap-target"
+                aria-label="Settings" data-tooltip="Settings" data-section="settings"
+                data-router-target="navItem" data-action="click->router#navigateTo">
+                <i data-lucide="settings" class="jin-navigation-row__icon" aria-hidden="true"></i>
+                <span class="jin-navigation-row__label">Settings</span>
+              </a>
+            </li>
+
           </ul>
         </nav>
-
-        <div class="jin-sidebar-foot">
-          <!-- Settings — labeled rail row with collapsed-only tooltip (SET-1).
-               Still a router navItem (data-section="settings") so navigation
-               and active state behave exactly like the other sections. -->
-          <a
-            href="#settings"
-            class="jin-settings-btn jin-navigation-row tap-target"
-            aria-label="Settings"
-            data-tooltip="Settings"
-            data-section="settings"
-            data-router-target="navItem"
-            data-action="click->router#navigateTo"
-          >
-            <i data-lucide="settings" class="jin-navigation-row__icon" aria-hidden="true"></i>
-            <span class="jin-navigation-row__label">Settings</span>
-          </a>
-        </div>
       </aside>
+
+      <div class="jin-sidebar-backdrop" data-sidebar-target="backdrop"
+        data-action="click->sidebar#hide" aria-hidden="true"></div>
 
       <!-- ── Main content area ────────────────────────────────────────────── -->
       <main
@@ -255,6 +259,15 @@
         data-controller="error google-status"
         role="main"
       >
+        <div class="jin-native-content-drag" data-tauri-drag-region aria-hidden="true"></div>
+        <div class="jin-content-navigation">
+          <button type="button" class="jin-navigation-reveal tap-target"
+            data-sidebar-target="reveal" data-action="click->sidebar#show"
+            aria-label="Show navigation" aria-controls="jin-nav-routes">
+            <i data-lucide="panel-left-open" aria-hidden="true"></i>
+            <span>Show navigation</span>
+          </button>
+        </div>
         <!-- Error banner (ErrorController renders into this) -->
         <div
           data-error-target="container"
@@ -458,28 +471,18 @@
           data-action="jin:open-detail->notes#openDetail"
         >
           <!-- ── Folder rail (Wave 2B — tree + collapse) ──────────────────── -->
-          <div class="notes-folder-rail jin-context-rail jin-navigation-rail jin-chrome" data-notes-target="folderRail" aria-label="Note folders">
-            <!-- Rail header: title + collapse control -->
-            <div class="notes-folder-rail__header jin-section-header">
-              <span class="notes-folder-rail__title text-caption1">Folders</span>
+          <div class="notes-folder-rail jin-context-rail jin-navigation-rail jin-chrome" data-notes-target="folderRail" data-sidebar-context="notes" aria-label="Note folders">
+            <section class="notes-collections" aria-label="Collections">
               <button
                 type="button"
-                class="notes-folder-rail__collapse-btn jin-control jin-control--icon tap-target"
-                data-action="click->notes#togglePane"
-                aria-label="Collapse sidebar"
+                class="notes-collection-row jin-navigation-row jin-navigation-row--inset is-active"
+                data-notes-target="allNotesButton"
+                data-action="click->notes#selectAllNotes"
+                aria-current="page"
               >
-                <i data-lucide="panel-left-close" aria-hidden="true"></i>
+                <i data-lucide="book-open" class="jin-navigation-row__icon" aria-hidden="true"></i>
+                <span class="jin-navigation-row__label">All Notes</span>
               </button>
-            </div>
-            <!-- Tree container: keydown delegated to controller for WAI-ARIA nav -->
-            <ul
-              class="notes-folder-rail__list jin-navigation-list jin-navigation-list--inset"
-              data-notes-target="folderList"
-              role="tree"
-              aria-label="Folders"
-              data-action="keydown->notes#onTreeKeydown"
-            ></ul>
-            <section class="notes-collections" aria-label="Collections">
               <div class="notes-collections__header">
                 <span class="notes-folder-rail__title text-caption1">Collections</span>
                 <button
@@ -491,16 +494,7 @@
                   <i data-lucide="plus" aria-hidden="true"></i>
                 </button>
               </div>
-              <button
-                type="button"
-                class="notes-collection-row jin-navigation-row jin-navigation-row--inset is-active"
-                data-notes-target="allNotesButton"
-                data-action="click->notes#selectAllNotes"
-                aria-current="page"
-              >
-                <i data-lucide="book-open" class="jin-navigation-row__icon" aria-hidden="true"></i>
-                <span class="jin-navigation-row__label">All Notes</span>
-              </button>
+              <p class="notes-collections__hint">Saved views that update as your notes change. Notes stay in their folders.</p>
               <ul
                 class="notes-collections__list jin-navigation-list jin-navigation-list--inset"
                 data-notes-target="collectionList"
@@ -508,6 +502,25 @@
                 aria-label="Saved collections"
               ></ul>
             </section>
+            <div class="notes-folder-rail__header jin-section-header">
+              <span class="notes-folder-rail__title text-caption1">Folders</span>
+              <button
+                type="button"
+                class="notes-folder-rail__collapse-btn jin-control jin-control--icon tap-target"
+                data-action="click->notes#togglePane"
+                aria-label="Collapse sidebar"
+              >
+                <i data-lucide="panel-left-close" aria-hidden="true"></i>
+              </button>
+            </div>
+            <!-- Tree container stays under NotesController for WAI-ARIA keys. -->
+            <ul
+              class="notes-folder-rail__list jin-navigation-list jin-navigation-list--inset"
+              data-notes-target="folderList"
+              role="tree"
+              aria-label="Folders"
+              data-action="keydown->notes#onTreeKeydown"
+            ></ul>
             <button
               type="button"
               class="notes-folder-rail__new-btn jin-control tap-target"
@@ -520,7 +533,7 @@
           </div>
 
           <!-- ── List panel ─────────────────────────────────────────────────── -->
-          <div class="notes-list-pane jin-workspace-pane" data-notes-target="listPanel">
+          <div class="notes-list-pane jin-workspace-pane" data-notes-target="listPanel" data-sidebar-workspace>
             <!-- Reveal control: shown only when .rail-collapsed is active -->
             <button
               type="button"
@@ -530,41 +543,46 @@
             >
               <i data-lucide="panel-left-open" aria-hidden="true"></i>
             </button>
-            <!-- NN-2: List pane header — compose button (K-NN-1) -->
-            <div class="notes-list-pane__header jin-workspace-header jin-workspace-header--combined">
-              <div class="jin-workspace-header__identity">
-                <h1 class="notes-workspace-title" data-notes-target="scopeTitle">All Notes</h1>
-              </div>
-              <div class="jin-workspace-header__controls">
-                <div class="notes-search">
-                  <label class="notes-search__label" for="notes-search-input">Search notes</label>
+            <div class="notes-list-pane__header jin-workspace-header">
+              <div class="notes-explorer__toolbar">
+                <div class="notes-explorer__identity">
+                  <i data-lucide="file-text" aria-hidden="true"></i>
+                  <h1 class="notes-workspace-title" data-notes-target="scopeTitle" tabindex="-1">All Notes</h1>
+                  <span class="notes-explorer__count" data-notes-target="resultCount" role="status" aria-live="polite">Loading…</span>
+                </div>
+                <div class="notes-explorer__controls">
+                  <label class="notes-search" for="notes-search-input">
+                    <i data-lucide="search" aria-hidden="true"></i>
+                    <span class="sr-only">Search notes</span>
                   <input
                     id="notes-search-input"
                     type="search"
                     class="notes-search__input"
                     placeholder="Search notes"
+                    aria-label="Search notes"
                     autocomplete="off"
                     data-notes-target="searchInput"
                     data-action="input->notes#onSearchInput keydown->notes#onSearchKeydown"
                   />
-                  <span
-                    class="notes-search__count"
-                    data-notes-target="searchCount"
-                    role="status"
-                    aria-live="polite"
-                    aria-atomic="true"
-                  ></span>
-                </div>
+                  </label>
+                  <div class="notes-explorer__view-switch" role="group" aria-label="Notes view">
+                    <button type="button" class="notes-explorer__view-button" data-notes-target="listViewButton" data-action="click->notes#showListView" aria-label="List view" aria-pressed="true"><i data-lucide="list" aria-hidden="true"></i><span>List</span></button>
+                    <button type="button" class="notes-explorer__view-button" data-notes-target="cardsViewButton" data-action="click->notes#showCardsView" aria-label="Cards view" aria-pressed="false"><i data-lucide="layout-grid" aria-hidden="true"></i><span>Cards</span></button>
+                  </div>
                 <button
                   type="button"
-                  class="notes-new-note-btn jin-control jin-control--icon tap-target"
+                  class="notes-new-note-btn jin-control tap-target"
                   data-action="click->notes#newNote"
                   aria-label="New note"
                 >
                   <i data-lucide="square-pen" aria-hidden="true"></i>
+                  <span>New note</span>
                 </button>
+                </div>
               </div>
+              <div class="notes-explorer__context" data-notes-target="scopeDescription"></div>
             </div>
+            <div class="notes-explorer__body" data-notes-target="explorerBody">
             <div
               data-notes-target="loadingState"
               class="browse-loading"
@@ -594,10 +612,11 @@
               role="list"
               aria-label="Notes list"
             ></ul>
+            </div>
           </div>
 
           <!-- ── Detail panel (hidden until note opened) ──────────────────── -->
-          <div class="notes-detail-pane jin-workspace-pane hidden" data-notes-target="detailPanel">
+          <div class="notes-detail-pane jin-workspace-pane hidden" data-notes-target="detailPanel" data-sidebar-workspace>
             <!--
               items 1 + 2 + 3: single flex header row.
                 LEFT:   rail-reveal (only when sidebar collapsed) + back button
@@ -605,6 +624,7 @@
                 RIGHT:  icon-only attach/link action cluster (set by render.ts)
             -->
             <div class="notes-detail-pane__header jin-toolbar-strip jin-chrome">
+              <span class="notes-detail-pane__drag" data-tauri-drag-region aria-hidden="true"></span>
               <!-- Reveal control: shown only when .rail-collapsed is active -->
               <button
                 type="button"
@@ -628,6 +648,7 @@
                 data-notes-target="detailBreadcrumb"
                 aria-hidden="true"
               ></span>
+              <div class="notes-detail-pane__formatting" aria-label="Note formatting"></div>
               <!-- item 1: icon-only action cluster — populated by renderNoteDetail -->
               <div
                 class="notes-detail-pane__actions"
@@ -888,7 +909,7 @@
               </div>
               <div class="form-group">
                 <label class="form-label" for="collection-filter">Show notes</label>
-                <select id="collection-filter" class="form-input" data-notes-target="collectionFilterInput">
+                <select id="collection-filter" class="form-input" data-notes-target="collectionFilterInput" data-action="change->notes#onCollectionFilterChange">
                   <option value="all">All notes</option>
                   <option value="tag">With tag</option>
                   <option value="status">With status</option>
@@ -897,8 +918,10 @@
               </div>
               <div class="form-group">
                 <label class="form-label" for="collection-filter-value">Filter value</label>
-                <input id="collection-filter-value" type="text" class="form-input" data-notes-target="collectionFilterValueInput" />
+                <input id="collection-filter-value" type="text" class="form-input" data-notes-target="collectionFilterValueInput" list="collection-tag-suggestions" />
+                <datalist id="collection-tag-suggestions" data-notes-target="collectionTagSuggestions"></datalist>
               </div>
+              <p class="notes-collection-rule-summary" data-notes-target="collectionRuleSummary"></p>
               <div class="form-group">
                 <label class="form-label" for="collection-sort">Sort by</label>
                 <select id="collection-sort" class="form-input" data-notes-target="collectionSortInput">
@@ -985,21 +1008,26 @@
         >
           <div class="action-dialog__inner notes-history-dialog">
             <div class="action-dialog__header">
-              <h2 class="action-dialog__title">Note History</h2>
+              <h2 class="action-dialog__title">History</h2>
               <button type="button" class="modal-close-btn jin-control jin-control--icon tap-target" aria-label="Close" data-action="click->notes#closeHistory">
                 <i data-lucide="x" aria-hidden="true"></i>
               </button>
             </div>
             <div class="action-dialog__body">
               <p class="notes-history__status" data-notes-target="historyStatus" role="status" aria-live="polite"></p>
+              <label class="notes-history__select-wrap" for="notes-history-revision-select">Revision
+                <select id="notes-history-revision-select" class="form-select" data-notes-target="historyRevisionSelect" data-action="change->notes#selectHistoryRevision">
+                  <option value="">Choose a revision</option>
+                </select>
+              </label>
               <div class="notes-history__layout">
                 <div class="notes-history__revisions" data-notes-target="historyRevisionList" role="list" aria-label="Available revisions"></div>
-                <div class="notes-history__preview cm-reading-wrapper" data-notes-target="historyPreview" aria-label="Selected revision preview"></div>
+                <div class="notes-history__preview cm-reading-wrapper" data-notes-target="historyPreview" aria-label="Selected revision snapshot"></div>
               </div>
             </div>
             <div class="form-actions">
-              <button type="button" class="btn-secondary" data-action="click->notes#closeHistory">Close</button>
-              <button type="button" class="btn-primary jin-control jin-control--primary" data-notes-target="restoreRevisionButton" data-action="click->notes#requestRestoreRevision" disabled>Restore selected revision</button>
+              <button type="button" class="btn-secondary notes-history__footer-close" data-action="click->notes#closeHistory">Close</button>
+              <button type="button" class="btn-primary jin-control jin-control--primary" aria-label="Restore selected revision" data-notes-target="restoreRevisionButton" data-action="click->notes#requestRestoreRevision" disabled><span class="notes-history__restore-long">Restore selected revision</span><span class="notes-history__restore-short">Restore</span></button>
             </div>
           </div>
         </dialog>
@@ -1133,9 +1161,10 @@
           <div
             id="tasks-lists-rail"
             class="tasks-lists-rail jin-context-rail jin-navigation-rail jin-chrome"
+            data-sidebar-context="tasks"
             data-controller="lists"
             aria-label="Task lists"
-            data-action="jin:tasks-changed@window->lists#handleTasksChanged jin:scope-set@window->lists#handleScopeSet"
+            data-action="jin:tasks-changed@window->lists#handleTasksChanged jin:scope-set@window->lists#handleScopeSet jin:open-task-container@window->lists#openCreate"
           >
             <div class="tasks-lists-rail__mobile-header">
               <span>Task lists</span>
@@ -1155,12 +1184,12 @@
             ></ul>
 
             <div class="tasks-lists-rail__header jin-section-header">
-              <span class="tasks-lists-rail__title text-caption1">Lists</span>
+              <span class="tasks-lists-rail__title text-caption1">My work</span>
               <button
                 type="button"
                 class="tasks-lists-rail__new-btn jin-control jin-control--icon tap-target"
                 data-action="click->lists#openCreate"
-                aria-label="New list"
+                aria-label="New list or board"
               >
                 <i data-lucide="plus" aria-hidden="true"></i>
               </button>
@@ -1170,7 +1199,7 @@
               class="tasks-lists-rail__list jin-navigation-list jin-navigation-list--inset"
               data-lists-target="sidebarList"
               role="list"
-              aria-label="Task lists"
+              aria-label="Lists and boards"
             ></ul>
 
             <!-- ── Create list dialog ───────────────────────────────────── -->
@@ -1182,12 +1211,12 @@
             <dialog
               class="action-dialog"
               data-lists-target="createDialog"
-              aria-label="Create new list"
+              aria-label="Create a list or board"
               aria-modal="true"
             >
               <div class="action-dialog__inner">
                 <div class="action-dialog__header">
-                  <h2 class="action-dialog__title">New List</h2>
+                  <h2 class="action-dialog__title">New List or Board</h2>
                   <button
                     type="button"
                     class="modal-close-btn tap-target"
@@ -1197,6 +1226,13 @@
                   </button>
                 </div>
                 <div class="action-dialog__body">
+                  <fieldset class="tasks-workflow-choice">
+                    <legend class="form-label">Workflow</legend>
+                    <label><input type="radio" name="lists-create-kind" value="checklist" checked />
+                      <span><strong>List</strong><small>Check off reminders as you finish them.</small></span></label>
+                    <label><input type="radio" name="lists-create-kind" value="board" />
+                      <span><strong>Board</strong><small>Move work through your own columns.</small></span></label>
+                  </fieldset>
                   <div class="form-group">
                     <label class="form-label" for="lists-create-name">Name</label>
                     <input
@@ -1341,13 +1377,15 @@
             TasksController toggles `.tasks-main--detail-open` and makes the
             covered list inert until Close restores focus.
           -->
-          <div class="tasks-main jin-workspace-pane" data-tasks-target="main">
+          <div class="tasks-main jin-workspace-pane" data-tasks-target="main" data-sidebar-workspace>
 
           <!-- ── List panel ─────────────────────────────────────────────────── -->
           <div data-tasks-target="listPanel">
             <div class="jin-workspace-header jin-workspace-header--paired">
+              <span class="tasks-workspace-drag" data-tauri-drag-region aria-hidden="true"></span>
               <header class="tasks-workspace-header jin-workspace-header__identity">
                 <h1 class="tasks-workspace-title" data-tasks-target="workspaceTitle">Inbox</h1>
+                <span class="tasks-workspace-count" data-tasks-target="workspaceCount" aria-live="polite"></span>
                 <button
                   type="button"
                   class="tasks-rail-toggle jin-control jin-control--secondary"
@@ -1359,6 +1397,8 @@
               </header>
               <!-- Filter bar — selects are passed through to invoke list_tasks -->
               <div class="tasks-filter-bar jin-workspace-header__controls" role="group" aria-label="Filter tasks">
+              <button type="button" class="tasks-workspace-new jin-control jin-control--primary" data-action="click->tasks#focusNewTask"><i data-lucide="plus" aria-hidden="true"></i><span>New task</span></button>
+              <button type="button" class="tasks-manage-columns jin-control jin-control--secondary" data-action="click->tasks#manageColumns" hidden>Columns</button>
               <button
                 type="button"
                 class="tasks-filter-toggle jin-control jin-control--secondary"
@@ -1636,15 +1676,28 @@
           data-router-target="section"
           data-section-name="events"
         >
-          <!-- Month view (primary view) -->
-          <div data-calendar-view-target="monthView" class="calendar-month-view" tabindex="0" aria-label="Calendar month">
-            <div data-calendar-view-target="monthViewContent"></div>
+          <div class="calendar-route-toolbar">
+            <button
+              type="button"
+              class="btn-primary calendar-global-add"
+              aria-label="Add event"
+              data-calendar-view-target="createEventBtn"
+              data-action="click->calendar-view#openEventCreate"
+            >+ Add Event</button>
           </div>
+          <div class="calendar-workspace" data-calendar-view-target="workspace">
+            <div class="calendar-field" data-calendar-view-target="field">
+              <!-- Month view (primary view) -->
+              <div data-calendar-view-target="monthView" class="calendar-month-view" tabindex="0" aria-label="Calendar month">
+                <div data-calendar-view-target="monthViewContent"></div>
+              </div>
 
-          <!-- Day view (shown when date is selected) -->
-          <div data-calendar-view-target="dayView" class="calendar-day-view hidden">
-            <div class="calendar-day-panel">
-              <div data-calendar-view-target="dayViewContent"></div>
+              <!-- Day view (shown when date is selected) -->
+              <div data-calendar-view-target="dayView" class="calendar-day-view hidden">
+                <div class="calendar-day-panel">
+                  <div data-calendar-view-target="dayViewContent"></div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1665,283 +1718,6 @@
             <div data-events-target="detailContent" class="hidden"></div>
           </div>
 
-          <button
-            type="button"
-            class="btn-primary calendar-global-add"
-            aria-label="Add event"
-            data-calendar-view-target="createEventBtn"
-            data-action="click->calendar-view#openEventCreate"
-          >+ Add Event</button>
-
-          <!--
-            Event creation/editing modal.
-            Managed by CalendarViewController. Opened when user clicks "Add Event"
-            or clicks on an existing event to edit.
-          -->
-          <dialog
-            id="jin-event-dialog"
-            class="action-dialog"
-            aria-labelledby="event-dialog-title"
-            aria-modal="true"
-            data-calendar-view-target="eventModal"
-          >
-            <div class="action-dialog__inner">
-              <div class="action-dialog__header">
-                <h2 class="action-dialog__title" id="event-dialog-title">New Event</h2>
-                <button
-                  type="button"
-                  class="modal-close-btn tap-target"
-                  aria-label="Close"
-                  data-action="click->calendar-view#closeEventDialog"
-                >
-                  <i data-lucide="x" aria-hidden="true"></i>
-                </button>
-              </div>
-
-              <div class="action-dialog__form">
-                <div class="form-group event-destination-field">
-                  <label class="form-label" for="calendar-event-destination">Calendar</label>
-                  <select
-                    id="calendar-event-destination"
-                    class="form-input"
-                    data-calendar-view-target="eventDestination"
-                    aria-describedby="calendar-event-destination-help"
-                  ></select>
-                  <p id="calendar-event-destination-help" class="sr-only">
-                    Choose Jin only or an exact Google account and calendar.
-                  </p>
-                </div>
-
-
-                <div class="form-group">
-                  <label class="form-label" for="event-title">
-                    Title <span aria-hidden="true">*</span>
-                  </label>
-                  <input
-                    id="event-title"
-                    type="text"
-                    class="form-input"
-                    placeholder="Event title"
-                    aria-required="true"
-                    data-calendar-view-target="eventTitle"
-                  />
-                </div>
-
-                <fieldset class="event-when">
-                  <legend class="form-label" data-event-copy="when">When <span aria-hidden="true">*</span></legend>
-
-                  <details class="event-when__calendar-disclosure">
-                    <summary aria-label="Choose dates"><span id="event-when-summary" class="event-when__summary" aria-live="polite" data-calendar-view-target="eventWhenSummary"></span></summary>
-                    <div
-                      class="event-when__calendar"
-                      data-controller="calendar"
-                      data-calendar-mode-value="range"
-                      data-calendar-view-target="eventCalendar"
-                      data-action="calendar:change->calendar-view#calendarSelectionChanged"
-                    ></div>
-                  </details>
-
-                  <details class="event-when__natural-disclosure">
-                  <summary data-event-copy="dateTime">Date and time</summary>
-                  <label class="sr-only" for="event-when-natural">Date and time</label>
-                  <div class="event-when__quick-row">
-                    <input
-                      id="event-when-natural"
-                      type="text"
-                      class="form-input event-when__natural"
-                      placeholder="Tomorrow at 2pm"
-                      autocomplete="off"
-                      aria-describedby="event-when-preview event-when-summary"
-                      data-calendar-view-target="eventWhenInput"
-                      data-action="input->calendar-view#previewWhen keydown.enter->calendar-view#applyWhen"
-                    />
-                    <button type="button" class="btn-secondary event-when__use" data-event-copy="use" data-action="click->calendar-view#applyWhen">Use</button>
-                  </div>
-                  <p id="event-when-preview" class="event-when__preview" aria-live="polite" data-calendar-view-target="eventWhenPreview"></p>
-                  </details>
-                </fieldset>
-
-                <div class="form-group" data-calendar-view-target="timeGroup">
-                  <div class="form-row">
-                    <div class="form-group">
-                      <label class="form-label" for="event-start-time">Start time</label>
-                      <input
-                        id="event-start-time"
-                        type="text"
-                        inputmode="numeric"
-                        autocomplete="off"
-                        placeholder="09:00"
-                        class="form-input"
-                        data-calendar-view-target="eventStartTime"
-                        data-action="input->calendar-view#repeatChanged blur->calendar-view#normalizeEventTime"
-                      />
-                    </div>
-                    <div class="form-group">
-                      <label class="form-label" for="event-end-time">End time</label>
-                      <input
-                        id="event-end-time"
-                        type="text"
-                        inputmode="numeric"
-                        autocomplete="off"
-                        placeholder="10:00"
-                        class="form-input"
-                        data-calendar-view-target="eventEndTime"
-                        data-action="input->calendar-view#repeatChanged blur->calendar-view#normalizeEventTime"
-                      />
-                    </div>
-                  </div>
-                  <label class="form-label event-timezone" for="event-timezone">Time zone
-                    <input id="event-timezone" type="text" class="form-input" autocomplete="off" spellcheck="false" data-calendar-view-target="eventTimezone" aria-describedby="event-timezone-help" />
-                  </label>
-                  <p id="event-timezone-help" class="text-footnote color-secondary">Use an IANA zone, for example America/Sao_Paulo.</p>
-                </div>
-
-                <div class="form-group event-when__all-day">
-                  <label class="form-label jin-checkbox">
-                    <input
-                      type="checkbox"
-                      id="event-all-day"
-                      data-calendar-view-target="eventAllDay"
-                      data-action="change->calendar-view#toggleAllDay"
-                    />
-                    <span class="jin-checkbox__mark" aria-hidden="true"></span>
-                    <span>All day</span>
-                  </label>
-                </div>
-
-                <details class="event-options event-repeat-row">
-                  <summary data-recurrence-copy="repeat">Repeat</summary>
-                  <div class="form-group">
-                  <label class="form-label" for="event-repeat" data-recurrence-copy="repeat">Repeat</label>
-                  <select id="event-repeat" class="form-input event-repeat-row__select" data-calendar-view-target="eventRepeat" data-action="change->calendar-view#repeatChanged">
-                    <option value="none">Does not repeat</option>
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                    <option value="yearly">Yearly</option>
-                    <option value="custom">Custom…</option>
-                  </select>
-                  <div class="event-repeat-custom hidden" data-calendar-view-target="eventRepeatCustom">
-                    <div class="event-repeat-custom__every">
-                      <span data-recurrence-copy="every">Every</span>
-                      <input class="form-input event-repeat-custom__number" type="number" min="1" max="999" value="1" inputmode="numeric" aria-label="Repeat interval" data-calendar-view-target="eventRepeatInterval" data-action="input->calendar-view#repeatChanged">
-                      <select class="form-input" aria-label="Repeat unit" data-calendar-view-target="eventRepeatFrequency" data-action="change->calendar-view#repeatChanged">
-                        <option value="daily">day</option><option value="weekly" selected>week</option><option value="monthly">month</option><option value="yearly">year</option>
-                      </select>
-                    </div>
-                    <fieldset class="event-repeat-custom__section" data-calendar-view-target="eventRepeatWeekdays">
-                      <legend data-recurrence-copy="onDays">On days</legend>
-                      <div class="event-repeat-weekdays" role="group" aria-label="Repeat on weekdays">
-                        <label><input type="checkbox" value="mo" data-action="change->calendar-view#repeatChanged"><span>Mon</span></label>
-                        <label><input type="checkbox" value="tu" data-action="change->calendar-view#repeatChanged"><span>Tue</span></label>
-                        <label><input type="checkbox" value="we" data-action="change->calendar-view#repeatChanged"><span>Wed</span></label>
-                        <label><input type="checkbox" value="th" data-action="change->calendar-view#repeatChanged"><span>Thu</span></label>
-                        <label><input type="checkbox" value="fr" data-action="change->calendar-view#repeatChanged"><span>Fri</span></label>
-                        <label><input type="checkbox" value="sa" data-action="change->calendar-view#repeatChanged"><span>Sat</span></label>
-                        <label><input type="checkbox" value="su" data-action="change->calendar-view#repeatChanged"><span>Sun</span></label>
-                      </div>
-                    </fieldset>
-                    <fieldset class="event-repeat-custom__section" data-calendar-view-target="eventRepeatMonthlyMode">
-                      <legend data-recurrence-copy="monthlyOn">Monthly on</legend>
-                      <label class="event-repeat-choice"><input type="radio" name="event-repeat-monthly" value="day_of_month" checked data-action="change->calendar-view#repeatChanged"><span data-recurrence-copy="dayOfMonth">Day</span><input class="form-input event-repeat-custom__number" type="number" min="1" max="31" value="1" aria-label="Day of month" data-calendar-view-target="eventRepeatMonthDay" data-action="input->calendar-view#repeatChanged"></label>
-                      <label class="event-repeat-choice"><input type="radio" name="event-repeat-monthly" value="nth_weekday" data-action="change->calendar-view#repeatChanged"><select class="form-input" aria-label="Week of month" data-calendar-view-target="eventRepeatOrdinal" data-action="change->calendar-view#repeatChanged"><option value="1">First</option><option value="2">Second</option><option value="3">Third</option><option value="4">Fourth</option><option value="-1">Last</option></select><select class="form-input" aria-label="Weekday" data-calendar-view-target="eventRepeatOrdinalWeekday" data-action="change->calendar-view#repeatChanged"><option value="mo">Monday</option><option value="tu">Tuesday</option><option value="we">Wednesday</option><option value="th">Thursday</option><option value="fr">Friday</option><option value="sa">Saturday</option><option value="su">Sunday</option></select></label>
-                    </fieldset>
-                    <fieldset class="event-repeat-custom__section event-repeat-ends">
-                      <legend data-recurrence-copy="ends">Ends</legend>
-                      <label><input type="radio" name="event-repeat-end" value="never" checked data-calendar-view-target="eventRepeatEndKind" data-action="change->calendar-view#repeatChanged"><span data-recurrence-copy="never">Never</span></label>
-                      <label><input type="radio" name="event-repeat-end" value="until" data-calendar-view-target="eventRepeatEndKind" data-action="change->calendar-view#repeatChanged"><span data-recurrence-copy="onDate">On date</span><input class="form-input" type="date" data-calendar-view-target="eventRepeatUntil" data-action="change->calendar-view#repeatChanged"></label>
-                      <label><input type="radio" name="event-repeat-end" value="count" data-calendar-view-target="eventRepeatEndKind" data-action="change->calendar-view#repeatChanged"><span data-recurrence-copy="after">After</span><input class="form-input event-repeat-custom__number" type="number" min="1" max="999" value="10" inputmode="numeric" aria-label="Number of occurrences" data-calendar-view-target="eventRepeatCount" data-action="input->calendar-view#repeatChanged"><span data-recurrence-copy="occurrences">occurrences</span></label>
-                    </fieldset>
-                  </div>
-                  <p class="event-repeat-preview hidden" aria-live="polite" data-calendar-view-target="eventRepeatPreview"></p>
-                  </div>
-                </details>
-
-                <details class="event-options event-collaboration-field">
-                  <summary>Guests & video</summary>
-                  <div class="form-group">
-                  <label class="form-label" for="event-guests">Guests</label>
-                  <input
-                    id="event-guests"
-                    type="email"
-                    multiple
-                    class="form-input"
-                    placeholder="name@example.com, colleague@example.com"
-                    aria-describedby="event-guests-help"
-                    data-calendar-view-target="eventGuests"
-                    data-action="input->calendar-view#guestsChanged"
-                  />
-                  <p id="event-guests-help" class="text-footnote color-secondary">Separate email addresses with commas. Invitations notify guests from Google Calendar.</p>
-                  </div>
-
-                  <div class="form-group event-collaboration-field">
-                  <label class="form-label" for="event-guest-updates">Notify guests</label>
-                  <select id="event-guest-updates" class="form-select" data-calendar-view-target="eventGuestUpdates">
-                    <option value="all">All guests</option>
-                    <option value="external_only">External guests only</option>
-                    <option value="none">Do not notify guests</option>
-                  </select>
-                  </div>
-
-                  <div class="form-group event-collaboration-field">
-                  <label class="form-label jin-checkbox event-collaboration-field__check">
-                    <input type="checkbox" data-calendar-view-target="eventGoogleMeet" />
-                    <span class="jin-checkbox__mark" aria-hidden="true"></span>
-                    <span>Add Google Meet</span>
-                  </label>
-                  <p class="text-footnote color-secondary">A Meet link is created by Google after the event is saved.</p>
-                  </div>
-                </details>
-
-                <details class="event-options">
-                  <summary>Location & notes</summary>
-                  <div class="form-group">
-                  <label class="form-label" for="event-location">Location</label>
-                  <input
-                    id="event-location"
-                    type="text"
-                    class="form-input"
-                    placeholder="Location"
-                    data-calendar-view-target="eventLocation"
-                  />
-                  </div>
-
-                  <div class="form-group">
-                  <label class="form-label" for="event-description">Description</label>
-                  <textarea
-                    id="event-description"
-                    class="form-input"
-                    placeholder="Event description"
-                    rows="4"
-                    data-calendar-view-target="eventDescription"
-                  ></textarea>
-                  </div>
-                </details>
-
-                <p
-                  class="form-error hidden"
-                  aria-live="polite"
-                  data-calendar-view-target="eventError"
-                ></p>
-
-                <div class="form-actions">
-                  <button
-                    type="button"
-                    class="btn-secondary"
-                    aria-label="Cancel"
-                    data-action="click->calendar-view#closeEventDialog"
-                  >Cancel</button>
-                  <button
-                    type="button"
-                    class="btn-primary"
-                    aria-label="Create event"
-                    data-calendar-view-target="eventSubmit"
-                    data-action="click->calendar-view#submitEvent"
-                  >Create</button>
-                </div>
-              </div>
-            </div>
-          </dialog>
         </section>
 
         <!-- Durable invitations and task reminders. -->
@@ -2038,7 +1814,7 @@
           data-section-name="settings"
         >
           <div class="settings-view jin-split-view">
-            <div class="settings-nav jin-context-rail jin-navigation-rail">
+            <div class="settings-nav jin-context-rail jin-navigation-rail" data-sidebar-context="settings">
               <h2 class="settings-view__heading">Settings</h2>
               <nav class="settings-nav__items jin-navigation-list" aria-label="Settings categories">
                 <button
@@ -2076,7 +1852,7 @@
               </nav>
             </div>
 
-            <div class="settings-workspace jin-workspace-pane" data-settings-target="settingsWorkspace">
+            <div class="settings-workspace jin-workspace-pane" data-settings-target="settingsWorkspace" data-sidebar-workspace>
               <section
                 id="settings-pane-calendars"
                 class="settings-pane"
@@ -2793,19 +2569,19 @@
       <template id="tmpl-note-row">
         <li class="browse-row note-row">
           <button type="button" class="browse-row__inner jin-list-row tap-target" aria-label="">
-            <div class="note-row__header">
+            <span class="note-row__glyph" aria-hidden="true"><i data-lucide="file-text"></i></span>
+            <div class="note-row__main">
               <span class="browse-row__title text-headline"></span>
-            </div>
-            <div class="note-row__preview">
-              <span class="note-row__date text-caption1"></span>
               <span class="note-row__snippet text-subheadline"></span>
             </div>
-            <div class="browse-row__meta">
+            <div class="note-row__aside browse-row__meta">
+              <time class="note-row__date text-caption1"></time>
+              <span class="note-row__folder text-caption1"></span>
+              <span class="note-row__tags text-caption1" aria-label=""></span>
               <span class="browse-status-badge note-row__status jin-badge" role="img" aria-label="">
                 <i class="note-row__status-icon" aria-hidden="true"></i>
                 <span class="note-row__status-label"></span>
               </span>
-              <span class="note-row__tags text-caption1" aria-label=""></span>
             </div>
           </button>
         </li>
@@ -3495,7 +3271,14 @@
               data-capture-target="eventError"
             ></p>
 
-            <div class="form-actions">
+            <div class="form-actions capture-event-actions">
+              <button
+                type="button"
+                class="btn-secondary"
+                aria-label="More event options"
+                data-capture-target="eventMoreOptions"
+                data-action="click->capture#openMoreEventOptions"
+              >More event options</button>
               <button
                 type="button"
                 class="btn-secondary"
@@ -3510,6 +3293,11 @@
                 data-action="click->capture#submitEvent"
               >Create Event</button>
             </div>
+            <div
+              class="capture-event-discard hidden"
+              data-capture-target="eventDiscard"
+              hidden
+            ></div>
           </div>
         </div>
       </dialog>
@@ -3637,11 +3425,14 @@
 
           <div class="action-dialog__form">
             <div class="form-group actions-context-search hidden" data-actions-target="attachContextGroup">
+              <p class="actions-attach-source hidden" data-actions-target="attachSource"></p>
               <label class="form-label" for="attach-context-title">Note title</label>
               <input id="attach-context-title" type="search" class="form-input"
                 placeholder="Search by title" autocomplete="off" list="attach-context-options"
-                data-actions-target="attachContextSearch" />
+                data-actions-target="attachContextSearch" data-action="input->actions#filterAttachEvents" />
               <datalist id="attach-context-options" data-actions-target="attachContextOptions"></datalist>
+              <div class="actions-event-choices hidden" data-actions-target="attachEventChoices" role="listbox" aria-label="Matching events"></div>
+              <p class="actions-event-status hidden" data-actions-target="attachEventStatus" role="status" aria-live="polite"></p>
             </div>
             <div class="form-group" data-actions-target="attachLegacyGroup">
               <label class="form-label" for="attach-note-id">

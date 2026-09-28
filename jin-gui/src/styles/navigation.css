@@ -53,11 +53,13 @@
 .jin-navigation-row:hover {
   color: var(--label);
   background: var(--workspace-row-hover);
+  text-decoration: none;
 }
 
 .jin-navigation-row:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+  text-decoration: none;
 }
 
 .jin-navigation-row[aria-current="page"],
@@ -72,20 +74,7 @@
 .jin-navigation-row[aria-current="page"]::before,
 .jin-navigation-row.is-active::before,
 .jin-navigation-row.jin-nav-item--active::before,
-[role="treeitem"][aria-selected="true"] > .jin-navigation-row::before {
-  content: '';
-  position: absolute;
-  z-index: 1;
-  inset-block: 4px 3px;
-  inset-inline-start: 3px;
-  inline-size: 3px;
-  border-radius: 46% 54% 38% 62%;
-  background: var(--ink-stroke);
-  box-shadow:
-    2px 0 5px var(--ink-bleed),
-    -1px 1px 2px var(--ink-bleed);
-  pointer-events: none;
-}
+[role="treeitem"][aria-selected="true"] > .jin-navigation-row::before { content: none; }
 
 .jin-navigation-row__icon {
   inline-size: var(--icon-size-standard);
@@ -121,7 +110,7 @@
 .jin-navigation-row--tree {
   grid-template-columns: 14px var(--icon-size-standard) minmax(0, 1fr) auto var(--control-height);
   column-gap: var(--space-half);
-  padding-inline-start: calc(10px + var(--tree-depth, 0) * 14px);
+  padding-inline-start: calc(10px + var(--tree-depth-visual, var(--tree-depth, 0)) * 12px);
   padding-inline-end: var(--space-1);
   overflow: hidden;
 }

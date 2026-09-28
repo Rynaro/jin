@@ -26,6 +26,7 @@ import {
   type RouterState,
 } from '../lib/router';
 import { initIcons } from '../lib/icons';
+import { consultNavigationGuard } from '../lib/ui/navigation_guard';
 
 export default class RouterController extends Controller {
   // ── Targets ───────────────────────────────────────────────────────────────
@@ -36,12 +37,16 @@ export default class RouterController extends Controller {
 
   // ── State ─────────────────────────────────────────────────────────────────
   private state: RouterState = createInitialState();
+  /** Latest intent while a guard promise is unresolved. */
+  private pendingIntent: { kind: ViewKind; detailId?: string } | null = null;
+  private guardDecisionOpen = false;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   connect(): void {
     this.state = createInitialStateFromHash(window.location.hash);
     if (this.state.section !== 'today') this.activateSection(this.state.section);
+    else this.publishCommittedSection('today');
   }
 
   // ── Sidebar navigation ────────────────────────────────────────────────────
@@ -96,10 +101,35 @@ export default class RouterController extends Controller {
   // ── Internals ─────────────────────────────────────────────────────────────
 
   private activateSection(kind: ViewKind, detailId?: string): void {
+    const intent = { kind, detailId };
+    const decision = consultNavigationGuard(intent);
+
+    if (decision === true) {
+      this.commitActivation(kind, detailId);
+      return;
+    }
+    if (decision === false) {
+      return;
+    }
+
+    // Promise: pause; remember the latest intent if another navigation arrives.
+    this.pendingIntent = intent;
+    if (this.guardDecisionOpen) return;
+    this.guardDecisionOpen = true;
+    Promise.resolve(decision).then((ok) => {
+      this.guardDecisionOpen = false;
+      const latest = this.pendingIntent;
+      this.pendingIntent = null;
+      if (ok && latest) this.commitActivation(latest.kind, latest.detailId);
+    });
+  }
+
+  private commitActivation(kind: ViewKind, detailId?: string): void {
     this.state = navigate(kind, detailId);
 
     const sectionsMap = this.buildSectionsMap();
     applyRouterState(this.state, sectionsMap, this.navItemTargets);
+    this.publishCommittedSection(kind);
 
     const targetSection = sectionsMap.get(kind);
     targetSection?.dispatchEvent(
@@ -123,6 +153,11 @@ export default class RouterController extends Controller {
 
     // Re-initialize icons in the newly-visible section
     initIcons();
+  }
+
+  private publishCommittedSection(kind: ViewKind): void {
+    (this.element as HTMLElement).dataset.activeSection = kind;
+    window.dispatchEvent(new CustomEvent('jin:route-committed', { detail: { section: kind } }));
   }
 
   private buildSectionsMap(): Map<string, HTMLElement> {

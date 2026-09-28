@@ -96,22 +96,26 @@
 .notifications-header__title {
   margin: 0;
   color: var(--label);
-  font-family: var(--font-display);
-  font-size: var(--text-large-title-size);
-  line-height: var(--text-large-title-line);
+  font-family: var(--font-text);
+  font-size: var(--text-title1-size);
+  line-height: var(--text-title1-line);
+  font-weight: 700;
 }
 
 .notifications-filters {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-half);
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-capsule);
+  background: var(--control-track);
 }
 
 .notifications-filter {
   min-height: var(--control-height);
   padding: var(--space-half) var(--space-1);
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  border-radius: var(--radius-capsule);
   background: transparent;
   color: var(--label-secondary);
   font-size: var(--text-footnote-size);
@@ -120,9 +124,10 @@
 
 .notifications-filter--active,
 .notifications-filter[aria-pressed="true"] {
-  border-color: var(--agenda-indigo);
-  background: var(--operational-wash);
-  color: var(--agenda-indigo);
+  border-color: var(--control-edge);
+  background: var(--control-surface);
+  color: var(--label);
+  box-shadow: var(--control-shadow);
   font-weight: 600;
 }
 
@@ -311,7 +316,7 @@
 .notifications-detail__title {
   margin: 0;
   color: var(--label);
-  font-family: var(--font-display);
+  font-family: var(--font-text);
   font-size: var(--text-title1-size);
   line-height: var(--text-title1-line);
 }

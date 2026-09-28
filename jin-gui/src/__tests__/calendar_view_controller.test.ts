@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Application } from '@hotwired/stimulus';
 import CalendarViewController, { eventIntersectsDate } from '../controllers/calendar_view_controller';
@@ -13,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   deleteEvent: vi.fn(), promoteTask: vi.fn(), listTasks: vi.fn(),
   previewRecurrence: vi.fn(),
   syncCalendarEvent: vi.fn(),
+  calendarRangeProjection: vi.fn(),
+  getEventDetailById: vi.fn(),
 }));
 
 vi.mock('../invoke', () => mocks);
@@ -31,50 +35,66 @@ function makeEvent(overrides: Partial<EventDto> = {}): EventDto {
   };
 }
 
+
+function toProjectionEntry(event: EventDto) {
+  const isAllDay = event.is_all_day;
+  const startDate = event.start.slice(0, 10);
+  let endDate = event.end.slice(0, 10);
+  if (isAllDay) {
+    const end = new Date(`${endDate}T00:00:00Z`);
+    end.setUTCDate(end.getUTCDate() - 1);
+    endDate = end.toISOString().slice(0, 10);
+  } else if (event.end.includes('T') && event.end.slice(11, 19) === '00:00:00') {
+    const end = new Date(`${endDate}T00:00:00Z`);
+    end.setUTCDate(end.getUTCDate() - 1);
+    endDate = end.toISOString().slice(0, 10);
+  }
+  return {
+    event_id: event.id,
+    title: event.title,
+    slot_state: isAllDay ? 'all_day' as const : event.floating ? 'floating' as const : 'anchored' as const,
+    start_date: startDate,
+    end_date: endDate,
+    start_display: isAllDay ? startDate : event.start.slice(0, 19),
+    end_display: isAllDay ? endDate : event.end.slice(0, 19),
+    start_utc: null,
+    end_utc: null,
+    continuation_dates: [] as string[],
+    elapsed_minutes: 60,
+    start_tzid: event.start_tzid,
+    end_tzid: event.end_tzid,
+    is_all_day: isAllDay,
+    floating: event.floating,
+    start_resolution: 'exact' as const,
+    end_resolution: 'exact' as const,
+    temporal_editable: true,
+    temporal_disabled_reason: null,
+  };
+}
+
+function mockProjectionFromListEvents(): void {
+  mocks.calendarRangeProjection.mockImplementation(async (input: { from: string; to: string }) => {
+    const events = await mocks.listEvents() as EventDto[];
+    return {
+      from: input.from,
+      to: input.to,
+      display_tz: 'UTC',
+      entries: events.map(toProjectionEntry),
+    };
+  });
+}
+
 function fixture(): string {
   return `
     <section data-controller="calendar-view" data-action="jin:events-mutated@window->calendar-view#handleMutation" aria-label="Calendar">
-      <div data-calendar-view-target="monthView"><div data-calendar-view-target="monthViewContent"></div></div>
-      <div data-calendar-view-target="dayView" class="hidden"><div data-calendar-view-target="dayViewContent"></div></div>
+      <div data-calendar-view-target="workspace" class="calendar-workspace">
+        <div data-calendar-view-target="field" class="calendar-field">
+          <div data-calendar-view-target="monthView"><div data-calendar-view-target="monthViewContent"></div></div>
+          <div data-calendar-view-target="dayView" class="hidden"><div data-calendar-view-target="dayViewContent"></div></div>
+        </div>
+      </div>
       <div data-events-target="detailPanel" class="hidden"></div>
       <button class="calendar-global-add" data-calendar-view-target="createEventBtn"></button>
-      <dialog data-calendar-view-target="eventModal" aria-labelledby="event-dialog-title">
-        <h2 id="event-dialog-title">New Event</h2>
-        <input data-calendar-view-target="eventTitle">
-        <select data-calendar-view-target="eventDestination"></select>
-        <input data-calendar-view-target="eventGuests" type="email" multiple>
-        <select data-calendar-view-target="eventGuestUpdates"><option value="all">All</option><option value="external_only">External</option><option value="none">None</option></select>
-        <input data-calendar-view-target="eventGoogleMeet" type="checkbox">
-        <fieldset class="event-when">
-          <legend data-event-copy="when">When *</legend>
-          <label data-event-copy="dateTime">Date and time</label>
-          <input data-calendar-view-target="eventWhenInput">
-          <button type="button" data-event-copy="use">Use</button>
-          <p data-calendar-view-target="eventWhenPreview"></p>
-          <div data-controller="calendar" data-calendar-mode-value="range" data-calendar-view-target="eventCalendar"></div>
-          <p data-calendar-view-target="eventWhenSummary"></p>
-        </fieldset>
-        <input data-calendar-view-target="eventAllDay" type="checkbox">
-        <div class="event-repeat-row">
-          <label data-recurrence-copy="repeat">Repeat</label>
-          <select data-calendar-view-target="eventRepeat"><option value="none">None</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option><option value="custom">Custom</option></select>
-          <div class="event-repeat-custom hidden" data-calendar-view-target="eventRepeatCustom">
-            <span data-recurrence-copy="every">Every</span><input data-calendar-view-target="eventRepeatInterval" value="1"><select data-calendar-view-target="eventRepeatFrequency"><option value="daily">day</option><option value="weekly">week</option><option value="monthly">month</option><option value="yearly">year</option></select>
-            <fieldset data-calendar-view-target="eventRepeatWeekdays"><legend data-recurrence-copy="onDays">On days</legend><div class="event-repeat-weekdays">${['mo','tu','we','th','fr','sa','su'].map(day => `<label><input type="checkbox" value="${day}"><span>${day}</span></label>`).join('')}</div></fieldset>
-            <fieldset data-calendar-view-target="eventRepeatMonthlyMode"><legend data-recurrence-copy="monthlyOn">Monthly on</legend><label><input type="radio" name="event-repeat-monthly" value="day_of_month" checked><span data-recurrence-copy="dayOfMonth">Day</span><input data-calendar-view-target="eventRepeatMonthDay" value="1"></label><label><input type="radio" name="event-repeat-monthly" value="nth_weekday"><select data-calendar-view-target="eventRepeatOrdinal"><option value="1">First</option><option value="-1">Last</option></select><select data-calendar-view-target="eventRepeatOrdinalWeekday"><option value="mo">Monday</option><option value="th">Thursday</option></select></label></fieldset>
-            <fieldset><legend data-recurrence-copy="ends">Ends</legend><label><input type="radio" name="event-repeat-end" value="never" checked data-calendar-view-target="eventRepeatEndKind"><span data-recurrence-copy="never">Never</span></label><label><input type="radio" name="event-repeat-end" value="until" data-calendar-view-target="eventRepeatEndKind"><span data-recurrence-copy="onDate">On date</span><input data-calendar-view-target="eventRepeatUntil"></label><label><input type="radio" name="event-repeat-end" value="count" data-calendar-view-target="eventRepeatEndKind"><span data-recurrence-copy="after">After</span><input data-calendar-view-target="eventRepeatCount" value="10"><span data-recurrence-copy="occurrences">occurrences</span></label></fieldset>
-          </div>
-          <p class="hidden" data-calendar-view-target="eventRepeatPreview"></p>
-        </div>
-        <div data-calendar-view-target="timeGroup">
-          <input data-calendar-view-target="eventStartTime" type="text" inputmode="numeric">
-          <input data-calendar-view-target="eventEndTime" type="text" inputmode="numeric">
-        </div>
-        <input data-calendar-view-target="eventLocation">
-        <textarea data-calendar-view-target="eventDescription"></textarea>
-        <div data-calendar-view-target="eventError" class="hidden"></div>
-        <div class="form-actions"><button class="btn-secondary"></button><button data-calendar-view-target="eventSubmit"></button></div>
-      </dialog>
     </section>
     <template id="tmpl-calendar">
       <div class="calendar-widget">
@@ -90,8 +110,11 @@ function fixture(): string {
     </template>`;
 }
 
+
 async function flush(): Promise<void> {
   await Promise.resolve();
+  await Promise.resolve();
+  await new Promise(resolve => setTimeout(resolve, 0));
   await new Promise(resolve => setTimeout(resolve, 0));
 }
 
@@ -112,6 +135,24 @@ describe('CalendarViewController safety and mode invariants', () => {
     });
     const event = makeEvent();
     mocks.listEvents.mockReset().mockResolvedValue([event]);
+    mockProjectionFromListEvents();
+    mocks.getEventDetailById.mockReset().mockImplementation(async (id: string) => {
+      const events = await mocks.listEvents() as EventDto[];
+      const found = events.find(item => item.id === id) ?? event;
+      return {
+        event: found,
+        edit_token: 'tok',
+        capabilities: {
+          display_kind: 'event',
+          can_edit: true,
+          can_delete: true,
+          read_only_reason: null,
+          can_return_task_to_flexible: false,
+          originating_task: null,
+          recurrence_scopes: ['this_occurrence', 'entire_series'],
+        },
+      };
+    });
     mocks.listTasks.mockReset().mockResolvedValue([]);
     mocks.createEvent.mockReset().mockResolvedValue(event);
     mocks.createRoutedEvent.mockReset().mockResolvedValue(event);
@@ -190,227 +231,143 @@ describe('CalendarViewController safety and mode invariants', () => {
     detail.classList.remove('hidden');
     month.classList.add('hidden'); day.classList.add('hidden');
     mocks.listEvents.mockResolvedValue([makeEvent({ title: 'Synced meeting' })]);
+    mockProjectionFromListEvents();
     window.dispatchEvent(new CustomEvent('jin:events-mutated', { detail: { source: 'events' } }));
+    await flush();
     await flush();
     expect(detail.classList.contains('hidden')).toBe(false);
     expect(month.classList.contains('hidden')).toBe(true);
     expect(day.classList.contains('hidden')).toBe(true);
     controller.restoreActiveView();
+    await flush();
+    await flush();
     expect(document.querySelector('[data-event-id="event-1"]')?.textContent).toContain('Synced meeting');
   });
 
-  it('reloads destinations after reconnect without restarting the calendar controller', async () => {
-    await controller.openEventCreate();
-    const select = document.querySelector<HTMLSelectElement>('[data-calendar-view-target="eventDestination"]')!;
-    expect(Array.from(select.options, option => option.text)).toEqual(['Jin only']);
-    document.querySelector<HTMLDialogElement>('[data-calendar-view-target="eventModal"]')!.close();
-    mocks.listGoogleAccounts.mockResolvedValue([{
-      id: 'personal', alias: 'Personal', state: 'connected', calendars: [{
-        calendar_id: 'primary', name: 'Personal calendar', enabled: true, available: true,
-        writable: true, allowed_conference_solution_types: ['hangoutsMeet'],
-      }],
-    }]);
-    await controller.openEventCreate();
-    expect(Array.from(select.options, option => option.text)).toContain('Personal · Personal calendar');
-    expect(select.selectedOptions[0].dataset.accountId).toBe('personal');
-  });
 
-  it('keeps the calendar modal create-only; detail owns all edit behavior', async () => {
+  it('keeps create entry on the companion; legacy dialog is removed', async () => {
     expect((controller as unknown as { openEventEdit?: unknown }).openEventEdit).toBeUndefined();
+    expect(document.querySelector('#jin-event-dialog, [data-calendar-view-target="eventModal"]')).toBeNull();
     await controller.openEventCreate();
-    expect(document.querySelector<HTMLButtonElement>('[data-calendar-view-target="eventSubmit"]')?.textContent).toBe('Create');
-    expect(document.querySelector('#event-dialog-title')?.textContent).toBe('New Event');
+    expect(document.querySelector('.event-composer')).toBeTruthy();
+    expect(document.querySelector('#event-composer-title')).toBeTruthy();
+    expect(mocks.createEvent).not.toHaveBeenCalled();
   });
 
-  it('uses the shared range Calendar with no native date input and tranquil defaults', async () => {
+  it('companion create serializes through createInputFromDraft without writing before Save', async () => {
     await controller.openEventCreate();
-    expect(document.querySelector('[data-calendar-view-target="eventModal"] input[type="date"]')).toBeNull();
-    expect(document.querySelector('[data-calendar-view-target="eventCalendar"] .calendar-widget')).not.toBeNull();
-    expect(document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventAllDay"]')?.checked).toBe(true);
-    expect(document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventStartTime"]')?.value).toBe('09:00');
-    expect(document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventEndTime"]')?.value).toBe('10:00');
-    expect(document.activeElement).toBe(document.querySelector('[data-calendar-view-target="eventTitle"]'));
-    expect(document.querySelector('.calendar-widget__commit-btn')?.hasAttribute('hidden')).toBe(true);
+    const title = document.querySelector<HTMLInputElement>('#event-composer-title')!;
+    title.value = 'Quiet retreat';
+    title.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(mocks.createEvent).not.toHaveBeenCalled();
+    const draft = (controller as unknown as { companion: { getDraft(): { title: string } | null } }).companion.getDraft();
+    expect(draft?.title).toBe('Quiet retreat');
   });
 
-  it('serializes an inclusive all-day range to an exclusive canonical end', async () => {
+  it('offers exact writable destinations and prevents a stale route from silently saving locally', async () => {
+    const accounts = [{
+      id: 'acc-work', alias: 'Work', state: 'connected', calendars: [{
+        calendar_id: 'team', name: 'Team', enabled: true, available: true, writable: true,
+        allowed_conference_solution_types: ['hangoutsMeet'],
+      }],
+    }];
+    mocks.listGoogleAccounts.mockResolvedValue(accounts);
+    await controller.loadCalendar();
     await controller.openEventCreate();
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')!.value = 'Quiet retreat';
-    document.querySelector<HTMLButtonElement>('.calendar-widget__day-btn[data-iso="2026-08-22"]')!.click();
-    await controller.submitEvent();
-    expect(mocks.createEvent).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'Quiet retreat', start: '2026-08-20', end: '2026-08-23', is_all_day: true,
-    }));
-  });
-
-  it.each([false, true])('creates once and attempts scoped delivery even when offline=%s', async (offline) => {
-    if (offline) mocks.syncCalendarEvent.mockRejectedValueOnce(new Error('offline'));
-    await controller.openEventCreate();
-    const destination = document.querySelector<HTMLSelectElement>('[data-calendar-view-target="eventDestination"]')!;
-    const option = new Option('Work · Team', 'work\u0000team');
-    option.dataset.accountId = 'work';
-    option.dataset.calendarId = 'team';
-    option.dataset.canMeet = 'true';
-    destination.replaceChildren(option);
-    option.selected = true;
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')!.value = 'Launch review';
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventGuests"]')!.value = 'Alex@example.com, alex@example.com, sam@example.com';
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventGoogleMeet"]')!.checked = true;
-    document.querySelector<HTMLSelectElement>('[data-calendar-view-target="eventGuestUpdates"]')!.value = 'external_only';
-
-    await controller.submitEvent();
-    expect(mocks.createRoutedEvent).toHaveBeenCalledTimes(1);
-    expect(mocks.syncCalendarEvent).toHaveBeenCalledWith('event-1');
-    expect(document.querySelector('dialog')?.hasAttribute('open')).toBe(false);
-
-    expect(document.querySelector('[data-calendar-view-target="eventError"]')?.textContent).toBe('');
-    expect(mocks.createRoutedEvent).toHaveBeenCalledWith(expect.objectContaining({
-      account_id: 'work', calendar_id: 'team',
-      guest_update_policy: 'external_only',
-      attendees: [
-        { email: 'Alex@example.com', responseStatus: 'needsAction' },
-        { email: 'sam@example.com', responseStatus: 'needsAction' },
-      ],
-      conference_data: expect.objectContaining({
-        pendingCreateRequest: expect.objectContaining({
-          requestId: 'generated-by-jin-core',
-          conferenceSolutionKey: { type: 'hangoutsMeet' },
-        }),
-      }),
-    }));
-  });
-
-  it('does not create an invitation with invalid guest email', async () => {
-    await controller.openEventCreate();
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')!.value = 'Launch review';
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventGuests"]')!.value = 'not-an-email';
-
-    await controller.submitEvent();
-
+    const select = document.querySelector<HTMLSelectElement>('#event-composer-destination')!;
+    expect([...select.options].map(option => option.textContent)).toEqual(['Choose a calendar', 'Jin', 'Work · Team']);
+    expect(document.querySelector<HTMLButtonElement>('.event-composer__save')?.disabled).toBe(true);
+    select.value = '1';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    const title = document.querySelector<HTMLInputElement>('#event-composer-title')!;
+    title.value = 'Review';
+    title.dispatchEvent(new Event('input', { bubbles: true }));
+    mocks.listGoogleAccounts.mockResolvedValue([]);
+    document.querySelector<HTMLButtonElement>('.event-composer__save')!.click();
+    await flush();
+    await flush();
     expect(mocks.createEvent).not.toHaveBeenCalled();
     expect(mocks.createRoutedEvent).not.toHaveBeenCalled();
-    expect(document.querySelector('[data-calendar-view-target="eventError"]')?.textContent).toContain('valid guest email');
+    expect(document.querySelector('.event-companion__status')?.textContent).toContain('no longer writable');
   });
 
-  it('builds a custom monthly recurrence and renders a next-three preview', async () => {
+  it('submits the selected account/calendar IDs when two accounts share a calendar name', async () => {
+    const accounts = ['acc-one', 'acc-two'].map(id => ({
+      id, alias: id, state: 'connected', calendars: [{
+        calendar_id: 'shared', name: 'Team', enabled: true, available: true, writable: true,
+        allowed_conference_solution_types: [],
+      }],
+    }));
+    mocks.listGoogleAccounts.mockResolvedValue(accounts);
+    await controller.loadCalendar();
     await controller.openEventCreate();
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')!.value = 'Monthly review';
-    const repeat = document.querySelector<HTMLSelectElement>('[data-calendar-view-target="eventRepeat"]')!;
-    repeat.value = 'custom';
-    document.querySelector<HTMLSelectElement>('[data-calendar-view-target="eventRepeatFrequency"]')!.value = 'monthly';
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventRepeatInterval"]')!.value = '2';
-    document.querySelector<HTMLInputElement>('input[name="event-repeat-monthly"][value="nth_weekday"]')!.checked = true;
-    document.querySelector<HTMLSelectElement>('[data-calendar-view-target="eventRepeatOrdinal"]')!.value = '-1';
-    document.querySelector<HTMLSelectElement>('[data-calendar-view-target="eventRepeatOrdinalWeekday"]')!.value = 'th';
-    document.querySelector<HTMLInputElement>('input[name="event-repeat-end"][value="count"]')!.checked = true;
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventRepeatCount"]')!.value = '6';
-    controller.repeatChanged();
+    const select = document.querySelector<HTMLSelectElement>('#event-composer-destination')!;
+    expect([...select.options].map(option => option.textContent)).toEqual([
+      'Choose a calendar', 'Jin', 'acc-one · Team', 'acc-two · Team',
+    ]);
+    select.value = '2';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    const title = document.querySelector<HTMLInputElement>('#event-composer-title')!;
+    title.value = 'Review';
+    title.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector<HTMLButtonElement>('.event-composer__save')!.click();
+    await flush();
+    await flush();
+    expect(mocks.createRoutedEvent).toHaveBeenCalledWith(expect.objectContaining({
+      account_id: 'acc-two', calendar_id: 'shared', title: 'Review',
+    }));
+    expect(mocks.createEvent).not.toHaveBeenCalled();
+  });
+
+  it('opens Composer When fields as the form alternative for drag outcomes (AC-CALX-021)', async () => {
+    await controller.openEventCreate();
+    expect(document.querySelector('.event-composer')).toBeTruthy();
+    expect(document.querySelector('input[type="date"][data-companion-focus="composer-start-date"]')).toBeTruthy();
+    expect(document.querySelector('.event-composer__temporal input[type="time"]')).toBeTruthy();
+    expect(mocks.createEvent).not.toHaveBeenCalled();
+  });
+
+  it('guards a dirty inspector from timeline Enter and empty-time drag replacements', async () => {
+    controller.selectDate('2026-08-20');
+    await controller.openEventCreate();
+    const title = document.querySelector<HTMLInputElement>('#event-composer-title')!;
+    title.value = 'Unsaved title';
+    title.dispatchEvent(new Event('input', { bubbles: true }));
+
+    const scroller = document.querySelector<HTMLElement>('.calendar-timegrid__scroller')!;
+    scroller.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await flush();
+    expect(document.querySelector<HTMLInputElement>('#event-composer-title')?.value).toBe('Unsaved title');
+    expect(document.querySelector('.event-companion__discard.hidden')).toBeNull();
+    document.querySelector<HTMLButtonElement>('.event-companion__discard button')!.click();
     await flush();
 
-    expect(document.querySelector('[data-calendar-view-target="eventRepeatCustom"]')?.classList.contains('hidden')).toBe(false);
-    expect(document.querySelector('[data-calendar-view-target="eventRepeatPreview"]')?.textContent).toContain('Next 3');
-    await controller.submitEvent();
-    expect(mocks.createEvent).not.toHaveBeenCalled();
-    expect(document.querySelector('[data-calendar-view-target="eventError"]')?.textContent).toContain('Google Calendar');
-  });
-
-  it('applies relative time with overnight rollover and preserves date-only time intent', async () => {
-    await controller.openEventCreate();
-    const input = document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventWhenInput"]')!;
-    input.value = 'tomorrow at 11:30 pm';
-    controller.applyWhen();
-    expect(document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventAllDay"]')?.checked).toBe(false);
-    expect(document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventStartTime"]')?.value).toBe('23:30');
-    expect(document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventEndTime"]')?.value).toBe('00:30');
-    expect(document.querySelector<HTMLElement>('[data-calendar-view-target="eventCalendar"]')?.dataset.pendingEnd).toBe('2026-08-22');
-    input.value = 'in 3 days';
-    controller.applyWhen();
-    expect(document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventAllDay"]')?.checked).toBe(false);
-    expect(document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventStartTime"]')?.value).toBe('23:30');
-  });
-
-  it('keeps invalid natural input from mutating the last valid range', async () => {
-    await controller.openEventCreate();
-    const input = document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventWhenInput"]')!;
-    input.value = 'tomorrow';
-    controller.applyWhen();
-    const calendar = document.querySelector<HTMLElement>('[data-calendar-view-target="eventCalendar"]')!;
-    const before = { ...calendar.dataset };
-    input.value = 'sometime soon';
-    controller.applyWhen();
-    expect(calendar.dataset.pendingStart).toBe(before.pendingStart);
-    expect(calendar.dataset.pendingEnd).toBe(before.pendingEnd);
-    expect(document.querySelector<HTMLElement>('[data-calendar-view-target="eventWhenPreview"]')?.dataset.state).toBe('error');
-  });
-
-  it('reformats a cached valid preview on locale change without reparsing or losing the draft', async () => {
-    await controller.openEventCreate();
-    const input = document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventWhenInput"]')!;
-    input.value = 'tomorrow at noon';
-    controller.previewWhen();
-    localStorage.setItem('jin:event-locale', 'pt-BR');
-    controller.localeChanged();
-    expect(input.value).toBe('tomorrow at noon');
-    expect(document.querySelector('[data-event-copy="when"]')?.textContent).toContain('Quando');
-    expect(document.querySelector<HTMLElement>('[data-calendar-view-target="eventWhenPreview"]')?.textContent).toContain('às');
-    expect(document.querySelector('.calendar-widget__today-btn')?.textContent).toBe('Hoje');
-    expect(document.querySelector('#event-dialog-title')?.textContent).toBe('Novo evento');
-    const submit = document.querySelector<HTMLButtonElement>('[data-calendar-view-target="eventSubmit"]');
-    expect(submit?.textContent).toBe('Criar');
-    expect(submit?.getAttribute('aria-label')).toBe('Criar evento');
-  });
-
-  it('rejects malformed or backwards timed intervals locally and keeps the draft', async () => {
-    await controller.openEventCreate();
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')!.value = 'Still here';
-    const allDay = document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventAllDay"]')!;
-    allDay.checked = false;
-    controller.toggleAllDay();
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventStartTime"]')!.value = '11:00';
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventEndTime"]')!.value = '10:00';
-    await controller.submitEvent();
-    expect(mocks.createEvent).not.toHaveBeenCalled();
-    expect(document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')?.value).toBe('Still here');
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventStartTime"]')!.value = 'bad';
-    await controller.submitEvent();
+    const day = scroller.querySelector<HTMLElement>('.calendar-timegrid__day[data-date="2026-08-20"]')!;
+    const pointer = (type: string): Event => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        pointerType: { value: 'mouse' },
+        clientY: { value: 120 },
+      });
+      return event;
+    };
+    day.dispatchEvent(pointer('pointerdown'));
+    window.dispatchEvent(pointer('pointerup'));
+    await flush();
+    expect(document.querySelector<HTMLInputElement>('#event-composer-title')?.value).toBe('Unsaved title');
+    expect(document.querySelector('.event-companion__discard.hidden')).toBeNull();
     expect(mocks.createEvent).not.toHaveBeenCalled();
   });
 
-  it('normalizes compact clocks before creating a timed event', async () => {
-    await controller.openEventCreate();
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')!.value = 'Afternoon review';
-    const allDay = document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventAllDay"]')!;
-    allDay.checked = false;
-    controller.toggleAllDay();
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventStartTime"]')!.value = '16';
-    document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventEndTime"]')!.value = '1730';
 
-    await controller.submitEvent();
 
-    expect(mocks.createEvent).toHaveBeenCalledWith(expect.objectContaining({
-      start: expect.stringContaining('T16:00:00'),
-      end: expect.stringContaining('T17:30:00'),
-      is_all_day: false,
-    }));
-  });
 
-  it('allows at most one Create in flight and preserves the complete draft on failure', async () => {
-    await controller.openEventCreate();
-    const title = document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')!;
-    const location = document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventLocation"]')!;
-    title.value = 'Slow morning';
-    location.value = 'Garden';
-    let rejectCreate: (reason: Error) => void = () => {};
-    mocks.createEvent.mockReturnValue(new Promise((_resolve, reject) => { rejectCreate = reject; }));
-    const first = controller.submitEvent();
-    const second = controller.submitEvent();
-    expect(mocks.createEvent).toHaveBeenCalledTimes(1);
-    rejectCreate(new Error('offline'));
-    await Promise.all([first, second]);
-    expect(title.value).toBe('Slow morning');
-    expect(location.value).toBe('Garden');
-    expect(document.querySelector('[data-calendar-view-target="eventModal"]')?.hasAttribute('open')).toBe(true);
-  });
+
+
+
+
+
+
 
   it('locale rerender leaves calendar hidden while event detail is open', () => {
     const month = document.querySelector<HTMLElement>('[data-calendar-view-target="monthView"]')!;
@@ -423,10 +380,8 @@ describe('CalendarViewController safety and mode invariants', () => {
 
     expect(month.classList.contains('hidden')).toBe(true);
     expect(detail.classList.contains('hidden')).toBe(false);
-    expect(document.querySelector<HTMLButtonElement>('.form-actions .btn-secondary')?.textContent).toBe('Cancelar');
-    expect(document.querySelector<HTMLInputElement>('[data-calendar-view-target="eventTitle"]')?.placeholder).toBe('Título do evento');
     expect(document.querySelector('section')?.getAttribute('aria-label')).toBe('Calendário');
-    expect(document.querySelector<HTMLButtonElement>('.calendar-global-add')?.textContent).toBe('+ Adicionar evento');
+    expect(document.querySelector<HTMLButtonElement>('.calendar-global-add')?.textContent).toBe('+');
     expect(document.querySelector<HTMLButtonElement>('.calendar-global-add')?.getAttribute('aria-label')).toBe('Adicionar evento');
   });
 
@@ -435,7 +390,7 @@ describe('CalendarViewController safety and mode invariants', () => {
     controller.localeChanged();
 
     expect(document.querySelector<HTMLButtonElement>('[data-date="2026-08-20"]')?.getAttribute('aria-label')).toBe('20 (1 evento)');
-    expect(document.querySelector<HTMLButtonElement>('.calendar-event-chip')?.getAttribute('aria-label')).toBe('Ver Overnight workshop, Source: Jin');
+    expect(document.querySelector<HTMLButtonElement>('.calendar-event-chip')?.getAttribute('aria-label')).toBe('Ver Overnight workshop, 23:30, Source: Jin');
   });
 
   it('keeps month dates on the existing Day-view activation path', () => {
@@ -447,32 +402,89 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(document.querySelector('[data-calendar-view-target="dayView"]')?.classList.contains('hidden')).toBe(false);
   });
 
-  it('keeps month event chips on the authoritative detail path', () => {
-    const navigations: unknown[] = [];
-    document.querySelector('section')?.addEventListener('jin:navigate', event => navigations.push((event as CustomEvent).detail));
+  it('keeps month event chips on the companion preview path', async () => {
     const chip = document.querySelector<HTMLButtonElement>('.calendar-event-chip')!;
-
     chip.click();
+    await flush();
+    await flush();
 
     expect(chip.dataset.eventId).toBe('event-1');
-    expect(navigations).toEqual([{ kind: 'events', id: 'event-1' }]);
+    expect(mocks.getEventDetailById).toHaveBeenCalledWith('event-1');
+    expect(document.querySelector('.event-preview, .event-companion')).toBeTruthy();
     expect(document.querySelector('[data-calendar-view-target="monthView"]')?.classList.contains('hidden')).toBe(false);
   });
 
-  it('keeps the first three real month event controls and truthful overflow', async () => {
+  it('keeps every month event control mounted while showing a truthful overflow', async () => {
     mocks.listEvents.mockResolvedValue([
       makeEvent({ id: 'event-1', title: 'First', start: '2026-08-20T09:00:00', end: '2026-08-20T10:00:00' }),
       makeEvent({ id: 'event-2', title: 'Second', start: '2026-08-20T10:00:00', end: '2026-08-20T11:00:00' }),
       makeEvent({ id: 'event-3', title: 'Third', start: '2026-08-20T11:00:00', end: '2026-08-20T12:00:00' }),
       makeEvent({ id: 'event-4', title: 'Fourth', start: '2026-08-20T12:00:00', end: '2026-08-20T13:00:00' }),
     ]);
+    mockProjectionFromListEvents();
     await controller.loadCalendar();
+    await flush();
     const cell = document.querySelector<HTMLButtonElement>('[data-date="2026-08-20"]')!.closest('.calendar-day-cell')!;
     const chips = [...cell.querySelectorAll<HTMLButtonElement>('.calendar-event-chip')];
 
-    expect(chips.map(chip => chip.dataset.eventId)).toEqual(['event-1', 'event-2', 'event-3']);
+    expect(chips.map(chip => chip.dataset.eventId)).toEqual(['event-1', 'event-2', 'event-3', 'event-4']);
+    expect(chips.filter(chip => !chip.hidden).map(chip => chip.dataset.eventId)).toEqual(['event-1', 'event-2', 'event-3']);
     expect(chips.every(chip => chip.getAttribute('aria-label')?.startsWith('View '))).toBe(true);
     expect(cell.querySelector('.calendar-event-more')?.textContent).toBe('+1');
+  });
+
+  it('reconciles ten events to measured shared capacity without replacing focused controls', async () => {
+    mocks.listEvents.mockResolvedValue(Array.from({ length: 10 }, (_, index) => makeEvent({
+      id: `dense-${index}`,
+      title: `Event ${index}`,
+      start: `2026-08-20T${String(index + 8).padStart(2, '0')}:00:00`,
+      end: `2026-08-20T${String(index + 9).padStart(2, '0')}:00:00`,
+    })));
+    mockProjectionFromListEvents();
+    await controller.loadCalendar();
+    const grid = document.querySelector<HTMLElement>('.calendar-day-grid')!;
+    const scroller = document.querySelector<HTMLElement>('.calendar-month-grid-scroller')!;
+    const cell = document.querySelector<HTMLButtonElement>('[data-date="2026-08-20"]')!.closest<HTMLElement>('.calendar-day-cell')!;
+    const chips = [...cell.querySelectorAll<HTMLButtonElement>('.calendar-event-chip')];
+    const date = cell.querySelector<HTMLElement>('.calendar-day-button')!;
+    const more = cell.querySelector<HTMLElement>('.calendar-event-more')!;
+    let rowHeight = 112;
+    vi.spyOn(cell, 'getBoundingClientRect').mockImplementation(() => ({ height: rowHeight } as DOMRect));
+    vi.spyOn(date, 'getBoundingClientRect').mockReturnValue({ height: 27 } as DOMRect);
+    vi.spyOn(chips[0], 'getBoundingClientRect').mockReturnValue({ height: 20 } as DOMRect);
+    vi.spyOn(more, 'getBoundingClientRect').mockReturnValue({ height: 28 } as DOMRect);
+    const measurement = controller as unknown as {
+      stopMonthGridMeasurement(): void;
+      measureMonthGrid(grid: HTMLElement, scroller: HTMLElement): void;
+    };
+    measurement.stopMonthGridMeasurement();
+    chips[1].focus();
+    measurement.measureMonthGrid(grid, scroller);
+    expect(chips.filter(chip => !chip.hidden)).toHaveLength(2);
+    expect(more.textContent).toBe('+8');
+    expect(document.activeElement).toBe(chips[1]);
+
+    rowHeight = 80;
+    measurement.stopMonthGridMeasurement();
+    measurement.measureMonthGrid(grid, scroller);
+    expect(chips.filter(chip => !chip.hidden)).toHaveLength(1);
+    expect(more.textContent).toBe('+9');
+    expect(document.activeElement).toBe(more);
+    rowHeight = 300;
+    measurement.stopMonthGridMeasurement();
+    measurement.measureMonthGrid(grid, scroller);
+    expect(chips.filter(chip => !chip.hidden)).toHaveLength(10);
+    expect(more.hidden).toBe(true);
+    expect(document.activeElement).toBe(date);
+
+    rowHeight = 80;
+    measurement.stopMonthGridMeasurement();
+    measurement.measureMonthGrid(grid, scroller);
+    more.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    window.dispatchEvent(new Event('pointerup', { bubbles: true }));
+    more.click();
+    expect(localStorage.getItem('jin:calendar-view')).toBe('day');
+    expect(document.querySelectorAll('.calendar-timegrid__event').length).toBeGreaterThanOrEqual(10);
   });
 
   it('keeps Week active for Today and week navigation', () => {
@@ -549,20 +561,23 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(document.querySelectorAll('.calendar-timegrid--week .calendar-timegrid__gutter')).toHaveLength(1);
   });
 
-  it('keeps chronological controls focusable and routes activation to authoritative detail', async () => {
+  it('keeps chronological controls focusable and routes activation to companion preview', async () => {
     mocks.listEvents.mockResolvedValue([
       makeEvent({ id: 'later', start: '2026-08-20T10:00:00', end: '2026-08-20T11:00:00' }),
       makeEvent({ id: 'earlier', start: '2026-08-20T09:00:00', end: '2026-08-20T10:30:00' }),
     ]);
+    mockProjectionFromListEvents();
     await controller.loadCalendar();
     controller.selectDate('2026-08-20');
+    await flush();
     const controls = [...document.querySelectorAll<HTMLButtonElement>('.calendar-timegrid__event')];
     expect(controls.map(control => control.dataset.eventId)).toEqual(['earlier', 'later']);
     expect(controls.every(control => control.tabIndex === 0)).toBe(true);
-    const navigations: unknown[] = [];
-    document.querySelector('section')?.addEventListener('jin:navigate', event => navigations.push((event as CustomEvent).detail));
     controls[0].click();
-    expect(navigations).toEqual([{ kind: 'events', id: 'earlier' }]);
+    await flush();
+    await flush();
+    expect(mocks.getEventDetailById).toHaveBeenCalledWith('earlier');
+    expect(document.querySelector('.event-preview, .event-companion')).toBeTruthy();
   });
 
   it.each([false, true])('uses the assigned Google calendar in all periods for Jin-origin events (all-day=%s)', async (allDay) => {
@@ -618,7 +633,7 @@ describe('CalendarViewController safety and mode invariants', () => {
     mocks.listEvents.mockResolvedValue([makeEvent({ title })]);
     await controller.loadCalendar();
     const chip = document.querySelector<HTMLButtonElement>('.calendar-event-chip')!;
-    expect(chip.textContent).toBe(title);
+    expect(chip.querySelector('.calendar-event-chip__title')?.textContent).toBe(title);
     expect(chip.closest('.calendar-week-row')?.children).toHaveLength(7);
     expect(chip.dataset.calendarColor).toBe('accent');
   });
@@ -678,10 +693,10 @@ describe('CalendarViewController safety and mode invariants', () => {
     const early = document.querySelector<HTMLButtonElement>('.calendar-timegrid__night-toggle[data-band="early"]')!;
     const late = document.querySelector<HTMLButtonElement>('.calendar-timegrid__night-toggle[data-band="late"]')!;
     expect([early.getAttribute('aria-expanded'), late.getAttribute('aria-expanded')]).toEqual(['true', 'true']);
-    expect(early.textContent).toContain('1 event');
-    expect(early.textContent).toContain('2:00 AM');
-    expect(early.title).toBe(early.textContent);
-    expect(early.getAttribute('aria-label')).toContain(early.textContent);
+    expect(early.getAttribute('aria-label')).toContain('1 event');
+    expect(early.getAttribute('aria-label')).toContain('2:00 AM');
+    expect(early.getAttribute('aria-label')).toContain(early.title);
+    expect(early.textContent).toBe('Hide');
     early.click();
     expect(early.getAttribute('aria-expanded')).toBe('false');
     expect(document.querySelector('[data-event-id="early"]')).not.toBeNull();
@@ -690,6 +705,8 @@ describe('CalendarViewController safety and mode invariants', () => {
 
   it('updates one today marker in place and keeps one timer without rebuilding or moving focus', async () => {
     controller.selectDate('2026-08-20');
+    await flush();
+    await flush();
     const scroller = document.querySelector<HTMLElement>('.calendar-timegrid__scroller')!;
     const event = document.querySelector<HTMLButtonElement>('.calendar-timegrid__event')!;
     const beforeMarker = document.querySelector<HTMLElement>('.calendar-timegrid__now')!;
@@ -779,10 +796,99 @@ describe('CalendarViewController safety and mode invariants', () => {
     controller.localeChanged();
     controller.selectDate('2026-08-20');
     expect(document.querySelector('.calendar-timegrid')?.getAttribute('aria-label')).toBe('Linha do tempo do dia');
-    expect(document.querySelector<HTMLElement>('.calendar-timegrid__hour-label[data-minute="0"]')?.textContent).toBe('0:00');
+    expect(document.querySelector<HTMLElement>('.calendar-timegrid__hour-label[data-minute="0"]')?.textContent).toBe('00');
     expect(document.querySelector('.calendar-timegrid__all-day-label')?.textContent).toBe('Dia inteiro');
   });
+
+  it('consumes calendarRangeProjection for Day geometry (AC-CALX-051 GUI)', async () => {
+    await flush();
+    controller.selectDate('2026-08-20');
+    await flush();
+    expect(mocks.calendarRangeProjection).toHaveBeenCalled();
+    expect(document.querySelector('[data-event-id="event-1"]')).toBeTruthy();
+    const calls = mocks.calendarRangeProjection.mock.calls.map(call => call[0]);
+    expect(calls.some(input => input.from === '2026-08-20' && input.to === '2026-08-20')).toBe(true);
+  });
+
+  it('month_date_opens_day: activating the date number opens Day (AC-CALX-011)', async () => {
+    await flush();
+    const dateBtn = document.querySelector<HTMLButtonElement>('.calendar-day-button[data-date="2026-08-20"]');
+    expect(dateBtn).toBeTruthy();
+    dateBtn!.click();
+    await flush();
+    expect(document.querySelector('.calendar-timegrid--day')).toBeTruthy();
+    expect(document.querySelector('[data-calendar-view-target="dayView"]')?.classList.contains('hidden')).toBe(false);
+  });
+
+  it('create opens companion without mutating before save', async () => {
+    mocks.createEvent.mockClear();
+    await controller.openEventCreate();
+    await flush();
+    expect(document.querySelector('.event-composer')).toBeTruthy();
+    expect(mocks.createEvent).not.toHaveBeenCalled();
+  });
+
+  it('preserves timeline scroll when opening event preview via companion', async () => {
+    controller.selectDate('2026-08-20');
+    await flush();
+    const scroller = document.querySelector<HTMLElement>('.calendar-timegrid__scroller')!;
+    scroller.scrollTop = 180;
+    scroller.dispatchEvent(new Event('scroll'));
+    const eventBtn = document.querySelector<HTMLButtonElement>('.calendar-timegrid__event')!;
+    eventBtn.click();
+    await flush();
+    await flush();
+    expect(mocks.getEventDetailById).toHaveBeenCalledWith('event-1');
+    expect(document.querySelector('.event-preview, .event-companion')).toBeTruthy();
+    expect(document.querySelector<HTMLElement>('.calendar-timegrid__scroller')?.scrollTop).toBe(180);
+    expect(window.location.hash).not.toContain('event-1');
+  });
+
+  it('applies visibility filter to projected events before render', async () => {
+    mocks.listEvents.mockResolvedValue([
+      makeEvent({ id: 'jin-a', title: 'Jin A', start: '2026-08-20T10:00:00', end: '2026-08-20T11:00:00' }),
+      makeEvent({
+        id: 'google-b', title: 'Google B', start: '2026-08-20T12:00:00', end: '2026-08-20T13:00:00',
+        source: 'google', authority: 'google',
+        sync_context: { provider: 'google', account_id: 'acc', account_alias: 'Work', calendar_id: 'cal', calendar_name: 'Team' },
+      }),
+    ]);
+    mockProjectionFromListEvents();
+    await controller.loadCalendar();
+    await flush();
+    const key = googleCalendarKey('acc', 'cal');
+    localStorage.setItem('jin:calendar-visibility:v1', JSON.stringify({ [key]: false }));
+    (controller as unknown as { visibilityMap: Record<string, boolean> }).visibilityMap = { [key]: false };
+    controller.selectDate('2026-08-20');
+    await flush();
+    await flush();
+    expect(document.querySelector('.calendar-timegrid [data-event-id="jin-a"]')).toBeTruthy();
+    expect(document.querySelector('.calendar-timegrid [data-event-id="google-b"]')).toBeNull();
+  });
+
+  it('keeps due-task appendage after the time-grid scroller (AC-CALX-059)', async () => {
+    mocks.listTasks.mockResolvedValue([{ id: 'task-1', title: 'Due task', due: '2026-08-20', body: '', status: 'todo' }]);
+    await controller.loadCalendar();
+    controller.selectDate('2026-08-20');
+    await flush();
+    const timeline = document.querySelector('.calendar-timegrid')!;
+    const task = document.querySelector('.calendar-task-item')!;
+    expect(timeline.querySelector('.calendar-timegrid__surface')?.contains(task)).toBe(false);
+    expect(task.closest('.calendar-timegrid__scroller')).toBe(timeline.querySelector('.calendar-timegrid__scroller'));
+  });
+
+  it('avoids horizontal overflow styles on companion+grid layout (AC-CALX-049 S5)', () => {
+    expect(document.querySelector('[data-calendar-view-target="workspace"]')).toBeTruthy();
+    const calendarCss = readFileSync(resolve(process.cwd(), 'src/styles/calendar.css'), 'utf8');
+    expect(calendarCss).toContain('.calendar-timegrid__layout');
+    expect(calendarCss).toContain('max-inline-size: 100%');
+    expect(calendarCss).toContain('min-block-size: 2.75rem');
+    expect(calendarCss).not.toMatch(/\.calendar-timegrid__layout[^{]*\{[^}]*overflow-x:\s*scroll/);
+  });
+
 });
+
+
 
 describe('half-open calendar projection', () => {
   it.each([

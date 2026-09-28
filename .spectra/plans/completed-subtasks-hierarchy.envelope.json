@@ -1,0 +1,26 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "72772102-5154-4766-8af7-807a0027d942",
+  "thread_id": "completed-subtasks-hierarchy",
+  "performative": "PROPOSE",
+  "from": {
+    "eidolon": "ramza"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "artifact": {
+    "kind": "spec",
+    "path": ".spectra/plans/completed-subtasks-hierarchy.md",
+    "sha256": "246f38735695a2fbf13c850090cfe548de8642d5243f2d56f48744b26bd71abc"
+  },
+  "integrity": {
+    "method": "sha256",
+    "value": "246f38735695a2fbf13c850090cfe548de8642d5243f2d56f48744b26bd71abc"
+  },
+  "confidence": 0.945,
+  "x_ramza_acceptance_criteria": {
+    "path": ".spectra/plans/completed-subtasks-hierarchy.criteria.md",
+    "sha256": "b521def2f205287759862903e85d1d9034c5ba2b9851fb30312154d7a826051b"
+  }
+}

@@ -50,7 +50,8 @@ import { isJinErrorDto } from '../types/error';
 import { promoteTask, attachNote, linkObjects, newOperationId, listGoogleAccounts, listNotes, listTasks, listEvents } from '../invoke';
 import { initIcons } from '../lib/icons';
 import { eventMessage, resolveEventLocale } from '../lib/events/locale';
-import type { NoteDto } from '../types/dto';
+import { formatEventDate, formatEventTime } from '../lib/events/transform';
+import type { EventDto, NoteDto } from '../types/dto';
 
 export default class ActionsController extends Controller {
   // ── Targets ───────────────────────────────────────────────────────────────
@@ -70,6 +71,9 @@ export default class ActionsController extends Controller {
     'attachContextGroup',
     'attachContextSearch',
     'attachContextOptions',
+    'attachSource',
+    'attachEventChoices',
+    'attachEventStatus',
     'attachLegacyGroup',
     'linkDialog',
     'linkSourceId',
@@ -100,6 +104,9 @@ export default class ActionsController extends Controller {
   declare attachContextGroupTarget: HTMLElement;
   declare attachContextSearchTarget: HTMLInputElement;
   declare attachContextOptionsTarget: HTMLDataListElement;
+  declare attachSourceTarget: HTMLElement;
+  declare attachEventChoicesTarget: HTMLElement;
+  declare attachEventStatusTarget: HTMLElement;
   declare attachLegacyGroupTargets: HTMLElement[];
 
   declare linkDialogTarget: HTMLDialogElement;
@@ -116,6 +123,11 @@ export default class ActionsController extends Controller {
   // Current task id for the promote action
   private currentTaskId = '';
   private attachContextual = false;
+  private attachNoteEvent = false;
+  private attachRequestId = 0;
+  private attachEvents: EventDto[] = [];
+  private selectedAttachEventId = '';
+  private attachSubmitting = false;
   private linkContextual = false;
   private linkNoteConnect = false;
   private linkRequestId = 0;
@@ -241,22 +253,54 @@ export default class ActionsController extends Controller {
    * data-action="jin:open-attach->actions#openAttach" on .jin-shell.
    */
   openAttach(event: Event): void {
-    const ce = event as CustomEvent<{ noteId?: string; targetId?: string; context?: string }>;
+    const ce = event as CustomEvent<{ noteId?: string; targetId?: string; context?: string; noteTitle?: string }>;
+    const requestId = ++this.attachRequestId;
     this.attachContextual = ce.detail?.context === 'event-prep';
+    this.attachNoteEvent = ce.detail?.context === 'note-event';
+    this.attachSubmitting = false;
+    this.attachEvents = [];
+    this.contextualNotes.clear();
+    this.selectedAttachEventId = '';
+    this.attachDialogTarget.querySelector('.action-dialog__title')!.textContent = 'Attach Note';
+    this.attachDialogTarget.setAttribute('aria-label', 'Attach note to target');
+    this.attachSubmitTarget.textContent = 'Attach';
+    setFormBusy(this.attachSubmitTarget, false);
 
     this.attachNoteIdTarget.value = ce.detail?.noteId ?? '';
     this.attachTargetIdTarget.value = ce.detail?.targetId ?? '';
-    this.attachKindTarget.value = this.attachContextual ? 'prep-for' : '';
-    this.attachContextGroupTarget.classList.toggle('hidden', !this.attachContextual);
-    this.attachLegacyGroupTargets.forEach(group => group.classList.toggle('hidden', this.attachContextual));
+    this.attachKindTarget.value = this.attachContextual || this.attachNoteEvent ? 'prep-for' : '';
+    const contextual = this.attachContextual || this.attachNoteEvent;
+    this.attachContextGroupTarget.classList.toggle('hidden', !contextual);
+    this.attachLegacyGroupTargets.forEach(group => group.classList.toggle('hidden', contextual));
     this.attachContextSearchTarget.value = '';
+    this.attachContextOptionsTarget.replaceChildren();
+    this.attachContextSearchTarget.setAttribute('list', 'attach-context-options');
+    this.attachEventChoicesTarget.replaceChildren();
+    this.attachEventChoicesTarget.classList.add('hidden');
+    this.attachSourceTarget.classList.toggle('hidden', !this.attachNoteEvent);
+    this.attachEventStatusTarget.classList.add('hidden');
     clearFormError(this.attachErrorTarget);
 
     this.attachDialogTarget.showModal();
+    if (this.attachNoteEvent) {
+      this.attachDialogTarget.querySelector('.action-dialog__title')!.textContent = 'Attach to event';
+      this.attachDialogTarget.setAttribute('aria-label', 'Attach to event');
+      this.attachDialogTarget.querySelector<HTMLLabelElement>('label[for="attach-context-title"]')!.textContent = 'Find an event';
+      this.attachSourceTarget.textContent = `Note: ${ce.detail?.noteTitle || 'Untitled'}`;
+      this.attachContextSearchTarget.placeholder = 'Search event titles';
+      this.attachContextSearchTarget.removeAttribute('list');
+      this.attachSubmitTarget.textContent = 'Attach to event';
+      this.attachSubmitTarget.disabled = true;
+      this.attachContextSearchTarget.focus();
+      this.showAttachEventStatus('Loading events…');
+      void this.loadAttachEvents(requestId);
+      return;
+    }
     if (this.attachContextual) {
+      this.attachSubmitTarget.disabled = true;
       this.localizeContextDialog(this.attachDialogTarget, 'attachNote', 'noteTitle', this.attachContextSearchTarget);
       this.attachContextSearchTarget.focus();
-      void this.loadContextNotes();
+      void this.loadContextNotes(requestId);
       initIcons();
       return;
     }
@@ -272,10 +316,22 @@ export default class ActionsController extends Controller {
   }
 
   closeAttach(): void {
+    this.attachRequestId += 1;
+    this.attachSubmitting = false;
     this.attachDialogTarget.close();
   }
 
   async submitAttach(): Promise<void> {
+    if (this.attachSubmitting) return;
+    const requestId = this.attachRequestId;
+    if (this.attachNoteEvent) {
+      if (!this.selectedAttachEventId || !this.attachEvents.some(candidate => candidate.id === this.selectedAttachEventId)) {
+        renderFormError(this.attachErrorTarget, 'Choose an event from the results.');
+        return;
+      }
+      this.attachTargetIdTarget.value = this.selectedAttachEventId;
+      this.attachKindTarget.value = 'prep-for';
+    }
     if (this.attachContextual) {
       const noteId = this.contextualNotes.get(this.attachContextSearchTarget.value.trim().toLocaleLowerCase());
       if (!noteId) {
@@ -296,17 +352,25 @@ export default class ActionsController extends Controller {
       return;
     }
     clearAllFormErrors(this.attachDialogTarget);
+    this.attachSubmitting = true;
     setFormBusy(this.attachSubmitTarget, true);
     try {
       const payload = buildAttachPayload(state);
       await attachNote(payload.note_id, payload.target_id, payload.kind);
-      this.attachDialogTarget.close();
+      if (requestId !== this.attachRequestId || !this.attachDialogTarget.open) return;
+      const fromNote = this.attachNoteEvent;
+      this.closeAttach();
       window.dispatchEvent(new CustomEvent('jin:event-context-attached', {
         detail: { id: state.targetId },
       }));
       // Re-fetch the target (events/tasks) so the prep-for backlink appears (SP3)
-      this.navigateAfterAction('events', state.targetId);
+      if (fromNote) {
+        window.dispatchEvent(new CustomEvent('jin:note-attachment-updated', { detail: { noteId: state.noteId, eventId: state.targetId } }));
+      } else {
+        this.navigateAfterAction('events', state.targetId);
+      }
     } catch (err: unknown) {
+      if (requestId !== this.attachRequestId || !this.attachDialogTarget.open) return;
       if (this.attachContextual) {
         renderFormError(this.attachErrorTarget, eventMessage('failedAttachNote'));
       } else if (isJinErrorDto(err)) {
@@ -315,7 +379,10 @@ export default class ActionsController extends Controller {
         renderFormError(this.attachErrorTarget, eventMessage('unexpectedError'));
       }
     } finally {
-      setFormBusy(this.attachSubmitTarget, false);
+      if (requestId === this.attachRequestId) {
+        this.attachSubmitting = false;
+        setFormBusy(this.attachSubmitTarget, false);
+      }
     }
   }
 
@@ -467,14 +534,73 @@ export default class ActionsController extends Controller {
     });
   }
 
-  private async loadContextNotes(): Promise<void> {
+  private async loadContextNotes(requestId: number): Promise<void> {
     try {
       const notes = await listNotes();
+      if (requestId !== this.attachRequestId || !this.attachContextual || !this.attachDialogTarget.open) return;
       const choices = this.buildNoteChoices(notes);
       this.contextualNotes = new Map(choices.map(choice => [choice.label.toLocaleLowerCase(), choice.id]));
       this.populateTitleOptions(this.attachContextOptionsTarget, choices.map(choice => choice.label));
+      this.attachSubmitTarget.disabled = choices.length === 0;
     } catch {
+      if (requestId !== this.attachRequestId || !this.attachContextual || !this.attachDialogTarget.open) return;
       renderFormError(this.attachErrorTarget, eventMessage('noTitleMatch'));
+    }
+  }
+
+  private showAttachEventStatus(message: string): void {
+    this.attachEventStatusTarget.textContent = message;
+    this.attachEventStatusTarget.classList.remove('hidden');
+  }
+
+  private async loadAttachEvents(requestId: number): Promise<void> {
+    try {
+      const events = await listEvents();
+      if (requestId !== this.attachRequestId || !this.attachNoteEvent || !this.attachDialogTarget.open) return;
+      this.attachEvents = events.filter(candidate => candidate.status !== 'cancelled');
+      this.filterAttachEvents();
+    } catch {
+      if (requestId !== this.attachRequestId || !this.attachNoteEvent || !this.attachDialogTarget.open) return;
+      this.attachEventChoicesTarget.replaceChildren();
+      this.showAttachEventStatus('Could not load events. Close and try again.');
+    }
+  }
+
+  filterAttachEvents(): void {
+    if (!this.attachNoteEvent) return;
+    this.selectedAttachEventId = '';
+    this.attachTargetIdTarget.value = '';
+    this.attachSubmitTarget.disabled = true;
+    const query = this.attachContextSearchTarget.value.trim().toLocaleLowerCase();
+    const matches = this.attachEvents.filter(candidate => candidate.title.toLocaleLowerCase().includes(query)).slice(0, 40);
+    this.attachEventChoicesTarget.replaceChildren();
+    this.attachEventChoicesTarget.classList.toggle('hidden', matches.length === 0);
+    if (matches.length === 0) {
+      this.showAttachEventStatus(this.attachEvents.length === 0 ? 'No events are available.' : 'No events match this search.');
+      return;
+    }
+    this.attachEventStatusTarget.classList.add('hidden');
+    for (const candidate of matches) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.role = 'option';
+      button.setAttribute('aria-selected', 'false');
+      const title = document.createElement('strong');
+      title.textContent = candidate.title || 'Untitled event';
+      const detail = document.createElement('small');
+      const date = formatEventDate(candidate.start, candidate.is_all_day, candidate.start_tzid);
+      const time = candidate.is_all_day ? '' : ` · ${formatEventTime(candidate.start, candidate.end, false, candidate.floating, candidate.start_tzid)}`;
+      detail.textContent = `${date}${time} · ${candidate.sync_context?.calendar_name || 'Jin'}`;
+      button.append(title, detail);
+      button.addEventListener('click', () => {
+        this.selectedAttachEventId = candidate.id;
+        this.attachTargetIdTarget.value = candidate.id;
+        this.attachContextSearchTarget.value = candidate.title;
+        for (const option of this.attachEventChoicesTarget.querySelectorAll('[role="option"]')) option.setAttribute('aria-selected', String(option === button));
+        this.attachSubmitTarget.disabled = false;
+        clearFormError(this.attachErrorTarget);
+      });
+      this.attachEventChoicesTarget.append(button);
     }
   }
 

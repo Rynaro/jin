@@ -8,6 +8,7 @@
  */
 
 import type { TaskDto, SectionDto, ReminderDto } from '../../types/dto';
+import { decomposeDueString } from '../calendar/transform';
 // Re-export overdue helper from the calendar pure layer so callers only need one import.
 export { isTaskOverdue } from '../calendar/transform';
 
@@ -173,21 +174,16 @@ export function taskPriorityLabel(priority: string): string {
 }
 
 /**
- * taskPriorityGlyph — Lucide icon name for the priority.
- * All non-none priorities use a Flag glyph (tinted via CSS data-priority attribute).
- * none → '' (no glyph; the priority icon element should be hidden by render.ts).
- * Supplementary to the text label; never the sole visual identifier.
- * CSS tinting: data-priority="high" → --color-danger; "medium" → --color-warning/accent;
- *              "low" → --color-label-secondary (muted); "" / "none" → no icon.
+ * A stable, color-independent priority mark. The full label remains available
+ * to assistive technology and in the inspector.
  */
 export function taskPriorityGlyph(priority: string): string {
   switch (priority.toLowerCase()) {
-    case 'high':
-    case 'medium':
-    case 'low':
-      return 'flag';
+    case 'high': return '!!!';
+    case 'medium': return '!!';
+    case 'low': return '!';
     default:
-      return ''; // none and unknown → no flag
+      return '';
   }
 }
 
@@ -392,14 +388,39 @@ export function computeSubtaskDisplayInfo(tasks: TaskDto[]): Map<string, Subtask
  */
 export function formatTaskDue(due: string | null): string {
   if (due == null) return 'No due date';
-  const d = new Date(due);
-  return d.toLocaleDateString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
+  const parts = decomposeDueString(due);
+  if (!parts.date) return due;
+  const [year, month, day] = parts.date.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const label = new Intl.DateTimeFormat(undefined, {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+  }).format(date);
+  return parts.time ? `${label}, ${parts.time}` : label;
+}
+
+/** A short label for a task row; calendar arithmetic uses the stored wall date. */
+export function formatTaskDueCompact(due: string | null, now: Date = new Date()): string {
+  if (!due) return 'No due date';
+  const parts = decomposeDueString(due);
+  if (!parts.date) return formatTaskDue(due);
+  const [year, month, day] = parts.date.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const distance = Math.round((date.getTime() - today) / 86_400_000);
+  let label: string;
+  if (distance === 0 || distance === 1) {
+    const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(distance, 'day');
+    label = relative.charAt(0).toLocaleUpperCase() + relative.slice(1);
+  }
+  else if (distance >= 2 && distance <= 6) {
+    label = new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' }).format(date);
+  } else {
+    label = new Intl.DateTimeFormat(undefined, {
+      month: 'short', day: 'numeric', ...(year !== now.getFullYear() ? { year: 'numeric' } : {}),
+      timeZone: 'UTC',
+    }).format(date);
+  }
+  return parts.time ? `${label} · ${parts.time}` : label;
 }
 
 // ── Reminder label formatter (P10) ────────────────────────────────────────────

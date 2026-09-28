@@ -1897,8 +1897,8 @@ impl NotificationCenter {
             ));
         }
         self.prepare_action_attempt(&intent, now)?;
-        if let Err(error) = crate::ops::tasks::transition_task(
-            &config.tasks_dir(),
+        if let Err(error) = crate::ops::workflows::transition_task(
+            root,
             &payload.task_id,
             crate::model::task::TaskStatus::Done,
         ) {

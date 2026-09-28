@@ -48,8 +48,10 @@ import { listNameById } from '../lists/transform';
 import type { BrowseNavigateCallback } from '../notes/render';
 import { buildTaskItem, createTaskDragPreview, wirePointerDrag, type TaskRowCallbacks } from './item';
 import { configureTaskCompletion } from './completion';
+import { guardNativeDrag } from '../ui/movement';
 import { between } from './rank';
 import type { FlexibleTaskGroup } from './scopes';
+import type { ListDto } from '../../types/dto';
 
 // Re-exported for backward-compat call sites (S1-era imports of these symbols
 // from render.ts): the item builder and its callback contract now live in
@@ -115,6 +117,8 @@ export interface SectionCallbacks {
  * Omit the interface entirely (pass undefined) to get the existing read-only view.
  */
 export interface TaskDetailCallbacks {
+  owningList?: ListDto;
+  onSaveColumn?: (taskId: string, columnId: string) => Promise<void>;
   /** Called on title blur / Enter. Should call edit_task({title}). */
   onSaveTitle?: (taskId: string, title: string) => Promise<void>;
   /** Called on body blur (only when content changed). Should call edit_task({body}). */
@@ -599,6 +603,8 @@ export function renderBoardView(
   selectedTaskId?: string | null,
   subtaskDisplayInfo?: Map<string, SubtaskDisplayInfo>,
   selectedTaskIds?: ReadonlySet<string>,
+  typedColumns?: ListDto['columns'],
+  initialColumnId?: string | null,
 ): void {
   container.innerHTML = '';
 
@@ -618,10 +624,15 @@ export function renderBoardView(
   const displayInfo = subtaskDisplayInfo ?? computeSubtaskDisplayInfo(boardTasks);
 
   const columnEls: HTMLElement[] = [];
-  for (const status of BOARD_STATUS_COLUMNS) {
-    const colTasks = boardTasks.filter((t) => t.status === status);
+  const columns = typedColumns?.length
+    ? [...typedColumns].sort((a, b) => a.position.localeCompare(b.position))
+    : BOARD_STATUS_COLUMNS.map((status) => ({ id: status, name: taskStatusLabel(status), type: status, position: status }));
+  for (const column of columns) {
+    const colTasks = typedColumns?.length
+      ? boardTasks.filter((t) => t.board_column_id === column.id)
+      : boardTasks.filter((t) => t.status === column.type);
     const colEl = buildStatusColumn(
-      status,
+      column.type,
       colTasks,
       templates,
       sortMode,
@@ -630,9 +641,26 @@ export function renderBoardView(
       selectedTaskId,
       displayInfo,
       selectedTaskIds,
+      typedColumns?.length ? column as ListDto['columns'][number] : undefined,
+      undefined,
+      typedColumns?.length ? column.id === (initialColumnId ?? columns.find((item) => item.type === 'queue')?.id ?? columns.find((item) => item.type === 'none')?.id) : false,
     );
     columnEls.push(colEl);
     boardEl.appendChild(colEl);
+  }
+
+  if (typedColumns?.length) {
+    const placementIsValid = (task: TaskDto) => columns.some((column) =>
+      column.id === task.board_column_id
+      && (column.type === 'queue' ? task.status === 'todo' : column.type === 'done' ? task.status === 'done' : column.type === 'none' ? task.status === 'todo' || task.status === 'doing' : task.status === 'doing'));
+    const needsPlacement = boardTasks.filter((task) => !placementIsValid(task));
+    if (needsPlacement.length) {
+      const repair = buildStatusColumn('repair', needsPlacement, templates, sortMode, onNavigate,
+        taskCallbacks, selectedTaskId, displayInfo, selectedTaskIds, undefined, 'Needs placement');
+      repair.classList.add('tasks-board__column--repair');
+      columnEls.push(repair);
+      boardEl.appendChild(repair);
+    }
   }
 
   const resetBoardDrag = () => {
@@ -642,23 +670,37 @@ export function renderBoardView(
     }
   };
 
-  // Board movement is pointer-captured from its grip. The source and legal
-  // successor lanes remain available; dropping back into the source is a
-  // safe no-op and within-lane ordering remains intentionally unchanged.
+  // A card's title and quiet body can start a drag after the pointer moves;
+  // completion, menus, links and editing controls retain their own clicks.
+  // Ordinary clicks, including whitespace, still open the inspector.
   for (const card of Array.from(boardEl.querySelectorAll<HTMLElement>('.task-item--card[data-task-id]'))) {
-    const handle = card.querySelector<HTMLElement>('.task-item__drag-handle');
     const taskId = card.dataset.taskId;
     const sourceStatus = card.dataset.taskStatus;
-    if (!handle || !taskId || !sourceStatus || !taskCallbacks?.onStatusDrop) continue;
+    if (!taskId || !sourceStatus || sourceStatus === 'cancelled' || (!taskCallbacks?.onStatusDrop && !taskCallbacks?.onColumnDrop)) continue;
     const legal = new Set(legalNextStatuses(sourceStatus));
 
-    wirePointerDrag(handle, {
+    card.addEventListener('click', (event) => {
+      const target = event.target as Element;
+      if (target.closest('button, a, input, select, textarea, [contenteditable="true"]')) return;
+      if (taskCallbacks?.onItemClick) taskCallbacks.onItemClick(taskId, event);
+      else onNavigate('tasks', taskId);
+    });
+
+    wirePointerDrag(card, {
+      preserveClickTarget: true,
+      shouldStart: (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return false;
+        if (target.closest('input, select, textarea, a, [contenteditable="true"]')) return false;
+        const button = target.closest('button');
+        return !button || button.classList.contains('task-item__body') || button.classList.contains('task-item__drag-handle');
+      },
       onActivate: () => {
         card.classList.add('task-item--dragging');
         taskCallbacks.onDragStart?.(taskId);
         for (const colEl of columnEls) {
           const status = colEl.dataset.columnStatus ?? '';
-          const available = status === sourceStatus || legal.has(status);
+          const available = typedColumns?.length ? Boolean(colEl.dataset.boardColumnId) : status === sourceStatus || legal.has(status);
           colEl.classList.toggle('tasks-board__column--drop-disabled', !available);
           colEl.setAttribute('aria-disabled', available ? 'false' : 'true');
         }
@@ -669,16 +711,22 @@ export function renderBoardView(
         const column = hit?.closest<HTMLElement>('.tasks-board__column') ?? null;
         return column && boardEl.contains(column) ? column : null;
       },
-      onTargetChange: (_previous, next) => {
+      onTargetChange: (_previous, next, point) => {
         for (const colEl of columnEls) colEl.classList.remove('tasks-board__column--pointer-drop-target');
+        const viewport = boardEl.getBoundingClientRect();
+        if (point.x < viewport.left + 32) boardEl.scrollLeft -= 18;
+        else if (point.x > viewport.right - 32) boardEl.scrollLeft += 18;
         const status = next?.dataset.columnStatus ?? '';
-        if (next && (status === sourceStatus || legal.has(status))) {
+        if (next && (typedColumns?.length ? Boolean(next.dataset.boardColumnId) : status === sourceStatus || legal.has(status))) {
           next.classList.add('tasks-board__column--pointer-drop-target');
         }
       },
       onCommit: (target) => {
         const status = target.dataset.columnStatus ?? '';
-        if (status !== sourceStatus && legal.has(status)) taskCallbacks.onStatusDrop?.(taskId, status);
+        if (typedColumns?.length) {
+          const columnId = target.dataset.boardColumnId;
+          if (columnId && columnId !== card.dataset.boardColumnId) taskCallbacks.onColumnDrop?.(taskId, columnId);
+        } else if (status !== sourceStatus && legal.has(status)) taskCallbacks.onStatusDrop?.(taskId, status);
       },
       onCleanup: () => {
         card.classList.remove('task-item--dragging');
@@ -688,7 +736,46 @@ export function renderBoardView(
   }
 
   container.appendChild(boardEl);
+  if (typedColumns?.length) {
+    const cancelled = tasks.filter((task) => task.status === 'cancelled');
+    if (cancelled.length) {
+      const closed = document.createElement('details');
+      closed.className = 'tasks-closed-group';
+      const summary = document.createElement('summary'); summary.textContent = `Cancelled · ${cancelled.length}`;
+      closed.append(summary);
+      const list = document.createElement('ul'); list.className = 'browse-list tasks-closed-group__list';
+      for (const task of cancelled) list.append(buildTaskItem(templates.taskItem, task, 'row', onNavigate, taskCallbacks,
+        resolveItemSelected(task.id, selectedTaskId, selectedTaskIds), displayInfo.get(task.id)));
+      closed.append(list); container.append(closed);
+    }
+  }
   ensureRovingTabStop(boardEl);
+}
+
+/** Closed checklist families remain nested beneath their visible root. */
+export function appendTaskDisclosure(
+  container: HTMLElement,
+  label: string,
+  tasks: TaskDto[],
+  templates: TasksTemplates,
+  onNavigate: BrowseNavigateCallback,
+  callbacks?: TaskRowCallbacks,
+  selectedTaskId?: string | null,
+  selectedTaskIds?: ReadonlySet<string>,
+): void {
+  if (!tasks.length) return;
+  const { topLevel } = partitionParentsAndChildren(tasks);
+  const host = document.createElement('li');
+  host.className = 'tasks-closed-group';
+  host.setAttribute('role', 'presentation');
+  const details = document.createElement('details');
+  const summary = document.createElement('summary');
+  summary.textContent = `${label} · ${topLevel.length}`;
+  details.append(summary);
+  const list = document.createElement('ul');
+  list.className = 'browse-list tasks-closed-group__list';
+  appendTasksWithNesting(list, tasks, templates, onNavigate, callbacks, selectedTaskId, selectedTaskIds);
+  details.append(list); host.append(details); container.append(host);
 }
 
 /**
@@ -708,10 +795,14 @@ function buildStatusColumn(
   selectedTaskId?: string | null,
   displayInfo?: Map<string, SubtaskDisplayInfo>,
   selectedTaskIds?: ReadonlySet<string>,
+  typedColumn?: ListDto['columns'][number],
+  specialLabel?: string,
+  isInitial = false,
 ): HTMLElement {
   const col = document.createElement('div');
   col.className = 'tasks-board__column';
   col.dataset.columnStatus = status;
+  if (typedColumn) col.dataset.boardColumnId = typedColumn.id;
   col.setAttribute('role', 'listitem');
   col.setAttribute('aria-disabled', 'false');
 
@@ -719,7 +810,7 @@ function buildStatusColumn(
   const header = document.createElement('div');
   header.className = 'tasks-board__column-header';
 
-  const label = taskStatusLabel(status);
+  const label = specialLabel ?? typedColumn?.name ?? taskStatusLabel(status);
 
   const nameEl = document.createElement('span');
   nameEl.className = 'tasks-board__column-name text-subheadline';
@@ -731,6 +822,19 @@ function buildStatusColumn(
   countEl.textContent = String(colTasks.length);
   countEl.setAttribute('aria-label', `${colTasks.length} tasks`);
   header.appendChild(countEl);
+
+  if (typedColumn) {
+    const descriptor = document.createElement('small');
+    descriptor.className = 'tasks-board__column-type';
+    descriptor.textContent = typedColumn.type === 'in_progress' ? 'In Progress' : typedColumn.type === 'done' ? 'Done' : typedColumn.type === 'none' ? 'No status change' : 'Queue';
+    header.appendChild(descriptor);
+    if (isInitial) {
+      const initial = document.createElement('small');
+      initial.className = 'tasks-board__column-initial';
+      initial.textContent = 'New tasks';
+      header.appendChild(initial);
+    }
+  }
 
   col.appendChild(header);
 
@@ -745,8 +849,7 @@ function buildStatusColumn(
 
   const sorted = sortTasksForMode(colTasks, sortMode);
   for (const task of sorted) {
-    cardList.appendChild(
-      buildTaskItem(
+    const card = buildTaskItem(
         templates.taskItem,
         task,
         'card',
@@ -754,15 +857,18 @@ function buildStatusColumn(
         taskCallbacks,
         resolveItemSelected(task.id, selectedTaskId, selectedTaskIds),
         displayInfo?.get(task.id),
-      ),
-    );
+      );
+    if (typedColumn) card.dataset.boardColumnId = typedColumn.id;
+    cardList.appendChild(card);
   }
   col.appendChild(cardList);
 
   // AC-S4-08 (RETIRES AC-S2-04): the add-task row lives ONLY in the Todo
   // column now that columns are status-keyed — core always creates at
   // `todo`, so an add row under any other column would be a lie.
-  if (status === 'todo' && taskCallbacks?.onCreateTask) {
+  if (typedColumn && taskCallbacks?.onColumnCreate) {
+    cardList.appendChild(buildAddTaskRow((title, due) => taskCallbacks.onColumnCreate?.(typedColumn.id, title, due), taskCallbacks.onPickDueForCreate));
+  } else if (status === 'todo' && taskCallbacks?.onCreateTask) {
     cardList.appendChild(buildAddTaskRow(taskCallbacks.onCreateTask, taskCallbacks.onPickDueForCreate));
   }
 
@@ -848,6 +954,7 @@ function wireSectionReorderDrag(
   header.classList.add('tasks-section-group__header--draggable');
 
   header.addEventListener('dragstart', (e: DragEvent) => {
+    guardNativeDrag(header);
     if (e.dataTransfer) {
       e.dataTransfer.setData('application/x-jin-section-id', sectionId);
       e.dataTransfer.effectAllowed = 'move';
@@ -1144,7 +1251,7 @@ export function renderTaskPane(
   bodyEl.value = task.body ?? '';
   bodyEl.placeholder = 'Add a description…';
   bodyEl.setAttribute('aria-label', 'Task notes (body)');
-  bodyEl.rows = 4;
+  bodyEl.rows = 2;
 
   if (detailCallbacks?.onSaveBody) {
     const origBody = task.body ?? '';
@@ -1202,7 +1309,7 @@ export function renderTaskPane(
     priorityIconEl.className = 'task-detail__priority-icon';
     const pGlyph = taskPriorityGlyph(task.priority);
     if (pGlyph) {
-      priorityIconEl.setAttribute('data-lucide', pGlyph);
+      priorityIconEl.textContent = pGlyph;
       priorityIconEl.setAttribute('data-priority', task.priority.toLowerCase());
     } else {
       priorityIconEl.style.display = 'none';
@@ -1310,17 +1417,16 @@ export function renderTaskPane(
     el.detailContent.appendChild(backlinksSection);
   }
 
-  // Compose the existing, fully wired controls into a task workspace. Keeping
-  // the controls themselves intact preserves their save/reminder/calendar
-  // behavior while making the task content primary and metadata companion.
+  // Place the already wired controls in reading order. Moving nodes preserves
+  // their listeners, pending edits, and the controller's draft ownership.
   const existing = Array.from(el.detailContent.children);
   const layout = document.createElement('div');
   layout.className = 'task-detail__layout';
   const main = document.createElement('div');
   main.className = 'task-detail__main';
-  const attributes = document.createElement('aside');
-  attributes.className = 'task-detail__attributes';
-  attributes.setAttribute('aria-label', 'Task attributes');
+
+  const header = existing.find((node) => node.classList.contains('tasks-detail-pane__header'));
+  if (header) main.appendChild(header);
 
   const title = existing.find((node) => node.classList.contains('browse-detail__title'));
   if (title) {
@@ -1333,25 +1439,41 @@ export function renderTaskPane(
       });
       titleRow.appendChild(completion);
     }
-    titleRow.appendChild(title);
+    const titleCopy = document.createElement('div');
+    titleCopy.className = 'task-detail__title-copy';
+    titleCopy.appendChild(title);
+    const context = document.createElement('p');
+    context.className = 'task-detail__context text-footnote';
+    context.textContent = `${listNameById(resolverLists, task.list)} · ${taskStatusLabel(task.status)}`;
+    titleCopy.appendChild(context);
+    titleRow.appendChild(titleCopy);
     main.appendChild(titleRow);
   }
 
+  const appendKind = (kind: string) => {
+    const node = existing.find((item) => item.classList.contains(kind));
+    if (node) main.appendChild(node);
+  };
+  appendKind('task-detail__body-section');
+  const fields = existing.find((node) => node.classList.contains('task-detail__fields'));
+  const reminders = existing.find((node) => node.classList.contains('task-detail__reminders'));
+  const timing = fields?.querySelector('.task-detail__field-group--timing');
+  if (timing && reminders) timing.appendChild(reminders);
+  if (fields) main.appendChild(fields);
+  else {
+    appendKind('browse-detail__meta');
+    appendKind('task-detail__due');
+    appendKind('task-detail__list');
+    if (reminders) main.appendChild(reminders);
+  }
+  appendKind('task-detail__subtasks');
+  appendKind('browse-detail__backlinks');
+  appendKind('browse-detail__actions');
   for (const node of existing) {
-    if (node === title) continue;
-    if (
-      node.classList.contains('task-detail__body-section')
-      || node.classList.contains('task-detail__subtasks')
-      || node.classList.contains('browse-detail__backlinks')
-      || node.classList.contains('tasks-detail-pane__header')
-    ) {
-      main.appendChild(node);
-    } else {
-      attributes.appendChild(node);
-    }
+    if (node !== title && !main.contains(node)) main.appendChild(node);
   }
 
-  layout.append(main, attributes);
+  layout.append(main);
   el.detailContent.replaceChildren(layout);
 }
 
@@ -1710,9 +1832,10 @@ function buildDetailFields(task: TaskDto, cbs: TaskDetailCallbacks): HTMLElement
   // the PARENT's list/section changes; editing them directly on the child
   // would fight that cascade).
   const isSubtask = Boolean(task.parent);
+  const workflow = cbs.owningList?.workflow_kind ?? null;
 
   // ── Status ──────────────────────────────────────────────────────────────────
-  if (cbs.onSaveStatus) {
+  if (cbs.onSaveStatus && workflow === null) {
     const row = buildFieldRow('Status');
     const sel = document.createElement('select');
     sel.className = 'task-detail__status-select form-select';
@@ -1749,7 +1872,7 @@ function buildDetailFields(task: TaskDto, cbs: TaskDetailCallbacks): HTMLElement
     for (const p of PRIORITY_OPTIONS) {
       const opt = document.createElement('option');
       opt.value = p;
-      opt.textContent = taskPriorityLabel(p);
+      opt.textContent = p === 'none' ? 'None' : `${taskPriorityGlyph(p)}  ${taskPriorityLabel(p)}`;
       if (p === (task.priority ?? 'none')) opt.selected = true;
       sel.appendChild(opt);
     }
@@ -1814,7 +1937,7 @@ function buildDetailFields(task: TaskDto, cbs: TaskDetailCallbacks): HTMLElement
 
   // ── List ─────────────────────────────────────────────────────────────────────
   if (cbs.onSaveList && cbs.availableLists && cbs.availableLists.length > 0) {
-    const row = buildFieldRow('List');
+    const row = buildFieldRow(workflow === 'board' ? 'Board' : 'List');
     const sel = document.createElement('select');
     sel.className = 'task-detail__list-select form-select';
     sel.setAttribute('aria-label', 'Task list');
@@ -1839,8 +1962,31 @@ function buildDetailFields(task: TaskDto, cbs: TaskDetailCallbacks): HTMLElement
     fields.appendChild(row);
   }
 
+  if (workflow === 'board' && cbs.owningList && cbs.onSaveColumn) {
+    const row = buildFieldRow('Column');
+    const sel = document.createElement('select');
+    sel.className = 'task-detail__column-select form-select';
+    sel.setAttribute('aria-label', 'Board column');
+    const validCurrent = cbs.owningList.columns.some((column) => column.id === task.board_column_id
+      && (column.type === 'queue' ? task.status === 'todo' : column.type === 'done' ? task.status === 'done' : column.type === 'none' ? task.status === 'todo' || task.status === 'doing' : task.status === 'doing'));
+    if (!validCurrent) {
+      const prompt = new Option('Choose a column…', '');
+      prompt.disabled = true;
+      prompt.selected = true;
+      sel.add(prompt);
+    }
+    for (const column of [...cbs.owningList.columns].sort((a, b) => a.position.localeCompare(b.position))) {
+      const option = new Option(`${column.name} · ${column.type === 'in_progress' ? 'In Progress' : column.type === 'done' ? 'Done' : column.type === 'none' ? 'No status change' : 'Queue'}`, column.id);
+      option.selected = validCurrent && column.id === task.board_column_id;
+      sel.add(option);
+    }
+    if (isSubtask) { sel.disabled = true; sel.title = 'Moves with parent'; }
+    sel.addEventListener('change', () => void cbs.onSaveColumn?.(task.id, sel.value));
+    row.append(sel); fields.append(row);
+  }
+
   // ── Section ───────────────────────────────────────────────────────────────────
-  if (cbs.onSaveSection && cbs.availableSections) {
+  if (workflow !== 'board' && cbs.onSaveSection && cbs.availableSections) {
     const row = buildFieldRow('Section');
     const sel = document.createElement('select');
     sel.className = 'task-detail__section-select form-select';
@@ -1868,6 +2014,14 @@ function buildDetailFields(task: TaskDto, cbs: TaskDetailCallbacks): HTMLElement
     row.appendChild(sel);
     fields.appendChild(row);
   }
+  if (workflow === 'board' && task.section_id && cbs.availableSections) {
+    const group = cbs.availableSections.find((section) => section.id === task.section_id);
+    if (group) {
+      const row = buildFieldRow('Group');
+      const value = document.createElement('span'); value.textContent = group.name;
+      row.append(value); fields.append(row);
+    }
+  }
 
   // ── Tags ──────────────────────────────────────────────────────────────────────
   if (cbs.onSaveTags) {
@@ -1876,6 +2030,22 @@ function buildDetailFields(task: TaskDto, cbs: TaskDetailCallbacks): HTMLElement
     fields.appendChild(row);
   }
 
+  const timing = document.createElement('section');
+  timing.className = 'task-detail__field-group task-detail__field-group--timing';
+  const organization = document.createElement('section');
+  organization.className = 'task-detail__field-group task-detail__field-group--organization';
+  const heading = (text: string) => {
+    const label = document.createElement('h3');
+    label.className = 'task-detail__group-heading text-footnote';
+    label.textContent = text;
+    return label;
+  };
+  timing.appendChild(heading('Timing'));
+  organization.appendChild(heading('Organization'));
+  for (const row of Array.from(fields.children)) {
+    (row.querySelector('.task-detail__field-label')?.textContent === 'Due' ? timing : organization).appendChild(row);
+  }
+  fields.replaceChildren(timing, organization);
   return fields;
 }
 

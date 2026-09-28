@@ -1,0 +1,333 @@
+/* One visual sidebar slot. Context DOM stays under its Notes/Tasks/Settings controller. */
+.jin-shell {
+  --sidebar-body-top: calc(var(--sidebar-native-top) + 132px);
+}
+
+.jin-shell > .jin-sidebar {
+  flex: 0 0 var(--sidebar-width);
+  inline-size: var(--sidebar-width);
+  block-size: 100%;
+  min-inline-size: 0;
+  padding: var(--sidebar-native-top) 0 0;
+  background: var(--workspace-context);
+  border-inline-end: 1px solid var(--separator);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow: visible;
+  transition: none;
+}
+
+.jin-sidebar-header {
+  flex: 0 0 auto;
+  min-block-size: 44px;
+  block-size: auto;
+  padding: 0 var(--space-2);
+}
+.jin-shell > .jin-sidebar .jin-sidebar-toggle {
+  position: static;
+  inset: auto;
+  transform: none;
+  flex: 0 0 44px;
+  inline-size: 44px;
+  block-size: 44px;
+  min-inline-size: 44px;
+  min-block-size: 44px;
+  margin-inline-start: auto;
+  box-shadow: none;
+}
+
+.jin-sidebar-actions {
+  flex: 0 0 auto;
+  min-block-size: 44px;
+  block-size: auto;
+  padding: var(--space-half) var(--space-2);
+}
+
+.jin-sidebar-actions .jin-capture-btn { min-block-size: 36px; block-size: auto; min-inline-size: 0; }
+.jin-sidebar-actions .jin-capture-btn > span { min-inline-size: 0; overflow-wrap: anywhere; }
+
+.jin-section-switcher {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  inline-size: calc(100% - var(--space-2));
+  min-block-size: 44px;
+  block-size: auto;
+  min-inline-size: 0;
+  margin-inline: var(--space-1);
+  padding-inline: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label);
+  font: 650 var(--text-subheadline-size)/var(--text-subheadline-line) var(--font-text);
+  text-align: start;
+  cursor: pointer;
+}
+.jin-section-switcher:hover,
+.jin-section-switcher[aria-expanded='true'] { background: var(--workspace-row-hover); }
+.jin-section-switcher:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.jin-section-switcher__label { flex: 1 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jin-section-switcher svg { inline-size: 16px; block-size: 16px; flex: none; }
+.jin-section-switcher__unread { display: none; inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--system-red); }
+.jin-sidebar[data-has-unread='true'] .jin-section-switcher__unread { display: block; }
+
+.jin-shell > .jin-sidebar .jin-nav {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  padding: var(--space-half) var(--space-1);
+  overflow: auto;
+}
+.jin-shell > .jin-sidebar .jin-nav-list { gap: 2px; }
+.jin-shell > .jin-sidebar .jin-navigation-row { min-block-size: 32px; }
+
+/* Context and app routes share the same sidebar body without a second column. */
+.jin-shell[data-active-section='notes']:not([data-switcher-open='true']) > .jin-sidebar .jin-nav,
+.jin-shell[data-active-section='tasks']:not([data-switcher-open='true']) > .jin-sidebar .jin-nav,
+.jin-shell[data-active-section='settings']:not([data-switcher-open='true']) > .jin-sidebar .jin-nav { display: none; }
+
+.jin-shell[data-switcher-open='true'] > .jin-sidebar { z-index: 120; }
+.jin-shell[data-switcher-open='true'] > .jin-sidebar .jin-nav {
+  position: absolute;
+  inset-block-start: var(--sidebar-body-top, 132px);
+  inset-inline: var(--space-1);
+  inline-size: calc(100% - var(--space-2));
+  max-block-size: calc(100dvh - var(--sidebar-body-top, 132px) - var(--space-1));
+  flex: none;
+  padding: var(--space-half);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--elevation-shadow);
+  z-index: 2;
+}
+
+.jin-shell [data-section-name='notes'].notes-paned,
+.jin-shell [data-section-name='notes'].notes-paned.detail-open,
+.jin-shell [data-section-name='notes'].notes-paned.rail-collapsed,
+.jin-shell [data-section-name='notes'].notes-paned.detail-open.rail-collapsed,
+.jin-shell [data-section-name='tasks'].jin-split-view,
+.jin-shell .settings-view { grid-template-columns: minmax(0, 1fr); }
+
+.jin-shell [data-sidebar-context] {
+  position: fixed;
+  inset-block-start: var(--sidebar-body-top, 132px);
+  inset-block-end: 0;
+  inset-inline-start: 0;
+  display: flex;
+  flex-direction: column;
+  inline-size: var(--sidebar-width);
+  block-size: auto;
+  max-inline-size: var(--sidebar-width);
+  min-inline-size: 0;
+  padding-block-end: var(--space-1);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 11;
+  transition: none;
+}
+
+.jin-shell[data-switcher-open='true'] [data-sidebar-context] { pointer-events: none; }
+.jin-shell .notes-collections,
+.jin-shell .notes-folder-rail__list {
+  flex: 0 0 auto;
+  min-block-size: 0;
+  overflow: visible;
+}
+.jin-shell .notes-collections { border: 0; padding-block: var(--space-half); }
+.jin-shell .notes-folder-rail__list { padding-block: var(--space-half); }
+.jin-shell .notes-folder-rail__header { border-block-end: 0; }
+.jin-shell .notes-folder-rail__new-btn { flex: 0 0 auto; margin-block-start: auto; }
+.jin-shell .folder-row__menu-btn,
+.jin-shell .folder-row__menu-btn:hover {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.jin-shell .notes-folder-rail__title,
+.jin-shell .notes-collections__title,
+.jin-shell .jin-navigation-row__meta,
+.jin-shell .folder-row__count { color: var(--label-secondary); }
+.jin-shell .folder-row__name { color: var(--label); }
+.jin-shell .folder-row[role='treeitem']:focus-visible { outline: none; }
+.jin-shell .folder-row[role='treeitem']:focus-visible > .folder-row__btn {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+:root[data-text-scale='accessibility'] .jin-shell .folder-row__name {
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+.jin-shell[data-active-section='notes'] .notes-folder-rail__collapse-btn,
+.jin-shell[data-active-section='notes'] .notes-rail-reveal,
+.jin-shell[data-active-section='tasks'] .tasks-rail-toggle,
+.jin-shell[data-active-section='tasks'] .tasks-lists-rail__mobile-header { display: none; }
+.jin-shell .settings-nav .settings-view__heading { display: none; }
+
+.jin-shell[data-nav-visible='false'] > .jin-sidebar {
+  flex-basis: 0;
+  inline-size: 0;
+  border: 0;
+  overflow: hidden;
+}
+.jin-shell[data-nav-visible='false'] [data-sidebar-context] { display: none; }
+.jin-shell[data-nav-visible='false'] .jin-content-navigation { display: flex; }
+.jin-content-navigation { display: none; flex: 0 0 auto; min-block-size: 44px; align-items: center; padding-inline: var(--space-1); border-block-end: 1px solid var(--separator); }
+.jin-navigation-reveal { display: inline-flex; align-items: center; gap: var(--space-1); min-block-size: 36px; padding-inline: var(--space-1); border-radius: var(--radius-sm); color: var(--label); background: transparent; font: 500 var(--text-footnote-size)/1 var(--font-text); }
+.jin-navigation-reveal:hover { background: var(--workspace-row-hover); }
+.jin-navigation-reveal:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.jin-navigation-reveal svg { inline-size: 18px; block-size: 18px; }
+
+.jin-sidebar-backdrop { display: none; }
+.jin-native-drag-region,
+.jin-native-content-drag { display: none; }
+
+/* A single drawer owns both shared chrome and the active contextual navigation. */
+.jin-shell[data-nav-presentation='drawer'] > .jin-sidebar {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-start: 0;
+  flex: none;
+  inline-size: min(var(--sidebar-width), calc(100vw - var(--space-2)));
+  max-inline-size: calc(100vw - var(--space-2));
+  transform: translateX(-100%);
+  z-index: 100;
+}
+.jin-shell[data-nav-presentation='drawer'][data-nav-visible='true'] > .jin-sidebar { transform: none; }
+.jin-shell[data-nav-presentation='drawer'] [data-sidebar-context] {
+  inline-size: min(var(--sidebar-width), calc(100vw - var(--space-2)));
+  max-inline-size: calc(100vw - var(--space-2));
+  z-index: 101;
+}
+.jin-shell[data-nav-presentation='drawer'][data-nav-visible='true'] > .jin-sidebar-backdrop {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: color-mix(in srgb, var(--label) 28%, transparent);
+}
+.jin-shell[data-nav-presentation='drawer'][data-switcher-open='true'] > .jin-sidebar { z-index: 120; }
+.jin-shell[data-nav-presentation='drawer'] .jin-content-navigation { display: flex; }
+.jin-shell[data-nav-presentation='drawer'][data-nav-visible='true'] .jin-content-navigation { display: none; }
+.jin-shell[data-nav-presentation='drawer'] .jin-navigation-reveal { visibility: visible; transition: none; }
+
+:root[data-text-scale='accessibility'] .jin-shell { --sidebar-width: 100vw; }
+:root[data-text-scale='accessibility'] .jin-section-switcher__label { white-space: normal; overflow: visible; }
+:root[data-text-scale='accessibility'] .jin-shell > .jin-sidebar .jin-navigation-row__label {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+:root[data-text-scale='accessibility'] .jin-shell > .jin-sidebar .jin-nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 24px;
+  min-block-size: 24px;
+  padding-inline: 5px;
+  font-size: 13px;
+  line-height: 1;
+}
+:root[data-text-scale='accessibility'] .jin-shell > .jin-sidebar .jin-nav-badge[hidden] { display: none; }
+:root[data-text-scale='accessibility'] .jin-shell > .jin-sidebar .jin-navigation-row { min-block-size: var(--coarse-hit-target); }
+:root[data-text-scale='accessibility'] .jin-shell[data-nav-presentation='drawer'] > .jin-sidebar,
+:root[data-text-scale='accessibility'] .jin-shell[data-nav-presentation='drawer'] [data-sidebar-context] { inline-size: 100vw; max-inline-size: 100vw; }
+
+@media (pointer: coarse) {
+  .jin-shell > .jin-sidebar .jin-navigation-row,
+  .jin-section-switcher,
+  .jin-navigation-reveal { min-block-size: var(--coarse-hit-target); }
+}
+
+/* Only a real macOS Tauri webview gets titlebar clearance. Native controls stay native. */
+:root[data-native-macos-overlay='true'] .jin-shell { --sidebar-native-top: 52px; }
+:root[data-native-macos-overlay='true'] .jin-native-drag-region {
+  display: block;
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 90px;
+  inset-inline-end: 0;
+  block-size: 52px;
+}
+:root[data-native-macos-overlay='true'] .jin-native-content-drag { display: block; flex: 0 0 52px; block-size: 52px; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'] .jin-content > .jin-native-content-drag { display: none; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'] .jin-content > .jin-native-content-drag { display: none; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'] [data-tasks-target='listPanel'] .jin-workspace-header--paired { min-block-size: 52px; }
+.tasks-workspace-drag { display: none; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'] .tasks-workspace-drag {
+  display: block;
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: 6px;
+}
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'][data-nav-visible='false'] .jin-content { position: relative; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'][data-nav-visible='false'] .jin-content > .jin-content-navigation {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 90px;
+  inline-size: 44px;
+  min-block-size: 52px;
+  padding: 0;
+  border: 0;
+  z-index: 20;
+}
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'][data-nav-visible='false'] .jin-content .jin-navigation-reveal {
+  justify-content: center;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+}
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'][data-nav-visible='false'] .jin-content .jin-navigation-reveal > span { display: none; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'][data-nav-visible='false'] [data-tasks-target='listPanel'] .jin-workspace-header--paired {
+  padding-inline-start: 142px;
+}
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'][data-nav-visible='false'] .tasks-workspace-drag { inset-inline-start: 142px; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'][data-nav-visible='false'] .jin-content { position: relative; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'][data-nav-visible='false'] .jin-content > .jin-content-navigation {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 90px;
+  inline-size: 44px;
+  min-block-size: 52px;
+  padding: 0;
+  border: 0;
+  z-index: 20;
+}
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'][data-nav-visible='false'] .jin-content .jin-navigation-reveal {
+  justify-content: center;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+}
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'][data-nav-visible='false'] .jin-content .jin-navigation-reveal > span { display: none; }
+:root[data-native-macos-overlay='true'] .notes-list-pane__header { min-block-size: 52px; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'][data-nav-visible='false'] .notes-list-pane__header .notes-explorer__toolbar { padding-inline-start: 118px; }
+:root[data-native-macos-overlay='true'] .notes-detail-pane__header { min-block-size: 52px; }
+:root[data-native-macos-overlay='true'] .notes-detail-pane__drag {
+  display: block;
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: var(--notes-native-drag-start, 0px) 0;
+  block-size: 6px;
+}
+:root[data-native-macos-overlay='true'] .jin-shell[data-nav-visible='false'] .notes-detail-pane__header {
+  --notes-native-drag-start: 90px;
+  padding-inline-start: 142px;
+}
+:root[data-native-macos-overlay='true'] [data-first-run-root] { padding-block-start: 52px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .jin-shell > .jin-sidebar { transition: none; }
+}

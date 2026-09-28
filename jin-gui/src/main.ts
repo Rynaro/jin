@@ -48,6 +48,15 @@ import NotificationsController from './controllers/notifications_controller';
 import FirstRunController from './controllers/first_run_controller';
 import { getLaunchState } from './invoke';
 import { applyLaunchMode } from './lib/launch_bootstrap';
+import { isTauri } from '@tauri-apps/api/core';
+import { installExternalLinkService } from './lib/ui/externalLinks';
+
+installExternalLinkService();
+
+// The overlay webview occupies the native titlebar only on macOS Tauri.
+if (isTauri() && /Macintosh|Mac OS X/i.test(navigator.userAgent)) {
+  document.documentElement.dataset.nativeMacosOverlay = 'true';
+}
 
 const stimulusApp = Application.start();
 

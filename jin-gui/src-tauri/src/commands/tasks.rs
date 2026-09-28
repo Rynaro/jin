@@ -7,7 +7,7 @@ use serde::Deserialize;
 use jin_core::dto::TaskDto;
 use jin_core::model::task::Reminder;
 use jin_core::model::{DueDate, Priority, TaskStatus};
-use jin_core::ops::{api, tags as tags_ops, tasks};
+use jin_core::ops::{api, tags as tags_ops, tasks, workflows};
 use jin_core::Config;
 
 use crate::error::JinErrorDto;
@@ -39,6 +39,7 @@ pub struct TaskInput {
     pub priority: Option<String>,
     pub due: Option<String>,
     pub list: Option<String>,
+    pub board_column_id: Option<String>,
     /// P4: initial tag slugs. Slugified before use.
     pub tags: Option<Vec<String>>,
     /// P10: initial reminders. `None` = use auto-reminder logic.
@@ -83,6 +84,9 @@ pub struct EditTaskInput {
 pub struct MoveTaskInput {
     pub list_id: String,
     pub section_id: Option<String>,
+    pub board_column_id: Option<String>,
+    #[serde(default)]
+    pub confirm_doing_to_checklist: bool,
     /// Fractional position key (base-62). Must be non-empty.
     pub position: String,
 }
@@ -182,7 +186,6 @@ pub fn get_task_fn(root: &Path, id: String) -> Result<TaskDto, JinErrorDto> {
 }
 
 pub fn create_task_fn(root: &Path, input: TaskInput) -> Result<TaskDto, JinErrorDto> {
-    let cfg = Config::load(root).map_err(JinErrorDto::from)?;
     let priority = input.priority.as_deref().map(parse_priority).transpose()?;
     let due = input.due.as_deref().map(parse_due).transpose()?;
 
@@ -202,8 +205,9 @@ pub fn create_task_fn(root: &Path, input: TaskInput) -> Result<TaskDto, JinError
         .reminders
         .map(|rs| rs.into_iter().map(Reminder::from).collect());
 
-    let task = tasks::create_task(
-        &cfg.tasks_dir(),
+    let board_column_id = input.board_column_id.clone();
+    let task = workflows::create_task(
+        root,
         tasks::CreateTaskParams {
             title: input.title,
             body: input.body,
@@ -214,6 +218,7 @@ pub fn create_task_fn(root: &Path, input: TaskInput) -> Result<TaskDto, JinError
             reminders,
             parent: input.parent,
         },
+        board_column_id.as_deref(),
     )
     .map_err(JinErrorDto::from)?;
     api::refresh(root).map_err(JinErrorDto::from)?;
@@ -221,7 +226,6 @@ pub fn create_task_fn(root: &Path, input: TaskInput) -> Result<TaskDto, JinError
 }
 
 pub fn edit_task_fn(root: &Path, id: String, input: EditTaskInput) -> Result<TaskDto, JinErrorDto> {
-    let cfg = Config::load(root).map_err(JinErrorDto::from)?;
     let priority = input.priority.as_deref().map(parse_priority).transpose()?;
     let due_param: Option<Option<DueDate>> = if input.clear_due {
         Some(None)
@@ -254,8 +258,8 @@ pub fn edit_task_fn(root: &Path, id: String, input: EditTaskInput) -> Result<Tas
         input.parent.map(Some)
     };
 
-    let task = tasks::edit_task(
-        &cfg.tasks_dir(),
+    let task = workflows::edit_task(
+        root,
         &id,
         tasks::EditTaskParams {
             title: input.title,
@@ -276,9 +280,8 @@ pub fn edit_task_fn(root: &Path, id: String, input: EditTaskInput) -> Result<Tas
 }
 
 pub fn set_task_status_fn(root: &Path, id: String, status: String) -> Result<TaskDto, JinErrorDto> {
-    let cfg = Config::load(root).map_err(JinErrorDto::from)?;
     let next = parse_status(&status)?;
-    let task = tasks::transition_task(&cfg.tasks_dir(), &id, next).map_err(JinErrorDto::from)?;
+    let task = workflows::transition_task(root, &id, next).map_err(JinErrorDto::from)?;
     api::refresh(root).map_err(JinErrorDto::from)?;
     Ok(TaskDto::from_model(&task))
 }
@@ -292,14 +295,15 @@ pub fn delete_task_fn(root: &Path, id: String) -> Result<TaskDto, JinErrorDto> {
 
 /// P9 — Atomic drag/drop: set list, section_id, and position in one file write.
 pub fn move_task_fn(root: &Path, id: String, input: MoveTaskInput) -> Result<TaskDto, JinErrorDto> {
-    let cfg = Config::load(root).map_err(JinErrorDto::from)?;
-    let task = tasks::move_task(
-        &cfg.tasks_dir(),
+    let task = workflows::move_task(
+        root,
         &id,
-        tasks::MoveTaskParams {
+        workflows::MoveTaskParams {
             list_id: input.list_id,
             section_id: input.section_id,
+            board_column_id: input.board_column_id,
             position: input.position,
+            confirm_doing_to_checklist: input.confirm_doing_to_checklist,
         },
     )
     .map_err(JinErrorDto::from)?;

@@ -1,0 +1,65 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "944695b6-205a-4e46-8efd-ba37068e7d77",
+  "thread_id": "8890c6c6-14d8-475e-b37c-ea000c74e55f",
+  "parent_id": null,
+  "from": {
+    "eidolon": "ramza",
+    "version": "0.1.0"
+  },
+  "to": {
+    "eidolon": "vivi",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Amend Boards with neutral open stages and persisted initial placement; tighten Tasks composition and whole-card drag.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/tasks-board-neutral-amendment.md",
+    "sha256": "0755e5eadf7ee16e4f426acb2e722bc26a22d51ec4ab46d965d19213ee935017",
+    "size_bytes": 11467
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 2300,
+    "input_handles": [],
+    "summary": "Root-reviewed neutral status semantics, initial resolution, optional InProgress, safe column lifecycle, caller compatibility and compact contextual Tasks UI."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "ise": {
+    "assertion_grade": "self-attested",
+    "provenance": {
+      "methodology_version": "ramza-0.1.0",
+      "tool_surface": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "lateral_consults": []
+    },
+    "receiver_authorization": {
+      "auto_route": true,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "confidence": 0.9375,
+  "integrity": {
+    "method": "sha256",
+    "value": "0755e5eadf7ee16e4f426acb2e722bc26a22d51ec4ab46d965d19213ee935017"
+  },
+  "trace": {
+    "ts": "2026-09-25T02:23:16.793615+00:00",
+    "host": "codex",
+    "model": "gpt-6-astra",
+    "tier": "standard"
+  },
+  "x_ramza_acceptance_criteria": {
+    "path": ".spectra/plans/tasks-board-neutral-amendment.md",
+    "sha256": "0755e5eadf7ee16e4f426acb2e722bc26a22d51ec4ab46d965d19213ee935017"
+  }
+}

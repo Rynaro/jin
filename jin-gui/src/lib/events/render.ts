@@ -1,4 +1,8 @@
-import { calendarProviderForEvent } from '../calendar/colors';
+import {
+  calendarMembershipIdentity,
+  calendarProvenanceLabel,
+  calendarProviderForEvent,
+} from '../calendar/colors';
 /**
  * events/render.ts — DOM rendering functions for the Events browse + detail view.
  *
@@ -194,14 +198,15 @@ export function renderEventDetail(
   const sourceBadgeEl = document.createElement('span');
   sourceBadgeEl.className = 'event-detail__source-badge jin-badge';
   sourceBadgeEl.setAttribute('role', 'img');
+  const membership = calendarMembershipIdentity(event, eventMessage('jinCalendarName', locale));
   const routedGoogle = event.sync_context?.provider === 'google';
   const srcLabel = routedGoogle
-    ? `${eventMessage('googleDestination', locale)} · ${event.sync_context!.calendar_name}`
-    : event.source.toLowerCase() === 'google'
+    ? `${eventMessage('googleDestination', locale)} · ${membership.label}`
+    : membership.provider === 'google'
     ? eventMessage('sourceGoogle', locale)
     : eventMessage('sourceJin', locale);
   sourceBadgeEl.setAttribute('aria-label', srcLabel);
-  sourceBadgeEl.dataset.source = routedGoogle ? 'google' : event.source.toLowerCase();
+  sourceBadgeEl.dataset.source = membership.provider;
 
   const sourceIconEl = document.createElement('i');
   sourceIconEl.className = 'event-detail__source-icon';
@@ -246,9 +251,18 @@ export function renderEventDetail(
 
   if (event.sync_context?.provider === 'google') {
     const route = event.sync_context;
+    const membership = calendarMembershipIdentity(event, eventMessage('jinCalendarName', locale));
     const destination = document.createElement('p');
     destination.className = 'event-detail__destination text-footnote';
-    destination.textContent = `${route.account_alias} — ${route.calendar_name}${event.source === 'jin' ? ` · ${eventMessage('createdInJin', locale)}` : ''}`;
+    const provenance = calendarProvenanceLabel(event, {
+      createdInJin: eventMessage('createdInJin', locale),
+      sourceGoogle: eventMessage('sourceGoogle', locale),
+      sourceJin: eventMessage('sourceJin', locale),
+    });
+    const membershipLine = `${membership.accountAlias} — ${membership.label}`;
+    destination.textContent = event.source === 'jin'
+      ? `${membershipLine} · ${provenance}`
+      : membershipLine;
     article.appendChild(destination);
     if (route.state === 'pending' || route.state === 'synced') {
       const syncState = document.createElement('p');
@@ -817,8 +831,9 @@ function buildEventBrowseRow(
   if (titleEl) titleEl.textContent = event.title;
 
   // Source badge: text label (primary) + icon (supplementary) — NEVER color-only
+  const membership = calendarMembershipIdentity(event, eventMessage('jinCalendarName'));
   const srcLabel = event.sync_context?.provider === 'google'
-    ? `${eventMessage('googleDestination')} · ${event.sync_context.calendar_name}`
+    ? `${eventMessage('googleDestination')} · ${membership.label}`
     : sourceBadgeLabel(event.source);
   if (sourceBadgeEl) {
     sourceBadgeEl.setAttribute('aria-label', `Source: ${srcLabel}`);

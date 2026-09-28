@@ -711,6 +711,7 @@ mod tests {
                 deleted_at: None,
                 links: vec![],
                 section_id: None,
+                board_column_id: None,
                 tags: vec![],
                 position: String::new(),
                 reminders,

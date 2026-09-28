@@ -352,8 +352,13 @@ pub fn task_filename(id: &str) -> String {
 pub fn write_task(tasks_dir: &Path, task: &Task) -> Result<PathBuf> {
     let path = tasks_dir.join(task_filename(&task.frontmatter.id));
     let content = frontmatter::render(&task.frontmatter, &task.body)?;
-    std::fs::write(&path, content)?;
+    atomic_write(&path, content.as_bytes())?;
     Ok(path)
+}
+
+/// Exact post-image for journaled Task mutations.
+pub fn render_task_bytes(task: &Task) -> Result<Vec<u8>> {
+    Ok(frontmatter::render(&task.frontmatter, &task.body)?.into_bytes())
 }
 
 pub fn read_task(path: &Path) -> Result<Task> {
@@ -477,6 +482,11 @@ pub fn read_list(path: &Path) -> Result<List> {
         frontmatter: fm,
         body,
     })
+}
+
+/// Exact post-image for journaled List/Board mutations.
+pub fn render_list_bytes(list: &List) -> Result<Vec<u8>> {
+    Ok(frontmatter::render(&list.frontmatter, &list.body)?.into_bytes())
 }
 
 pub fn list_list_paths(lists_dir: &Path) -> Result<Vec<PathBuf>> {

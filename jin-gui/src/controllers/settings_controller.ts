@@ -266,6 +266,7 @@ export default class SettingsController extends Controller {
     applySettingsPane(this.settingsNavItemTargets, this.settingsPaneTargets, pane);
     this.settingsWorkspaceTarget.scrollTop = 0;
     saveSettingsPane(pane);
+    window.dispatchEvent(new CustomEvent('jin:sidebar-selection'));
   }
 
   disconnect(): void {

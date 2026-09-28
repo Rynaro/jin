@@ -28,7 +28,7 @@
  * imports markdown-it or dompurify directly (enforced by G-CHOKEPOINT).
  */
 
-import { EditorState, Compartment } from '@codemirror/state';
+import { EditorState, Compartment, Transaction } from '@codemirror/state';
 import { EditorView, keymap, placeholder as placeholderExt, type ViewUpdate } from '@codemirror/view';
 import {
   history,
@@ -37,7 +37,7 @@ import {
   indentMore,
   indentLess,
 } from '@codemirror/commands';
-import { syntaxHighlighting, HighlightStyle, indentUnit, LanguageDescription } from '@codemirror/language';
+import { syntaxHighlighting, HighlightStyle, indentUnit, LanguageDescription, syntaxTree } from '@codemirror/language';
 import {
   markdown,
   markdownLanguage,
@@ -47,12 +47,14 @@ import {
 import { languages } from '@codemirror/language-data';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { tags } from '@lezer/highlight';
+import type { SyntaxNode } from '@lezer/common';
 import { renderMarkdownFragment, hydrateManagedImages } from './markdown';
 import { resolveImageAttachment } from '../../invoke';
 import { jinLivePreview, jinCodeBlockBackground, jinTablePreview, jinManagedImagePreview, taskCheckboxClickHandler } from './livePreview';
 import { jinFocusMode } from './focusMode';
 import { typewriterExtender } from './typewriter';
 import { initIcons } from '../icons';
+import { confirmExternalLink, normalizeExternalUrl } from '../ui/externalLinks';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -122,9 +124,9 @@ export { LanguageDescription };
 
 export const jinHighlightStyle = HighlightStyle.define([
   // Heading content — larger + bold, scaling from h1 → h6
-  { tag: tags.heading1, fontFamily: 'var(--font-display)', fontSize: 'var(--prose-h1-size)', fontWeight: '700', color: 'var(--notes-writing-ink)' },
-  { tag: tags.heading2, fontFamily: 'var(--font-display)', fontSize: 'var(--prose-h2-size)', fontWeight: '700', color: 'var(--notes-writing-ink)' },
-  { tag: tags.heading3, fontFamily: 'var(--font-display)', fontSize: 'var(--prose-h3-size)', fontWeight: '700', color: 'var(--notes-writing-ink)' },
+  { tag: tags.heading1, fontFamily: 'var(--font-text)', fontSize: 'var(--prose-h1-size)', fontWeight: '700', color: 'var(--notes-writing-ink)' },
+  { tag: tags.heading2, fontFamily: 'var(--font-text)', fontSize: 'var(--prose-h2-size)', fontWeight: '700', color: 'var(--notes-writing-ink)' },
+  { tag: tags.heading3, fontFamily: 'var(--font-text)', fontSize: 'var(--prose-h3-size)', fontWeight: '700', color: 'var(--notes-writing-ink)' },
   { tag: tags.heading4, fontSize: '1.2em', fontWeight: '600', color: 'var(--label)' },
   { tag: tags.heading5, fontSize: '1.1em', fontWeight: '600', color: 'var(--label)' },
   { tag: tags.heading6, fontSize: '1.0em', fontWeight: '600', color: 'var(--label)' },
@@ -222,9 +224,9 @@ const jinEditorTheme = EditorView.theme({
     fontFamily: 'var(--font-text)',
     fontSize: 'var(--notes-prose-size)',
     lineHeight: 'var(--notes-prose-line)',
-    maxWidth: 'var(--notes-prose-measure)',
-    margin: '0 auto',
-    padding: '1.5rem clamp(16px, 4vw, 40px)',
+    maxWidth: '100%',
+    margin: '0',
+    padding: 'var(--space-1) 0 var(--space-8)',
     minHeight: 'calc(100vh - 200px)',
     wordBreak: 'break-word',
     overflowWrap: 'anywhere',
@@ -465,6 +467,48 @@ export function toggleLink(view: EditorView): boolean {
   return true;
 }
 
+/** Resolve a link from the current CM document, never from an old DOM position. */
+export function linkAtPosition(state: EditorState, position: number): string | null {
+  let node: SyntaxNode | null = syntaxTree(state).resolveInner(Math.max(0, Math.min(position, state.doc.length)), -1);
+  while (node && node.name !== 'Link') node = node.parent;
+  const url = node?.getChild('URL');
+  return url ? state.sliceDoc(url.from, url.to) : null;
+}
+
+function isCodePosition(state: EditorState, position: number): boolean {
+  let node: SyntaxNode | null = syntaxTree(state).resolveInner(Math.max(0, Math.min(position, state.doc.length)), -1);
+  while (node) {
+    if (['FencedCode', 'CodeBlock', 'InlineCode', 'CodeText'].includes(node.name)) return true;
+    node = node.parent;
+  }
+  return false;
+}
+
+/** Return one replacement for a single safe URL paste, or let CM paste normally. */
+export function composedLinkPaste(state: EditorState, clipboard: string): { from: number; to: number; insert: string } | null {
+  if (clipboard.includes('\n') || clipboard.includes('\r') || state.selection.ranges.length !== 1) return null;
+  const safe = normalizeExternalUrl(clipboard.trim());
+  if (!safe) return null;
+  const selection = state.selection.main;
+  if (isCodePosition(state, selection.from) || isCodePosition(state, selection.to)) return null;
+  const href = safe.replace(/\(/g, '%28').replace(/\)/g, '%29');
+  if (!selection.empty) {
+    const selected = state.sliceDoc(selection.from, selection.to);
+    if (!selected || selected.includes('\n')) return null;
+    let containsCode = false;
+    syntaxTree(state).iterate({ from: selection.from, to: selection.to, enter(node) {
+      if (['InlineCode', 'CodeText', 'FencedCode', 'CodeBlock'].includes(node.name)) containsCode = true;
+    } });
+    if (containsCode) return null;
+    const label = selected.replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]');
+    return { from: selection.from, to: selection.to, insert: `[${label}](${href})` };
+  }
+  const line = state.doc.lineAt(selection.from);
+  if (line.text.trim() !== '') return null;
+  const label = new URL(safe).host.replace(/\[/g, '\\[').replace(/\]/g, '\\]');
+  return { from: line.from, to: line.to, insert: `[${label}](${href} "jin-card")` };
+}
+
 /** Insert a small, useful GFM table and place the selection in its first header. */
 export function insertTable(view: EditorView): boolean {
   const { state, dispatch } = view;
@@ -606,8 +650,10 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   let autosavePaused = false;
   let revokeReadingMedia: (() => void) | null = null;
   let readingHydrationGeneration = 0;
-  let revokeLiveMedia: (() => void) | null = null;
-  let liveHydrationGeneration = 0;
+  const liveImageUrls = new Map<string, string>();
+  const liveImagePending = new Map<string, Promise<void>>();
+  const liveImageFailed = new Set<string>();
+  let liveImageScanQueued = false;
   // Mode-toggle flags (per-mount, default OFF — D-PERSIST)
   let focusOn = false;
   let typewriterOn = false;
@@ -666,6 +712,8 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   // Block group
   const quoteBtn   = mkBtn('quote', 'Blockquote');
   const linkFmtBtn = mkBtn('link',  'Insert link');
+  const openSelectedLinkBtn = mkBtn('link', 'Open selected link');
+  openSelectedLinkBtn.disabled = true;
   const attachmentBtn = mkBtn('paperclip', 'Add image or attachment');
   attachmentBtn.dataset.tooltip = 'Add Attachment';
 
@@ -691,7 +739,7 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   toolbar.appendChild(mkGroup('Structure', [h1Btn, h2Btn, h3Btn, tableBtn]));
   toolbar.appendChild(mkGroup('Inline formatting', [boldBtn, italicBtn, strikeBtn, codeBtn]));
   toolbar.appendChild(mkGroup('Lists', [bulletBtn, numberedBtn, checklistBtn]));
-  toolbar.appendChild(mkGroup('Blocks', [quoteBtn, linkFmtBtn]));
+  toolbar.appendChild(mkGroup('Blocks', [quoteBtn, linkFmtBtn, openSelectedLinkBtn]));
   toolbar.appendChild(mkGroup('Media', [attachmentBtn]));
   toolbar.appendChild(toolbarSpacer);
   toolbar.appendChild(mkGroup('Writing modes', [focusBtn, typewriterBtn, toggleBtn]));
@@ -879,6 +927,9 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
         ),
         // Doc-change listener → schedule debounced save + update footer stats
         EditorView.updateListener.of((update: ViewUpdate) => {
+          if (update.docChanged || update.selectionSet) {
+            openSelectedLinkBtn.disabled = !normalizeExternalUrl(linkAtPosition(update.state, update.state.selection.main.head) ?? '');
+          }
           if (update.docChanged || update.selectionSet || update.viewportChanged) scheduleLiveImageHydration();
           if (update.docChanged && !readOnly) {
             if (autosavePaused) {
@@ -893,7 +944,43 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
         }),
         // Blur → flush (caret-safe; no re-render)
         EditorView.domEventHandlers({
+          paste: (event, view) => {
+            if (readOnly) return false;
+            const replacement = composedLinkPaste(view.state, event.clipboardData?.getData('text/plain') ?? '');
+            if (!replacement) return false;
+            event.preventDefault();
+            view.dispatch({
+              changes: replacement,
+              selection: { anchor: replacement.from + replacement.insert.length },
+              scrollIntoView: true,
+              annotations: Transaction.userEvent.of('input.paste'),
+            });
+            return true;
+          },
           mousedown: (event, view) => {
+            const linkOpen = (event.target as HTMLElement).closest<HTMLElement>('[data-cm-link-open]');
+            if (linkOpen) {
+              event.preventDefault();
+              const current = linkAtPosition(view.state, Number(linkOpen.dataset.cmLinkFocus ?? '0') + 1);
+              confirmExternalLink(current ?? linkOpen.dataset.cmLinkOpen ?? '', linkOpen);
+              return true;
+            }
+            const linkEdit = (event.target as HTMLElement).closest<HTMLElement>('[data-cm-link-focus]');
+            if (linkEdit) {
+              event.preventDefault();
+              const from = Number(linkEdit.dataset.cmLinkFocus);
+              if (Number.isFinite(from)) view.dispatch({ selection: { anchor: from + 1 }, scrollIntoView: true });
+              view.focus();
+              return true;
+            }
+            if ((event.metaKey || event.ctrlKey) && (event.target as HTMLElement).closest('.cm-link-label')) {
+              const current = linkAtPosition(view.state, view.posAtDOM(event.target as Node));
+              if (current) {
+                event.preventDefault();
+                confirmExternalLink(current, view.dom);
+                return true;
+              }
+            }
             const preview = (event.target as HTMLElement).closest<HTMLElement>('.cm-table-widget[data-cm-table-focus], .cm-managed-image-placeholder[data-cm-image-focus]');
             if (!preview) return false;
             const from = Number(preview.dataset.cmTableFocus ?? preview.dataset.cmImageFocus);
@@ -904,6 +991,21 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
             return true;
           },
           keydown: (event, view) => {
+            const linkOpen = (event.target as HTMLElement).closest<HTMLElement>('[data-cm-link-open]');
+            if ((event.key === 'Enter' || event.key === ' ') && linkOpen) {
+              event.preventDefault();
+              const current = linkAtPosition(view.state, Number(linkOpen.dataset.cmLinkFocus ?? '0') + 1);
+              confirmExternalLink(current ?? linkOpen.dataset.cmLinkOpen ?? '', linkOpen);
+              return true;
+            }
+            const linkEdit = (event.target as HTMLElement).closest<HTMLElement>('[data-cm-link-focus]:not([data-cm-link-open])');
+            if ((event.key === 'Enter' || event.key === ' ') && linkEdit) {
+              event.preventDefault();
+              const from = Number(linkEdit.dataset.cmLinkFocus);
+              if (Number.isFinite(from)) view.dispatch({ selection: { anchor: from + 1 }, scrollIntoView: true });
+              view.focus();
+              return true;
+            }
             if (event.key !== 'Enter' && event.key !== ' ') return false;
             const preview = (event.target as HTMLElement).closest<HTMLElement>('.cm-table-widget[data-cm-table-focus], .cm-managed-image-placeholder[data-cm-image-focus]');
             if (!preview) return false;
@@ -925,30 +1027,67 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
 
   /** Hydrate only parser-created managed-image widgets via verified local bytes. */
   const scheduleLiveImageHydration = (): void => {
-    const generation = ++liveHydrationGeneration;
-    revokeLiveMedia?.();
-    revokeLiveMedia = null;
-    queueMicrotask(async () => {
-      const urls: string[] = [];
+    if (liveImageScanQueued || destroyed) return;
+    liveImageScanQueued = true;
+    queueMicrotask(() => {
+      liveImageScanQueued = false;
+      if (destroyed) return;
+      const source = view.state.doc.toString();
+      for (const [hash, url] of liveImageUrls) {
+        if (!source.includes(`jin-asset://sha256/${hash}`)) {
+          URL.revokeObjectURL(url);
+          liveImageUrls.delete(hash);
+        }
+      }
+      for (const hash of liveImageFailed) if (!source.includes(`jin-asset://sha256/${hash}`)) liveImageFailed.delete(hash);
       const widgets = Array.from(editorWrapper.querySelectorAll<HTMLElement>('.cm-managed-image-placeholder[data-jin-asset-hash]'));
-      await Promise.all(widgets.map(async (widget) => {
+      const visibleHashes = new Set(widgets.map(widget => widget.dataset.jinAssetHash ?? ''));
+      for (const widget of widgets) {
         const hash = widget.dataset.jinAssetHash ?? '';
-        if (!/^[a-f0-9]{64}$/.test(hash)) return;
-        try {
-          const asset = await resolveImageAttachment(hash);
-          if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(asset.mime) || !Array.isArray(asset.bytes)) return;
-          const url = URL.createObjectURL(new Blob([new Uint8Array(asset.bytes)], { type: asset.mime }));
-          if (destroyed || generation !== liveHydrationGeneration || !editorWrapper.contains(widget)) { URL.revokeObjectURL(url); return; }
-          urls.push(url);
+        if (!/^[a-f0-9]{64}$/.test(hash)) continue;
+        const cached = liveImageUrls.get(hash);
+        if (cached) {
+          if (widget.querySelector<HTMLImageElement>('img')?.src === cached) continue;
           const image = document.createElement('img');
           image.className = 'cm-managed-image';
-          image.src = url;
+          image.src = cached;
           image.alt = widget.dataset.jinAssetLabel || 'Managed image';
+          image.addEventListener('load', () => view.requestMeasure(), { once: true });
           widget.replaceChildren(image);
-        } catch { /* leave a readable inert placeholder */ }
-      }));
-      if (destroyed || generation !== liveHydrationGeneration) urls.forEach((url) => URL.revokeObjectURL(url));
-      else revokeLiveMedia = () => urls.forEach((url) => URL.revokeObjectURL(url));
+          continue;
+        }
+        if (liveImagePending.has(hash) || liveImageFailed.has(hash)) continue;
+        const pending = (async () => {
+          let resolved = false;
+          try {
+            const asset = await resolveImageAttachment(hash);
+            if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(asset.mime) || !Array.isArray(asset.bytes)) {
+              liveImageFailed.add(hash);
+              return;
+            }
+            const url = URL.createObjectURL(new Blob([new Uint8Array(asset.bytes)], { type: asset.mime }));
+            if (destroyed || !view.state.doc.toString().includes(`jin-asset://sha256/${hash}`)) {
+              URL.revokeObjectURL(url);
+              return;
+            }
+            liveImageUrls.set(hash, url);
+            resolved = true;
+            // Keep repeated images cheap while bounding unused entries; visible
+            // images are pinned so a 25-image note never churns requests.
+            while (liveImageUrls.size > 24) {
+              const oldest = [...liveImageUrls.keys()].find(candidate => !visibleHashes.has(candidate));
+              if (!oldest) break;
+              URL.revokeObjectURL(liveImageUrls.get(oldest)!);
+              liveImageUrls.delete(oldest);
+            }
+          } catch { liveImageFailed.add(hash); }
+          finally {
+            liveImagePending.delete(hash);
+            if (resolved && !destroyed) scheduleLiveImageHydration();
+          }
+        })();
+        liveImagePending.set(hash, pending);
+      }
     });
   };
   scheduleLiveImageHydration();
@@ -1039,6 +1178,10 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   checklistBtn.addEventListener('click', () => { toggleLinePrefix(view, '- [ ] '); });
   quoteBtn.addEventListener('click',   () => { toggleLinePrefix(view, '> '); });
   linkFmtBtn.addEventListener('click', openLinkComposer);
+  openSelectedLinkBtn.addEventListener('click', () => {
+    const href = linkAtPosition(view.state, view.state.selection.main.head);
+    if (href) confirmExternalLink(href, openSelectedLinkBtn);
+  });
   attachmentBtn.addEventListener('click', () => { onAddAttachment?.(); });
 
   // Focus mode toggle (COZY-1) — reconfigure compartment; no remount, caret-safe
@@ -1176,9 +1319,10 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
         debounceTimer = null;
       }
       view.destroy();
-      liveHydrationGeneration += 1;
-      revokeLiveMedia?.();
-      revokeLiveMedia = null;
+      for (const url of liveImageUrls.values()) URL.revokeObjectURL(url);
+      liveImageUrls.clear();
+      liveImagePending.clear();
+      liveImageFailed.clear();
       readingHydrationGeneration += 1;
       revokeReadingMedia?.();
       revokeReadingMedia = null;

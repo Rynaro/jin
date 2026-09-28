@@ -67,13 +67,51 @@ describe('deterministic Tauri visual-QA fixture', () => {
     expect(work.find((task) => task.id === 't2')?.position).toBe('VV');
   });
 
+  it('handles section creation, editing and deletion with real list and task state', async () => {
+    const bridge = loadFixture();
+    const created = await bridge.invoke('create_section', {
+      list_id: 'work', input: { name: 'Waiting' },
+    }) as Record<string, unknown>;
+    expect(created).toMatchObject({ list_id: 'work', name: 'Waiting' });
+    const renamed = await bridge.invoke('rename_section', {
+      list_id: 'work', section_id: created.id, input: { name: 'Review' },
+    }) as Record<string, unknown>;
+    expect(renamed.name).toBe('Review');
+    const ordered = await bridge.invoke('reorder_section', {
+      list_id: 'work', section_id: created.id, input: { position: 'A' },
+    }) as Record<string, unknown>;
+    expect(ordered.position).toBe('A');
+    await bridge.invoke('delete_section', { list_id: 'work', section_id: created.id });
+    await bridge.invoke('delete_section', { list_id: 'work', section_id: 's1' });
+    const lists = await bridge.invoke('list_lists') as Array<Record<string, unknown>>;
+    const work = lists.find((list) => list.id === 'work')!;
+    expect((work.sections as Array<Record<string, unknown>>).some((section) => section.id === created.id || section.id === 's1')).toBe(false);
+    expect(await bridge.invoke('get_task', { id: 't1' })).toMatchObject({ section_id: null });
+  });
+
+  it('requires confirmation before a Board Doing task becomes an unchecked List task', async () => {
+    const bridge = loadFixture();
+    const input = { list_id: 'home', section_id: null, position: 'V' };
+    await expect(bridge.invoke('move_task', { id: 't8', input })).rejects.toThrow(/confirm/i);
+    expect(await bridge.invoke('get_task', { id: 't8' })).toMatchObject({
+      list: 'project', status: 'doing', board_column_id: 'project-review',
+    });
+    const moved = await bridge.invoke('move_task', {
+      id: 't8', input: { ...input, confirm_doing_to_checklist: true },
+    }) as Record<string, unknown>;
+    expect(moved).toMatchObject({ list: 'home', status: 'todo', board_column_id: null, completed_at: null });
+    expect(await bridge.invoke('get_task', { id: 't8' })).toMatchObject({
+      list: 'home', status: 'todo', board_column_id: null,
+    });
+  });
+
   it('creates a deterministic subtask with the submitted parent and list', async () => {
     const bridge = loadFixture();
     const created = await bridge.invoke('create_task', {
       input: { title: 'Verify the new composer', list: 'work', parent: 't1' },
     }) as Record<string, unknown>;
     expect(created).toMatchObject({
-      id: 'fixture-task-007', title: 'Verify the new composer', list: 'work', parent: 't1', status: 'todo',
+      id: expect.stringMatching(/^fixture-task-\d+$/), title: 'Verify the new composer', list: 'work', parent: 't1', status: 'todo',
     });
     const work = await bridge.invoke('list_tasks', { list: 'work' }) as Array<Record<string, unknown>>;
     expect(work.find((item) => item.id === created.id)).toMatchObject({ parent: 't1', list: 'work' });
@@ -250,7 +288,8 @@ describe('deterministic Tauri visual-QA fixture', () => {
     const baseInput = {
       event_id: 'e1', edit_token: before.edit_token,
       title: before.event.title, start: before.event.start, end: before.event.end,
-      is_all_day: false, location: before.event.location, description: before.event.description,
+      is_all_day: false, tzid: before.event.start_tzid,
+      location: before.event.location, description: before.event.description,
     };
     const noOp = await bridge.invoke('edit_event', {
       input: { ...baseInput, operation_id: 'fixture-no-op' },

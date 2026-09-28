@@ -1,0 +1,140 @@
+{
+  "esl_version": "1.1",
+  "change_id": "calendar-experience-s2-core-temporal-draft",
+  "status": "verified",
+  "tier": "full",
+  "maker": "Vivi",
+  "checker": "VIGIL",
+  "acceptance_checks": [
+    {
+      "id": "AC-S2-01",
+      "given": "the 9 verified struct-literal sites (google_calendar_mutation_routing.rs and bridge.rs) have had their missing fields (allowed_conference_solution_types, guest_update_policy, recurrence, clear_recurrence) added with each field's own default/behavior-preserving value",
+      "when": "cargo test -p jin-gui is run",
+      "then": "it SHALL compile with zero E0063 errors and every previously-defined test in bridge.rs and google_calendar_mutation_routing.rs SHALL pass with assertions and outcomes unchanged from before the fixture fix — except the 2 conference-request-id assertions in `public_create_and_edit_inputs_reject_reused_conference_request_ids` (edit half) and `legacy_tauri_edit_and_delete_preserve_the_canonical_route` (outbox payload), amended to assert the actual freshen-before-validate behavior documented in `event_mutation.rs`'s `edit_with_guest_update_policy`: a fresh `jin-meet-`-prefixed id always replaces any client-supplied value on edit, rather than the id being rejected-on-duplicate or surviving verbatim. This is pre-existing production behavior the S1 fixture fix newly exposed, not an S2-introduced change.",
+      "verify_method": "test"
+    },
+    {
+      "id": "AC-S2-02",
+      "given": "the fixture fix applies only additive, default-equal struct-literal fields",
+      "when": "the 9 corrected tests execute",
+      "then": "none of their existing assertions on outbox payload shape, conference/recurrence rejection, or stale-token conflict behavior SHALL change — except the 2 conference-request-id assertions in `public_create_and_edit_inputs_reject_reused_conference_request_ids` (edit half) and `legacy_tauri_edit_and_delete_preserve_the_canonical_route` (outbox payload), amended to assert the actual freshen-before-validate behavior documented in `event_mutation.rs`'s `edit_with_guest_update_policy`: a fresh `jin-meet-`-prefixed id always replaces any client-supplied value on edit, rather than the id being rejected-on-duplicate or surviving verbatim. This is pre-existing production behavior the S1 fixture fix newly exposed, not an S2-introduced change.",
+      "verify_method": "test"
+    },
+    {
+      "id": "AC-S2-03",
+      "given": "Month, Week, or Day requests a date range",
+      "when": "core builds CalendarRangeProjectionDto",
+      "then": "every anchored event SHALL be projected into config.display_tz using independent start and end zones (maps to AC-CALX-051)",
+      "verify_method": "test (Rust: calendar_projection cross_zone_display_geometry)"
+    },
+    {
+      "id": "AC-S2-04",
+      "given": "an existing anchored event's ambiguous wall-time identity cannot be proven to round-trip",
+      "when": "the calendar range projection computes that event's entry",
+      "then": "it SHALL report temporal_editable=false with a stable temporal_disabled_reason, while other permitted sparse edits (title, location, guests, Meet, RSVP) remain available (maps to AC-CALX-055)",
+      "verify_method": "test: calendar_projection ambiguous_existing_event_safe_editing"
+    },
+    {
+      "id": "AC-S2-05",
+      "given": "local time falls in a non-standard gap that remains unresolved after core DST policy",
+      "when": "temporal preview or calendar projection runs",
+      "then": "core SHALL return typed unresolvable_local_time without producing a schedulable draft (maps to AC-CALX-056)",
+      "verify_method": "test: time nonstandard_gap_error and calendar_projection gap_error"
+    },
+    {
+      "id": "AC-S2-06",
+      "given": "resolvable local start/end values and valid IANA zones",
+      "when": "temporal preview runs",
+      "then": "the core/Tauri/TypeScript boundaries SHALL preserve exact resolution kind, resolved instants, display values, and elapsed minutes with no data loss across the boundary (maps to AC-CALX-035)",
+      "verify_method": "Rust serialization fixture equals TypeScript temporal-preview fixture"
+    },
+    {
+      "id": "AC-S2-07",
+      "given": "temporal preview input resolves to an ambiguous fall-back wall time, or an ordinary one-hour spring-forward gap",
+      "when": "EventTemporalPreviewDto is constructed",
+      "then": "it SHALL report resolution kind ambiguous_earlier (with the earlier offset) or nonexistent_shifted_forward (with the adjusted local time) respectively, each carrying a human-readable note (maps to AC-CALX-036, AC-CALX-037)",
+      "verify_method": "Rust test: time/calendar_projection resolution-kind fixtures"
+    },
+    {
+      "id": "AC-S2-08",
+      "given": "an invalid timezone, an unresolvable non-standard gap, or a non-positive elapsed duration",
+      "when": "EventDraft validation (lib/events/draft.ts) runs against the temporal preview result",
+      "then": "it SHALL surface field-associated validation errors sufficient for a later Composer to block Save (maps to AC-CALX-038)",
+      "verify_method": "test: event_draft temporal_validation"
+    },
+    {
+      "id": "AC-S2-09",
+      "given": "the user changes an event's timezone within the draft",
+      "when": "temporal preview recomputes",
+      "then": "the entered local clock values SHALL remain unchanged (maps to AC-CALX-039)",
+      "verify_method": "test: event_draft timezone_change_wall_time"
+    },
+    {
+      "id": "AC-S2-10",
+      "given": "an all-day draft spans user-selected inclusive UI dates",
+      "when": "input is serialized",
+      "then": "canonical end SHALL equal the day after the final inclusive UI date (maps to AC-CALX-024)",
+      "verify_method": "test: event_draft all_day_exclusive_end"
+    },
+    {
+      "id": "AC-S2-11",
+      "given": "EventDraft's local/routed serializer adapters exist in lib/events/draft.ts",
+      "when": "create/edit payloads are built from a draft in a unit fixture",
+      "then": "the payload SHALL originate only from the shared serializer functions, establishing the single adapter that S7 will make every surface consume (maps to AC-CALX-027; full cross-surface adoption completes in S7)",
+      "verify_method": "static ownership test plus controller-fixture equivalence"
+    },
+    {
+      "id": "AC-S2-12",
+      "given": "a sparse temporal bundle is constructed with only one of {start, end, all-day/value type, floating state, start_tzid, end_tzid} present",
+      "when": "the Rust EventEditDelta type (or its Tauri/TypeScript sparse-edit input mirror) is constructed/deserialized",
+      "then": "construction SHALL reject the partial bundle — either the complete bundle is present or every temporal field is absent (maps to AC-CALX-054)",
+      "verify_method": "Rust/TypeScript fixture: partial_temporal_bundle_rejected"
+    },
+    {
+      "id": "AC-S2-13",
+      "given": "a supplied edit token no longer matches the canonical event's current state",
+      "when": "the sparse EventEditDelta command runs",
+      "then": "it SHALL fail before merging the delta into the baseline or performing any local/routed write, and the client SHALL NOT have supplied a canonical fallback value (maps to AC-CALX-054)",
+      "verify_method": "Rust fixture: stale_sparse_edit_no_write"
+    },
+    {
+      "id": "AC-S2-14",
+      "given": "an existing event has distinct start and end IANA zones",
+      "when": "the user saves a title-only edit through the sparse command (temporal bundle omitted)",
+      "then": "core SHALL merge under the supplied current edit token while preserving both endpoints and their distinct zones unchanged (maps to AC-CALX-054)",
+      "verify_method": "Rust/Tauri/TypeScript fixture: cross_zone_title_only_edit"
+    },
+    {
+      "id": "AC-S2-15",
+      "given": "lib/events/draft.ts computes dirty_fields for a non-temporal-only change (e.g. title only)",
+      "when": "the sparse serializer builds the Tauri invoke payload",
+      "then": "the payload SHALL omit start/end/tzid/all-day/floating fields entirely rather than sending previous or normalized values (maps to AC-CALX-054)",
+      "verify_method": "test: event_draft sparse_serializer_omits_untouched_temporal"
+    },
+    {
+      "id": "AC-S2-16",
+      "given": "every existing caller of the current full EditEventInput / edit_event / edit_routed_event Tauri commands, unmigrated during S2",
+      "when": "those callers invoke edit through the retained EditEventInput compatibility adapter",
+      "then": "behavior, payload shape, and outcomes SHALL be identical to pre-S2 behavior, and the adapter SHALL never clone one zone over a distinct baseline end zone",
+      "verify_method": "test (existing bridge.rs / google_calendar_mutation_routing.rs suites, now compiling, plus an adapter cross-zone-preservation fixture)"
+    },
+    {
+      "id": "AC-S2-17",
+      "given": "S2 lands only core/Tauri/TypeScript pure-model and reducer code with no changes to controllers, index.html, or CSS",
+      "when": "the existing Calendar/Today/Capture/Notifications test suites captured by S1's baseline manifest are re-run",
+      "then": "they SHALL pass identically with no visual or behavioral diff, and CalendarViewController SHALL still consume raw list_events geometry (migration to calendar_range_projection is S5, not S2)",
+      "verify_method": "test: re-run S1 baseline suites; scope-diff review against declared_scope"
+    },
+    {
+      "id": "AC-S2-18",
+      "given": "lib/events/operation_state.ts implements the draft/dirty/validating/persisting/sync-pending/confirmed/needs-review/conflict reducer",
+      "when": "transitions are exercised in a unit fixture",
+      "then": "the reducer SHALL be pure (no network/DOM side effects) and SHALL reject invalid transitions",
+      "verify_method": "test: operation_state transition fixture"
+    }
+  ],
+  "spec_ref": ".spectra/changes/calendar-experience-s2-core-temporal-draft/spec.md",
+  "created_at": "2026-09-16",
+  "drift_checked": true,
+  "has_code": true
+}

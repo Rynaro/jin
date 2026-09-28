@@ -1,5 +1,23 @@
+/**
+ * Legacy event-edit surface — **migration-only** as of S2.
+ *
+ * The pure draft model that used to live here (`EventEditDraft`,
+ * `EventEditInput`, `draftFromEvent`, `inputFromDraft`) has been extracted and
+ * generalized into `./draft.ts`, which is where new work belongs. The exports
+ * below are kept verbatim so the controllers still consuming them keep working
+ * unchanged; S7 migrates those surfaces and this file's model half then goes
+ * away.
+ *
+ * The one thing the legacy model cannot express is an event whose endpoints
+ * live in different timezones: `EventEditDraft` has a single `timezone` field.
+ * `toEventDraft` below is the bridge, and it takes the original `EventDto` so
+ * the true end zone is recovered rather than guessed.
+ */
+
 import type { EventDetailDto, EventDto } from '../../types/dto';
 import type { CalendarSelection } from '../../controllers/calendar_controller';
+import type { EventDraft } from './draft';
+import { draftFromEvent as eventDraftFromEvent } from './draft';
 import { addDays, parseIso } from '../calendar/transform';
 import { normalizeClockInput } from '../calendar/clock';
 import { formatNaturalDateResult, naturalDateErrorMessage, parseNaturalDateTime, type NaturalDateErrorCode, type NaturalDateResult } from '../calendar/natural_language';
@@ -73,6 +91,72 @@ export function inputFromDraft(draft: EventEditDraft, _original?: EventDto): Eve
   return { title: draft.title.trim(), start: `${draft.start_date}T${draft.start_time}:00`,
     end: `${draft.end_date}T${draft.end_time}:00`, tzid: draft.timezone || undefined,
     is_all_day: false, location, description, recurrence: draft.recurrence_changed && !draft.clear_recurrence ? draft.recurrence : undefined, clear_recurrence: draft.recurrence_changed && draft.clear_recurrence };
+}
+
+/**
+ * Bridge a legacy `EventEditDraft` onto the shared `EventDraft` model.
+ *
+ * Pass the `EventDto` the legacy draft came from whenever it is available: the
+ * legacy shape carries one `timezone`, so without the original event a distinct
+ * end zone cannot be recovered and would be flattened onto the start zone —
+ * precisely the data loss S2 exists to stop.
+ */
+export function toEventDraft(
+  legacy: EventEditDraft,
+  origin?: { event: EventDto; edit_token?: string },
+): EventDraft {
+  const draft: EventDraft = origin
+    ? eventDraftFromEvent(origin.event, origin.edit_token)
+    : {
+        event_id: null,
+        edit_token: null,
+        title: legacy.title,
+        location: legacy.location,
+        description: legacy.description,
+        temporal: {
+          start_date: legacy.start_date,
+          end_date: legacy.end_date,
+          start_time: legacy.start_time,
+          end_time: legacy.end_time,
+          is_all_day: legacy.is_all_day,
+          floating: legacy.baseline.floating,
+          timezone: legacy.timezone,
+          end_timezone: legacy.timezone,
+        },
+        baseline: null,
+        recurrence_scope: legacy.recurrence_scope,
+        recurrence: legacy.recurrence,
+        clear_recurrence: legacy.clear_recurrence,
+        recurrence_changed: legacy.recurrence_changed,
+        guest_update_policy: legacy.guest_update_policy,
+        conference_intent: { kind: 'preserve' },
+        relative_input: legacy.relative_input,
+        range_complete: legacy.range_complete,
+      };
+
+  // Overlay the live legacy values on top of the reconstructed draft.
+  draft.title = legacy.title;
+  draft.location = legacy.location;
+  draft.description = legacy.description;
+  draft.temporal.start_date = legacy.start_date;
+  draft.temporal.end_date = legacy.end_date;
+  draft.temporal.start_time = legacy.start_time;
+  draft.temporal.end_time = legacy.end_time;
+  draft.temporal.is_all_day = legacy.is_all_day;
+  if (draft.temporal.timezone !== legacy.timezone) {
+    // The user changed the zone in the legacy editor, which pre-S2 meant both
+    // endpoints move. Honour that intent explicitly rather than silently.
+    draft.temporal.timezone = legacy.timezone;
+    draft.temporal.end_timezone = legacy.timezone;
+  }
+  draft.recurrence_scope = legacy.recurrence_scope;
+  draft.recurrence = legacy.recurrence;
+  draft.clear_recurrence = legacy.clear_recurrence;
+  draft.recurrence_changed = legacy.recurrence_changed;
+  draft.guest_update_policy = legacy.guest_update_policy;
+  draft.relative_input = legacy.relative_input;
+  draft.range_complete = legacy.range_complete;
+  return draft;
 }
 
 function wallDayNumber(iso: string): number {

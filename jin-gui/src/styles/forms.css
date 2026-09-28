@@ -94,7 +94,7 @@ dialog::backdrop {
 
 .capture-modal__title {
   color: var(--ink-primary);
-  font-family: var(--font-display);
+  font-family: var(--font-text);
   font-size: var(--text-title3-size);
   font-weight: var(--display-title-weight);
   line-height: var(--text-title3-line);
@@ -113,9 +113,11 @@ dialog::backdrop {
 
 .capture-modal__tabs {
   display: flex;
-  gap: var(--space-1);
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 0.5px solid var(--separator);
+  gap: 2px;
+  margin: var(--space-2) var(--space-3) 0;
+  padding: 2px;
+  border-radius: var(--radius-capsule);
+  background: var(--control-track);
   role: tablist;
   flex: 0 0 auto;
 }
@@ -128,7 +130,7 @@ dialog::backdrop {
   align-items: center;
   justify-content: center;
   gap: var(--space-1);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-capsule);
   font-size: var(--text-subheadline-size);
   font-family: inherit;
   font-weight: 400;
@@ -166,9 +168,10 @@ dialog::backdrop {
 }
 
 .capture-modal__tab[aria-selected="true"] {
-  background: var(--workspace-row-selected);
-  color: var(--ink-primary);
+  background: var(--control-surface);
+  color: var(--label);
   font-weight: 600;
+  box-shadow: var(--control-shadow);
 }
 
 [data-reduce-motion="1"] .capture-modal__tab {
@@ -323,9 +326,9 @@ dialog::backdrop {
 .form-select {
   min-block-size: var(--hit-target);
   padding: var(--space-1) var(--space-2);
-  background: var(--fill-primary);
-  border: 0.5px solid var(--separator);
-  border-radius: var(--radius-sm);
+  background: var(--control-surface);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-md);
   color: var(--label);
   font-size: var(--text-body-size);
   font-family: var(--font-text);
@@ -339,15 +342,15 @@ dialog::backdrop {
 .form-textarea:focus,
 .form-select:focus {
   outline: none;
-  border-color: var(--ink-dry);
-  box-shadow: 0 0 0 3px var(--ink-bleed);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--operational-wash);
 }
 
 .form-input:focus-visible,
 .form-textarea:focus-visible,
 .form-select:focus-visible {
-  border-color: var(--ink-stroke);
-  box-shadow: 0 0 0 3px var(--ink-bleed);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--operational-wash);
 }
 
 .form-textarea {
@@ -391,80 +394,7 @@ dialog::backdrop {
   padding-top: var(--space-1);
 }
 
-/* ── Shared button styles ────────────────────────────────────────────────── */
-
-.btn-primary {
-  min-block-size: var(--hit-target);
-  min-inline-size: var(--hit-target);
-  padding: var(--space-1) var(--space-3);
-  background: var(--ink-primary);
-  color: var(--ink-on);
-  border: none;
-  border-radius: var(--radius-capsule);
-  font-size: var(--text-subheadline-size);
-  font-family: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity var(--duration-fast) var(--ease-standard);
-}
-
-.btn-primary:hover {
-  opacity: 0.88;
-}
-
-.btn-primary:disabled {
-  opacity: 0.48;
-  cursor: not-allowed;
-}
-
-.btn-secondary {
-  min-block-size: var(--hit-target);
-  min-inline-size: var(--hit-target);
-  padding: var(--space-1) var(--space-3);
-  background: transparent;
-  color: var(--accent);
-  border: none;
-  border-radius: var(--radius-capsule);
-  font-size: var(--text-subheadline-size);
-  font-family: inherit;
-  font-weight: 400;
-  cursor: pointer;
-  transition: background-color var(--duration-fast) var(--ease-standard);
-}
-
-.btn-secondary:hover {
-  background: var(--fill-primary);
-}
-
-/* ── Danger action button (cinnabar seal — destructive actions) ──────────── */
-/*
- * Used for delete confirmations (Delete List, ConfirmDialog with variant:'danger').
- * Standalone class: <button class="btn-danger">Delete</button>.
- * Uses --seal (cinnabar) so the red is harmonised with the ink-and-seal design.
- */
-.btn-danger {
-  min-block-size: var(--hit-target);
-  min-inline-size: var(--hit-target);
-  padding: var(--space-1) var(--space-3);
-  background: var(--seal);
-  color: var(--seal-on);
-  border: none;
-  border-radius: var(--radius-capsule);
-  font-size: var(--text-subheadline-size);
-  font-family: inherit;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color var(--duration-fast) var(--ease-standard);
-}
-
-.btn-danger:hover {
-  background: var(--seal-strong);
-}
-
-.btn-danger:disabled {
-  opacity: 0.48;
-  cursor: not-allowed;
-}
+/* Shared action variants are owned by the compact aliases below. */
 
 [data-reduce-motion="1"] .btn-primary,
 [data-reduce-motion="1"] .btn-secondary {
@@ -520,7 +450,7 @@ dialog::backdrop {
 
 .action-dialog__title {
   color: var(--ink-primary);
-  font-family: var(--font-display);
+  font-family: var(--font-text);
   font-size: var(--text-title3-size);
   font-weight: var(--display-title-weight);
   line-height: var(--text-title3-line);
@@ -875,31 +805,34 @@ dialog::backdrop {
   min-height: var(--control-height-prominent);
   padding: 0 var(--space-2);
   border: 0.5px solid transparent;
-  border-radius: var(--radius-sm);
-  box-shadow: none;
+  border-radius: var(--radius-capsule);
+  box-shadow: var(--control-shadow);
   font-size: var(--text-footnote-size);
   line-height: var(--text-footnote-line);
   font-weight: 500;
+  font-family: var(--font-text);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard);
 }
 
 .btn,
 .btn-secondary,
 .btn--secondary {
   color: var(--label);
-  background: var(--workspace-row-hover);
-  border-color: var(--separator);
+  background: var(--control-surface);
+  border-color: var(--control-edge);
 }
 
 .btn-primary,
 .btn--primary {
-  color: var(--ink-on);
-  background: var(--ink-primary);
+  color: var(--color-on-accent);
+  background: var(--action-primary-fill);
 }
 
 .btn-danger,
 .btn--danger {
-  color: var(--seal-on);
-  background: var(--seal);
+  color: var(--color-on-accent);
+  background: var(--action-danger-fill);
 }
 
 .btn:hover,
@@ -909,13 +842,24 @@ dialog::backdrop {
 .btn--primary:hover,
 .btn--secondary:hover,
 .btn--danger:hover {
-  opacity: 0.88;
+  filter: brightness(0.92);
 }
 
 .btn-danger:hover,
 .btn--danger:hover {
-  background: var(--seal-strong);
+  background: var(--action-danger-fill);
   opacity: 1;
+}
+
+.btn:disabled,
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-danger:disabled,
+.btn--primary:disabled,
+.btn--secondary:disabled,
+.btn--danger:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
 }
 
 .modal-close-btn {
@@ -924,7 +868,8 @@ dialog::backdrop {
   min-width: var(--desktop-hit-target);
   min-height: var(--desktop-hit-target);
   padding: 0;
-  border-radius: var(--radius-sm);
+  border-radius: 50%;
+  background: var(--control-surface);
 }
 
 .action-dialog,
@@ -950,7 +895,7 @@ dialog::backdrop {
 .form-textarea,
 .form-select {
   min-block-size: var(--control-height-prominent);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   font-size: var(--text-callout-size);
 }
 
@@ -985,32 +930,9 @@ dialog::backdrop {
 
 /* ── Living Agenda Capture surface ─────────────────────────────────────── */
 
-.capture-modal {
-  background: var(--agenda-elevated);
-  border-color: var(--agenda-timeline);
-}
-
-.capture-modal__header { border-bottom-color: var(--agenda-timeline); }
-
-.capture-modal__tabs {
-  border-bottom-color: var(--agenda-timeline);
-}
-
-.capture-modal__tab[aria-selected="true"] {
-  background: var(--agenda-indigo-tint);
-  color: var(--agenda-indigo);
-}
-
 .capture-modal__form {
   min-block-size: 0;
 }
-
-.capture-modal .btn-primary {
-  background: var(--capture-vermilion);
-  color: var(--capture-on-vermilion);
-}
-
-.capture-modal .btn-primary:hover { background: var(--capture-vermilion-hover); }
 
 @media (max-width: 420px) {
   .capture-modal { inline-size: calc(100vw - var(--space-2)); }
@@ -1022,11 +944,14 @@ dialog::backdrop {
 }
 
 :root[data-text-scale="accessibility"] .capture-modal__tabs {
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  border-radius: var(--radius-md);
 }
 
 :root[data-text-scale="accessibility"] .capture-modal__tab {
-  flex: 1 1 calc(50% - var(--space-1));
+  justify-content: flex-start;
+  min-inline-size: 0;
 }
 
 :root[data-text-scale="accessibility"] .capture-modal__form {
@@ -1050,7 +975,7 @@ dialog::backdrop {
   padding-block: var(--space-2);
 }
 
-.action-dialog__inner, .jin-modal__content, dialog .modal-content { background: var(--dialog-paper); box-shadow: var(--dialog-elevation); }
+.action-dialog__inner, .jin-modal__content, dialog .modal-content { background: var(--dialog-paper); }
 .action-dialog__header, .action-dialog__footer { border-color: var(--separator); }
-.form-input, .form-select, .jin-select__trigger { border-color: var(--separator); background: var(--workspace-canvas); color: var(--label); }
+.form-input, .form-select, .jin-select__trigger { border-color: var(--control-edge); background: var(--control-surface); color: var(--label); }
 .form-input:focus-visible, .form-select:focus-visible, .jin-select__trigger:focus-visible { border-color: var(--accent); outline-color: var(--accent); }

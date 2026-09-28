@@ -58,6 +58,18 @@ import {
   editList,
   reorderList,
   deleteList,
+  previewWorkflowSetup,
+  applyWorkflowSetup,
+  createBoardColumn,
+  setInitialBoardColumn,
+  renameBoardColumn,
+  reorderBoardColumn,
+  changeBoardColumnType,
+  deleteBoardColumn,
+  createSection,
+  renameSection,
+  reorderSection,
+  deleteSection,
   listTags,
   setTagColor,
   getLaunchState,
@@ -73,6 +85,52 @@ const mockInvoke = vi.mocked(invoke);
 
 beforeEach(() => {
   mockInvoke.mockReset();
+});
+
+describe('workflow and column native IPC payloads', () => {
+  it('keeps top-level snake_case keys accepted by the Tauri command decoder', async () => {
+    mockInvoke.mockResolvedValue({});
+    await previewWorkflowSetup('inbox', 'checklist');
+    expect(mockInvoke).toHaveBeenLastCalledWith('preview_workflow_setup', { id: 'inbox', target: 'checklist' });
+    await applyWorkflowSetup('inbox', 'checklist', 'snapshot', 'operation-1');
+    expect(mockInvoke).toHaveBeenLastCalledWith('apply_workflow_setup', {
+      id: 'inbox', target: 'checklist', snapshot: 'snapshot', operation_id: 'operation-1',
+    });
+
+    await createBoardColumn('project', 'Backlog', 'none');
+    expect(mockInvoke).toHaveBeenLastCalledWith('create_board_column', {
+      id: 'project', name: 'Backlog', column_type: 'none',
+    });
+    await setInitialBoardColumn('project', 'backlog');
+    expect(mockInvoke).toHaveBeenLastCalledWith('set_initial_board_column', { id: 'project', column_id: 'backlog' });
+    await renameBoardColumn('project', 'backlog', 'Ideas');
+    expect(mockInvoke).toHaveBeenLastCalledWith('rename_board_column', { id: 'project', column_id: 'backlog', name: 'Ideas' });
+    await reorderBoardColumn('project', 'backlog', 'A');
+    expect(mockInvoke).toHaveBeenLastCalledWith('reorder_board_column', { id: 'project', column_id: 'backlog', position: 'A' });
+    await changeBoardColumnType('project', 'backlog', 'queue');
+    expect(mockInvoke).toHaveBeenLastCalledWith('change_board_column_type', {
+      id: 'project', column_id: 'backlog', column_type: 'queue',
+    });
+    await deleteBoardColumn('project', 'backlog', 'queue');
+    expect(mockInvoke).toHaveBeenLastCalledWith('delete_board_column', {
+      id: 'project', column_id: 'backlog', replacement_id: 'queue',
+    });
+    await deleteList('project', true);
+    expect(mockInvoke).toHaveBeenLastCalledWith('delete_list', { id: 'project', confirm_doing: true });
+
+    await createSection('project', 'Group');
+    expect(mockInvoke).toHaveBeenLastCalledWith('create_section', { list_id: 'project', input: { name: 'Group' } });
+    await renameSection('project', 'group', 'Review');
+    expect(mockInvoke).toHaveBeenLastCalledWith('rename_section', {
+      list_id: 'project', section_id: 'group', input: { name: 'Review' },
+    });
+    await reorderSection('project', 'group', 'A');
+    expect(mockInvoke).toHaveBeenLastCalledWith('reorder_section', {
+      list_id: 'project', section_id: 'group', input: { position: 'A' },
+    });
+    await deleteSection('project', 'group');
+    expect(mockInvoke).toHaveBeenLastCalledWith('delete_section', { list_id: 'project', section_id: 'group' });
+  });
 });
 
 describe('first-run setup bridge', () => {
@@ -546,7 +604,7 @@ describe('deleteList', () => {
   it('calls delete_list with the id', async () => {
     mockInvoke.mockResolvedValueOnce(undefined);
     await deleteList('work');
-    expect(mockInvoke).toHaveBeenCalledWith('delete_list', { id: 'work' });
+    expect(mockInvoke).toHaveBeenCalledWith('delete_list', { id: 'work', confirm_doing: false });
   });
 });
 

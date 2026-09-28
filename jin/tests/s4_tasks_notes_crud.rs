@@ -17,6 +17,9 @@
 use std::path::Path;
 use std::process::Command;
 
+use jin_core::model::list::WorkflowKind;
+use jin_core::ops::lists::{self, CreateListParams};
+use jin_core::{store::fs, Config};
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -87,12 +90,45 @@ fn init_root() -> TempDir {
     tmp
 }
 
+/// An existing, unconfigured Inbox retains the original four-state lifecycle.
+/// Explicitly write the legacy frontmatter instead of letting the first task
+/// command seed the new Checklist Inbox.
+fn init_legacy_root() -> TempDir {
+    let tmp = init_root();
+    let root = tmp.path();
+    lists::ensure_default_list_for_root(root).unwrap();
+    let cfg = Config::load(root).unwrap();
+    let inbox_path = cfg.lists_dir().join(fs::list_filename("inbox"));
+    let mut inbox = fs::read_list(&inbox_path).unwrap();
+    inbox.frontmatter.workflow_kind = None;
+    fs::write_list(&cfg.lists_dir(), &inbox).unwrap();
+    jin_core::ops::api::refresh(root).unwrap();
+    tmp
+}
+
+/// The CLI has no list-create verb; set up a real typed container through core
+/// and pass its canonical ID through the public CLI commands under test.
+fn create_list(root: &Path, name: &str, workflow_kind: WorkflowKind) -> String {
+    lists::create_list(
+        root,
+        CreateListParams {
+            name: name.into(),
+            color: "accent".into(),
+            icon: "list".into(),
+            parent_id: None,
+            workflow_kind: Some(workflow_kind),
+        },
+    )
+    .unwrap()
+    .id
+}
+
 // ── Task state-machine: valid transitions ─────────────────────────────────────
 
 /// todo → doing via `jin task start`
 #[test]
 fn task_start_todo_to_doing() {
-    let tmp = init_root();
+    let tmp = init_legacy_root();
     let root = tmp.path();
 
     let env = run_json(root, &["task", "add", "Prepare report"]);
@@ -124,7 +160,7 @@ fn task_done_todo_to_done_sets_completed_at() {
 /// doing → done via `jin task done`
 #[test]
 fn task_doing_to_done_sets_completed_at() {
-    let tmp = init_root();
+    let tmp = init_legacy_root();
     let root = tmp.path();
 
     let env = run_json(root, &["task", "add", "Deploy service"]);
@@ -140,7 +176,7 @@ fn task_doing_to_done_sets_completed_at() {
 /// todo → cancelled via `jin task cancel`
 #[test]
 fn task_cancel_todo_to_cancelled() {
-    let tmp = init_root();
+    let tmp = init_legacy_root();
     let root = tmp.path();
 
     let env = run_json(root, &["task", "add", "Low-priority thing"]);
@@ -154,7 +190,7 @@ fn task_cancel_todo_to_cancelled() {
 /// doing → cancelled via `jin task cancel`
 #[test]
 fn task_cancel_doing_to_cancelled() {
-    let tmp = init_root();
+    let tmp = init_legacy_root();
     let root = tmp.path();
 
     let env = run_json(root, &["task", "add", "Interrupted work"]);
@@ -187,7 +223,7 @@ fn task_reopen_done_clears_completed_at() {
 /// cancelled → todo (reopen)
 #[test]
 fn task_reopen_cancelled_to_todo() {
-    let tmp = init_root();
+    let tmp = init_legacy_root();
     let root = tmp.path();
 
     let env = run_json(root, &["task", "add", "Resurrected task"]);
@@ -199,12 +235,44 @@ fn task_reopen_cancelled_to_todo() {
     assert_eq!(data(&env)["status"].as_str().unwrap(), "todo");
 }
 
+/// New Checklist containers have only unchecked/completed states. Rejected
+/// legacy lifecycle commands must leave the canonical task byte-identical.
+#[test]
+fn checklist_rejects_doing_and_cancelled_without_mutation() {
+    let tmp = init_root();
+    let root = tmp.path();
+    let env = run_json(root, &["task", "add", "Checklist item"]);
+    let id = data(&env)["id"].as_str().unwrap();
+    let task_path = root.join("tasks").join(format!("{id}.md"));
+    let before = std::fs::read(&task_path).unwrap();
+
+    for command in ["start", "cancel"] {
+        let (code, error) = run_json_raw(root, &["task", command, id]);
+        assert_ne!(code, 0, "Checklist {command} must fail");
+        assert!(
+            error["data"]["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("Lists support only unchecked and completed tasks"),
+            "Checklist {command} must explain the workflow restriction: {error}"
+        );
+        assert_eq!(std::fs::read(&task_path).unwrap(), before);
+    }
+
+    let done = run_json(root, &["task", "done", id]);
+    assert_eq!(data(&done)["status"], "done");
+    assert!(!data(&done)["completed_at"].is_null());
+    let reopened = run_json(root, &["task", "reopen", id]);
+    assert_eq!(data(&reopened)["status"], "todo");
+    assert!(data(&reopened)["completed_at"].is_null());
+}
+
 // ── Task state-machine: INVALID transitions ───────────────────────────────────
 
 /// done → doing is not allowed; exit 2; file must be byte-identical after.
 #[test]
 fn task_invalid_done_to_doing_rejected_file_unchanged() {
-    let tmp = init_root();
+    let tmp = init_legacy_root();
     let root = tmp.path();
 
     let env = run_json(root, &["task", "add", "Finished already"]);
@@ -235,7 +303,7 @@ fn task_invalid_done_to_doing_rejected_file_unchanged() {
 /// done → cancelled is not allowed (can only go done → todo via reopen).
 #[test]
 fn task_invalid_done_to_cancelled_rejected() {
-    let tmp = init_root();
+    let tmp = init_legacy_root();
     let root = tmp.path();
 
     let env = run_json(root, &["task", "add", "Already done"]);
@@ -259,7 +327,7 @@ fn task_invalid_done_to_cancelled_rejected() {
 /// cancelled → done is not allowed (must reopen first).
 #[test]
 fn task_invalid_cancelled_to_done_rejected() {
-    let tmp = init_root();
+    let tmp = init_legacy_root();
     let root = tmp.path();
 
     let env = run_json(root, &["task", "add", "Abandoned task"]);
@@ -350,18 +418,19 @@ fn task_edit_due_set_and_clear() {
 fn task_edit_list_moves_task() {
     let tmp = init_root();
     let root = tmp.path();
+    let work_id = create_list(root, "Work", WorkflowKind::Checklist);
 
     let env = run_json(root, &["task", "add", "Inbox item"]);
     let id = data(&env)["id"].as_str().unwrap().to_string();
     assert_eq!(data(&env)["list"].as_str().unwrap(), "inbox");
 
-    run_json(root, &["task", "edit", &id, "--list", "work"]);
+    run_json(root, &["task", "edit", &id, "--list", &work_id]);
 
     let show = run_json(root, &["task", "show", &id]);
-    assert_eq!(data(&show)["list"].as_str().unwrap(), "work");
+    assert_eq!(data(&show)["list"].as_str().unwrap(), work_id);
 
-    // Should appear in --list work filter.
-    let list_env = run_json(root, &["task", "list", "--list", "work"]);
+    // Should appear when filtered by Work's canonical ID.
+    let list_env = run_json(root, &["task", "list", "--list", &work_id]);
     let items = data(&list_env).as_array().unwrap();
     assert!(
         items.iter().any(|t| t["id"].as_str() == Some(&id)),
@@ -487,12 +556,16 @@ fn note_edit_add_remove_tags() {
 fn task_list_status_filter() {
     let tmp = init_root();
     let root = tmp.path();
+    let board_id = create_list(root, "Project", WorkflowKind::Board);
 
-    // Create todo, doing, done tasks.
+    // Checklist supplies unchecked/completed work; Board supplies Doing.
     let t1 = run_json(root, &["task", "add", "Task A (todo)"]);
     let id1 = data(&t1)["id"].as_str().unwrap().to_string();
 
-    let t2 = run_json(root, &["task", "add", "Task B (doing)"]);
+    let t2 = run_json(
+        root,
+        &["task", "add", "--list", &board_id, "Task B (doing)"],
+    );
     let id2 = data(&t2)["id"].as_str().unwrap().to_string();
     run_json(root, &["task", "start", &id2]);
 
@@ -515,6 +588,12 @@ fn task_list_status_filter() {
         !items.iter().any(|t| t["id"].as_str() == Some(&id3)),
         "done task must NOT appear in --status todo"
     );
+
+    let doing = run_json(root, &["task", "list", "--status", "doing"]);
+    let doing_items = data(&doing).as_array().unwrap();
+    assert!(doing_items.iter().any(|t| t["id"].as_str() == Some(&id2)));
+    assert!(!doing_items.iter().any(|t| t["id"].as_str() == Some(&id1)));
+    assert!(!doing_items.iter().any(|t| t["id"].as_str() == Some(&id3)));
 }
 
 /// `jin task list --priority high` returns only high-priority tasks.
@@ -548,14 +627,15 @@ fn task_list_priority_filter() {
 fn task_list_list_filter() {
     let tmp = init_root();
     let root = tmp.path();
+    let work_id = create_list(root, "Work", WorkflowKind::Checklist);
 
     let t1 = run_json(root, &["task", "add", "--list", "inbox", "Inbox task"]);
     let id1 = data(&t1)["id"].as_str().unwrap().to_string();
 
-    let t2 = run_json(root, &["task", "add", "--list", "work", "Work task"]);
+    let t2 = run_json(root, &["task", "add", "--list", &work_id, "Work task"]);
     let id2 = data(&t2)["id"].as_str().unwrap().to_string();
 
-    let env = run_json(root, &["task", "list", "--list", "work"]);
+    let env = run_json(root, &["task", "list", "--list", &work_id]);
     let items = data(&env).as_array().unwrap();
 
     assert!(
@@ -723,7 +803,7 @@ fn note_edit_preserves_outgoing_links_as_backlinks_on_target() {
 /// `jin task start --json` returns a valid versioned DTO envelope.
 #[test]
 fn json_parity_task_start() {
-    let tmp = init_root();
+    let tmp = init_legacy_root();
     let root = tmp.path();
 
     let env = run_json(root, &["task", "add", "Sprint task"]);
@@ -739,7 +819,7 @@ fn json_parity_task_start() {
 /// `jin task cancel --json` returns a valid versioned DTO envelope.
 #[test]
 fn json_parity_task_cancel() {
-    let tmp = init_root();
+    let tmp = init_legacy_root();
     let root = tmp.path();
 
     let env = run_json(root, &["task", "add", "Will be cancelled"]);
@@ -878,7 +958,7 @@ fn json_parity_task_list_priority_filter() {
 /// Invalid-transition JSON error envelope has `jin_dto_version` and no raw SQLite columns.
 #[test]
 fn json_parity_invalid_transition_error_envelope() {
-    let tmp = init_root();
+    let tmp = init_legacy_root();
     let root = tmp.path();
 
     let env = run_json(root, &["task", "add", "Complete me"]);

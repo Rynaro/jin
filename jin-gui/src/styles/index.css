@@ -7,7 +7,8 @@
  *   3. spacing    — box model, gap, flex helpers, tap targets
  *   4. materials  — glass materials
  *   5. motion/layout/features — component and feature composition
- *   6. a11y       — final-authority accessibility fallbacks
+ *   6. events     — Preview/Composer/Companion (after notifications, before a11y)
+ *   7. a11y       — final-authority accessibility fallbacks (must stay last)
  *
  * main.ts also imports @fontsource/inter weights before this file
  * so Inter is available when typography.css applies the font stack.
@@ -28,4 +29,6 @@
 @import './first-run.css';
 @import './calendar.css';
 @import './notifications.css';
+@import './events.css';
+@import './sidebar.css';
 @import './a11y.css';

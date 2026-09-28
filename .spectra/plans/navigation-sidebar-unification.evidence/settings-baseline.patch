@@ -1,0 +1,947 @@
+diff --git a/jin-gui/index.html b/jin-gui/index.html
+index 9299c3b..6506e03 100644
+--- a/jin-gui/index.html
++++ b/jin-gui/index.html
+@@ -1846,8 +1846,58 @@
+           data-router-target="section"
+           data-section-name="settings"
+         >
+-          <div class="settings-view">
+-            <h2 class="settings-view__heading">Settings</h2>
++          <div class="settings-view jin-split-view">
++            <div class="settings-nav jin-context-rail">
++              <h2 class="settings-view__heading">Settings</h2>
++              <nav class="settings-nav__items" aria-label="Settings categories">
++                <button
++                  type="button"
++                  class="settings-nav__item jin-nav-item tap-target"
++                  aria-controls="settings-pane-general"
++                  data-settings-target="settingsNavItem"
++                  data-settings-pane-key="general"
++                  data-action="click->settings#selectPane"
++                >General</button>
++                <button
++                  type="button"
++                  class="settings-nav__item jin-nav-item tap-target"
++                  aria-controls="settings-pane-calendars"
++                  data-settings-target="settingsNavItem"
++                  data-settings-pane-key="calendars"
++                  data-action="click->settings#selectPane"
++                >Calendars &amp; Sync</button>
++                <button
++                  type="button"
++                  class="settings-nav__item jin-nav-item tap-target"
++                  aria-controls="settings-pane-notifications"
++                  data-settings-target="settingsNavItem"
++                  data-settings-pane-key="notifications"
++                  data-action="click->settings#selectPane"
++                >Notifications</button>
++                <button
++                  type="button"
++                  class="settings-nav__item jin-nav-item tap-target"
++                  aria-controls="settings-pane-data-storage"
++                  data-settings-target="settingsNavItem"
++                  data-settings-pane-key="data-storage"
++                  data-action="click->settings#selectPane"
++                >Data &amp; Storage</button>
++              </nav>
++            </div>
++
++            <div class="settings-workspace jin-workspace-pane" data-settings-target="settingsWorkspace">
++              <section
++                id="settings-pane-calendars"
++                class="settings-pane"
++                aria-labelledby="settings-pane-calendars-title"
++                data-settings-target="settingsPane"
++                data-settings-pane-key="calendars"
++                hidden
++              >
++                <header class="settings-pane__header">
++                  <h2 id="settings-pane-calendars-title" class="settings-pane__title">Calendars &amp; Sync</h2>
++                  <p class="settings-pane__description">Connect calendars, review paused changes, and control synchronization.</p>
++                </header>
+
+             <section class="settings-section" aria-label="Google calendar accounts">
+               <h3 class="settings-section__heading">Calendar Accounts</h3>
+@@ -1893,7 +1943,7 @@
+               <div data-settings-target="googleAccountsList" class="google-account-list" aria-live="polite"></div>
+             </section>
+
+-            <section class="settings-section" aria-label="Quarantined calendar changes">
++            <section class="settings-section settings-section--attention" aria-label="Quarantined calendar changes">
+               <h3 class="settings-section__heading">Changes awaiting review</h3>
+               <p class="text-callout color-secondary">
+                 Jin never replays paused Google Calendar changes automatically. Review each change after reconnecting or restoring calendar access.
+@@ -2016,7 +2066,21 @@
+               </div>
+             </section>
+
+-            <!-- ── Notifications ──────────────────────────────────────────── -->
++              </section>
++
++              <!-- ── Notifications ──────────────────────────────────────────── -->
++              <section
++                id="settings-pane-notifications"
++                class="settings-pane"
++                aria-labelledby="settings-pane-notifications-title"
++                data-settings-target="settingsPane"
++                data-settings-pane-key="notifications"
++                hidden
++              >
++                <header class="settings-pane__header">
++                  <h2 id="settings-pane-notifications-title" class="settings-pane__title">Notifications</h2>
++                  <p class="settings-pane__description">Manage system permission and verify that reminders can reach you.</p>
++                </header>
+             <section class="settings-section notification-settings" aria-label="Notifications">
+               <div class="notification-settings__heading">
+                 <h3 class="settings-section__heading">Notifications</h3>
+@@ -2044,7 +2108,49 @@
+               <p class="settings-error hidden" role="alert" aria-live="assertive" data-settings-target="notificationError"></p>
+             </section>
+
+-            <!-- ── Export ─────────────────────────────────────────────────── -->
++              </section>
++
++              <!-- ── Data & Storage ─────────────────────────────────────────── -->
++              <section
++                id="settings-pane-data-storage"
++                class="settings-pane"
++                aria-labelledby="settings-pane-data-storage-title"
++                data-settings-target="settingsPane"
++                data-settings-pane-key="data-storage"
++                hidden
++              >
++                <header class="settings-pane__header">
++                  <h2 id="settings-pane-data-storage-title" class="settings-pane__title">Data &amp; Storage</h2>
++                  <p class="settings-pane__description">Choose where Jin stores data, export a portable copy, and inspect diagnostics.</p>
++                </header>
++
++            <section class="settings-section" aria-label="Storage location">
++              <h3 class="settings-section__heading">Storage</h3>
++              <div class="settings-field">
++                <span class="settings-field__label">Root path</span>
++                <span
++                  data-settings-target="infoRootPath"
++                  class="settings-field__value"
++                  aria-label="Jin root directory"
++                >—</span>
++              </div>
++              <div class="settings-field settings-field--action">
++                <button
++                  class="btn btn--secondary tap-target"
++                  data-settings-target="changeStoreFolderBtn"
++                  data-action="click->settings#changeStoreFolder"
++                  aria-label="Choose a different folder for the Jin store"
++                >
++                  Change store folder
++                </button>
++                <span
++                  data-settings-target="changeStoreFolderStatus"
++                  class="settings-field__status"
++                  aria-live="polite"
++                ></span>
++              </div>
++            </section>
++
+             <section class="settings-section" aria-label="Export">
+               <h3 class="settings-section__heading">Export</h3>
+
+@@ -2148,12 +2254,54 @@
+               </div>
+             </section>
+
++            <details class="settings-section settings-diagnostics">
++              <summary class="settings-diagnostics__summary">About &amp; diagnostics</summary>
++              <div class="settings-diagnostics__content">
++                <div class="settings-field">
++                  <span class="settings-field__label">Display timezone</span>
++                  <span
++                    data-settings-target="infoDisplayTz"
++                    class="settings-field__value"
++                    aria-label="Display timezone"
++                  >—</span>
++                </div>
++                <div class="settings-field">
++                  <span class="settings-field__label">Calendar ID</span>
++                  <span
++                    data-settings-target="infoCalendarId"
++                    class="settings-field__value"
++                    aria-label="Configured calendar ID"
++                  >—</span>
++                </div>
++                <div class="settings-field">
++                  <span class="settings-field__label">Schema version</span>
++                  <span
++                    data-settings-target="infoSchemaVersion"
++                    class="settings-field__value"
++                    aria-label="Database schema version"
++                  >—</span>
++                </div>
++              </div>
++            </details>
++              </section>
++
+             <!-- ── Appearance & Accessibility ─────────────────────────────── -->
+             <!--
+               Controls dispatch directly to AppearanceController (on <body>)
+               via data-action. SettingsController only initializes checkbox/slider
+               states from persisted prefs on connect — no logic duplication.
+             -->
++              <section
++                id="settings-pane-general"
++                class="settings-pane"
++                aria-labelledby="settings-pane-general-title"
++                data-settings-target="settingsPane"
++                data-settings-pane-key="general"
++              >
++                <header class="settings-pane__header">
++                  <h2 id="settings-pane-general-title" class="settings-pane__title">General</h2>
++                  <p class="settings-pane__description">Personalize Jin's appearance, language, motion, and readability.</p>
++                </header>
+             <section class="settings-section" aria-label="Appearance and accessibility">
+               <h3 class="settings-section__heading">Appearance &amp; Accessibility</h3>
+
+@@ -2312,63 +2460,8 @@
+               </div>
+             </section>
+
+-            <!-- ── App Info ───────────────────────────────────────────────── -->
+-            <section class="settings-section" aria-label="App information">
+-              <h3 class="settings-section__heading">App Info</h3>
+-
+-              <div class="settings-field">
+-                <span class="settings-field__label">Root path</span>
+-                <span
+-                  data-settings-target="infoRootPath"
+-                  class="settings-field__value"
+-                  aria-label="Jin root directory"
+-                >—</span>
+-              </div>
+-
+-              <div class="settings-field settings-field--action">
+-                <button
+-                  class="btn btn--secondary tap-target"
+-                  data-settings-target="changeStoreFolderBtn"
+-                  data-action="click->settings#changeStoreFolder"
+-                  aria-label="Choose a different folder for the Jin store"
+-                >
+-                  Change store folder
+-                </button>
+-                <span
+-                  data-settings-target="changeStoreFolderStatus"
+-                  class="settings-field__status"
+-                  aria-live="polite"
+-                ></span>
+-              </div>
+-
+-              <div class="settings-field">
+-                <span class="settings-field__label">Display timezone</span>
+-                <span
+-                  data-settings-target="infoDisplayTz"
+-                  class="settings-field__value"
+-                  aria-label="Display timezone"
+-                >—</span>
+-              </div>
+-
+-              <div class="settings-field">
+-                <span class="settings-field__label">Calendar ID</span>
+-                <span
+-                  data-settings-target="infoCalendarId"
+-                  class="settings-field__value"
+-                  aria-label="Configured calendar ID"
+-                >—</span>
+-              </div>
+-
+-              <div class="settings-field">
+-                <span class="settings-field__label">Schema version</span>
+-                <span
+-                  data-settings-target="infoSchemaVersion"
+-                  class="settings-field__value"
+-                  aria-label="Database schema version"
+-                >—</span>
+-              </div>
+-            </section>
+-
++              </section>
++            </div>
+           </div>
+         </section>
+       </main>
+diff --git a/jin-gui/src/__tests__/notes_visual_system.test.ts b/jin-gui/src/__tests__/notes_visual_system.test.ts
+index cd2396d..495a005 100644
+--- a/jin-gui/src/__tests__/notes_visual_system.test.ts
++++ b/jin-gui/src/__tests__/notes_visual_system.test.ts
+@@ -24,6 +24,7 @@ describe('Continuous Ink Workspace', () => {
+   const spacing = read('../styles/spacing.css');
+   const settings = read('../styles/settings.css');
+   const a11y = read('../styles/a11y.css');
++  const layout = read('../styles/layout.css');
+
+   it('publishes the continuous workspace geometry and semantic surface tokens', () => {
+     for (const contract of [
+@@ -187,7 +188,7 @@ describe('Continuous Ink Workspace', () => {
+   });
+
+   it('keeps AX Settings content inside the viewport and destructive hooks sealed', () => {
+-    expect(settings).toMatch(/:root\[data-text-scale="accessibility"\] \.settings-view \{[\s\S]*?overflow-x: clip;/);
++    expect(settings).toMatch(/:root\[data-text-scale="accessibility"\] \.settings-view \{[\s\S]*?overflow: visible;/);
+     expect(settings).toMatch(/\.gcp-wizard-step__instructions,[\s\S]*?min-inline-size: 0;/);
+     expect(settings).toMatch(/overflow-wrap: anywhere;/);
+     expect(settings).toMatch(/\.sync-summary__grid \{[\s\S]*?repeat\(2, minmax\(0, 1fr\)\);/);
+@@ -206,7 +207,93 @@ describe('Continuous Ink Workspace', () => {
+     expect(markup.match(/class="jin-switch"/g)).toHaveLength(3);
+     expect(markup).toContain('class="jin-checkbox__mark"');
+     expect(markup).toContain('class="jin-range"');
+-    expect(settings).toMatch(/\.settings-section \{[\s\S]*?background: transparent;[\s\S]*?border-bottom: 0\.5px solid var\(--separator\);/);
++    expect(settings).toMatch(/\.settings-section \{[\s\S]*?background: var\(--bg-secondary\);[\s\S]*?border: 0\.5px solid var\(--separator\);/);
++  });
++
++  it('composes Settings as a persistent four-pane split view', () => {
++    expect(markup).toContain('settings-view jin-split-view');
++    expect(markup).toContain('settings-nav jin-context-rail');
++    expect(markup).toContain('settings-workspace jin-workspace-pane');
++    expect(settings).toContain('grid-template-columns: var(--context-rail-width) minmax(0, 1fr)');
++
++    const labels = ['General', 'Calendars &amp; Sync', 'Notifications', 'Data &amp; Storage'];
++    const offsets = labels.map(label => markup.indexOf(`>${label}</button>`));
++    expect(offsets.every(offset => offset >= 0)).toBe(true);
++    expect(offsets).toEqual([...offsets].sort((a, b) => a - b));
++    expect(markup.match(/data-settings-target="settingsPane"/g)).toHaveLength(4);
++    expect(markup.match(/data-settings-target="settingsNavItem"/g)).toHaveLength(4);
++    expect(markup.match(/data-settings-target="settingsWorkspace"/g)).toHaveLength(1);
++    expect(markup.match(/class="settings-nav__item jin-nav-item tap-target"/g)).toHaveLength(4);
++    expect(markup).not.toMatch(/class="settings-nav__item jin-rail-row tap-target"/);
++    expect(markup).not.toContain('<aside class="settings-nav');
++    expect(markup.match(/<nav class="settings-nav__items" aria-label="Settings categories">/g)).toHaveLength(1);
++    expect(settings).toMatch(/\.settings-nav \{[\s\S]*?padding: var\(--space-3\) var\(--space-1\);/);
++    expect(settings).toMatch(/\.settings-nav__items \{[\s\S]*?gap: 0;/);
++    expect(layout).toMatch(/\.jin-nav-item \{[\s\S]*?min-height: var\(--rail-row-height\);/);
++    expect(components).toMatch(/\.jin-nav-item\[aria-current="page"\]::before,[\s\S]*?width: 3px;/);
++    expect(settings).not.toContain('.settings-nav__item[aria-current="page"]::before');
++    expect(settings).not.toMatch(/\.settings-nav__item\.is-active,[\s\S]*?background:/);
++  });
++
++  it('preserves the complete behavior-bearing Settings hook inventory', () => {
++    for (const target of [
++      'syncBtn', 'syncLoadingState', 'syncResultDisplay', 'syncPulled', 'syncPushed',
++      'syncConflicts', 'syncResolved', 'syncStatus', 'syncAuditLink', 'syncResolvedNotice',
++      'syncError', 'exportDestInput', 'exportForceToggle', 'exportBtn', 'exportLoadingState',
++      'exportResultDisplay', 'exportFileCount', 'exportDestDisplay', 'exportAuditIncluded',
++      'exportError', 'infoRootPath', 'infoDisplayTz', 'infoCalendarId', 'infoSchemaVersion',
++      'changeStoreFolderBtn', 'changeStoreFolderStatus', 'appearanceLight', 'appearanceDark',
++      'appearanceAuto', 'reduceTransparencyToggle', 'increaseContrastToggle',
++      'reduceMotionToggle', 'textSizeRange', 'eventLocaleSelect', 'jinCalendarColorPicker',
++      'googleAccountsList', 'googleAccountAliasInput', 'googleAccountsError',
++      'quarantinedOperationsList', 'quarantinedOperationsError', 'notificationLoading',
++      'notificationStatus', 'notificationReason', 'notificationAllowBtn',
++      'notificationSettingsBtn', 'notificationTestBtn', 'notificationCheckBtn',
++      'notificationResult', 'notificationError',
++    ]) expect(markup).toContain(`data-settings-target="${target}"`);
++
++    for (const id of [
++      'export-dest', 'event-locale-select', 'appearance-mode-label', 'text-size-label',
++      'text-size-range', 'reduce-transparency-label', 'reduce-transparency-toggle',
++      'increase-contrast-label', 'increase-contrast-toggle', 'reduce-motion-label',
++      'reduce-motion-toggle',
++    ]) expect(markup).toContain(`id="${id}"`);
++
++    for (const action of [
++      'click->settings#addGoogleAccount', 'click->settings#runSync',
++      'click->settings#allowNotifications', 'click->settings#openNotificationSettings',
++      'click->settings#sendTestNotification', 'click->settings#checkNotificationStatus',
++      'click->settings#submitExport', 'click->settings#changeStoreFolder',
++      'change->settings#changeEventLocale', 'click->appearance#setLight',
++      'click->appearance#setDark', 'click->appearance#setAuto',
++      'input->appearance#setTextSize', 'change->appearance#toggleReduceTransparency',
++      'change->appearance#toggleIncreaseContrast', 'change->appearance#toggleReduceMotion',
++    ]) expect(markup).toContain(`data-action="${action}"`);
++  });
++
++  it('keeps Settings hierarchy responsive, contained, and diagnostics collapsed', () => {
++    expect(markup).toMatch(/data-settings-pane-key="calendars"[\s\S]*?Google calendar accounts[\s\S]*?Quarantined calendar changes[\s\S]*?aria-label="Sync"/);
++    expect(markup).toMatch(/<details class="settings-section settings-diagnostics">[\s\S]*?infoDisplayTz[\s\S]*?infoCalendarId[\s\S]*?infoSchemaVersion/);
++    expect(settings).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.settings-view\.jin-split-view \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
++    expect(settings).toMatch(/:root\[data-text-scale="accessibility"\] \.settings-nav__items \{[\s\S]*?flex-wrap: wrap;[\s\S]*?gap: var\(--space-1\);[\s\S]*?overflow-x: visible;/);
++    expect(settings).toMatch(/\.settings-pane,\s*\.settings-section,[\s\S]*?\.google-account-card,[\s\S]*?min-inline-size: 0;/);
++    expect(settings).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.settings-nav__item:focus-visible \{[\s\S]*?outline: 0;[\s\S]*?box-shadow: inset 0 0 0 2px var\(--accent\);/);
++    expect(settings).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.appearance-mode-group \{[\s\S]*?inline-size: 100%;[\s\S]*?max-inline-size: 100%;/);
++    expect(settings).toMatch(/:root\[data-text-scale="accessibility"\] \.appearance-mode-group \{[\s\S]*?display: grid;[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
++    expect(settings).toMatch(/:root\[data-text-scale="accessibility"\] \.appearance-mode-btn \{[\s\S]*?inline-size: 100%;[\s\S]*?justify-content: flex-start;[\s\S]*?white-space: normal;/);
++    expect(settings).toMatch(/:root\[data-text-scale="accessibility"\] \.settings-view :is\([\s\S]*?\.settings-pane__title,[\s\S]*?\.settings-section__heading,[\s\S]*?overflow-wrap: anywhere;/);
++    expect(a11y).toMatch(/@media \(forced-colors: active\) \{[\s\S]*?\.jin-nav-item\[aria-current="page"\]::before,[\s\S]*?background: Highlight;/);
++    expect(settings).toMatch(/@media \(forced-colors: active\) \{[\s\S]*?\.settings-nav__item:focus-visible \{[\s\S]*?outline-offset: -2px;/);
++  });
++
++  it('owns Settings scrolling by mode without moving the desktop rail', () => {
++    expect(settings).toMatch(/\[data-section-name="settings"\]\.jin-content-body \{[\s\S]*?block-size: 100%;[\s\S]*?overflow-y: hidden;/);
++    expect(settings).toMatch(/\.settings-view \{[\s\S]*?block-size: 100%;[\s\S]*?max-block-size: 100%;[\s\S]*?overflow: hidden;/);
++    expect(settings).toMatch(/\.settings-nav \{[\s\S]*?position: static;[\s\S]*?align-self: stretch;[\s\S]*?block-size: 100%;/);
++    expect(settings).toMatch(/\.settings-workspace \{[\s\S]*?min-block-size: 0;[\s\S]*?overflow-y: auto;/);
++    expect(settings).toMatch(/:root\[data-text-scale="accessibility"\] \[data-section-name="settings"\]\.jin-content-body \{[\s\S]*?block-size: auto;[\s\S]*?overflow-y: auto;/);
++    expect(settings).toMatch(/:root\[data-text-scale="accessibility"\] \.settings-workspace \{[\s\S]*?overflow-y: visible;/);
++    expect(settings).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\[data-section-name="settings"\]\.jin-content-body \{[\s\S]*?overflow-y: auto;[\s\S]*?\.settings-workspace \{[\s\S]*?overflow-y: visible;/);
+   });
+
+   it('keeps task checks compact and clears stale detail before a scope reload', () => {
+diff --git a/jin-gui/src/__tests__/settings_controller.test.ts b/jin-gui/src/__tests__/settings_controller.test.ts
+index 42b27b8..6919315 100644
+--- a/jin-gui/src/__tests__/settings_controller.test.ts
++++ b/jin-gui/src/__tests__/settings_controller.test.ts
+@@ -102,7 +102,7 @@
+
+ import { describe, it, expect, vi, beforeEach } from 'vitest';
+ import type { JinErrorDto } from '../types/error';
+-import type { AuthStatusDto, SyncSummary, ExportResultDto } from '../types/dto';
++import type { AuthStatusDto, SyncSummary, ExportResultDto, GoogleAccountDto } from '../types/dto';
+
+ // ── Mock @tauri-apps/api/core ─────────────────────────────────────────────────
+ // Required so invoke calls don't fail in jsdom (no Tauri runtime).
+@@ -113,6 +113,14 @@ vi.mock('@tauri-apps/api/core', () => ({
+ import { invoke } from '@tauri-apps/api/core';
+ import { authStatus, authLogin, authLogout, runSync, exportFiles } from '../invoke';
+ import SettingsController from '../controllers/settings_controller';
++import {
++  DEFAULT_SETTINGS_PANE,
++  SETTINGS_PANE_STORAGE_KEY,
++  applySettingsPane,
++  isSettingsPaneKey,
++  loadSettingsPane,
++  saveSettingsPane,
++} from '../lib/settings/navigation';
+
+ import {
+   GCP_WIZARD_STEPS,
+@@ -160,6 +168,138 @@ beforeEach(() => {
+   mockInvoke.mockReset();
+ });
+
++describe('settings pane navigation', () => {
++  const makeNavigation = () => {
++    const keys = ['general', 'calendars', 'notifications', 'data-storage'];
++    const navItems = keys.map((key) => {
++      const item = document.createElement('button');
++      item.dataset.settingsPaneKey = key;
++      return item;
++    });
++    const panes = keys.map((key) => {
++      const pane = document.createElement('section');
++      pane.dataset.settingsPaneKey = key;
++      return pane;
++    });
++    return { navItems, panes };
++  };
++
++  it('accepts only the closed settings pane key set', () => {
++    expect(isSettingsPaneKey('general')).toBe(true);
++    expect(isSettingsPaneKey('data-storage')).toBe(true);
++    expect(isSettingsPaneKey('unknown')).toBe(false);
++    expect(isSettingsPaneKey(null)).toBe(false);
++  });
++
++  it('restores a valid saved pane and falls back for an unknown pane', () => {
++    const validStorage = { getItem: vi.fn(() => 'notifications'), setItem: vi.fn() };
++    const invalidStorage = { getItem: vi.fn(() => 'other'), setItem: vi.fn() };
++    expect(loadSettingsPane(validStorage)).toBe('notifications');
++    expect(loadSettingsPane(invalidStorage)).toBe(DEFAULT_SETTINGS_PANE);
++  });
++
++  it('falls back without throwing when storage reads fail', () => {
++    const storage = {
++      getItem: vi.fn(() => { throw new Error('blocked'); }),
++      setItem: vi.fn(),
++    };
++    expect(loadSettingsPane(storage)).toBe(DEFAULT_SETTINGS_PANE);
++  });
++
++  it('persists with the narrow storage key and ignores write failures', () => {
++    const storage = { getItem: vi.fn(), setItem: vi.fn() };
++    saveSettingsPane('calendars', storage);
++    expect(storage.setItem).toHaveBeenCalledWith(SETTINGS_PANE_STORAGE_KEY, 'calendars');
++
++    expect(() => saveSettingsPane('general', {
++      getItem: vi.fn(),
++      setItem: vi.fn(() => { throw new Error('blocked'); }),
++    })).not.toThrow();
++  });
++
++  it('exposes exactly one pane and exactly one current navigation item', () => {
++    const { navItems, panes } = makeNavigation();
++    applySettingsPane(navItems, panes, 'notifications');
++
++    expect(panes.filter(pane => !pane.hidden)).toHaveLength(1);
++    expect(panes.find(pane => !pane.hidden)?.dataset.settingsPaneKey).toBe('notifications');
++    expect(navItems.filter(item => item.getAttribute('aria-current') === 'page')).toHaveLength(1);
++    expect(navItems[2].classList.contains('is-active')).toBe(true);
++  });
++
++  it('uses General when the DOM applicator receives an invalid key', () => {
++    const { navItems, panes } = makeNavigation();
++    expect(applySettingsPane(navItems, panes, 'bad')).toBe('general');
++    expect(panes[0].hidden).toBe(false);
++  });
++
++  it('switches panes, resets only workspace scroll, and retains button focus', () => {
++    const { navItems, panes } = makeNavigation();
++    const workspace = document.createElement('div');
++    workspace.scrollTop = 240;
++    document.body.append(...navItems, ...panes);
++    navItems[1].focus();
++
++    SettingsController.prototype.selectPane.call({
++      settingsNavItemTargets: navItems,
++      settingsPaneTargets: panes,
++      settingsWorkspaceTarget: workspace,
++    } as unknown as SettingsController, { currentTarget: navItems[1] } as unknown as Event);
++
++    expect(document.activeElement).toBe(navItems[1]);
++    expect(panes[1].hidden).toBe(false);
++    expect(workspace.scrollTop).toBe(0);
++    expect(mockInvoke).not.toHaveBeenCalled();
++  });
++
++  it('keeps dynamically rendered Google account cards in the Calendars pane', () => {
++    const pane = document.createElement('section');
++    pane.dataset.settingsPaneKey = 'calendars';
++    const list = document.createElement('div');
++    pane.appendChild(list);
++    const account: GoogleAccountDto = {
++      id: 'work',
++      alias: 'Work',
++      principal: 'work@example.com',
++      state: 'connected',
++      auth_generation: 1,
++      calendars: [],
++    };
++    const renderGoogleAccounts = (SettingsController.prototype as unknown as {
++      renderGoogleAccounts(accounts: GoogleAccountDto[]): void;
++    }).renderGoogleAccounts;
++
++    renderGoogleAccounts.call({
++      hasGoogleAccountsListTarget: true,
++      googleAccountsListTarget: list,
++      colorPickers: new Map(),
++    }, [account]);
++
++    expect(list.querySelector('.google-account-card')?.closest('[data-settings-pane-key]')).toBe(pane);
++  });
++
++  it('restores notification action focus while Notifications remains selected', () => {
++    const pane = document.createElement('section');
++    pane.dataset.settingsPaneKey = 'notifications';
++    const action = document.createElement('button');
++    const fallback = document.createElement('button');
++    pane.append(action, fallback);
++    document.body.appendChild(pane);
++    const restoreNotificationFocus = (SettingsController.prototype as unknown as {
++      restoreNotificationFocus(): void;
++    }).restoreNotificationFocus;
++    const context = {
++      notificationFocusTarget: action,
++      notificationCheckBtnTarget: fallback,
++    };
++
++    restoreNotificationFocus.call(context);
++
++    expect(document.activeElement).toBe(action);
++    expect(context.notificationFocusTarget).toBeNull();
++  });
++});
++
+ // ── Fixture factories ─────────────────────────────────────────────────────────
+
+ function makeAuthStatusDto(
+diff --git a/jin-gui/src/controllers/settings_controller.ts b/jin-gui/src/controllers/settings_controller.ts
+index f54ba12..e5dd18c 100644
+--- a/jin-gui/src/controllers/settings_controller.ts
++++ b/jin-gui/src/controllers/settings_controller.ts
+@@ -86,11 +86,20 @@ import {
+   loadCalendarColors,
+   saveCalendarColor,
+ } from '../lib/calendar/colors';
++import {
++  applySettingsPane,
++  isSettingsPaneKey,
++  loadSettingsPane,
++  saveSettingsPane,
++} from '../lib/settings/navigation';
+
+ export default class SettingsController extends Controller {
+   // ── Targets ───────────────────────────────────────────────────────────────
+
+   static targets = [
++    'settingsNavItem',
++    'settingsPane',
++    'settingsWorkspace',
+     // Sync
+     'syncBtn',
+     'syncLoadingState',
+@@ -141,6 +150,10 @@ export default class SettingsController extends Controller {
+     'notificationResult', 'notificationError',
+   ];
+
++  declare settingsNavItemTargets: HTMLElement[];
++  declare settingsPaneTargets: HTMLElement[];
++  declare settingsWorkspaceTarget: HTMLElement;
++
+   declare syncBtnTarget: HTMLButtonElement;
+   declare syncLoadingStateTarget: HTMLElement;
+   declare syncResultDisplayTarget: HTMLElement;
+@@ -214,6 +227,12 @@ export default class SettingsController extends Controller {
+   // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+   connect(): void {
++    applySettingsPane(
++      this.settingsNavItemTargets,
++      this.settingsPaneTargets,
++      loadSettingsPane(),
++    );
++
+     void this.loadAppConfig();
+     if (this.hasGoogleAccountsListTarget) void this.loadGoogleAccounts();
+     if (this.hasQuarantinedOperationsListTarget) void this.loadQuarantinedOperations();
+@@ -229,6 +248,16 @@ export default class SettingsController extends Controller {
+     initIcons();
+   }
+
++  selectPane(event: Event): void {
++    const item = event.currentTarget as HTMLElement | null;
++    const pane = item?.dataset.settingsPaneKey;
++    if (!isSettingsPaneKey(pane)) return;
++
++    applySettingsPane(this.settingsNavItemTargets, this.settingsPaneTargets, pane);
++    this.settingsWorkspaceTarget.scrollTop = 0;
++    saveSettingsPane(pane);
++  }
++
+   disconnect(): void {
+     window.removeEventListener('focus', this.refreshNotificationsOnFocus);
+     this.colorPickers.forEach(picker => picker.destroy());
+diff --git a/jin-gui/src/styles/settings.css b/jin-gui/src/styles/settings.css
+index 4ab6c13..fbc4746 100644
+--- a/jin-gui/src/styles/settings.css
++++ b/jin-gui/src/styles/settings.css
+@@ -19,12 +19,21 @@
+
+ /* ── Settings view shell ─────────────────────────────────────────────────── */
+
++[data-section-name="settings"].jin-content-body {
++  block-size: 100%;
++  overflow-y: hidden;
++}
++
+ .settings-view {
+-  display: flex;
+-  flex-direction: column;
+-  gap: 0;
+-  padding: var(--space-3) var(--space-4);
+-  max-inline-size: 720px;
++  grid-template-columns: var(--context-rail-width) minmax(0, 1fr);
++  inline-size: 100%;
++  block-size: 100%;
++  max-block-size: 100%;
++  min-inline-size: 0;
++  min-block-size: 0;
++  overflow: hidden;
++  border: 0.5px solid var(--separator);
++  border-radius: var(--radius-lg);
+ }
+
+ .settings-view__heading {
+@@ -34,20 +43,90 @@
+   font-weight: var(--display-title-weight);
+   color: var(--ink-primary);
+   letter-spacing: var(--display-title-tracking);
+-  margin-block-end: var(--space-1);
++  margin-block-end: var(--space-3);
++  padding-inline: var(--space-1);
++}
++
++.settings-nav {
++  position: static;
++  align-self: stretch;
++  block-size: 100%;
++  overflow: hidden;
++  padding: var(--space-3) var(--space-1);
++  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
++}
++
++.settings-nav__items {
++  display: grid;
++  gap: 0;
++}
++
++.settings-nav__item {
++  inline-size: 100%;
++  border: 0;
++  text-align: start;
++  cursor: pointer;
++}
++
++.settings-nav__item:focus-visible {
++  outline: 2px solid var(--accent);
++  outline-offset: 2px;
++}
++
++.settings-workspace {
++  min-block-size: 0;
++  overflow-y: auto;
++  overscroll-behavior-block: contain;
++  padding: var(--space-4);
++  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
++}
++
++.settings-pane {
++  inline-size: min(100%, 720px);
++  min-inline-size: 0;
++  margin-inline: auto;
++}
++
++.settings-pane[hidden] {
++  display: none;
++}
++
++.settings-pane__header {
++  margin-block-end: var(--space-4);
++}
++
++.settings-pane__title {
++  font-family: var(--font-display);
++  font-size: var(--document-title-size);
++  line-height: var(--document-title-line);
++  font-weight: var(--display-title-weight);
++  color: var(--ink-primary);
++  letter-spacing: var(--display-title-tracking);
++}
++
++.settings-pane__description {
++  margin-block-start: var(--space-1);
++  color: var(--label-secondary);
++  font-size: var(--text-callout-size);
++  line-height: var(--text-callout-line);
+ }
+
+ /* ── Settings section ────────────────────────────────────────────────────── */
+
+ .settings-section {
+-  background: transparent;
+-  border: 0;
+-  border-bottom: 0.5px solid var(--separator);
+-  border-radius: 0;
+-  padding: var(--space-3) 0;
++  background: var(--bg-secondary);
++  border: 0.5px solid var(--separator);
++  border-radius: var(--radius-md);
++  padding: var(--space-3);
+   display: flex;
+   flex-direction: column;
+   gap: var(--space-2);
++  min-inline-size: 0;
++  margin-block-end: var(--space-3);
++}
++
++.settings-section--attention {
++  border-color: color-mix(in srgb, var(--system-orange) 40%, var(--separator));
+ }
+
+ .settings-section__heading {
+@@ -80,7 +159,21 @@
+   line-height: var(--text-callout-line);
+   color: var(--label);
+   font-family: var(--font-mono);
+-  overflow-wrap: break-word;
++  overflow-wrap: anywhere;
++}
++
++.settings-diagnostics__summary {
++  color: var(--label);
++  font-size: var(--text-subheadline-size);
++  line-height: var(--text-subheadline-line);
++  font-weight: 600;
++  cursor: pointer;
++}
++
++.settings-diagnostics__content {
++  display: grid;
++  gap: var(--space-3);
++  padding-block-start: var(--space-2);
+ }
+
+ /* ── Settings control row (label + toggle / input) ───────────────────────── */
+@@ -559,12 +652,52 @@
+  * URLs and command-like instructions may break at any character, but remain
+  * selectable/copyable text; containment prevents a child from widening the
+  * application viewport. Standard-size geometry is intentionally unchanged. */
++:root[data-text-scale="accessibility"] [data-section-name="settings"].jin-content-body {
++  block-size: auto;
++  overflow-y: auto;
++}
++
+ :root[data-text-scale="accessibility"] .settings-view {
+   box-sizing: border-box;
+   inline-size: 100%;
++  block-size: auto;
+   max-inline-size: 100%;
++  max-block-size: none;
+   min-inline-size: 0;
+-  overflow-x: clip;
++  min-block-size: 100%;
++  overflow: visible;
++}
++
++:root[data-text-scale="accessibility"] .settings-view.jin-split-view {
++  grid-template-columns: minmax(0, 1fr);
++}
++
++:root[data-text-scale="accessibility"] .settings-nav {
++  position: static;
++  align-self: stretch;
++  block-size: auto;
++  overflow: visible;
++  border-inline-end: 0;
++  border-block-end: 0.5px solid var(--separator);
++  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
++}
++
++:root[data-text-scale="accessibility"] .settings-workspace {
++  overflow-y: visible;
++  overscroll-behavior-block: auto;
++}
++
++:root[data-text-scale="accessibility"] .settings-nav__items {
++  display: flex;
++  flex-wrap: wrap;
++  gap: var(--space-1);
++  overflow-x: visible;
++}
++
++:root[data-text-scale="accessibility"] .settings-nav__item {
++  inline-size: auto;
++  max-inline-size: 100%;
++  white-space: normal;
+ }
+
+ :root[data-text-scale="accessibility"] .settings-view :is(
+@@ -588,6 +721,8 @@
+   a,
+   code,
+   pre,
++  .settings-pane__title,
++  .settings-section__heading,
+   .settings-field__value,
+   .export-summary__value
+ ) {
+@@ -610,11 +745,114 @@
+ }
+
+ @media (max-width: 720px) {
++  [data-section-name="settings"].jin-content-body {
++    block-size: auto;
++    overflow-y: auto;
++  }
++
++  .settings-view {
++    block-size: auto;
++    max-block-size: none;
++    min-block-size: 100%;
++    overflow: visible;
++  }
++
++  .settings-view.jin-split-view {
++    grid-template-columns: minmax(0, 1fr);
++  }
++
++  .settings-nav {
++    position: static;
++    align-self: stretch;
++    block-size: auto;
++    overflow: visible;
++    padding: var(--space-2);
++    border-inline-end: 0;
++    border-block-end: 0.5px solid var(--separator);
++    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
++  }
++
++  .settings-view__heading {
++    margin-block-end: var(--space-2);
++  }
++
++  .settings-nav__items {
++    display: flex;
++    gap: var(--space-1);
++    max-inline-size: 100%;
++    overflow-x: auto;
++    overscroll-behavior-inline: contain;
++  }
++
++  .settings-nav__item {
++    flex: 0 0 auto;
++    inline-size: auto;
++    white-space: nowrap;
++  }
++
++  .settings-nav__item:focus-visible {
++    outline: 0;
++    box-shadow: inset 0 0 0 2px var(--accent);
++  }
++
++  .settings-row {
++    flex-wrap: wrap;
++  }
++
++  .appearance-mode-group {
++    inline-size: 100%;
++    max-inline-size: 100%;
++  }
++
++  .appearance-mode-btn {
++    min-inline-size: 0;
++    padding-inline: var(--space-1);
++  }
++
++  :root[data-text-scale="accessibility"] .appearance-mode-group {
++    display: grid;
++    grid-template-columns: minmax(0, 1fr);
++    inline-size: 100%;
++    border-radius: var(--radius-md);
++  }
++
++  :root[data-text-scale="accessibility"] .appearance-mode-btn {
++    inline-size: 100%;
++    justify-content: flex-start;
++    white-space: normal;
++  }
++
++  .settings-workspace {
++    overflow-y: visible;
++    overscroll-behavior-block: auto;
++    padding: var(--space-3);
++    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
++  }
++
+   :root[data-text-scale="accessibility"] .sync-summary__grid {
+     grid-template-columns: minmax(0, 1fr);
+   }
+ }
+
++.settings-pane,
++.settings-section,
++.google-account-list,
++.google-account-card,
++.google-calendar-list,
++.quarantined-operation-list,
++.quarantined-operation-card {
++  max-inline-size: 100%;
++  min-inline-size: 0;
++}
++
++@media (forced-colors: active) {
++  .settings-nav__item:focus-visible {
++    outline: 2px solid CanvasText;
++    outline-offset: -2px;
++    box-shadow: none;
++  }
++}
++
+ .settings-calendar-row {
+   align-items: center;
+   gap: var(--space-3);

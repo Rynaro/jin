@@ -1,0 +1,92 @@
+from: ramza
+from_version: 0.1.0
+to: vivi
+performative: DELEGATE
+tier: deep
+activation: explicit-user-greenlight-required
+objective: Implement the definitive Jin Calendar experience through one stable Event Companion, one shared draft contract, transition-aware time projection, and truthful provider state.
+spec: .spectra/plans/calendar-experience/spec.md
+criteria: .spectra/plans/calendar-experience/criteria.md
+implementation: .spectra/plans/calendar-experience/implementation.md
+decisions: .spectra/plans/calendar-experience/decisions.md
+scope:
+  - jin-core/src/time/mod.rs
+  - jin-core/src/dto/**
+  - jin-core/src/ops/agenda.rs
+  - jin-core/src/ops/calendar_projection.rs
+  - jin-core/src/ops/event_mutation.rs
+  - jin-core/tests/**
+  - jin-gui/src-tauri/src/lib.rs
+  - jin-gui/src-tauri/src/commands/events.rs
+  - jin-gui/src-tauri/tests/**
+  - jin-gui/index.html
+  - jin-gui/src/invoke.ts
+  - jin-gui/src/types/dto.ts
+  - jin-gui/src/controllers/calendar_view_controller.ts
+  - jin-gui/src/controllers/events_controller.ts
+  - jin-gui/src/controllers/today_controller.ts
+  - jin-gui/src/controllers/capture_controller.ts
+  - jin-gui/src/controllers/notifications_controller.ts
+  - jin-gui/src/controllers/router_controller.ts
+  - jin-gui/src/lib/router.ts
+  - jin-gui/src/lib/ui/modal.ts
+  - jin-gui/src/lib/ui/companion.ts
+  - jin-gui/src/lib/calendar/**
+  - jin-gui/src/lib/events/**
+  - jin-gui/src/styles/index.css
+  - jin-gui/src/styles/tokens.css
+  - jin-gui/src/styles/components.css
+  - jin-gui/src/styles/forms.css
+  - jin-gui/src/styles/events.css
+  - jin-gui/src/styles/calendar.css
+  - jin-gui/src/styles/today.css
+  - jin-gui/src/styles/browse.css
+  - jin-gui/src/styles/a11y.css
+  - jin-gui/src/__tests__/**calendar**
+  - jin-gui/src/__tests__/**event**
+  - jin-gui/src/__tests__/today*.test.ts
+  - jin-gui/src/__tests__/capture*.test.ts
+  - jin-gui/src/__tests__/notifications*.test.ts
+  - jin-gui/src/__tests__/ui_modal*.test.ts
+  - jin-gui/src/__tests__/router_controller*.test.ts
+  - docs/visual-language/README.md
+  - .artifacts/playwright-mcp/calendar-experience/**
+stages:
+  - Freeze accepted provider, recovery, visual, and surface baselines.
+  - Add core calendar-range projection, temporal preview, endpoint-zone bridge, shared EventDraft, and operation reducer.
+  - Build shared Preview, Composer, Event Companion, recurrence scope, and dirty-navigation guard.
+  - Unify identity/filter presentation and consolidate CSS ownership.
+  - Add display-time cursor and in-context creation only after projected range geometry is authoritative.
+  - Add capability-gated move/end-resize as explicit unsaved drafts.
+  - Migrate Calendar, full detail, Today, Capture, and Notifications through named adapters.
+  - Complete accessibility, responsive, localization, provider, recovery, native, and usability gates.
+constraints:
+  - Do not start implementation until the user gives a separate greenlight.
+  - Retain the current Google route, Meet, invitation, recurrence, and recovery baseline.
+  - Do not add time proposals, Gmail delivery, this-and-following, calendar transfer, room discovery, or a calendar framework.
+  - Keep Notification RSVP in the invitation ledger; never route it through EventDraft.
+  - Preserve endpoint zones and omit temporal fields for unrelated sparse edits.
+  - Do not offer the later physical occurrence of an ambiguous fall-back wall time without a separately approved canonical temporal migration.
+  - Do not create a second provider write path or auto-submit a drag/drop operation.
+  - Do not add a third late calendar CSS override block.
+rollback:
+  - Keep compatibility adapters and controller hooks until each consumer and its focused tests pass.
+  - Switch one presenter consumer back without removing shared data contracts used by completed consumers.
+  - Retain old CSS declarations until replacement ownership tests pass, then remove them in the owning stage.
+  - Never roll back durable provider operations by deleting canonical event data.
+verification_commands:
+  - cargo fmt --all --check
+  - cargo test -p jin-core
+  - cargo test -p jin-gui
+  - npm --prefix jin-gui test -- src/__tests__/calendar_time_grid.test.ts src/__tests__/calendar_view_controller.test.ts src/__tests__/calendar_interaction.test.ts src/__tests__/event_draft.test.ts src/__tests__/event_companion.test.ts src/__tests__/events_controller.test.ts src/__tests__/today_controller.test.ts src/__tests__/capture_controller.test.ts src/__tests__/notifications_controller.test.ts
+  - npm --prefix jin-gui run lint:css
+  - npm --prefix jin-gui run build
+  - cargo test --workspace
+  - git diff --check
+evidence_root: .artifacts/playwright-mcp/calendar-experience
+evidence_contract:
+  - AC-indexed automated test manifest
+  - responsive and accessibility Playwright matrix with console report
+  - native Tauri owner review distinct from browser fixture evidence
+  - disposable Google provider and recovery report with no email-delivery claim
+  - five-participant task record and owner rollout decision

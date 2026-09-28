@@ -101,7 +101,7 @@ describe('event context dialogs use human-title search without ID or edge contro
          <div data-actions-target="linkLegacyGroup"><input data-actions-target="linkTargetId"></div>
          <div data-actions-target="linkLegacyGroup"><select data-actions-target="linkEdgeType"><option value="references"></option></select></div>`;
     return `<dialog data-actions-target="${kind}Dialog"><h2 class="action-dialog__title">${capital}</h2><button class="modal-close-btn"></button>
-      <div class="hidden" data-actions-target="${kind}ContextGroup"><label for="${kind}-context-title"></label><input id="${kind}-context-title" data-actions-target="${kind}ContextSearch"><datalist data-actions-target="${kind}ContextOptions"></datalist></div>
+      <div class="hidden" data-actions-target="${kind}ContextGroup"><p data-actions-target="attachSource"></p><label for="${kind}-context-title"></label><input id="${kind}-context-title" data-actions-target="${kind}ContextSearch"><datalist data-actions-target="${kind}ContextOptions"></datalist><div data-actions-target="attachEventChoices"></div><p data-actions-target="attachEventStatus"></p></div>
       ${idTargets}<p data-actions-target="${kind}Error" class="hidden"></p><div class="form-actions"><button></button><button data-actions-target="${kind}Submit"></button></div></dialog>`;
   }
 
@@ -141,6 +141,52 @@ describe('event context dialogs use human-title search without ID or edge contro
     const controller = app.getControllerForElementAndIdentifier(host, 'actions') as ActionsController;
     await controller.submitAttach();
     expect(mockInvoke).toHaveBeenCalledWith('attach_note', { note_id: 'note-private-id', target_id: 'event-private-id', kind: 'prep-for' });
+  });
+
+  it('attaches a named event to the fixed note using the exact selected ID and prep-for', async () => {
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === 'list_events') return [
+        { id: 'event-a', title: 'Review', start: '2026-09-24', end: '2026-09-25', is_all_day: true, floating: false, status: 'confirmed' },
+        { id: 'event-b', title: 'Review', start: '2026-09-25', end: '2026-09-26', is_all_day: true, floating: false, status: 'confirmed' },
+      ];
+      return undefined;
+    });
+    const host = document.querySelector<HTMLElement>('[data-controller="actions"]')!;
+    host.dispatchEvent(new CustomEvent('jin:open-attach', { bubbles: true, detail: { context: 'note-event', noteId: 'note-fixed', noteTitle: 'Draft notes' } }));
+    await flush();
+    const choices = [...document.querySelectorAll<HTMLButtonElement>('[data-actions-target="attachEventChoices"] button')];
+    expect(choices).toHaveLength(2);
+    expect(choices[0].textContent).toContain('September 24');
+    expect(choices[1].textContent).toContain('September 25');
+    expect(document.querySelector('[data-actions-target="attachSource"]')?.textContent).toBe('Note: Draft notes');
+    const submit = document.querySelector<HTMLButtonElement>('[data-actions-target="attachSubmit"]')!;
+    expect(submit.disabled).toBe(true);
+    choices[1].click();
+    expect(submit.disabled).toBe(false);
+    const controller = app.getControllerForElementAndIdentifier(host, 'actions') as ActionsController;
+    await controller.submitAttach();
+    expect(mockInvoke).toHaveBeenCalledWith('attach_note', { note_id: 'note-fixed', target_id: 'event-b', kind: 'prep-for' });
+  });
+
+  it('ignores an old event response after switching attach modes and clears stale note choices', async () => {
+    let resolveEvents!: (events: unknown[]) => void;
+    const pendingEvents = new Promise<unknown[]>(resolve => { resolveEvents = resolve; });
+    mockInvoke.mockImplementation(async (command: string) => {
+      if (command === 'list_events') return pendingEvents;
+      if (command === 'list_notes') return [{ id: 'fresh-note', title: 'Fresh note' }];
+      return undefined;
+    });
+    const host = document.querySelector<HTMLElement>('[data-controller="actions"]')!;
+    const controller = app.getControllerForElementAndIdentifier(host, 'actions') as ActionsController;
+    host.dispatchEvent(new CustomEvent('jin:open-attach', { bubbles: true, detail: { context: 'note-event', noteId: 'note-fixed' } }));
+    controller.closeAttach();
+    host.dispatchEvent(new CustomEvent('jin:open-attach', { bubbles: true, detail: { context: 'event-prep', targetId: 'event-new' } }));
+    await flush();
+    resolveEvents([{ id: 'stale-event', title: 'Old event' }]);
+    await flush();
+    expect(document.querySelector('[data-actions-target="attachEventChoices"]')?.textContent).toBe('');
+    expect(document.querySelector<HTMLDataListElement>('[data-actions-target="attachContextOptions"]')?.options[0]?.value).toBe('Fresh note');
+    expect(document.querySelector<HTMLInputElement>('[data-actions-target="attachTargetId"]')?.value).toBe('event-new');
   });
 
   it('event Related action offers Notes only and creates the supported Note-to-Event reference', async () => {

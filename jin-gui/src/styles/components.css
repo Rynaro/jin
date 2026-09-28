@@ -1,10 +1,4 @@
-/**
- * components.css — Continuous Ink Workspace primitives.
- *
- * Workspace and list surfaces are solid and contiguous. Liquid Glass is a
- * functional material reserved for chrome and transient layers; nanquim is a
- * sparse state grammar, never a paper texture or ambient illustration.
- */
+/** Shared workspace, chrome, and control primitives. */
 
 .jin-split-view {
   display: grid;
@@ -16,10 +10,7 @@
   background: var(--workspace-canvas);
 }
 
-.jin-badge { border-color: var(--separator); background: transparent; }
-.btn-secondary { border-color: var(--separator); background: transparent; }
-.btn-secondary:hover { background: var(--operational-wash); color: var(--accent); }
-.btn-danger { background: var(--seal); color: var(--seal-on); }
+.jin-badge { border-color: var(--separator); background: var(--control-track); }
 
 .jin-context-rail {
   min-width: 0;
@@ -52,7 +43,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  min-height: var(--toolbar-height);
+  min-height: max(var(--toolbar-height), 44px);
   padding-inline: var(--space-2);
   border-width: 0 0 0.5px;
   border-radius: 0;
@@ -141,9 +132,10 @@
   min-height: var(--control-height);
   padding: 0 var(--space-1);
   border: 0.5px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-capsule);
   color: var(--label);
-  background: transparent;
+  background: var(--control-surface);
+  box-shadow: var(--control-shadow);
   font-family: inherit;
   font-size: var(--text-footnote-size);
   line-height: var(--text-footnote-line);
@@ -156,7 +148,7 @@
 }
 
 .jin-control:hover {
-  background: var(--workspace-row-hover);
+  background: var(--control-track);
 }
 
 .jin-control:disabled {
@@ -168,6 +160,7 @@
   width: var(--control-height);
   padding: 0;
   flex-shrink: 0;
+  border-radius: 50%;
 }
 
 .jin-control--icon svg,
@@ -194,29 +187,29 @@
 .jin-control--danger {
   min-height: var(--control-height-prominent);
   padding-inline: var(--space-2);
-  color: var(--ink-on);
-  background: var(--ink-primary);
+  color: var(--color-on-accent);
+  background: var(--action-primary-fill);
 }
 
 .jin-control--primary:hover {
-  background: var(--ink-primary);
-  opacity: 0.88;
+  background: var(--action-primary-fill);
+  filter: brightness(0.92);
 }
 
 .jin-control--secondary {
   min-height: var(--control-height-prominent);
   padding-inline: var(--space-2);
-  border-color: var(--separator);
-  background: var(--workspace-row-hover);
+  border-color: var(--control-edge);
+  background: var(--control-surface);
 }
 
 .jin-control--danger {
-  color: var(--seal-on);
-  background: var(--seal);
+  color: var(--color-on-accent);
+  background: var(--action-danger-fill);
 }
 
 .jin-control--danger:hover {
-  background: var(--seal-strong);
+  background: var(--action-danger-fill);
   opacity: 1;
 }
 
@@ -444,18 +437,7 @@
 /* The selection stroke is out-of-flow, so selecting a row never changes it. */
 .jin-list-row[aria-selected="true"]::before,
 .jin-list-row.task-item--selected::before {
-  content: '';
-  position: absolute;
-  z-index: 1;
-  inset-block: 4px 3px;
-  inset-inline-start: 3px;
-  width: 3px;
-  border-radius: 46% 54% 38% 62%;
-  background: var(--ink-stroke);
-  box-shadow:
-    2px 0 5px var(--ink-bleed),
-    -1px 1px 2px var(--ink-bleed);
-  pointer-events: none;
+  content: none;
 }
 
 .jin-list-row[aria-selected="true"],
@@ -482,15 +464,7 @@
 .today-section__heading::after,
 .tasks-section-group__header::after,
 .tasks-board__column-header::after {
-  content: '';
-  flex: 0 0 auto;
-  width: 21px;
-  height: 2px;
-  margin-inline-end: auto;
-  background: linear-gradient(90deg, var(--ink-dry), var(--ink-bleed), transparent);
-  transform: rotate(-1.5deg);
-  clip-path: polygon(0 17%, 71% 0, 100% 48%, 63% 72%, 0 100%);
-  pointer-events: none;
+  content: none;
 }
 
 .jin-badge {

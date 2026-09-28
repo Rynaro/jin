@@ -1,0 +1,41 @@
+{
+  "esl_version": "1.1",
+  "change_id": "calendar-experience-s1-baseline-freeze",
+  "status": "verified",
+  "tier": "lite",
+  "maker": "Vivi",
+  "checker": "VIGIL",
+  "acceptance_checks": [
+    {
+      "id": "AC-S1-01",
+      "given": "S1 inventory work is complete",
+      "when": "the AC-to-test manifest file under .artifacts/playwright-mcp/calendar-experience/ is inspected",
+      "then": "it SHALL exist and cross-reference the current create/detail/edit/Today flows (from the baseline recipe) to the specific automated tests that cover them",
+      "verify_method": "manual-inspection"
+    },
+    {
+      "id": "AC-S1-02",
+      "given": "the primary evidence files (index.html, calendar_view/events/today/capture/notifications/router controllers, lib/events/{edit,render,invitation}.ts, lib/calendar/{time_grid,time_grid_render,colors}.ts, and the listed styles) have been read",
+      "when": "the manifest's inventory section is inspected",
+      "then": "it SHALL enumerate every duplicate Calendar CSS declaration, event payload builder, recurrence-scope transient, source/color helper, static dialog ID/target, and current Events locale key found",
+      "verify_method": "manual-inspection"
+    },
+    {
+      "id": "AC-S1-03",
+      "given": "the current focused create/detail/edit/Today/Capture/Notifications tests (TypeScript vitest files plus cargo test -p jin-core and cargo test -p jin-gui) passed before this change",
+      "when": "the same suites are re-run after this change",
+      "then": "every previously-passing test SHALL still pass identically, with zero behavior or visual diff, and any pre-existing failure SHALL be recorded in the manifest rather than fixed",
+      "verify_method": "test"
+    },
+    {
+      "id": "AC-S1-04",
+      "given": "the untracked/dirty pre-existing files (.spectra/plans/calendar-experience/, .spectra/plans/navigation-sidebar-unification.evidence/, .spectra/plans/ramza-calibration.jsonl, and the four root-level PNG screenshots) were present before this change",
+      "when": "git status is inspected after this change",
+      "then": "those files SHALL remain present, untouched, and unmodified, and no product source file outside the new manifest/spec SHALL be changed",
+      "verify_method": "manual-inspection"
+    }
+  ],
+  "spec_ref": ".spectra/changes/calendar-experience-s1-baseline-freeze/spec.md",
+  "created_at": "2026-09-16",
+  "has_code": true
+}
