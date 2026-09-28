@@ -300,74 +300,69 @@
           data-section-name="today"
         >
           <!-- ── Date navigation toolbar ──────────────────────────────────── -->
-          <div class="today-agenda-intro">
-            <div>
-              <p data-today-target="dateEyebrow" class="today-agenda-intro__eyebrow">Your selected day</p>
-              <h1 class="today-agenda-intro__title">Today</h1>
-              <p class="today-agenda-intro__detail">A connected desk for the work already in motion.</p>
+          <header class="today-topbar">
+            <div class="today-agenda-intro">
+              <div>
+                <p data-today-target="dateEyebrow" class="today-agenda-intro__eyebrow">Your selected day</p>
+                <h1 class="today-agenda-intro__title">Today</h1>
+                <p class="today-agenda-intro__detail">A connected desk for the work already in motion.</p>
+              </div>
             </div>
-            <button type="button" class="today-capture-btn tap-target" data-action="click->capture#open" aria-label="Capture a task or note">
-              <i data-lucide="plus" aria-hidden="true"></i><span>Capture</span>
-            </button>
-          </div>
-          <div
-            class="today-date-nav"
-            role="toolbar"
-            aria-label="Date navigation"
-          >
-            <button
-              type="button"
-              class="today-date-nav__btn tap-target"
-              data-action="click->today#prevDay"
-              aria-label="Previous day"
-            >
-              <i data-lucide="chevron-left" aria-hidden="true"></i>
-            </button>
+            <div class="today-date-nav" role="toolbar" aria-label="Date navigation">
+              <button
+                type="button"
+                class="today-date-nav__btn tap-target"
+                data-action="click->today#prevDay"
+                aria-label="Previous day"
+              >
+                <i data-lucide="chevron-left" aria-hidden="true"></i>
+              </button>
 
-            <div class="today-date-nav__center">
-              <!-- Human-readable date label (updated by controller) -->
-              <output
-                data-today-target="dateLabel"
-                class="today-date-nav__label"
-                aria-live="polite"
-                aria-atomic="true"
-                aria-label="Current date"
-              >Today</output>
+              <div class="today-date-nav__center">
+                <!-- Human-readable date label (updated by controller) -->
+                <output
+                  data-today-target="dateLabel"
+                  class="today-date-nav__label"
+                  aria-live="polite"
+                  aria-atomic="true"
+                  aria-label="Current date"
+                >Today</output>
 
-              <!--
-                Date input — visually hidden by default; keyboard-focusable.
-                Receives focus when the user tabs to it; shown via :focus CSS.
-                Synced by controller via dateInputTarget.value = "YYYY-MM-DD".
-              -->
-              <label class="visually-hidden" for="today-date-input">Jump to date</label>
-              <input
-                id="today-date-input"
-                type="date"
-                class="today-date-nav__date-input"
-                data-today-target="dateInput"
-                data-action="change->today#dateChanged"
-                aria-label="Jump to date"
-              />
+                <!--
+                  Date input — visually hidden by default; keyboard-focusable.
+                  Receives focus when the user tabs to it; shown via :focus CSS.
+                  Synced by controller via dateInputTarget.value = "YYYY-MM-DD".
+                -->
+                <label class="visually-hidden" for="today-date-input">Jump to date</label>
+                <input
+                  id="today-date-input"
+                  type="date"
+                  class="today-date-nav__date-input"
+                  data-today-target="dateInput"
+                  data-action="change->today#dateChanged"
+                  aria-label="Jump to date"
+                />
+              </div>
+
+              <button
+                type="button"
+                class="today-date-nav__btn tap-target"
+                data-action="click->today#nextDay"
+                aria-label="Next day"
+              >
+                <i data-lucide="chevron-right" aria-hidden="true"></i>
+              </button>
+
+              <button
+                type="button"
+                class="today-date-nav__today-btn tap-target"
+                data-action="click->today#goToday"
+                aria-label="Go to today"
+              >
+                Today
+              </button>
             </div>
-
-            <button
-              type="button"
-              class="today-date-nav__btn tap-target"
-              data-action="click->today#nextDay"
-              aria-label="Next day"
-            >
-              <i data-lucide="chevron-right" aria-hidden="true"></i>
-            </button>
-
-            <button
-              type="button"
-              class="today-date-nav__today-btn tap-target"
-              data-action="click->today#goToday"
-              aria-label="Go to today"
-            >
-              Today
-            </button>
-          </div>
+          </header>
 
           <!-- ── Loading state ─────────────────────────────────────────────── -->
           <div
@@ -392,6 +387,23 @@
             <p class="text-callout">Nothing scheduled for this day.</p>
           </div>
 
+          <section
+            data-today-target="errorState"
+            class="today-state today-state--error hidden"
+            role="alert"
+          >
+            <p data-today-target="errorMessage">Couldn’t refresh this day.</p>
+            <button type="button" class="btn-secondary tap-target" data-action="click->today#retryAgenda">
+              Try again
+            </button>
+          </section>
+          <p
+            data-today-target="refreshState"
+            class="today-refresh-state hidden"
+            role="status"
+            aria-live="polite"
+          ></p>
+
           <div class="today-desk">
             <div class="today-desk__main">
           <section data-today-target="focusSection" class="today-focus hidden" aria-labelledby="today-focus-heading">
@@ -408,7 +420,7 @@
             <h3 class="today-section__heading">All Day</h3>
             <ul
               data-today-target="allDayList"
-              class="today-event-list"
+              class="today-event-list today-event-list--all-day"
               role="list"
               aria-label="All-day events list"
             ></ul>

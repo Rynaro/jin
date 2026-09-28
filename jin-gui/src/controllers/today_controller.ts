@@ -102,6 +102,9 @@ export default class TodayController extends Controller {
     'contextSection',
     'contextList',
     'scheduleClear',
+    'errorState',
+    'errorMessage',
+    'refreshState',
   ];
 
   declare dateInputTarget: HTMLInputElement;
@@ -124,6 +127,9 @@ export default class TodayController extends Controller {
   declare contextSectionTarget: HTMLElement;
   declare contextListTarget: HTMLElement;
   declare scheduleClearTarget: HTMLElement;
+  declare errorStateTarget: HTMLElement;
+  declare errorMessageTarget: HTMLElement;
+  declare refreshStateTarget: HTMLElement;
   declare hasFocusSectionTarget: boolean;
   declare hasFocusListTarget: boolean;
   declare hasAttentionSectionTarget: boolean;
@@ -135,6 +141,9 @@ export default class TodayController extends Controller {
   declare hasContextSectionTarget: boolean;
   declare hasContextListTarget: boolean;
   declare hasScheduleClearTarget: boolean;
+  declare hasErrorStateTarget: boolean;
+  declare hasErrorMessageTarget: boolean;
+  declare hasRefreshStateTarget: boolean;
 
   // ── Values ────────────────────────────────────────────────────────────────
   // dateValue: the currently-displayed date as "YYYY-MM-DD".
@@ -147,6 +156,9 @@ export default class TodayController extends Controller {
   private hasSuccessfulProjection = false;
   private connected = false;
   private requestedDate: string | undefined;
+  /** True only while Today follows core's moving display-timezone current day. */
+  private followsCurrentDay = true;
+  private agendaRequestPending = false;
   private sectionObserver: MutationObserver | null = null;
   private previewModal: TodayPreviewModal | null = null;
   private previewSequence = 0;
@@ -158,12 +170,17 @@ export default class TodayController extends Controller {
   private previewMessage: string | null = null;
   private previewRestoreFocus = true;
   private previewReturnFocusName: string | null = null;
+  private previewOpener: HTMLElement | null = null;
+  private previewFocusRestoreSequence = 0;
   private eventCompanion: EventCompanion | null = null;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   connect(): void {
     this.connected = true;
+    // A startup date from markup is an explicit selection; the blank production
+    // value asks core to resolve its authoritative current date.
+    this.followsCurrentDay = !this.dateValue;
     document.addEventListener('visibilitychange', this.handleVisibilityChange);
     this.sectionObserver = new MutationObserver(() => {
       if (!this.isActiveSection()) {
@@ -188,6 +205,8 @@ export default class TodayController extends Controller {
     this.cancelMinuteRefresh();
     this.previewSequence += 1;
     this.previewRestoreFocus = false;
+    this.previewOpener = null;
+    this.previewFocusRestoreSequence += 1;
     this.previewModal?.destroy();
     this.previewModal = null;
     this.eventCompanion?.close(true);
@@ -207,6 +226,7 @@ export default class TodayController extends Controller {
   goToday(): void {
     // Omitting the date keeps the display-timezone authority in core.
     this.requestedDate = undefined;
+    this.followsCurrentDay = true;
     void this.loadAgenda(undefined);
   }
 
@@ -223,10 +243,16 @@ export default class TodayController extends Controller {
     if (this.isActiveSection()) void this.loadAgenda((this.requestedDate ?? this.dateValue) || undefined);
   }
 
+  /** Retry a failed initial agenda request without inventing a replacement date. */
+  retryAgenda(): void {
+    if (this.agendaRequestPending || !this.isActiveSection()) return;
+    void this.loadAgenda(this.requestedDate || undefined);
+  }
+
   /** Router emits this after making the named section visible. Its detail is
    * a route id, not the active section name, so visibility remains authority. */
   activateSection(_event?: Event): void {
-    if (this.isActiveSection()) void this.loadAgenda((this.requestedDate ?? this.dateValue) || undefined);
+    if (this.isActiveSection()) void this.loadAgenda(this.reentryAgendaDate());
   }
 
   // ── Core load ─────────────────────────────────────────────────────────────
@@ -242,13 +268,19 @@ export default class TodayController extends Controller {
     // Preserve the last truthful projection during a refresh. A timer or
     // mutation failure must never turn a populated day into a blank page.
     if (!this.hasSuccessfulProjection) showLoading(el);
+    if (!this.hasSuccessfulProjection) this.beginInitialAgendaRequest();
+    this.element.setAttribute('aria-busy', 'true');
+    if (date !== undefined) this.requestedDate = date;
     this.cancelMinuteRefresh();
     const request = ++this.requestSequence;
+    this.agendaRequestPending = true;
 
     try {
       const dto = await todayProjection(date);
       if (request !== this.requestSequence || !this.connected || !this.isActiveSection()) return;
       hideLoading(el);
+      this.element.setAttribute('aria-busy', 'false');
+      this.agendaRequestPending = false;
 
       this.dateValue = dto.agenda.date;
       this.requestedDate = dto.agenda.date;
@@ -259,6 +291,7 @@ export default class TodayController extends Controller {
       });
       this.lastProjectionIsCurrentDate = dto.is_current_date;
       this.hasSuccessfulProjection = true;
+      this.clearAgendaFailureState();
       this.scheduleMinuteRefresh();
 
       // Refresh icons: newly-cloned template rows have data-lucide attrs
@@ -267,11 +300,18 @@ export default class TodayController extends Controller {
     } catch (err: unknown) {
       if (request !== this.requestSequence || !this.connected || !this.isActiveSection()) return;
       hideLoading(el);
+      this.element.setAttribute('aria-busy', 'false');
+      this.agendaRequestPending = false;
 
       // Do not relabel the last rendered projection after a failed date
       // navigation. The controls continue to describe the content on screen.
-      this.requestedDate = this.dateValue || undefined;
-      if (this.hasSuccessfulProjection) this.syncDateControl();
+      if (this.hasSuccessfulProjection) {
+        this.requestedDate = this.dateValue || undefined;
+        this.syncDateControl();
+        this.showStaleRefreshState();
+      } else {
+        this.showInitialAgendaFailure();
+      }
 
       if (isJinErrorDto(err)) {
         // Bubble to the ErrorController on the parent <main data-controller="error">.
@@ -291,7 +331,69 @@ export default class TodayController extends Controller {
 
   private applyDate(isoDate: string): void {
     this.requestedDate = isoDate;
+    this.followsCurrentDay = false;
     void this.loadAgenda(isoDate);
+  }
+
+  /** Dates for automatic lifecycle refreshes only; core owns rolling “today”. */
+  private automaticAgendaDate(): string | undefined {
+    return this.followsCurrentDay ? undefined : (this.requestedDate ?? this.dateValue) || undefined;
+  }
+
+  private reentryAgendaDate(): string | undefined {
+    return this.automaticAgendaDate();
+  }
+
+  private beginInitialAgendaRequest(): void {
+    this.errorStateTargetOrNull()?.classList.add('hidden');
+    const retry = this.errorRetryControl();
+    if (retry) retry.disabled = true;
+  }
+
+  private clearAgendaFailureState(): void {
+    this.errorStateTargetOrNull()?.classList.add('hidden');
+    const retry = this.errorRetryControl();
+    if (retry) retry.disabled = false;
+    const refreshState = this.refreshStateTargetOrNull();
+    if (refreshState) {
+      refreshState.textContent = '';
+      refreshState.classList.add('hidden');
+    }
+  }
+
+  private showInitialAgendaFailure(): void {
+    const errorState = this.errorStateTargetOrNull();
+    if (!errorState) return;
+    const message = this.errorMessageTargetOrNull();
+    if (message) message.textContent = 'Couldn’t load this day. Try again.';
+    errorState.classList.remove('hidden');
+    const retry = this.errorRetryControl();
+    if (retry) retry.disabled = false;
+    this.refreshStateTargetOrNull()?.classList.add('hidden');
+  }
+
+  private showStaleRefreshState(): void {
+    const refreshState = this.refreshStateTargetOrNull();
+    if (!refreshState) return;
+    refreshState.textContent = 'Showing your last loaded plan. Couldn’t refresh it.';
+    refreshState.classList.remove('hidden');
+    this.errorStateTargetOrNull()?.classList.add('hidden');
+  }
+
+  private errorStateTargetOrNull(): HTMLElement | null {
+    return this.hasErrorStateTarget ? this.errorStateTarget : null;
+  }
+
+  private errorMessageTargetOrNull(): HTMLElement | null {
+    return this.hasErrorMessageTarget ? this.errorMessageTarget : null;
+  }
+
+  private errorRetryControl(): HTMLButtonElement | null {
+    return this.errorStateTargetOrNull()?.querySelector<HTMLButtonElement>('[data-action~="click->today#retryAgenda"]') ?? null;
+  }
+
+  private refreshStateTargetOrNull(): HTMLElement | null {
+    return this.hasRefreshStateTarget ? this.refreshStateTarget : null;
   }
 
   /** syncDateControl — keep the date input + label in sync with this.dateValue. */
@@ -351,7 +453,7 @@ export default class TodayController extends Controller {
    */
   private navigate(section: 'events' | 'tasks' | 'notes', id: string): void {
     if (section === 'events' || section === 'tasks') {
-      this.openPreview(section, id);
+      this.openPreview(section, id, this.capturePreviewOpener(section, id));
       return;
     }
     this.dispatch('navigate', {
@@ -367,7 +469,7 @@ export default class TodayController extends Controller {
       return;
     }
     if (this.isActiveSection() && this.lastProjectionIsCurrentDate) {
-      void this.loadAgenda((this.requestedDate ?? this.dateValue) || undefined);
+      void this.loadAgenda(this.automaticAgendaDate());
     }
   };
 
@@ -376,7 +478,7 @@ export default class TodayController extends Controller {
     const delay = 60_000 - (Date.now() % 60_000) + 25;
     this.refreshTimer = window.setTimeout(() => {
       this.refreshTimer = null;
-      if (this.isRefreshEligible()) void this.loadAgenda(this.dateValue || undefined);
+      if (this.isRefreshEligible()) void this.loadAgenda(this.automaticAgendaDate());
     }, delay);
   }
 
@@ -393,11 +495,13 @@ export default class TodayController extends Controller {
     return this.connected
       && this.isActiveSection()
       && this.lastProjectionIsCurrentDate
+      && this.followsCurrentDay
       && document.visibilityState !== 'hidden';
   }
 
-  private openPreview(kind: 'events' | 'tasks', id: string): void {
+  private openPreview(kind: 'events' | 'tasks', id: string, opener: HTMLElement | null = null): void {
     this.closePreview(false);
+    this.previewFocusRestoreSequence += 1;
     const request = ++this.previewSequence;
     this.previewKind = kind;
     this.previewId = id;
@@ -407,6 +511,7 @@ export default class TodayController extends Controller {
     this.previewMessage = null;
     this.previewRestoreFocus = true;
     this.previewReturnFocusName = null;
+    this.previewOpener = opener;
     if (kind === 'tasks') {
       this.previewModal = new TodayPreviewModal(
         'Task preview',
@@ -438,6 +543,7 @@ export default class TodayController extends Controller {
     const id = this.previewId;
     const restoreFocus = this.previewRestoreFocus;
     const modal = this.previewModal;
+    const opener = this.previewOpener;
     this.previewSequence += 1;
     this.previewModal = null;
     this.previewKind = null;
@@ -447,17 +553,11 @@ export default class TodayController extends Controller {
     this.previewPending = false;
     this.previewMessage = null;
     this.previewReturnFocusName = null;
+    this.previewOpener = null;
     queueMicrotask(() => {
       modal?.destroy();
       if (!restoreFocus || !kind || !id || !this.connected) return;
-      const opener = this.element.querySelector<HTMLElement>(`[data-today-preview-kind="${kind}"][data-today-preview-id="${id}"]`);
-      if (opener) {
-        opener.focus();
-        return;
-      }
-      const heading = this.element.querySelector<HTMLElement>('.today-agenda-intro__title');
-      heading?.setAttribute('tabindex', '-1');
-      heading?.focus();
+      this.schedulePreviewOpenerRestore(kind, id, opener);
     });
   }
 
@@ -465,23 +565,64 @@ export default class TodayController extends Controller {
     const kind = this.previewKind;
     const id = this.previewId;
     const restoreFocus = this.previewRestoreFocus;
+    const opener = this.previewOpener;
     this.previewSequence += 1;
     this.previewKind = null;
     this.previewId = null;
     this.previewEvent = null;
     this.previewPending = false;
     this.previewMessage = null;
+    this.previewOpener = null;
     queueMicrotask(() => {
       if (!restoreFocus || !kind || !id || !this.connected) return;
-      const opener = this.element.querySelector<HTMLElement>(`[data-today-preview-kind="${kind}"][data-today-preview-id="${id}"]`);
-      if (opener) {
-        opener.focus();
-        return;
-      }
-      const heading = this.element.querySelector<HTMLElement>('.today-agenda-intro__title');
-      heading?.setAttribute('tabindex', '-1');
-      heading?.focus();
+      this.schedulePreviewOpenerRestore(kind, id, opener);
     });
+  }
+
+  private capturePreviewOpener(kind: 'events' | 'tasks', id: string): HTMLElement | null {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement)) return null;
+    return this.element.contains(active)
+      && active.matches(`[data-today-preview-kind="${kind}"][data-today-preview-id="${id}"]`)
+      ? active
+      : null;
+  }
+
+  private restorePreviewOpener(kind: 'events' | 'tasks', id: string, opener: HTMLElement | null): void {
+    if (opener?.isConnected && this.element.contains(opener)) {
+      opener.focus();
+      return;
+    }
+    const sameEntity = this.element.querySelector<HTMLElement>(`[data-today-preview-kind="${kind}"][data-today-preview-id="${id}"]`);
+    if (sameEntity) {
+      sameEntity.focus();
+      return;
+    }
+    const heading = this.element.querySelector<HTMLElement>('.today-agenda-intro__title');
+    heading?.setAttribute('tabindex', '-1');
+    heading?.focus();
+  }
+
+  /**
+   * Native dialog hosts may reconcile focus after their close call returns.
+   * Restore immediately, then reconcile on the next frame only if focus fell
+   * back to the document or a detached/modal node. A newer preview cancels it.
+   */
+  private schedulePreviewOpenerRestore(kind: 'events' | 'tasks', id: string, opener: HTMLElement | null): void {
+    const restoreRequest = ++this.previewFocusRestoreSequence;
+    const restore = (force: boolean): void => {
+      if (restoreRequest !== this.previewFocusRestoreSequence || !this.connected) return;
+      const active = document.activeElement;
+      const focusEscaped = active === document.body
+        || active === document.documentElement
+        || !(active instanceof HTMLElement)
+        || active.closest('#jin-modal-root') !== null
+        || !this.element.contains(active);
+      if (force || focusEscaped) this.restorePreviewOpener(kind, id, opener);
+    };
+    restore(true);
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => restore(false));
+    else queueMicrotask(() => restore(false));
   }
 
   private isCurrentPreview(request: number, kind: 'events' | 'tasks', id: string): boolean {
@@ -503,7 +644,7 @@ export default class TodayController extends Controller {
     return container;
   }
 
-  private previewError(message: string): HTMLElement {
+  private previewError(message: string, onRetry?: () => void): HTMLElement {
     const container = document.createElement('div');
     container.className = 'today-preview';
     const feedback = document.createElement('p');
@@ -511,6 +652,14 @@ export default class TodayController extends Controller {
     feedback.setAttribute('role', 'alert');
     feedback.textContent = message;
     container.appendChild(feedback);
+    if (onRetry) {
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'today-preview__retry btn-secondary';
+      retry.textContent = 'Try again';
+      retry.addEventListener('click', onRetry);
+      container.appendChild(retry);
+    }
     return container;
   }
 
@@ -521,7 +670,12 @@ export default class TodayController extends Controller {
       this.previewTask = task;
       this.renderTaskPreview(task);
     } catch {
-      if (this.isCurrentPreview(request, 'tasks', id)) this.previewModal?.setBody(this.previewError('Could not load this task.'));
+      if (this.isCurrentPreview(request, 'tasks', id)) {
+        this.previewModal?.setBody(this.previewError('Could not load this task.', () => {
+          this.previewModal?.setBody(this.previewLoading());
+          void this.loadTaskPreview(id, request);
+        }));
+      }
     }
   }
 
@@ -529,7 +683,6 @@ export default class TodayController extends Controller {
     const restoreFocus = this.previewFocusName() ?? this.previewReturnFocusName;
     const container = document.createElement('article');
     container.className = 'today-preview';
-    container.append(this.previewGoButton('tasks', task.id, 'Go to task'));
     const title = document.createElement('h3');
     title.className = 'today-preview__title';
     title.textContent = task.title;
@@ -537,6 +690,30 @@ export default class TodayController extends Controller {
     metadata.className = 'today-preview__meta';
     metadata.textContent = `${task.status === 'doing' ? 'In progress' : task.status === 'done' ? 'Done' : 'To do'} · ${formatTaskDue(task.due)}`;
     container.append(title, metadata);
+    if (task.list.trim()) {
+      const list = document.createElement('p');
+      list.className = 'today-preview__list';
+      list.textContent = task.list;
+      container.appendChild(list);
+    }
+    if (task.body?.trim()) {
+      const body = document.createElement('p');
+      body.className = 'today-preview__body';
+      body.textContent = task.body;
+      container.appendChild(body);
+    }
+    const tags = task.tags?.map(tag => tag.trim()).filter(Boolean) ?? [];
+    if (tags.length) {
+      const tagList = document.createElement('ul');
+      tagList.className = 'today-preview__tags';
+      tagList.setAttribute('aria-label', 'Tags');
+      for (const tag of tags) {
+        const tagItem = document.createElement('li');
+        tagItem.textContent = tag;
+        tagList.appendChild(tagItem);
+      }
+      container.appendChild(tagList);
+    }
     const controls = document.createElement('div');
     controls.className = 'today-preview__controls';
     const status = document.createElement('button');
@@ -559,6 +736,7 @@ export default class TodayController extends Controller {
     priorityLabel.appendChild(priority);
     controls.append(status, priorityLabel);
     container.appendChild(controls);
+    container.appendChild(this.previewGoButton('tasks', task.id, 'Go to task'));
     if (this.previewMessage) container.appendChild(this.previewFeedback(this.previewMessage));
     this.previewModal?.setBody(container);
     this.restorePreviewFocus(restoreFocus);
@@ -641,7 +819,11 @@ export default class TodayController extends Controller {
         return;
       }
       this.previewModal = new TodayPreviewModal('Event preview', () => this.afterPreviewClose());
-      this.previewModal.setBody(this.previewError('Could not load this event.'));
+      this.previewModal.setBody(this.previewError('Could not load this event.', () => {
+        const opener = this.previewOpener;
+        this.closePreview(false);
+        queueMicrotask(() => this.openPreview('events', id, opener));
+      }));
       this.previewModal.open();
     }
   }

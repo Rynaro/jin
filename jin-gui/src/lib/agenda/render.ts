@@ -155,7 +155,11 @@ export function renderTodayView(
   if (el.dueSection && el.dueList) renderTaskLane(el.dueSection, el.dueList, grouped.dueTasks ?? [], onNavigate);
   if (el.flexibleSection && el.flexibleList) renderTaskLane(el.flexibleSection, el.flexibleList, grouped.flexibleTasks ?? [], onNavigate);
   renderConnectedWork(el, grouped, onNavigate);
-  el.scheduleClear?.classList.toggle('hidden', grouped.timed.length > 0 || grouped.isEmpty);
+  // The existing copy says "No more scheduled events." It is only truthful
+  // after a schedule has been shown, and this renderer does not receive a
+  // projection field that can establish that condition. Keep it quiet instead
+  // of applying it to all-day-only or task-only days.
+  el.scheduleClear?.classList.add('hidden');
 
   // Make sure empty-state is hidden when content rendered
   el.emptyState.classList.add('hidden');
@@ -163,7 +167,9 @@ export function renderTodayView(
 
 function renderFocus(el: TodayViewElements, grouped: GroupedAgenda, onNavigate: NavigateCallback): void {
   if (!el.focusSection || !el.focusList) return;
-  const byId = new Map(grouped.timed.map((event) => [event.id, event]));
+  // Focus references are authoritative projection data. Resolve against every
+  // agenda lane so a valid reference is never lost if its event is all-day.
+  const byId = new Map([...grouped.allDay, ...grouped.timed].map((event) => [event.id, event]));
   const focusItems: Array<{ focus: TodayFocusEventDto; phase: 'Now' | 'Up next' }> = [
     ...(grouped.activeFocus ?? []).map((focus) => ({ focus, phase: 'Now' as const })),
     ...(grouped.nextFocus ? [{ focus: grouped.nextFocus, phase: 'Up next' as const }] : []),
@@ -231,10 +237,17 @@ function renderConnectedWork(el: TodayViewElements, grouped: GroupedAgenda, onNa
   for (const entity of entities.values()) {
     const item = document.createElement('li');
     item.className = 'today-context-item';
+    // Keep the complete relationship graph available on the deduplicated
+    // entity without turning one linked task or note into duplicate rail rows.
+    item.dataset.eventIds = entity.events.map((event) => event.id).join(' ');
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'today-context-item__link';
     button.textContent = entity.title;
+    if (entity.kind === 'tasks') {
+      button.dataset.todayPreviewKind = 'tasks';
+      button.dataset.todayPreviewId = entity.id;
+    }
     button.setAttribute('aria-label', `Open ${entity.kind === 'tasks' ? 'task' : 'note'}: ${entity.title}`);
     button.addEventListener('click', () => onNavigate(entity.kind, entity.id));
     const events = document.createElement('span');
