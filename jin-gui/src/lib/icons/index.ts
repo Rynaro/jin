@@ -50,6 +50,7 @@ import {
   Database,       // Jin source badge
   Cloud,          // Google source badge
   Circle,         // Fallback source badge / todo task status
+  Check,          // Today inline task completion
   Repeat,         // Recurring event flag
   CalendarOff,    // Empty state
   // Browse + detail views (GUI-S4)
@@ -152,6 +153,7 @@ export {
   Database,
   Cloud,
   Circle,
+  Check,
   Repeat,
   CalendarOff,
   // Browse + detail views (GUI-S4)
@@ -253,6 +255,7 @@ const REGISTERED_ICONS = {
   Database,
   Cloud,
   Circle,
+  Check,
   Repeat,
   CalendarOff,
   // Browse + detail views (GUI-S4)

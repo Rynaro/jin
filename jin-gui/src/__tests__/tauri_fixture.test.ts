@@ -7,7 +7,7 @@ interface FixtureBridge {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 }
 
-function loadFixture(): FixtureBridge {
+function loadFixture(todayScenario?: string): FixtureBridge {
   const source = readFileSync(
     fileURLToPath(new URL('../../tools/tauri-fixture-init.js', import.meta.url)),
     'utf8',
@@ -16,6 +16,9 @@ function loadFixture(): FixtureBridge {
     url: 'http://127.0.0.1:1420',
     runScripts: 'outside-only',
   });
+  if (todayScenario !== undefined) {
+    dom.window.localStorage.setItem('jin.fixture.todayScenario', todayScenario);
+  }
   dom.window.eval(source);
   const bridge = (dom.window as unknown as { __TAURI_INTERNALS__: FixtureBridge }).__TAURI_INTERNALS__;
   return bridge;
@@ -239,6 +242,31 @@ describe('deterministic Tauri visual-QA fixture', () => {
     expect(events.find(event => event.id === 'e9')).toMatchObject({ source: 'jin', derived_from: 't3' });
     expect(events.find(event => event.id === 'e10')).toMatchObject({ start: '2026-08-20T02:00:00' });
     expect(events.find(event => event.id === 'e11')).toMatchObject({ start: '2026-08-20T22:45:00' });
+  });
+
+  it('supports a sparse Today projection scenario for bounded layout QA', async () => {
+    const bridge = loadFixture('sparse');
+    const projection = await bridge.invoke('today_projection', { date: '2026-08-20' }) as Record<string, any>;
+
+    expect(projection.current_date).toBe('2026-08-20');
+    expect(projection.is_current_date).toBe(true);
+    expect(projection.agenda).toMatchObject({ date: '2026-08-20', display_tz: 'UTC' });
+    expect(projection.agenda.all_day_events).toEqual([]);
+    expect(projection.agenda.timed_events).toHaveLength(1);
+    expect(projection.agenda.timed_events[0]).toMatchObject({
+      id: 'e8', source: 'google', authority: 'google', originating_task: null, prep_notes: [],
+    });
+    expect(projection.attention_tasks.map((task: Record<string, unknown>) => task.id)).toEqual(['t1']);
+    expect(projection.due_tasks).toEqual([]);
+    expect(projection.flexible_tasks).toEqual([]);
+    expect(projection.active_events).toEqual([]);
+    expect(projection.next_event).toBeNull();
+  });
+
+  it('rejects unknown Today fixture scenarios explicitly', async () => {
+    const bridge = loadFixture('dense');
+    await expect(bridge.invoke('today_projection', { date: '2026-08-20' }))
+      .rejects.toThrow('Unsupported Jin today scenario: dense');
   });
 
   it('provides rich, default, and explicit-none Google meeting metadata states', async () => {

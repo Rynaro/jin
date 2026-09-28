@@ -68,7 +68,7 @@ describe('Continuous Ink Workspace', () => {
   it('uses system type for shared chrome while retaining the optional display utility', () => {
     expect(typography).toContain('.text-display-title');
     expect(typography).toContain('font-family: var(--font-display)');
-    expect(today).toMatch(/\.today-agenda-intro__title \{[\s\S]*?font-family: var\(--font-text\);/);
+    expect(today).toMatch(/\.today-masthead__date \{[\s\S]*?font: 700 [^;]*var\(--font-text\);/);
     expect(settings).toMatch(/\.settings-view__heading \{[\s\S]*?font-family: var\(--font-text\);/);
     expect(forms).toMatch(/\.action-dialog__title \{[\s\S]*?font-family: var\(--font-text\);/);
     expect(browse).toMatch(/\.notes-detail-pane \.browse-detail__title--input\.jin-title-field \{[\s\S]*?font-family: var\(--font-text\);/);

@@ -1,0 +1,20 @@
+{
+  "selected": ["ATLAS", "FORGE", "RAMZA", "IDG"],
+  "tier": "standard",
+  "chain": [
+    {"eidolon": "ATLAS", "role": "scout", "hand_off_artifact_path": "research.md", "edge_origin": "research"},
+    {"eidolon": "FORGE", "role": "reasoner", "hand_off_artifact_path": "spec.md", "edge_origin": "tradeoffs"},
+    {"eidolon": "RAMZA", "role": "planner", "hand_off_artifact_path": "spec.md", "edge_origin": "spec"},
+    {"eidolon": "IDG", "role": "scriber", "hand_off_artifact_path": "README.md", "edge_origin": "documentation"}
+  ],
+  "model_tier_per_step": ["standard", "standard", "standard", "standard"],
+  "confidence": 0.9,
+  "assumptions": [
+    "The checked-out public/main SHA is the latest remote-main baseline available in this worktree.",
+    "This phase produces documentation only; implementation remains pending.",
+    "The existing Today projection and shared modal seams remain available to implementation."
+  ],
+  "clarification_request": null,
+  "refusal_rerouting": false,
+  "artifact_paths": ["research.md", "spec.md", "plan.md", "README.md"]
+}

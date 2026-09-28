@@ -16,6 +16,7 @@ import type { AgendaRowPresentation, GroupedAgenda } from './transform';
 import { calendarMembershipIdentity } from '../calendar/colors';
 import { eventMessage } from '../events/locale';
 import { sourceBadgeLabel, sourceBadgeIcon, isRecurring } from './transform';
+import { formatTaskDueCompact } from '../tasks/transform';
 
 // ── Interface types ───────────────────────────────────────────────────────────
 
@@ -52,6 +53,12 @@ export interface TodayTemplates {
  * id: the Jin object id to navigate to
  */
 export type NavigateCallback = (section: 'events' | 'tasks' | 'notes', id: string) => void;
+
+/** The controller owns persistence; the renderer supplies the affected row. */
+export type CompleteTaskCallback = (
+  task: AgendaTaskDto,
+  controls: { row: HTMLElement; button: HTMLButtonElement; feedback: HTMLElement; status: HTMLElement },
+) => void;
 
 // ── Lifecycle helpers ─────────────────────────────────────────────────────────
 
@@ -112,7 +119,8 @@ export function renderTodayView(
   el: TodayViewElements,
   templates: TodayTemplates,
   grouped: GroupedAgenda,
-  onNavigate: NavigateCallback
+  onNavigate: NavigateCallback,
+  onCompleteTask?: CompleteTaskCallback,
 ): void {
   // Clear stale rows
   el.allDayList.replaceChildren();
@@ -151,11 +159,18 @@ export function renderTodayView(
   }
 
   renderFocus(el, grouped, onNavigate);
-  if (el.attentionSection && el.attentionList) renderTaskLane(el.attentionSection, el.attentionList, grouped.attentionTasks ?? [], onNavigate);
-  if (el.dueSection && el.dueList) renderTaskLane(el.dueSection, el.dueList, grouped.dueTasks ?? [], onNavigate);
-  if (el.flexibleSection && el.flexibleList) renderTaskLane(el.flexibleSection, el.flexibleList, grouped.flexibleTasks ?? [], onNavigate);
+  if (el.attentionSection && el.attentionList) renderTaskLane(el.attentionSection, el.attentionList, grouped.attentionTasks ?? [], 'attention', grouped, onNavigate, onCompleteTask);
+  if (el.dueSection && el.dueList) renderTaskLane(el.dueSection, el.dueList, grouped.dueTasks ?? [], 'due', grouped, onNavigate, onCompleteTask);
+  if (el.flexibleSection && el.flexibleList) renderTaskLane(el.flexibleSection, el.flexibleList, grouped.flexibleTasks ?? [], 'flexible', grouped, onNavigate, onCompleteTask);
   renderConnectedWork(el, grouped, onNavigate);
-  el.scheduleClear?.classList.toggle('hidden', grouped.timed.length > 0 || grouped.isEmpty);
+  const hasScheduledEvents = grouped.allDay.length + grouped.timed.length > 0;
+  const hasTasks = (grouped.attentionTasks?.length ?? 0) + (grouped.dueTasks?.length ?? 0) + (grouped.flexibleTasks?.length ?? 0) > 0;
+  if (!hasScheduledEvents && hasTasks && el.scheduleClear) {
+    el.scheduleClear.textContent = 'No events on the calendar.';
+    el.scheduleClear.classList.remove('hidden');
+  } else {
+    el.scheduleClear?.classList.add('hidden');
+  }
 
   // Make sure empty-state is hidden when content rendered
   el.emptyState.classList.add('hidden');
@@ -163,7 +178,9 @@ export function renderTodayView(
 
 function renderFocus(el: TodayViewElements, grouped: GroupedAgenda, onNavigate: NavigateCallback): void {
   if (!el.focusSection || !el.focusList) return;
-  const byId = new Map(grouped.timed.map((event) => [event.id, event]));
+  // Focus references are authoritative projection data. Resolve against every
+  // agenda lane so a valid reference is never lost if its event is all-day.
+  const byId = new Map([...grouped.allDay, ...grouped.timed].map((event) => [event.id, event]));
   const focusItems: Array<{ focus: TodayFocusEventDto; phase: 'Now' | 'Up next' }> = [
     ...(grouped.activeFocus ?? []).map((focus) => ({ focus, phase: 'Now' as const })),
     ...(grouped.nextFocus ? [{ focus: grouped.nextFocus, phase: 'Up next' as const }] : []),
@@ -197,13 +214,23 @@ function renderFocus(el: TodayViewElements, grouped: GroupedAgenda, onNavigate: 
   el.focusSection.classList.toggle('hidden', el.focusList.childElementCount === 0);
 }
 
-function renderTaskLane(section: HTMLElement, list: HTMLElement, tasks: AgendaTaskDto[], onNavigate: NavigateCallback): void {
+function renderTaskLane(
+  section: HTMLElement,
+  list: HTMLElement,
+  tasks: AgendaTaskDto[],
+  lane: 'attention' | 'due' | 'flexible',
+  grouped: GroupedAgenda,
+  onNavigate: NavigateCallback,
+  onCompleteTask?: CompleteTaskCallback,
+): void {
   for (const task of tasks) {
     const item = document.createElement('li');
     item.className = 'today-task-row';
     const status = document.createElement('span');
     status.className = 'today-task-row__status';
-    status.textContent = task.status === 'doing' ? 'In progress' : 'Open';
+    status.textContent = task.status === 'doing' ? 'In progress' : task.status === 'done' ? 'Complete' : 'Open';
+    const body = document.createElement('div');
+    body.className = 'today-task-row__body';
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'today-task-row__title';
@@ -214,11 +241,50 @@ function renderTaskLane(section: HTMLElement, list: HTMLElement, tasks: AgendaTa
     button.addEventListener('click', () => onNavigate('tasks', task.id));
     const meta = document.createElement('span');
     meta.className = 'today-task-row__meta';
-    meta.textContent = task.due ? `Due ${task.due}` : task.list;
-    item.append(status, button, meta);
+    meta.textContent = taskDueMetadata(task, lane, grouped);
+    body.append(button, status, meta);
+    const complete = document.createElement('button');
+    complete.type = 'button';
+    complete.className = 'today-task-row__complete';
+    const completeIcon = document.createElement('i');
+    completeIcon.setAttribute('data-lucide', 'check');
+    completeIcon.setAttribute('aria-hidden', 'true');
+    const completeLabel = document.createElement('span');
+    completeLabel.className = 'visually-hidden';
+    completeLabel.textContent = task.status === 'done' ? 'Completed' : 'Complete';
+    complete.append(completeIcon, completeLabel);
+    complete.setAttribute('aria-label', task.status === 'done' ? `${task.title} is complete` : `Mark ${task.title} complete`);
+    const feedback = document.createElement('span');
+    feedback.className = 'today-task-row__feedback';
+    feedback.setAttribute('role', 'status');
+    feedback.setAttribute('aria-live', 'polite');
+    if (task.status === 'done') {
+      item.dataset.state = 'complete';
+      complete.disabled = true;
+    } else if (onCompleteTask) {
+      complete.addEventListener('click', () => onCompleteTask(task, { row: item, button: complete, feedback, status }));
+    } else {
+      complete.disabled = true;
+    }
+    item.append(complete, body, feedback);
     list.appendChild(item);
   }
   section.classList.toggle('hidden', tasks.length === 0);
+}
+
+function taskDueMetadata(
+  task: AgendaTaskDto,
+  lane: 'attention' | 'due' | 'flexible',
+  grouped: GroupedAgenda,
+): string {
+  if (!task.due) return task.list.trim() || 'No due date';
+  const dueDate = task.due.match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+  // The UI can call a task overdue only when Today is the actual current-day
+  // projection, the task arrived in the attention lane, and its stored due day is past.
+  const overdue = lane === 'attention' && grouped.isCurrentDate === true && dueDate != null && dueDate < grouped.date;
+  const [year, month, day] = grouped.date.split('-').map(Number);
+  const selectedDate = new Date(year, month - 1, day, 12);
+  return `${overdue ? 'Overdue' : 'Due'} ${formatTaskDueCompact(task.due, selectedDate)}`;
 }
 
 function renderConnectedWork(el: TodayViewElements, grouped: GroupedAgenda, onNavigate: NavigateCallback): void {
@@ -231,10 +297,17 @@ function renderConnectedWork(el: TodayViewElements, grouped: GroupedAgenda, onNa
   for (const entity of entities.values()) {
     const item = document.createElement('li');
     item.className = 'today-context-item';
+    // Keep the complete relationship graph available on the deduplicated
+    // entity without turning one linked task or note into duplicate rail rows.
+    item.dataset.eventIds = entity.events.map((event) => event.id).join(' ');
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'today-context-item__link';
     button.textContent = entity.title;
+    if (entity.kind === 'tasks') {
+      button.dataset.todayPreviewKind = 'tasks';
+      button.dataset.todayPreviewId = entity.id;
+    }
     button.setAttribute('aria-label', `Open ${entity.kind === 'tasks' ? 'task' : 'note'}: ${entity.title}`);
     button.addEventListener('click', () => onNavigate(entity.kind, entity.id));
     const events = document.createElement('span');

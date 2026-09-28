@@ -263,6 +263,15 @@
 :root[data-native-macos-overlay='true'] .jin-native-content-drag { display: block; flex: 0 0 52px; block-size: 52px; }
 :root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'] .jin-content > .jin-native-content-drag { display: none; }
 :root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'] .jin-content > .jin-native-content-drag { display: none; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='today'] .jin-content > .jin-native-content-drag { display: none; }
+:root[data-native-macos-overlay='true'] .today-workspace-bar { min-block-size: 52px; }
+:root[data-native-macos-overlay='true'] .today-workspace-drag {
+  display: block;
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: 6px;
+}
 :root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'] [data-tasks-target='listPanel'] .jin-workspace-header--paired { min-block-size: 52px; }
 .tasks-workspace-drag { display: none; }
 :root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'] .tasks-workspace-drag {
