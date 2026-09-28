@@ -1173,7 +1173,7 @@ describe('renderTodayView — connected projection regions', () => {
     expect(connected.timedList.childElementCount).toBe(0);
   });
 
-  it('renders task-only work without the empty-day state or invented schedule', () => {
+  it('renders task-only work with a schedule-only clear state', () => {
     const connected = makeConnectedTodayViewElements();
     const grouped = groupTodayProjection(projection({ due_tasks: [agendaTask('task-only', 'Only real work')] }));
     renderTodayView(connected, templates, grouped, noopNavigate);
@@ -1181,7 +1181,40 @@ describe('renderTodayView — connected projection regions', () => {
     expect(connected.dueSection?.classList.contains('hidden')).toBe(false);
     expect(connected.dueList?.textContent).toContain('Only real work');
     expect(connected.contextSection?.classList.contains('hidden')).toBe(true);
-    expect(connected.scheduleClear?.classList.contains('hidden')).toBe(true);
+    expect(connected.scheduleClear?.classList.contains('hidden')).toBe(false);
+    expect(connected.scheduleClear?.textContent).toBe('No events on the calendar.');
+  });
+
+  it('renders localized due context and a keyboard-reachable completion control', () => {
+    const connected = makeConnectedTodayViewElements();
+    const complete = vi.fn();
+    const grouped = groupTodayProjection(projection({
+      attention_tasks: [{ ...agendaTask('late-task', 'Pay supplier'), due: '2026-06-26' }],
+    }));
+    renderTodayView(connected, templates, grouped, noopNavigate, complete);
+
+    const row = connected.attentionList!.querySelector<HTMLElement>('.today-task-row')!;
+    const action = row.querySelector<HTMLButtonElement>('.today-task-row__complete')!;
+    expect(row.querySelector('.today-task-row__meta')?.textContent).toMatch(/^Overdue /);
+    expect(action.type).toBe('button');
+    expect(action.getAttribute('aria-label')).toContain('Pay supplier');
+    expect(action.querySelector('[data-lucide="check"]')).not.toBeNull();
+    expect(action.querySelector('.visually-hidden')?.textContent).toBe('Complete');
+    action.click();
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(complete.mock.calls[0][0]).toMatchObject({ id: 'late-task' });
+  });
+
+  it('does not infer overdue copy for a noncurrent selected day', () => {
+    const connected = makeConnectedTodayViewElements();
+    const grouped = groupTodayProjection(projection({
+      agenda: makeAgendaDto({ date: '2026-06-27' }),
+      current_date: '2026-06-28',
+      is_current_date: false,
+      attention_tasks: [{ ...agendaTask('older-task', 'File paperwork'), due: '2026-06-26' }],
+    }));
+    renderTodayView(connected, templates, grouped, noopNavigate, vi.fn());
+    expect(connected.attentionList?.querySelector('.today-task-row__meta')?.textContent).toMatch(/^Due /);
   });
 
   it('deduplicates connected work by entity and hides the rail when relationships are absent', () => {
@@ -1302,8 +1335,13 @@ async function mountLifecycleController(startDate = '2026-06-27'): Promise<{ app
       data-today-date-value="${startDate}">
       <input data-today-target="dateInput" data-action="change->today#dateChanged" type="date"><output data-today-target="dateLabel"></output>
       <p data-today-target="dateEyebrow"></p>
+      <p data-today-target="summary"></p>
+      <button type="button" data-action="click->today#openCalendar">Open Calendar</button>
       <section data-today-target="allDaySection"><ul data-today-target="allDayList"></ul></section>
       <section data-today-target="timedSection"><ul data-today-target="timedList"></ul></section>
+      <section data-today-target="attentionSection" class="hidden"><ul data-today-target="attentionList"></ul></section>
+      <section data-today-target="dueSection" class="hidden"><ul data-today-target="dueList"></ul></section>
+      <section data-today-target="flexibleSection" class="hidden"><ul data-today-target="flexibleList"></ul></section>
       <aside data-today-target="contextSection" class="hidden"><ul data-today-target="contextList"></ul></aside>
       <div data-today-target="emptyState"></div><div data-today-target="loadingState"></div>
       <section data-today-target="errorState" class="hidden"><p data-today-target="errorMessage"></p><button type="button" data-action="click->today#retryAgenda">Try again</button></section>
@@ -1564,6 +1602,91 @@ describe('TodayController — task and event previews', () => {
     await new Promise(resolve => setTimeout(resolve, 0));
     return { section: mounted.section, controller: mounted.controller };
   }
+
+  it('completes an inline task once, refreshes through the shared signal, and reports failure on its own row', async () => {
+    const dueTask: AgendaTaskDto = {
+      id: 'inline-task', title: 'Send invoice', status: 'todo', priority: 'medium', due: '2026-06-27',
+      list: 'Work', position: '', parent: null, agenda_bucket: 'due',
+    };
+    const initial = { ...makeProjection('2026-06-27'), due_tasks: [dueTask] };
+    const refreshed = { ...makeProjection('2026-06-27'), due_tasks: [] };
+    const pending = deferred<TaskDto>();
+    const signals = vi.fn();
+    invokeMocks.todayProjection.mockResolvedValue(initial);
+    invokeMocks.setTaskStatus.mockReturnValue(pending.promise);
+    const mounted = await mountLifecycleController();
+    app = mounted.app;
+    mounted.section.addEventListener('jin:tasks-changed', signals);
+    await flushController();
+
+    expect(mounted.section.querySelector('[data-today-target="summary"]')?.textContent).toBe('1 event · 1 task due');
+    const complete = mounted.section.querySelector<HTMLButtonElement>('.today-task-row__complete')!;
+    complete.focus();
+    complete.click();
+    complete.click();
+    expect(invokeMocks.setTaskStatus).toHaveBeenCalledTimes(1);
+    expect(invokeMocks.setTaskStatus).toHaveBeenCalledWith('inline-task', 'done');
+    expect(complete.closest('.today-task-row')?.getAttribute('data-state')).toBe('pending');
+    expect(complete.closest('.today-task-row')?.querySelector('.today-task-row__feedback')?.textContent).toBe('Marking complete…');
+
+    // An unrelated refresh may replace the row while the save remains in flight.
+    // The new row stays pending and cannot issue a second save.
+    await mounted.controller.loadAgenda('2026-06-27');
+    const replacement = mounted.section.querySelector<HTMLButtonElement>('.today-task-row__complete')!;
+    expect(replacement.closest('.today-task-row')?.getAttribute('data-state')).toBe('pending');
+    expect(replacement.disabled).toBe(true);
+    expect(replacement.closest('.today-task-row')?.querySelector('.today-task-row__feedback')?.textContent).toBe('Marking complete…');
+
+    invokeMocks.todayProjection.mockResolvedValueOnce(refreshed);
+    pending.resolve(makePreviewTask({ id: 'inline-task', status: 'done' }));
+    await flushController();
+
+    expect(signals).toHaveBeenCalledTimes(1);
+    expect(mounted.section.querySelector('.today-task-row')).toBeNull();
+    expect(document.activeElement).toBe(mounted.section.querySelector('[data-today-target="dateLabel"]'));
+
+    const failedProjection = { ...makeProjection('2026-06-27'), due_tasks: [dueTask] };
+    invokeMocks.todayProjection.mockResolvedValue(failedProjection);
+    invokeMocks.setTaskStatus.mockRejectedValueOnce(new Error('offline'));
+    await mounted.controller.loadAgenda('2026-06-27');
+    const retry = mounted.section.querySelector<HTMLButtonElement>('.today-task-row__complete')!;
+    retry.click();
+    await flushController();
+    const failedRow = mounted.section.querySelector('.today-task-row')!;
+    expect(failedRow.getAttribute('data-state')).toBe('failed');
+    expect(retry.disabled).toBe(false);
+    expect(failedRow.querySelector('.today-task-row__feedback')?.textContent).toContain('Could not mark complete');
+  });
+
+  it('opens Calendar through the existing router navigation event', async () => {
+    invokeMocks.todayProjection.mockResolvedValue(makeProjection('2026-06-27'));
+    const mounted = await mountLifecycleController();
+    app = mounted.app;
+    await flushController();
+    const navigate = vi.fn();
+    mounted.section.addEventListener('jin:navigate', navigate);
+
+    (mounted.section.querySelector('[data-action="click->today#openCalendar"]') as HTMLButtonElement).click();
+
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect((navigate.mock.calls[0][0] as CustomEvent).detail).toEqual({ kind: 'events' });
+  });
+
+  it('always renders the selected calendar date in the masthead regardless of current-day status', async () => {
+    const coreCurrent = { ...makeProjection('2026-06-27'), current_date: '2032-01-04', is_current_date: true };
+    const selectedPast = { ...makeProjection('2026-06-27'), current_date: '2026-06-28', is_current_date: false };
+    invokeMocks.todayProjection.mockResolvedValueOnce(coreCurrent).mockResolvedValueOnce(selectedPast);
+    const mounted = await mountLifecycleController();
+    app = mounted.app;
+    await flushController();
+    const label = mounted.section.querySelector<HTMLOutputElement>('[data-today-target="dateLabel"]')!;
+    const expectedDate = formatDisplayDate('2026-06-27', '');
+    expect(label.textContent).toBe(expectedDate);
+    expect(label.textContent).not.toBe('Today');
+
+    await mounted.controller.loadAgenda('2026-06-27');
+    expect(label.textContent).toBe(expectedDate);
+  });
 
   it('shared_event_companion: opens shared Preview and keeps Today lanes after mutation (AC-CALX-048)', async () => {
     const first = makeProjection('2026-06-27', 'Preview event');

@@ -1376,6 +1376,25 @@
       }
       if (cmd === 'today_projection') {
         var projection = clone(fixtures.today_projection);
+        var todayScenario = fixtureStorageGet('jin.fixture.todayScenario');
+        if (todayScenario) {
+          if (todayScenario !== 'sparse') {
+            return Promise.reject(new Error('Unsupported Jin today scenario: ' + todayScenario));
+          }
+          projection.agenda.all_day_events = [];
+          projection.agenda.timed_events = projection.agenda.timed_events
+            .filter(function sparseTimedEvent(event) { return event.id === 'e8'; })
+            .map(function sparseOrdinaryEvent(event) {
+              return Object.assign({}, event, { originating_task: null, prep_notes: [] });
+            });
+          projection.attention_tasks = projection.attention_tasks.filter(function sparseAttentionTask(task) {
+            return task.id === 't1';
+          });
+          projection.due_tasks = [];
+          projection.flexible_tasks = [];
+          projection.active_events = [];
+          projection.next_event = null;
+        }
         function activeTodayTask(task) {
           var source = tasks.find(function matchingTask(item) { return item.id === task.id; });
           return source && (source.status === 'todo' || source.status === 'doing') && source.deleted_at === null;

@@ -42,7 +42,7 @@ import {
   newOperationId,
 } from '../invoke';
 import { isJinErrorDto } from '../types/error';
-import type { EventDetailDto, TaskDto } from '../types/dto';
+import type { AgendaTaskDto, EventDetailDto, TaskDto } from '../types/dto';
 import {
   groupTodayProjection,
   prevDay,
@@ -105,6 +105,7 @@ export default class TodayController extends Controller {
     'errorState',
     'errorMessage',
     'refreshState',
+    'summary',
   ];
 
   declare dateInputTarget: HTMLInputElement;
@@ -130,6 +131,7 @@ export default class TodayController extends Controller {
   declare errorStateTarget: HTMLElement;
   declare errorMessageTarget: HTMLElement;
   declare refreshStateTarget: HTMLElement;
+  declare summaryTarget: HTMLElement;
   declare hasFocusSectionTarget: boolean;
   declare hasFocusListTarget: boolean;
   declare hasAttentionSectionTarget: boolean;
@@ -144,6 +146,7 @@ export default class TodayController extends Controller {
   declare hasErrorStateTarget: boolean;
   declare hasErrorMessageTarget: boolean;
   declare hasRefreshStateTarget: boolean;
+  declare hasSummaryTarget: boolean;
 
   // ── Values ────────────────────────────────────────────────────────────────
   // dateValue: the currently-displayed date as "YYYY-MM-DD".
@@ -173,6 +176,10 @@ export default class TodayController extends Controller {
   private previewOpener: HTMLElement | null = null;
   private previewFocusRestoreSequence = 0;
   private eventCompanion: EventCompanion | null = null;
+  /** Shared by duplicate task appearances so one task cannot save twice. */
+  private pendingInlineTaskIds = new Set<string>();
+  /** Restored only after the mutation-triggered projection has replaced its rows. */
+  private pendingCompletionFocusTaskId: string | null = null;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -230,6 +237,11 @@ export default class TodayController extends Controller {
     void this.loadAgenda(undefined);
   }
 
+  /** Open the existing Calendar route; day selection remains in Today’s native input. */
+  openCalendar(): void {
+    this.dispatch('navigate', { detail: { kind: 'events' }, prefix: 'jin', bubbles: true });
+  }
+
   /** dateChanged — bound to the <input type="date"> change event. */
   dateChanged(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -284,12 +296,15 @@ export default class TodayController extends Controller {
 
       this.dateValue = dto.agenda.date;
       this.requestedDate = dto.agenda.date;
+      this.lastProjectionIsCurrentDate = dto.is_current_date;
       this.syncDateControl();
       const grouped = groupTodayProjection(dto);
       renderTodayView(el, this.viewTemplates, grouped, (section, id) => {
         this.navigate(section, id);
-      });
-      this.lastProjectionIsCurrentDate = dto.is_current_date;
+      }, (task, controls) => this.completeInlineTask(task, controls));
+      this.reapplyPendingInlineTaskStates();
+      this.restorePendingCompletionFocus();
+      this.renderSummary(grouped);
       this.hasSuccessfulProjection = true;
       this.clearAgendaFailureState();
       this.scheduleMinuteRefresh();
@@ -396,12 +411,103 @@ export default class TodayController extends Controller {
     return this.hasRefreshStateTarget ? this.refreshStateTarget : null;
   }
 
+  private renderSummary(grouped: ReturnType<typeof groupTodayProjection>): void {
+    if (!this.hasSummaryTarget) return;
+    const eventCount = grouped.allDay.length + grouped.timed.length;
+    const parts = [`${eventCount} ${eventCount === 1 ? 'event' : 'events'}`];
+    const taskLanes: Array<[number, (count: number) => string]> = [
+      [grouped.attentionTasks?.length ?? 0, (count) => `${count} ${count === 1 ? 'task needs' : 'tasks need'} attention`],
+      [grouped.dueTasks?.length ?? 0, (count) => `${count} ${count === 1 ? 'task' : 'tasks'} due`],
+      [grouped.flexibleTasks?.length ?? 0, (count) => `${count} flexible ${count === 1 ? 'task' : 'tasks'}`],
+    ];
+    for (const [count, label] of taskLanes) {
+      if (count > 0) parts.push(label(count));
+    }
+    this.summaryTarget.textContent = parts.join(' · ');
+  }
+
+  private completeInlineTask(
+    task: AgendaTaskDto,
+    controls: { row: HTMLElement; button: HTMLButtonElement; feedback: HTMLElement; status: HTMLElement },
+  ): void {
+    if (task.status === 'done' || this.pendingInlineTaskIds.has(task.id)) return;
+    this.pendingInlineTaskIds.add(task.id);
+    controls.row.dataset.state = 'pending';
+    controls.button.disabled = true;
+    controls.button.setAttribute('aria-busy', 'true');
+    controls.feedback.textContent = 'Marking complete…';
+    void this.saveInlineTaskStatus(task.id, controls);
+  }
+
+  private async saveInlineTaskStatus(
+    taskId: string,
+    controls: { row: HTMLElement; button: HTMLButtonElement; feedback: HTMLElement; status: HTMLElement },
+  ): Promise<void> {
+    const wasFocused = document.activeElement === controls.button;
+    try {
+      await setTaskStatus(taskId, 'done');
+      if (controls.row.isConnected) {
+        controls.row.dataset.state = 'complete';
+        controls.status.textContent = 'Complete';
+        controls.button.querySelector<HTMLElement>('.visually-hidden')!.textContent = 'Completed';
+        controls.button.setAttribute('aria-label', 'Task is complete');
+        controls.button.removeAttribute('aria-busy');
+        controls.feedback.textContent = 'Completed.';
+      }
+      // This is the established Today refresh seam; it updates every real
+      // appearance of the task from the next authoritative projection.
+      if (wasFocused) this.pendingCompletionFocusTaskId = taskId;
+      this.dispatch('tasks-changed', { prefix: 'jin', bubbles: true });
+    } catch {
+      if (controls.row.isConnected) {
+        controls.row.dataset.state = 'failed';
+        controls.button.disabled = false;
+        controls.button.removeAttribute('aria-busy');
+        controls.feedback.textContent = 'Could not mark complete. Try again.';
+        controls.button.focus();
+      }
+    } finally {
+      this.pendingInlineTaskIds.delete(taskId);
+    }
+  }
+
+  private reapplyPendingInlineTaskStates(): void {
+    for (const taskId of this.pendingInlineTaskIds) {
+      const taskTitles = Array.from(this.element.querySelectorAll<HTMLElement>('.today-task-row [data-today-preview-id]'))
+        .filter((candidate) => candidate.dataset.todayPreviewId === taskId);
+      for (const taskTitle of taskTitles) {
+        const row = taskTitle.closest<HTMLElement>('.today-task-row');
+        const button = row?.querySelector<HTMLButtonElement>('.today-task-row__complete');
+        const feedback = row?.querySelector<HTMLElement>('.today-task-row__feedback');
+        if (!row || !button || !feedback) continue;
+        row.dataset.state = 'pending';
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        feedback.textContent = 'Marking complete…';
+      }
+    }
+  }
+
+  private restorePendingCompletionFocus(): void {
+    const taskId = this.pendingCompletionFocusTaskId;
+    if (!taskId) return;
+    this.pendingCompletionFocusTaskId = null;
+    const sameTask = Array.from(this.element.querySelectorAll<HTMLElement>('.today-task-row [data-today-preview-id]'))
+      .find((candidate) => candidate.dataset.todayPreviewId === taskId) ?? null;
+    const nextTask = this.element.querySelector<HTMLElement>('.today-task-row__complete:not([disabled]), .today-task-row__title');
+    const target = sameTask ?? nextTask ?? this.dateLabelTarget;
+    if (target === this.dateLabelTarget) this.dateLabelTarget.setAttribute('tabindex', '-1');
+    target.focus();
+  }
+
   /** syncDateControl — keep the date input + label in sync with this.dateValue. */
   private syncDateControl(): void {
     // Sync the <input type="date"> value (YYYY-MM-DD — the input's native format)
     this.dateInputTarget.value = this.dateValue;
     // Sync the human-readable <output> label
-    this.dateLabelTarget.textContent = formatDisplayDate(this.dateValue);
+    // The masthead is the selected calendar date, even when it is today.
+    // Core’s current-day flag still governs focus and overdue semantics.
+    this.dateLabelTarget.textContent = formatDisplayDate(this.dateValue, '');
     const [year, month, day] = this.dateValue.split('-').map(Number);
     this.dateEyebrowTarget.textContent = new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(
       undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' },
@@ -598,9 +704,8 @@ export default class TodayController extends Controller {
       sameEntity.focus();
       return;
     }
-    const heading = this.element.querySelector<HTMLElement>('.today-agenda-intro__title');
-    heading?.setAttribute('tabindex', '-1');
-    heading?.focus();
+    this.dateLabelTarget.setAttribute('tabindex', '-1');
+    this.dateLabelTarget.focus();
   }
 
   /**
