@@ -1,51 +1,68 @@
 <div align="center">
 
-<img src="docs/assets/jin.png" alt="Jin logo" width="180">
+<img src="docs/assets/jin.png" alt="Jin logo" width="150">
 
 # Jin
 
-**Notes, tasks, and calendar context in one local workspace.**
+**Your notes, tasks, and calendar in one local workspace.**
 
 [![CI](https://github.com/Rynaro/jin/actions/workflows/ci.yml/badge.svg)](https://github.com/Rynaro/jin/actions/workflows/ci.yml)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/Rynaro/jin?label=release)](https://github.com/Rynaro/jin/releases/latest)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
-[Downloads](https://github.com/Rynaro/jin/releases) · [Quick start](#quick-start) · [Build from source](#build-from-source) · [Contribute](CONTRIBUTING.md)
+[Download](#download) · [Get started](#get-started) · [Features](#features) · [Build from source](#build-from-source) · [Contribute](CONTRIBUTING.md)
 
 </div>
 
-Jin stores your notes, tasks, and events as Markdown and YAML files you control.
-SQLite is a rebuildable index. The desktop app and scriptable CLI share the same
-Rust core and local data model. Google Calendar sync is optional.
+![Jin’s Today agenda with example events, connected work, and tasks](docs/assets/jin-today-preview.png)
 
-## Download and install
+<p align="center"><sub>Today view with example data. Your workspace starts with your own files.</sub></p>
 
-The [Releases page](https://github.com/Rynaro/jin/releases) is the source of
-published binaries. Release Please builds these files for a version when its
-release pull request is merged and the draft release is published (shown here
-for v1.0.0):
+Jin brings daily planning and the work behind it into one place. Write notes,
+track tasks, and see calendar context without handing over your data: Markdown
+and YAML are the source of truth, while SQLite is a rebuildable index. The
+desktop app and command-line interface use the same Rust core.
 
-| System | Desktop app | CLI |
+## Features
+
+- **A connected day.** See events, tasks, and related notes together in Today.
+- **Notes that stay yours.** Write and organize Markdown notes in a local
+  folder, with links to the work and events they support.
+- **Tasks with structure.** Capture tasks, organize them in lists or boards,
+  and schedule one as an event when it needs time on the calendar.
+- **A desktop app and a CLI.** Work visually or script common actions against
+  the same local workspace.
+- **Calendar when you want it.** Connect Google Calendar with your own OAuth
+  client, or keep your calendar data local. Desktop reminders run on your
+  device while Jin is open.
+
+## Download
+
+The [latest release](https://github.com/Rynaro/jin/releases/latest) has
+desktop installers and CLI archives. These are the published v1.0.0 assets:
+
+| Platform | Desktop app | CLI |
 | --- | --- | --- |
-| macOS, Apple Silicon (arm64) | DMG | jin-cli-1.0.0-macos-aarch64.tar.gz |
-| Linux, x86-64 | DEB or AppImage | jin-cli-1.0.0-linux-x86_64.tar.gz |
-| Windows, x86-64 | NSIS setup EXE | jin-cli-1.0.0-windows-x86_64.zip |
+| macOS · Apple Silicon | [DMG](https://github.com/Rynaro/jin/releases/download/v1.0.0/Jin_1.0.0_aarch64.dmg) | [tar.gz](https://github.com/Rynaro/jin/releases/download/v1.0.0/jin-cli-1.0.0-macos-aarch64.tar.gz) |
+| Linux · x86-64 | [DEB](https://github.com/Rynaro/jin/releases/download/v1.0.0/Jin_1.0.0_amd64.deb) · [AppImage](https://github.com/Rynaro/jin/releases/download/v1.0.0/Jin_1.0.0_amd64.AppImage) | [tar.gz](https://github.com/Rynaro/jin/releases/download/v1.0.0/jin-cli-1.0.0-linux-x86_64.tar.gz) |
+| Windows · x86-64 | [Setup EXE](https://github.com/Rynaro/jin/releases/download/v1.0.0/Jin_1.0.0_x64-setup.exe) | [ZIP](https://github.com/Rynaro/jin/releases/download/v1.0.0/jin-cli-1.0.0-windows-x86_64.zip) |
 
 On macOS, open the DMG and drag Jin to Applications. On Linux, install the DEB
-with your package manager, or mark the AppImage executable and run it. On
-Windows, run the setup EXE. The CLI archives contain a single jin executable
-(jin.exe on Windows); extract it and place it on your PATH.
+or make the AppImage executable and run it. On Windows, run the setup EXE.
+For the CLI, extract the archive and put `jin` (or `jin.exe`) on your `PATH`.
+Check a download against the release’s [SHA256SUMS](https://github.com/Rynaro/jin/releases/download/v1.0.0/SHA256SUMS).
 
-The macOS app uses ad-hoc signing and is **not Apple notarized**. Windows
-installers are **not code signed**. Your operating system may display an
-unverified-developer warning. The Linux packages are built on Ubuntu 24.04 x64
-and need a graphical desktop with WebKitGTK support. Other distributions may
-need different system libraries. Published releases include SHA256SUMS; compare the
-downloaded file's SHA-256 hash before running it.
+The macOS app is ad-hoc signed but not Apple notarized; the Windows installer
+is unsigned. Your OS may ask you to confirm that you want to open it. Linux
+packages are built on Ubuntu 24.04 x64 and require a graphical desktop with
+WebKitGTK support.
 
-## Quick start
+## Get started
 
-The desktop app guides you through choosing a local storage folder on first
-launch. The CLI can initialize a store explicitly:
+**Desktop:** Open Jin and follow the first-run guide to choose a folder for
+your workspace. Capture a note or task, then open Today to see what is ahead.
+
+**CLI:** Initialize a folder, add some work, and view your agenda:
 
 ```console
 $ jin --root ~/jin-store init
@@ -54,33 +71,36 @@ $ jin --root ~/jin-store task add "Draft quarterly roadmap"
 $ jin --root ~/jin-store today
 ```
 
-Run `jin --help` for commands and `jin <command> --help` for options. Jin can
-link preparation notes to events and promote a task into scheduled time.
-Reminders are delivered locally while the desktop app is running; reminder
-state does not sync between devices.
+Run `jin --help` to explore commands and `jin <command> --help` for options.
+The CLI also supports JSON output for scripts.
 
-## A look at Jin
+## Your data and integrations
 
-![Jin Today view with deterministic example data](docs/assets/jin-today-preview.png)
+Your workspace’s Markdown and YAML files are canonical. Jin can rebuild its
+SQLite index from them, and the CLI supports export and import. Optional Google
+Calendar sync needs a Google Desktop OAuth client that you configure; see the
+[setup guide](docs/google-smoke-test.md). Reminders are local to the desktop
+app and do not sync between devices.
 
-This Today screenshot uses demo data. It illustrates the interface; it does
-not establish native rendering quality on every supported system.
+Jin is actively developed. Real-account OAuth validation, recurring-event
+editing, multi-device sync, and mobile capture remain work in progress.
+Automated GUI checks cover logic; native appearance and installer behavior
+need platform testing.
 
 ## Build from source
 
-Install stable Rust, Node.js 20+ and npm 10+ for the desktop app. macOS needs
-Xcode Command Line Tools. Linux needs the [Tauri system prerequisites](https://v2.tauri.app/start/prerequisites/).
+Install stable Rust and, for the desktop app, Node.js 20+ and npm 10+. macOS
+needs Xcode Command Line Tools; Linux needs the
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```bash
 git clone https://github.com/Rynaro/jin.git
 cd jin
-python3 scripts/check-release-version.py
-make verify
 cargo build --release --locked -p jin
 ./target/release/jin --root ~/jin-store init
 ```
 
-To run the desktop app during development:
+For desktop development:
 
 ```bash
 cd jin-gui
@@ -88,28 +108,20 @@ npm ci
 npm run tauri -- dev
 ```
 
-`make verify-gui` runs the GUI logic gate; `make verify-all` runs both gates.
-Native bundle checks, release assets, and publication steps are documented in
-the [release runbook](docs/releasing.md).
+Run `make verify` for core and CLI checks, `make verify-gui` for GUI logic,
+or `make verify-all` for both. The [release runbook](docs/releasing.md)
+covers packaging.
 
-## Data, sync, and current limits
+## Documentation and help
 
-The canonical store is local Markdown and YAML. The Rust core provides the CLI
-and desktop app with one model for notes, tasks, events, and links. The SQLite
-index can be rebuilt. Optional Google Calendar sync uses your own Desktop
-OAuth client; see the [Google setup and smoke test](docs/google-smoke-test.md).
-
-Version 1.0.0 identifies the first coordinated binary release. Real-account
-OAuth validation, recurring-event editing, multi-device synchronization, rich
-notes, and mobile capture remain work in progress. Automated GUI checks cover
-logic, while native appearance and interaction require a human pass on each
-platform. See [GUI testing](docs/gui-testing.md) and [testing](docs/testing.md).
-
-## Contributing and license
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and checks, and
-[SECURITY.md](SECURITY.md) for security reporting. Architecture decisions live
-in [docs/adr](docs/adr/), and the GUI's visual language is described in
-[docs/visual-language](docs/visual-language/README.md).
+| Topic | Where to go |
+| --- | --- |
+| First-run setup | [Getting started with the desktop app](docs/first-time-setup.md) |
+| Calendar connection | [Google Calendar setup and smoke test](docs/google-smoke-test.md) |
+| Architecture | [Architecture decisions](docs/adr/) |
+| Testing | [Testing strategy](docs/testing.md) · [GUI testing](docs/gui-testing.md) |
+| Questions or bugs | [GitHub Issues](https://github.com/Rynaro/jin/issues) |
+| Security reports | [Security policy](SECURITY.md) |
+| Contributions | [Contributing guide](CONTRIBUTING.md) |
 
 Jin is licensed under the [GNU Affero General Public License v3.0](LICENSE).
