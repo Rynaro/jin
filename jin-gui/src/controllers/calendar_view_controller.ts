@@ -155,6 +155,9 @@ export default class CalendarViewController extends Controller {
     'dayView',
     'monthViewContent',
     'dayViewContent',
+    'filterHost',
+    'notificationsLink',
+    'manageCalendarsLink',
     'createEventBtn',
   ];
 
@@ -166,6 +169,12 @@ export default class CalendarViewController extends Controller {
   declare dayViewTarget: HTMLElement;
   declare monthViewContentTarget: HTMLElement;
   declare dayViewContentTarget: HTMLElement;
+  declare filterHostTarget: HTMLElement;
+  declare hasFilterHostTarget: boolean;
+  declare notificationsLinkTarget: HTMLButtonElement;
+  declare hasNotificationsLinkTarget: boolean;
+  declare manageCalendarsLinkTarget: HTMLButtonElement;
+  declare hasManageCalendarsLinkTarget: boolean;
   declare createEventBtnTarget: HTMLButtonElement;
   declare hasCreateEventBtnTarget: boolean;
 
@@ -190,6 +199,7 @@ export default class CalendarViewController extends Controller {
   private writableDestinationCount = 0;
   private visibilityMap: CalendarVisibilityMap = {};
   private filterAccounts: GoogleAccountDto[] = [];
+  private filterSignature = '';
   private rangeProjection: CalendarRangeProjectionDto | null = null;
   private companion: EventCompanion | null = null;
   private addButton: HTMLButtonElement | null = null;
@@ -261,6 +271,14 @@ export default class CalendarViewController extends Controller {
   activateSection(): void {
     queueMicrotask(() => this.applyPendingTimelineScroll());
     this.schedulePendingTimelineScrollFrame();
+  }
+
+  openNotifications(): void {
+    this.dispatch('navigate', { detail: { kind: 'notifications', id: '' }, prefix: 'jin', bubbles: true });
+  }
+
+  openCalendarSettings(): void {
+    this.dispatch('navigate', { detail: { kind: 'settings', id: 'calendars' }, prefix: 'jin', bubbles: true });
   }
 
   async loadCalendar(): Promise<void> {
@@ -416,6 +434,9 @@ export default class CalendarViewController extends Controller {
     this.element.setAttribute('aria-label', eventMessage('calendar', locale));
     this.createEventBtnTarget.textContent = '+';
     this.createEventBtnTarget.setAttribute('aria-label', eventMessage('addEvent', locale));
+    if (this.hasNotificationsLinkTarget) this.notificationsLinkTarget.querySelector('span')!.textContent = eventMessage('notifications', locale);
+    if (this.hasManageCalendarsLinkTarget) this.manageCalendarsLinkTarget.querySelector('span')!.textContent = eventMessage('manageCalendars', locale);
+    this.filterSignature = '';
   }
 
   async openEventCreate(): Promise<void> {
@@ -478,6 +499,7 @@ export default class CalendarViewController extends Controller {
   }
 
   private paintCurrentView(): void {
+    this.syncCalendarFilter();
     if (this.viewMode !== 'month') this.stopMonthGridMeasurement();
     if (this.viewMode === 'day') {
       this.monthViewTarget.classList.add('hidden');
@@ -880,20 +902,40 @@ export default class CalendarViewController extends Controller {
     return areAllCalendarsHidden(keys, this.visibilityMap);
   }
 
-  private createCalendarFilter(): HTMLElement {
-    const details = document.createElement('details');
-    details.className = 'calendar-filter';
-    const summary = document.createElement('summary');
-    summary.className = 'calendar-filter__summary';
-    summary.textContent = eventMessage('calendarsFilter');
-    details.appendChild(summary);
+  private syncCalendarFilter(): void {
+    if (!this.hasFilterHostTarget) return;
+    const identities = this.filterIdentities();
+    const signature = JSON.stringify(identities.map(({ key, label, accountAlias, color }) => [key, label, accountAlias, color]));
+    if (signature !== this.filterSignature || !this.filterHostTarget.firstElementChild) {
+      const focusedKey = this.filterHostTarget.contains(document.activeElement)
+        ? (document.activeElement as HTMLInputElement).dataset.calendarKey : undefined;
+      this.filterHostTarget.replaceChildren(this.createCalendarFilter(identities));
+      this.filterSignature = signature;
+      if (focusedKey) {
+        for (const input of this.filterHostTarget.querySelectorAll<HTMLInputElement>('input[data-calendar-key]')) {
+          if (input.dataset.calendarKey === focusedKey) input.focus({ preventScroll: true });
+        }
+      }
+    }
+    for (const input of this.filterHostTarget.querySelectorAll<HTMLInputElement>('input[data-calendar-key]')) {
+      input.checked = isCalendarVisible(input.dataset.calendarKey!, this.visibilityMap);
+    }
+  }
+
+  private createCalendarFilter(identities = this.filterIdentities()): HTMLElement {
+    const section = document.createElement('section');
+    section.className = 'calendar-filter';
+    const heading = document.createElement('h2');
+    heading.className = 'calendar-filter__heading';
+    heading.textContent = eventMessage('calendarsFilter');
+    section.appendChild(heading);
 
     const list = document.createElement('div');
     list.className = 'calendar-filter__list';
     list.setAttribute('role', 'group');
     list.setAttribute('aria-label', eventMessage('calendarsFilter'));
 
-    for (const identity of this.filterIdentities()) {
+    for (const identity of identities) {
       const row = document.createElement('label');
       row.className = 'form-label jin-checkbox calendar-filter__row';
 
@@ -927,8 +969,8 @@ export default class CalendarViewController extends Controller {
       list.appendChild(row);
     }
 
-    details.appendChild(list);
-    return details;
+    section.appendChild(list);
+    return section;
   }
 
   private createFilterEmptyState(): HTMLElement {
@@ -945,8 +987,8 @@ export default class CalendarViewController extends Controller {
     reset.addEventListener('click', () => {
       this.invalidateDetailRequest();
       this.visibilityMap = resetCalendarVisibility();
+      this.syncCalendarFilter();
       this.paintCurrentView();
-      void this.renderCurrentView();
       void this.renderCurrentView();
     });
     empty.append(copy, reset);
@@ -1001,6 +1043,10 @@ export default class CalendarViewController extends Controller {
 
     const controls = document.createElement('div');
     controls.className = 'calendar-month-controls';
+    const dragRegion = document.createElement('span');
+    dragRegion.className = 'calendar-workspace-drag';
+    dragRegion.setAttribute('data-tauri-drag-region', '');
+    dragRegion.setAttribute('aria-hidden', 'true');
     const leading = document.createElement('div');
     leading.className = 'calendar-month-leading';
     if (this.viewMode === 'day') {
@@ -1012,9 +1058,12 @@ export default class CalendarViewController extends Controller {
       back.innerHTML = '<i data-lucide="arrow-left" aria-hidden="true"></i>';
       leading.append(back);
     }
-    leading.append(this.createCalendarFilter());
+    const title = document.createElement('span');
+    title.className = 'calendar-workspace-title';
+    title.textContent = eventMessage('calendar');
+    leading.append(title);
     if (this.addButton) leading.appendChild(this.addButton);
-    controls.append(leading, this.createViewSwitch(), navContainer);
+    controls.append(dragRegion, leading, this.createViewSwitch(), navContainer);
     header.append(identity, controls);
     return header;
   }

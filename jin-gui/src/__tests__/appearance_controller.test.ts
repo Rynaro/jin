@@ -22,7 +22,7 @@ import {
   STORAGE_KEY,
   type AppearancePrefs,
 } from '../lib/appearance/state';
-import { syncAppearanceModeButtons } from '../controllers/appearance_controller';
+import AppearanceController, { syncAppearanceModeButtons } from '../controllers/appearance_controller';
 
 // Use a fresh HTMLElement for each test to avoid cross-test contamination
 function makeRoot(): HTMLElement {
@@ -38,6 +38,38 @@ beforeEach(() => {
   delete root.dataset.increaseContrast;
   delete root.dataset.reduceMotion;
   root.style.removeProperty('--dynamic-type-scale');
+});
+
+describe('Settings discrete text size input', () => {
+  it('persists every supported index as its canonical scale', () => {
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = '0';
+    input.max = '11';
+    input.step = '1';
+    input.dataset.settingsTextSize = 'index';
+    const context = { prefs: { ...DEFAULT_PREFS }, apply: () => undefined };
+    for (const [index, scale] of DYNAMIC_TYPE_STEPS.entries()) {
+      input.value = String(index);
+      AppearanceController.prototype.setTextSize.call(context as unknown as AppearanceController, { target: input } as unknown as Event);
+      expect(loadPrefs().textSizeScale).toBe(scale);
+    }
+    input.value = '3';
+    AppearanceController.prototype.setTextSize.call(context as unknown as AppearanceController, { target: input } as unknown as Event);
+    expect(loadPrefs().textSizeScale).toBe(1);
+  });
+
+  it('keeps First Run scale-valued input compatible', () => {
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = '0.82';
+    input.max = '3.1';
+    input.step = '0.01';
+    input.value = '1.24';
+    const context = { prefs: { ...DEFAULT_PREFS }, apply: () => undefined };
+    AppearanceController.prototype.setTextSize.call(context as unknown as AppearanceController, { target: input } as unknown as Event);
+    expect(loadPrefs().textSizeScale).toBe(1.24);
+  });
 });
 
 // ── applyToRoot ───────────────────────────────────────────────────────────────

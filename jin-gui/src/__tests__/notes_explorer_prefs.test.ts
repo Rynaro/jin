@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadNotesExplorerView, saveNotesExplorerView } from '../lib/notes/explorerPrefs';
+import { loadNotesExplorerView, saveNotesExplorerView, NOTES_EXPLORER_VIEW_CHANGED } from '../lib/notes/explorerPrefs';
 
 describe('Notes explorer view preference', () => {
   beforeEach(() => localStorage.clear());
@@ -22,5 +22,15 @@ describe('Notes explorer view preference', () => {
     const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
     expect(() => saveNotesExplorerView('list')).not.toThrow();
     set.mockRestore();
+  });
+
+  it('notifies mounted views when the persisted layout changes', () => {
+    const received: string[] = [];
+    const listener = (event: Event) => received.push((event as CustomEvent<string>).detail);
+    window.addEventListener(NOTES_EXPLORER_VIEW_CHANGED, listener);
+    saveNotesExplorerView('cards');
+    saveNotesExplorerView('list');
+    window.removeEventListener(NOTES_EXPLORER_VIEW_CHANGED, listener);
+    expect(received).toEqual(['cards', 'list']);
   });
 });

@@ -7,7 +7,7 @@ const SECTION_LABEL: Record<Section, string> = {
   today: 'Today', notes: 'Notes', tasks: 'Tasks', events: 'Events',
   notifications: 'Notifications', settings: 'Settings',
 };
-const CONTEXT_SECTIONS = new Set<Section>(['notes', 'tasks', 'settings']);
+const CONTEXT_SECTIONS = new Set<Section>(['notes', 'tasks', 'events', 'settings']);
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export default class SidebarController extends Controller {

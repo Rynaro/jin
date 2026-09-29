@@ -49,7 +49,18 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
             let allowed = external_links::configured_main_url(app.config(), tauri::is_dev())
                 .map_err(|error| format!("Invalid main navigation origin: {error}"))?;
             let policy = external_links::MainNavigationPolicy::new(allowed);
-            tauri::WebviewWindowBuilder::from_config(app.handle(), main_config)?
+            let main_window = tauri::WebviewWindowBuilder::from_config(app.handle(), main_config)?;
+            // Only macOS paints the system Sidebar material behind the WebView.
+            // Other platforms retain their normal opaque window and CSS fallback.
+            #[cfg(target_os = "macos")]
+            let main_window =
+                main_window
+                    .transparent(true)
+                    .effects(tauri::utils::config::WindowEffectsConfig {
+                        effects: vec![tauri::utils::WindowEffect::Sidebar],
+                        ..Default::default()
+                    });
+            main_window
                 .on_navigation(move |url| policy.allows(url))
                 .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
                 .build()?;

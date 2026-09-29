@@ -153,6 +153,8 @@ import {
   renderExportResult,
   renderExportError,
   initAppearanceControls,
+  textSizeIndex,
+  textSizeLabel,
 } from '../lib/settings/render';
 
 import {
@@ -250,6 +252,25 @@ describe('settings pane navigation', () => {
     expect(panes[1].hidden).toBe(false);
     expect(workspace.scrollTop).toBe(0);
     expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('opens Calendars on a committed targeted activation and persists that pane', () => {
+    const { navItems, panes } = makeNavigation();
+    const workspace = document.createElement('div');
+    workspace.scrollTop = 180;
+    SettingsController.prototype.activateSection.call({
+      settingsNavItemTargets: navItems,
+      settingsPaneTargets: panes,
+      settingsWorkspaceTarget: workspace,
+      hasGoogleAccountsListTarget: false,
+      hasQuarantinedOperationsListTarget: false,
+      refreshGoogleState: vi.fn(),
+      refreshAppearanceControls: vi.fn(),
+      refreshNotesLayout: vi.fn(),
+    } as unknown as SettingsController, new CustomEvent('jin:section-activated', { detail: { id: 'calendars' } }));
+    expect(panes.find(pane => !pane.hidden)?.dataset.settingsPaneKey).toBe('calendars');
+    expect(localStorage.getItem(SETTINGS_PANE_STORAGE_KEY)).toBe('calendars');
+    expect(workspace.scrollTop).toBe(0);
   });
 
   it('keeps dynamically rendered Google account cards in the Calendars pane', () => {
@@ -1352,7 +1373,16 @@ describe('initAppearanceControls', () => {
   it('sets textSizeRange.valueAsNumber from prefs', () => {
     const el = makeAppearanceElements();
     initAppearanceControls(el, { ...DEFAULT_PREFS, textSizeScale: 1.24 });
-    expect(el.textSizeRange.valueAsNumber).toBeCloseTo(1.24);
+    expect(el.textSizeRange.valueAsNumber).toBe(5);
+  });
+
+  it.each([
+    [1, 3, '17 px · 100%'],
+    [0.88, 1, '14.96 px · 88%'],
+    [3.1, 11, '52.7 px · 310%'],
+  ])('shows supported body-size values for scale %s', (scale, index, label) => {
+    expect(textSizeIndex(scale)).toBe(index);
+    expect(textSizeLabel(scale)).toBe(label);
   });
 
   it('sets aria-pressed="true" on the active appearance mode button (auto)', () => {

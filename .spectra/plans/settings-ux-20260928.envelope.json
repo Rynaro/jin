@@ -1,0 +1,70 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "01a0e9dc-f05d-713d-9cf1-5e56d5a8982c",
+  "thread_id": "01a0e9dc-f05d-713d-9cf1-5e56d5a8982c",
+  "parent_id": null,
+  "from": {
+    "eidolon": "ramza",
+    "version": "3.0.0"
+  },
+  "to": {
+    "eidolon": "apivr",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Propose compact Settings UX with exact text size controls and supported Notes layout preference.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/settings-ux-20260928.md",
+    "sha256": "55f296d14d691b3cce4c2e28366f246d947bac639c6c077fda3c050c3b0044a2",
+    "size_bytes": 14123
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 5000,
+    "input_handles": [],
+    "summary": "Implement the bounded Settings plan through Vivi with Sol 6 Medium; preserve dirty changes and existing backend contracts. The envelope recipient retains the installed schema template; actual orchestrator coder dispatch is Vivi."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "ise": {
+    "assertion_grade": "self-attested",
+    "provenance": {
+      "methodology_version": "ramza-3.0.0",
+      "tool_surface": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "lateral_consults": []
+    },
+    "receiver_authorization": {
+      "auto_route": true,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "confidence": 0.9125,
+  "integrity": {
+    "method": "sha256",
+    "value": "55f296d14d691b3cce4c2e28366f246d947bac639c6c077fda3c050c3b0044a2"
+  },
+  "trace": {
+    "ts": "2026-09-28T21:12:45.917373Z",
+    "host": "codex",
+    "model": "gpt-6-astra",
+    "tier": "standard"
+  },
+  "x_ramza_acceptance_criteria": {
+    "path": ".spectra/plans/settings-ux-20260928.md",
+    "sha256": "55f296d14d691b3cce4c2e28366f246d947bac639c6c077fda3c050c3b0044a2"
+  },
+  "x_executor": {
+    "eidolon": "vivi",
+    "model": "gpt-6-sol",
+    "reasoning": "medium"
+  }
+}

@@ -204,6 +204,16 @@ pub fn ensure_default_list_for_root(root: &Path) -> Result<()> {
 /// Returns `Vec<ListDto>` ordered by position (ascending).
 /// Each `ListDto.task_count` is a live COUNT from the index.
 pub fn list_lists(root: &Path) -> Result<Vec<ListDto>> {
+    crate::ops::api::recover_before_read(root)?;
+    // First-load Inbox creation is a canonical write. Keep the existence
+    // check, creation, index rebuild and query inside one waiting boundary so
+    // concurrent startup reads cannot turn it into a lock-contention error.
+    crate::ops::recoverable_operations::with_canonical_read_lock(root, false, || {
+        list_lists_locked(root)
+    })
+}
+
+fn list_lists_locked(root: &Path) -> Result<Vec<ListDto>> {
     let cfg = Config::load(root)?;
     let inbox_path = cfg.lists_dir().join(fs::list_filename(INBOX_ID));
     let inbox_existed = inbox_path.exists();
@@ -211,7 +221,8 @@ pub fn list_lists(root: &Path) -> Result<Vec<ListDto>> {
     // If inbox was just created (first call), rebuild the index so the new
     // list file is reflected in the query results.
     if !inbox_existed {
-        crate::ops::api::refresh(root)?;
+        let mut conn = index::open(&cfg.index_path())?;
+        crate::index::rebuild::rebuild(&mut conn, root)?;
     }
 
     let conn = index::open(&cfg.index_path())?;

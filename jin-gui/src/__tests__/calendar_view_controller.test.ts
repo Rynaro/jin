@@ -87,6 +87,7 @@ function mockProjectionFromListEvents(): void {
 function fixture(): string {
   return `
     <section data-controller="calendar-view" data-action="jin:events-mutated@window->calendar-view#handleMutation" aria-label="Calendar">
+      <aside data-sidebar-context="events"><div data-calendar-view-target="filterHost"></div><button data-calendar-view-target="notificationsLink"><span>Notifications</span></button><button data-calendar-view-target="manageCalendarsLink"><span>Calendars &amp; Sync</span></button></aside>
       <div data-calendar-view-target="workspace" class="calendar-workspace">
         <div data-calendar-view-target="field" class="calendar-field">
           <div data-calendar-view-target="monthView"><div data-calendar-view-target="monthViewContent"></div></div>
@@ -864,6 +865,32 @@ describe('CalendarViewController safety and mode invariants', () => {
     await flush();
     expect(document.querySelector('.calendar-timegrid [data-event-id="jin-a"]')).toBeTruthy();
     expect(document.querySelector('.calendar-timegrid [data-event-id="google-b"]')).toBeNull();
+  });
+
+  it('keeps sidebar checkbox focus and persisted visibility through view renders and reset', async () => {
+    const checkbox = document.querySelector<HTMLInputElement>('.calendar-filter input[data-calendar-key="jin"]')!;
+    expect(checkbox).toBeTruthy();
+    checkbox.focus();
+    checkbox.click();
+    await flush();
+    expect(localStorage.getItem('jin:calendar-visibility:v1')).toContain('"jin":false');
+    expect(document.activeElement).toBe(checkbox);
+    expect(document.querySelector('.calendar-filter-empty')).toBeTruthy();
+    controller.goToToday();
+    await flush();
+    expect(document.querySelector('.calendar-filter input')).toBe(checkbox);
+    document.querySelector<HTMLButtonElement>('.calendar-filter-empty__reset')!.click();
+    await flush();
+    expect(document.querySelector<HTMLInputElement>('.calendar-filter input')?.checked).toBe(true);
+    expect(localStorage.getItem('jin:calendar-visibility:v1')).toBe('{}');
+  });
+
+  it('routes sidebar actions through the existing navigation event', () => {
+    const intents: unknown[] = [];
+    document.querySelector('section')!.addEventListener('jin:navigate', event => intents.push((event as CustomEvent).detail));
+    controller.openNotifications();
+    controller.openCalendarSettings();
+    expect(intents).toEqual([{ kind: 'notifications', id: '' }, { kind: 'settings', id: 'calendars' }]);
   });
 
   it('keeps due-task appendage after the time-grid scroller (AC-CALX-059)', async () => {
