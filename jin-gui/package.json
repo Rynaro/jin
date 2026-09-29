@@ -36,7 +36,7 @@
     "dompurify": "^3.4.11",
     "highlight.js": "^11.11.1",
     "lucide": "^0.523.0",
-    "markdown-it": "^14.2.0"
+    "markdown-it": "^14.3.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
