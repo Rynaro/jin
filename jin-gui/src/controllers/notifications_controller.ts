@@ -310,6 +310,7 @@ export default class NotificationsController extends Controller {
         }),
         'Task marked done.',
         control as HTMLElement,
+        true,
       );
       return;
     }
@@ -432,6 +433,7 @@ export default class NotificationsController extends Controller {
     mutate: () => Promise<NotificationItemDto>,
     successMessage: string,
     focus: HTMLElement | null,
+    tasksChanged = false,
   ): Promise<void> {
     const item = this.selectedItem();
     if (!item) return;
@@ -441,6 +443,7 @@ export default class NotificationsController extends Controller {
     try {
       const updated = await mutate();
       this.replaceItem(updated);
+      if (tasksChanged) this.dispatch('tasks-changed', { prefix: 'jin', bubbles: true });
       await this.refresh();
       this.announce(successMessage);
     } catch (error: unknown) {

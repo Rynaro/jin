@@ -2548,7 +2548,7 @@ function fireScopeChanged(scope: { kind: 'list'; id: string } | { kind: 'smart';
 
 function buildStimulusTasksHTML(): string {
   return `
-    <section data-controller="tasks" data-action="jin:open-detail->tasks#openDetail jin:scope-changed->tasks#setScope">
+    <section data-controller="tasks" data-action="jin:section-activated->tasks#activateSection jin:open-detail->tasks#openDetail jin:scope-changed->tasks#setScope">
       <button data-tasks-target="railToggleBtn" data-action="click->tasks#toggleRail" aria-expanded="false">Task lists</button>
       <aside>
         <button data-tasks-target="railCloseBtn" data-action="click->tasks#toggleRail">Close task lists</button>
@@ -3267,6 +3267,34 @@ describe('S5 — sidebar scope + live counts (AC-S5-04/06/09)', () => {
 
     expect(InvokeModule.deleteTask).toHaveBeenCalledWith('t1');
     expect(dispatched).toBe(1);
+  });
+
+  it('refreshes completed tasks when Tasks is activated after a notification completion', async () => {
+    let storedTask = makeTaskDtoForStimulus({ id: 'task-1', status: 'todo' });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([makeDefaultListDto()]);
+    vi.spyOn(InvokeModule, 'listTasks').mockImplementation(async () => [storedTask]);
+    const setStatus = vi.spyOn(InvokeModule, 'setTaskStatus').mockImplementation(async (_id, status) => {
+      storedTask = { ...storedTask, status, completed_at: status === 'done' ? '2026-09-29T12:00:00Z' : null };
+      return storedTask;
+    });
+
+    startS5App();
+    await flushStimulusAsync();
+    expect(document.querySelector<HTMLButtonElement>('.task-item__status-btn')?.getAttribute('aria-checked')).toBe('false');
+
+    // The notification command completed the authoritative task while this
+    // controller still held its initial todo projection.
+    storedTask = { ...storedTask, status: 'done', completed_at: '2026-09-29T12:00:00Z' };
+    document.querySelector<HTMLElement>('[data-controller~="tasks"]')!.dispatchEvent(
+      new CustomEvent('jin:section-activated', { detail: { id: null } }),
+    );
+    await flushStimulusAsync();
+
+    const checkbox = document.querySelector<HTMLButtonElement>('.task-item__status-btn')!;
+    expect(checkbox.getAttribute('aria-checked')).toBe('true');
+    checkbox.click();
+    await flushStimulusAsync();
+    expect(setStatus).toHaveBeenCalledWith('task-1', 'todo');
   });
 
   // ── AC-S5-06 — the Today smart view (applyScope) ──────────────────────────

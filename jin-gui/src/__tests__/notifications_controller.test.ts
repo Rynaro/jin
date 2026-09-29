@@ -269,6 +269,37 @@ describe('NotificationsController', () => {
     expect(document.body.textContent).toContain('Queued: Accepted');
   });
 
+  it('completion announces one task change after the task is marked done', async () => {
+    let current = taskReminderFixture();
+    const completed = taskReminderFixture({
+      status: 'acted',
+      version: 3,
+      capabilities: { ...taskReminderFixture().capabilities, can_complete_task: false },
+    });
+    mockInvoke.mockImplementation(async (command) => {
+      if (command === 'list_notification_items') return page([current]);
+      if (command === 'notification_center_summary') {
+        return { visible_unread: current.read_at ? 0 : 1, visible_total: 1, pending: 0, errors: 0, partial_error_count: 0 };
+      }
+      if (command === 'complete_notification_task') {
+        current = completed;
+        return current;
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    activateNotifications(app);
+    await settle();
+
+    const changed = vi.fn();
+    document.addEventListener('jin:tasks-changed', changed);
+    document.querySelector<HTMLButtonElement>('[data-notification-action="complete-task"]')!.click();
+    await settle();
+
+    expect(mockInvoke.mock.calls.filter(([command]) => command === 'complete_notification_task')).toHaveLength(1);
+    expect(changed).toHaveBeenCalledOnce();
+    expect(document.querySelector<HTMLButtonElement>('[data-notification-action="complete-task"]')?.disabled).toBe(true);
+  });
+
   it('successful mutation refetches and applies the active filter', async () => {
     let current = invite;
     mockInvoke.mockImplementation(async (command, args) => {

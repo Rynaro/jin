@@ -709,6 +709,12 @@ export default class TasksController extends Controller {
     })();
   }
 
+  /** Refresh the authoritative task projection whenever the router returns to Tasks. */
+  activateSection(): void {
+    void this.loadList(this.currentFilter, true);
+    if (this.selectedTaskId) void this.refreshPane(this.selectedTaskId);
+  }
+
   toggleRail(): void {
     window.dispatchEvent(new CustomEvent('jin:sidebar-toggle'));
   }
