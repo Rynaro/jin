@@ -1,56 +1,64 @@
 # Releasing Jin
 
-The release workflow is [`.github/workflows/release.yml`](../.github/workflows/release.yml).
-It builds both the CLI and Tauri desktop app on native macOS Apple Silicon,
-Ubuntu 24.04 x64, and Windows x64 runners. It builds pull requests, accepts
-manual runs, and responds to version tags.
-Only a matching tag creates a GitHub **draft** release; publishing remains a
-separate review step.
+The [Release Please workflow](../.github/workflows/release-please.yml) runs on
+pushes to `main`. It maintains a release pull request, then creates a `vX.Y.Z`
+tag and **draft** GitHub release after that pull request is merged. Only a new
+Release Please release starts the macOS Apple Silicon, Linux x64, and Windows
+x64 binary builds. When all three succeed, the same workflow attaches seven
+files plus `SHA256SUMS` to its draft. A normal pull request, manual dispatch,
+or separately pushed tag cannot build or serve binaries.
 
-## Prepare
+## Version and release pull request
 
-1. Update first-party versions together in `jin/Cargo.toml`,
-   `jin-core/Cargo.toml`, `jin-gui/src-tauri/Cargo.toml`,
-   `jin-gui/src-tauri/tauri.conf.json`, and `jin-gui/package.json`.
-   Refresh `Cargo.lock` and `jin-gui/package-lock.json`.
-2. Run `python3 scripts/check-release-version.py` and
-   `python3 scripts/check-release-version.py --tag v1.0.0` (substitute the
-   intended tag). The release workflow rejects tag/version disagreement.
-3. Run `make verify` and `make verify-gui`, and inspect the pending changes.
+Release Please owns version changes through `release-please-config.json` and
+`.release-please-manifest.json`. Use Conventional Commit titles (`feat:`,
+`fix:`, and `feat!:` for breaking changes) so it can choose the next version.
+The Rust strategy updates `jin`, `jin-core`, `jin-gui/src-tauri`, and
+`Cargo.lock`; configured JSON paths update the Tauri and npm package versions,
+including both root version fields in `package-lock.json`.
 
-## Dry run and validation
+The manifest starts at `0.8.1`, the latest existing tag. The first release
+change uses `Release-As: 1.0.0` in the migration commit to bridge to the
+already aligned `1.0.0` package files. Preserve that footer when merging the
+pipeline pull request. Later releases use normal version selection; do not
+leave a permanent `release-as` setting in the config.
 
-Open a pull request or trigger **Release binaries** with `workflow_dispatch` on
-the commit intended for release. The three build jobs upload separate `release-*` workflow
-artifacts. A manual run does not create a GitHub release.
+Review the generated release pull request and its version changes. Run
+`python3 scripts/check-release-version.py`, `make verify`, and
+`make verify-gui` on its head. With the default `GITHUB_TOKEN`, GitHub does not
+automatically trigger pull request workflows for a Release Please-created PR;
+the Release Please job explicitly dispatches `ci.yml` on that branch.
+Repository Actions must be allowed to create pull requests in **Settings →
+Actions → General**. If that setting is unavailable, configure a suitable
+release token with the repository owner before expecting the automation to
+open a PR.
 
-Each job builds a release CLI, runs its version and help commands, builds the
-native Tauri bundle, checks expected package formats and architecture, then
-uploads the files. Download and inspect all artifacts. Extract each CLI archive
-and run `jin --version` and a temporary-store `jin --root ... init` on its
-target OS. Install and launch the GUI on all three OSes, including the
-[native GUI checklist](gui-testing.md). Automated logic tests do not prove
-native display or installer behavior.
+## Binary validation and publication
 
-Expected assets are three CLI archives, one macOS DMG, one Linux DEB, one Linux
-AppImage, and one Windows NSIS setup EXE.
+Before merging a release pull request, check the existing platform build
+evidence and run the [native GUI checklist](gui-testing.md) on macOS, Linux,
+and Windows. Build jobs compile the CLI, run its version and help commands,
+build the Tauri bundles, inspect formats and architecture, and upload their
+artifacts. This automated check does not prove native installer launch or GUI
+appearance.
 
-## Draft and publish
+Merge the release pull request when ready. Release Please creates the tag and
+draft. The matrix checks out its release SHA, rejects package/tag version
+disagreement, and builds three CLI archives, macOS DMG, Linux DEB and AppImage,
+and Windows NSIS EXE. The final job requires exactly these seven files,
+generates and verifies `SHA256SUMS`, and uploads them to the existing draft.
+Review the files, checksums, installation notes, and native smoke results;
+publish the draft in GitHub when ready.
 
-After a successful dry run and review, tag the same commit as `v1.0.0` and
-push the tag. The tag-triggered workflow rebuilds all targets. Its final job
-waits for all three builds, checks for exactly seven deliverables, generates
-`SHA256SUMS`, verifies the checksums, and creates a draft GitHub release.
-
-Review the draft's files, checksums, installation notes, and native smoke-test
-results. Publish the draft through GitHub when the release is ready. If a build
-fails, fix it on a new commit and repeat the dry run; do not reuse a failed
-release artifact. Avoid moving a published tag.
+If a build or upload fails, use **Re-run failed jobs** on that Release Please
+workflow run. This keeps the original release output and repeats only failed
+work; re-running all jobs after release creation may skip builds because no
+new release is created. Do not move a published tag or reuse a failed asset.
 
 ## Signing and support
 
 macOS uses Tauri's ad-hoc signing identity (`-`) and is not Apple notarized.
 Windows packages are unsigned. Do not describe these builds as trusted or
 notarized until real signing and notarization are implemented and verified.
-The release matrix intentionally does not produce Intel macOS, ARM Linux, or
-ARM Windows artifacts.
+The matrix intentionally does not produce Intel macOS, ARM Linux, or ARM
+Windows artifacts.

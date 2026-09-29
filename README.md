@@ -20,8 +20,9 @@ Rust core and local data model. Google Calendar sync is optional.
 ## Download and install
 
 The [Releases page](https://github.com/Rynaro/jin/releases) is the source of
-published binaries. The v1.0.0 pipeline produces these files when its release
-is published:
+published binaries. Release Please builds these files for a version when its
+release pull request is merged and the draft release is published (shown here
+for v1.0.0):
 
 | System | Desktop app | CLI |
 | --- | --- | --- |

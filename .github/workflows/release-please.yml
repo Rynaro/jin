@@ -1,34 +1,62 @@
-name: Release binaries
+name: Release Please
 
 on:
-  workflow_dispatch:
-  pull_request:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
+  release_please:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      # Pull requests opened with GITHUB_TOKEN do not trigger pull_request CI.
+      # workflow_dispatch is an exception, so run CI on the new PR branch.
+      - name: Run CI on Release Please pull request
+        if: steps.release.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PR: ${{ steps.release.outputs.pr }}
+        run: |
+          branch="$(jq -r '.headBranchName' <<< "$RELEASE_PR")"
+          test -n "$branch" && test "$branch" != null
+          gh workflow run ci.yml --ref "$branch"
+
   version:
+    if: needs.release_please.outputs.release_created == 'true'
+    needs: release_please
     runs-on: ubuntu-24.04
     outputs:
       release_version: ${{ steps.validate.outputs.release_version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release_please.outputs.sha }}
       - name: Check first-party versions and tag
         id: validate
+        env:
+          RELEASE_TAG: ${{ needs.release_please.outputs.tag_name }}
         run: |
-          tag_args=()
-          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
-            tag_args=(--tag "$GITHUB_REF_NAME")
-          fi
-          version="$(python3 scripts/check-release-version.py "${tag_args[@]}" --version-only)"
+          version="$(python3 scripts/check-release-version.py --tag "$RELEASE_TAG" --version-only)"
           echo "release_version=$version" >> "$GITHUB_OUTPUT"
 
   build:
-    needs: version
+    needs: [release_please, version]
     strategy:
       fail-fast: false
       matrix:
@@ -53,6 +81,8 @@ jobs:
       RELEASE_VERSION: ${{ needs.version.outputs.release_version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release_please.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -135,14 +165,15 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  draft-release:
-    if: github.ref_type == 'tag'
-    needs: build
+  attach_assets:
+    needs: [release_please, build]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release_please.outputs.sha }}
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -157,10 +188,10 @@ jobs:
             test "$(find dist -maxdepth 1 -name "*.$ext" | wc -l)" -eq 1
           done
           (cd dist && sha256sum -- ./* > SHA256SUMS && sha256sum --check SHA256SUMS)
-      - name: Create draft GitHub release
+      - name: Attach assets to Release Please draft
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release_please.outputs.tag_name }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag \
-            --title "Jin $GITHUB_REF_NAME" \
-            --notes "Jin $GITHUB_REF_NAME binaries for macOS Apple Silicon, Linux x64, and Windows x64. Verify downloads with SHA256SUMS. See README.md for installation and signing status."
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
+          gh release upload "$RELEASE_TAG" dist/* --clobber
