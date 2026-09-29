@@ -1,4 +1,4 @@
-/* One visual sidebar slot. Context DOM stays under its Notes/Tasks/Settings controller. */
+/* One visual sidebar slot. Context DOM stays under its route controller. */
 .jin-shell {
   --sidebar-body-top: calc(var(--sidebar-native-top) + 132px);
 }
@@ -9,13 +9,24 @@
   block-size: 100%;
   min-inline-size: 0;
   padding: var(--sidebar-native-top) 0 0;
-  background: var(--workspace-context);
-  border-inline-end: 1px solid var(--separator);
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  background: var(--sidebar-glass-tint);
+  border-inline-end: 0.5px solid var(--separator);
+  box-shadow: inset -0.5px 0 0 var(--specular-highlight),
+    4px 0 14px var(--workspace-edge-shadow);
+  -webkit-backdrop-filter: blur(var(--glass-blur-regular)) saturate(var(--glass-saturate));
+          backdrop-filter: blur(var(--glass-blur-regular)) saturate(var(--glass-saturate));
   overflow: visible;
   transition: none;
+}
+
+/* The macOS window supplies the semantic Sidebar vibrancy behind this WebView.
+ * Leave only a light tint over it; the workspace beside it remains opaque. */
+:root[data-native-macos-overlay='true'] body,
+:root[data-native-macos-overlay='true'] .jin-shell {
+  background: transparent;
+}
+:root[data-native-macos-overlay='true'] .jin-shell > .jin-sidebar {
+  background: var(--sidebar-native-glass-tint);
 }
 
 .jin-sidebar-header {
@@ -86,6 +97,7 @@
 /* Context and app routes share the same sidebar body without a second column. */
 .jin-shell[data-active-section='notes']:not([data-switcher-open='true']) > .jin-sidebar .jin-nav,
 .jin-shell[data-active-section='tasks']:not([data-switcher-open='true']) > .jin-sidebar .jin-nav,
+.jin-shell[data-active-section='events']:not([data-switcher-open='true']) > .jin-sidebar .jin-nav,
 .jin-shell[data-active-section='settings']:not([data-switcher-open='true']) > .jin-sidebar .jin-nav { display: none; }
 
 .jin-shell[data-switcher-open='true'] > .jin-sidebar { z-index: 120; }
@@ -264,6 +276,15 @@
 :root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'] .jin-content > .jin-native-content-drag { display: none; }
 :root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'] .jin-content > .jin-native-content-drag { display: none; }
 :root[data-native-macos-overlay='true'] .jin-shell[data-active-section='today'] .jin-content > .jin-native-content-drag { display: none; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'] .jin-content:has(> [data-section-name='events']:not(.hidden) > .events-detail-pane.hidden) > .jin-native-content-drag { display: none; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'] .calendar-month-controls { min-block-size: 52px; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'] .calendar-workspace-drag {
+  display: block;
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: 6px;
+}
 :root[data-native-macos-overlay='true'] .today-workspace-bar { min-block-size: 52px; }
 :root[data-native-macos-overlay='true'] .today-workspace-drag {
   display: block;
@@ -303,6 +324,26 @@
   padding-inline-start: 142px;
 }
 :root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'][data-nav-visible='false'] .tasks-workspace-drag { inset-inline-start: 142px; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'][data-nav-visible='false'] .jin-content { position: relative; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'][data-nav-visible='false'] .jin-content > .jin-content-navigation {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 90px;
+  inline-size: 44px;
+  min-block-size: 52px;
+  padding: 0;
+  border: 0;
+  z-index: 20;
+}
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'][data-nav-visible='false'] .jin-content .jin-navigation-reveal {
+  justify-content: center;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+}
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'][data-nav-visible='false'] .jin-content .jin-navigation-reveal > span { display: none; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'][data-nav-visible='false'] .calendar-month-controls { padding-inline-start: 142px; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'][data-nav-visible='false'] .calendar-workspace-drag { inset-inline-start: 142px; }
 :root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'][data-nav-visible='false'] .jin-content { position: relative; }
 :root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'][data-nav-visible='false'] .jin-content > .jin-content-navigation {
   position: absolute;

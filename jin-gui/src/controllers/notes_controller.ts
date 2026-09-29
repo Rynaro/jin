@@ -93,7 +93,7 @@ import {
   loadFolderTreePrefs,
   saveFolderTreePrefs,
 } from '../lib/notes/folderTreePrefs';
-import { loadNotesExplorerView, saveNotesExplorerView, type NotesExplorerView } from '../lib/notes/explorerPrefs';
+import { loadNotesExplorerView, saveNotesExplorerView, NOTES_EXPLORER_VIEW_CHANGED, type NotesExplorerView } from '../lib/notes/explorerPrefs';
 
 export default class NotesController extends Controller {
   // ── Targets ───────────────────────────────────────────────────────────────
@@ -325,6 +325,7 @@ export default class NotesController extends Controller {
     this.paneCollapsed = false;
     this.element.classList.remove('rail-collapsed');
     this.explorerView = loadNotesExplorerView();
+    window.addEventListener(NOTES_EXPLORER_VIEW_CHANGED, this.onExplorerViewChanged);
     this.applyExplorerView();
     this.updateScopeTitle();
 
@@ -373,6 +374,7 @@ export default class NotesController extends Controller {
     if (this.searchTimer !== null) clearTimeout(this.searchTimer);
     document.removeEventListener('pointerdown', this.onCollectionOutsidePointer);
     window.removeEventListener('jin:note-attachment-updated', this.onNoteAttachmentUpdated);
+    window.removeEventListener(NOTES_EXPLORER_VIEW_CHANGED, this.onExplorerViewChanged);
     this.closeCollectionMenu();
   }
 
@@ -2153,6 +2155,14 @@ export default class NotesController extends Controller {
 
   showListView(): void { this.setExplorerView('list'); }
   showCardsView(): void { this.setExplorerView('cards'); }
+
+  private readonly onExplorerViewChanged = (event: Event): void => {
+    const view = (event as CustomEvent<NotesExplorerView>).detail;
+    if (view !== 'list' && view !== 'cards') return;
+    if (view === this.explorerView) return;
+    this.explorerView = view;
+    this.applyExplorerView();
+  };
 
   private setExplorerView(view: NotesExplorerView): void {
     if (this.explorerView === view) return;

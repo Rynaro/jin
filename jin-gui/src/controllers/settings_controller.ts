@@ -69,8 +69,11 @@ import {
   renderExportError,
   renderAppInfo,
   initAppearanceControls,
+  textSizeIndex,
+  textSizeLabel,
 } from '../lib/settings/render';
-import { loadPrefs } from '../lib/appearance/state';
+import { DYNAMIC_TYPE_STEPS, loadPrefs } from '../lib/appearance/state';
+import { loadNotesExplorerView, saveNotesExplorerView, NOTES_EXPLORER_VIEW_CHANGED, type NotesExplorerView } from '../lib/notes/explorerPrefs';
 import { initIcons } from '../lib/icons';
 import {
   eventLocaleOptions,
@@ -138,6 +141,8 @@ export default class SettingsController extends Controller {
     'increaseContrastToggle',
     'reduceMotionToggle',
     'textSizeRange',
+    'textSizeSelect', 'textSizeValue', 'textSizeDefault',
+    'notesList', 'notesCards',
     'eventLocaleSelect',
     'jinCalendarColorPicker',
     'googleAccountsList',
@@ -191,6 +196,11 @@ export default class SettingsController extends Controller {
   declare increaseContrastToggleTarget: HTMLInputElement;
   declare reduceMotionToggleTarget: HTMLInputElement;
   declare textSizeRangeTarget: HTMLInputElement;
+  declare textSizeSelectTarget: HTMLSelectElement;
+  declare textSizeValueTarget: HTMLElement;
+  declare textSizeDefaultTarget: HTMLButtonElement;
+  declare notesListTarget: HTMLButtonElement;
+  declare notesCardsTarget: HTMLButtonElement;
   declare eventLocaleSelectTarget: HTMLSelectElement;
   declare readonly hasEventLocaleSelectTarget: boolean;
   declare jinCalendarColorPickerTarget: HTMLElement;
@@ -227,10 +237,19 @@ export default class SettingsController extends Controller {
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   private readonly refreshGoogleState = (): void => { if (this.hasGoogleAccountsListTarget) void this.loadGoogleAccounts(); };
+  private readonly refreshNotesLayout = (): void => { this.renderNotesLayout(loadNotesExplorerView()); };
 
-  activateSection(): void {
-    applySettingsPane(this.settingsNavItemTargets, this.settingsPaneTargets, loadSettingsPane());
+  activateSection(event: Event): void {
+    const requested = (event as CustomEvent<{ id?: string | null }>).detail?.id;
+    const targeted = requested === 'calendars';
+    applySettingsPane(this.settingsNavItemTargets, this.settingsPaneTargets, targeted ? 'calendars' : loadSettingsPane());
+    if (targeted) {
+      this.settingsWorkspaceTarget.scrollTop = 0;
+      saveSettingsPane('calendars');
+    }
     this.refreshGoogleState();
+    this.refreshAppearanceControls();
+    this.refreshNotesLayout();
     if (this.hasQuarantinedOperationsListTarget) void this.loadQuarantinedOperations();
   }
 
@@ -250,8 +269,10 @@ export default class SettingsController extends Controller {
     window.addEventListener('jin:google-state-changed', this.refreshGoogleState);
 
     // Initialize appearance controls from persisted prefs
-    const prefs = loadPrefs();
-    initAppearanceControls(this.appearanceElements, prefs);
+    this.populateTextSizeSelect();
+    this.refreshAppearanceControls();
+    this.refreshNotesLayout();
+    window.addEventListener(NOTES_EXPLORER_VIEW_CHANGED, this.refreshNotesLayout);
     this.renderEventLocaleSelect();
     this.renderJinCalendarColorPicker();
 
@@ -273,8 +294,63 @@ export default class SettingsController extends Controller {
     window.removeEventListener('focus', this.refreshNotificationsOnFocus);
     window.removeEventListener('focus', this.refreshGoogleState);
     window.removeEventListener('jin:google-state-changed', this.refreshGoogleState);
+    window.removeEventListener(NOTES_EXPLORER_VIEW_CHANGED, this.refreshNotesLayout);
     this.colorPickers.forEach(picker => picker.destroy());
     this.colorPickers.clear();
+  }
+
+  changeTextSize(): void {
+    this.renderTextSize(this.textSizeRangeTarget.valueAsNumber);
+  }
+
+  selectTextSize(): void {
+    this.textSizeRangeTarget.value = this.textSizeSelectTarget.value;
+    this.textSizeRangeTarget.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  resetTextSize(): void {
+    this.textSizeRangeTarget.value = '3';
+    this.textSizeRangeTarget.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  selectNotesLayout(event: Event): void {
+    const view = (event.currentTarget as HTMLElement).dataset.notesLayout;
+    if (view !== 'list' && view !== 'cards') return;
+    saveNotesExplorerView(view);
+    this.renderNotesLayout(view);
+  }
+
+  private renderNotesLayout(view: NotesExplorerView): void {
+    this.notesListTarget.setAttribute('aria-pressed', String(view === 'list'));
+    this.notesCardsTarget.setAttribute('aria-pressed', String(view === 'cards'));
+  }
+
+  private populateTextSizeSelect(): void {
+    this.textSizeSelectTarget.replaceChildren(...DYNAMIC_TYPE_STEPS.map((scale, index) => {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = `${textSizeLabel(scale)}${index === 3 ? ' (Default)' : ''}`;
+      return option;
+    }));
+  }
+
+  private refreshAppearanceControls(): void {
+    const prefs = loadPrefs();
+    initAppearanceControls(this.appearanceElements, prefs);
+    this.renderTextSize(textSizeIndex(prefs.textSizeScale));
+  }
+
+  private renderTextSize(index: number): void {
+    const scale = DYNAMIC_TYPE_STEPS[index] ?? 1;
+    const label = textSizeLabel(scale);
+    const progress = index / (DYNAMIC_TYPE_STEPS.length - 1);
+    this.textSizeRangeTarget.value = String(index);
+    this.textSizeRangeTarget.style.setProperty('--settings-range-fill',
+      `calc(${10 - 20 * progress}px + ${100 * progress}%)`);
+    this.textSizeRangeTarget.setAttribute('aria-valuetext', `${label} body text`);
+    this.textSizeSelectTarget.value = String(index);
+    this.textSizeValueTarget.textContent = label;
+    this.textSizeDefaultTarget.disabled = index === 3;
   }
 
   async allowNotifications(): Promise<void> {

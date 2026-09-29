@@ -1,0 +1,131 @@
+{
+  "schema": "ramza/plan-state.v1",
+  "plan": "settings-ux-20260928",
+  "created_at": "2026-09-28T21:08:11Z",
+  "tier": "lite",
+  "phase": "A",
+  "phases_done": [
+    "RS",
+    "S",
+    "P",
+    "E",
+    "C",
+    "T",
+    "A"
+  ],
+  "rightsize": {
+    "score": 1,
+    "computed_tier": "trivial",
+    "inputs": {
+      "files_est": 7,
+      "new_dep": false,
+      "public_api": false,
+      "migration": false,
+      "security": false,
+      "novel": false,
+      "stakes": "low"
+    },
+    "override": {
+      "tier": "lite",
+      "reason": "User requested researched UX redesign plus preference inventory; preserve explicit alternatives and acceptance coverage.",
+      "at": "2026-09-28T21:08:11Z"
+    }
+  },
+  "refine_cycles": 0,
+  "skips": [],
+  "gates": [
+    {
+      "rubric": "complexity",
+      "total": 5,
+      "dims": {
+        "scope": 2,
+        "ambiguity": 1,
+        "dependencies": 1,
+        "risk": 1
+      },
+      "verdict": "standard",
+      "at": "2026-09-28T21:08:11Z"
+    },
+    {
+      "rubric": "explore",
+      "total": 82.5,
+      "dims": {
+        "alignment": 7,
+        "correctness": 9,
+        "maintainability": 9,
+        "performance": 9,
+        "simplicity": 9,
+        "risk": 9,
+        "innovation": 4
+      },
+      "verdict": "solid",
+      "at": "2026-09-28T21:09:20Z",
+      "label": "conservative-spacing-only"
+    },
+    {
+      "rubric": "explore",
+      "total": 91.5,
+      "dims": {
+        "alignment": 10,
+        "correctness": 9,
+        "maintainability": 9,
+        "performance": 9,
+        "simplicity": 9,
+        "risk": 9,
+        "innovation": 7
+      },
+      "verdict": "elite",
+      "at": "2026-09-28T21:09:20Z",
+      "label": "compact-native-settings"
+    },
+    {
+      "rubric": "explore",
+      "total": 70.5,
+      "dims": {
+        "alignment": 8,
+        "correctness": 7,
+        "maintainability": 6,
+        "performance": 8,
+        "simplicity": 5,
+        "risk": 6,
+        "innovation": 9
+      },
+      "verdict": "solid",
+      "at": "2026-09-28T21:09:20Z",
+      "label": "new-settings-search-and-general-pane"
+    },
+    {
+      "rubric": "confidence",
+      "total": 91.25,
+      "dims": {
+        "pattern_match": 95,
+        "requirement_clarity": 90,
+        "decomposition_stability": 90,
+        "constraint_compliance": 90
+      },
+      "verdict": "AUTO_PROCEED",
+      "at": "2026-09-28T21:12:25Z"
+    }
+  ],
+  "amendments": [],
+  "declared_scope": [
+    "jin-gui/index.html",
+    "jin-gui/src/styles/settings.css",
+    "jin-gui/src/styles/a11y.css",
+    "jin-gui/src/controllers/settings_controller*",
+    "jin-gui/src/controllers/appearance_controller*",
+    "jin-gui/src/lib/appearance/**",
+    "jin-gui/src/lib/notes/explorerPrefs*",
+    "jin-gui/src/controllers/notes_controller*",
+    "jin-gui/tools/tauri-fixture-init.js",
+    ".spectra/plans/settings-ux-20260928*",
+    ".artifacts/playwright-mcp/*"
+  ],
+  "criteria_sha256": "55f296d14d691b3cce4c2e28366f246d947bac639c6c077fda3c050c3b0044a2",
+  "critic": {
+    "author": null,
+    "checker": null
+  },
+  "scope_declared_at": "2026-09-28T21:12:25Z",
+  "criteria_frozen_at": "2026-09-28T21:12:25Z"
+}

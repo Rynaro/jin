@@ -1,0 +1,65 @@
+{
+  "envelope_version": "2.0",
+  "message_id": "8c27d295-8cca-4ea4-91a2-6328e2534377",
+  "thread_id": "62443c44-fbc9-4fb6-afe6-bc4c7a2f7650",
+  "parent_id": null,
+  "from": {
+    "eidolon": "ramza",
+    "version": "0.1.0"
+  },
+  "to": {
+    "eidolon": "apivr",
+    "version": "n/a"
+  },
+  "performative": "PROPOSE",
+  "edge_origin": "roster",
+  "objective": "Polish the existing Jin first-run setup presentation while preserving workflow and ongoing changes.",
+  "artifact": {
+    "kind": "spec",
+    "schema_version": "1.0",
+    "path": ".spectra/plans/first-run-polish-20260928.md",
+    "sha256": "183a3fb461cadf7a9cbac9eb5639d972c68ef9ea56edb18aac857916a1914f30",
+    "size_bytes": 8198
+  },
+  "context_delta": {
+    "token_budget": 6000,
+    "tokens_used": 2300,
+    "input_handles": [],
+    "summary": "Bounded first-run HTML/CSS polish; existing state and native behavior stay intact. Execution routes to Vivi per cortex; apivr retained as mandated envelope identity."
+  },
+  "constraints": {
+    "trust_level": "standard"
+  },
+  "ise": {
+    "assertion_grade": "self-attested",
+    "provenance": {
+      "methodology_version": "ramza-0.1.0",
+      "tool_surface": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "lateral_consults": []
+    },
+    "receiver_authorization": {
+      "auto_route": true,
+      "auto_merge": false,
+      "auto_deploy": false
+    }
+  },
+  "confidence": 0.935,
+  "integrity": {
+    "method": "sha256",
+    "value": "183a3fb461cadf7a9cbac9eb5639d972c68ef9ea56edb18aac857916a1914f30"
+  },
+  "trace": {
+    "ts": "2026-09-28T22:40:18.095682+00:00",
+    "host": "codex",
+    "model": "gpt-6-astra",
+    "tier": "standard"
+  },
+  "x_ramza_acceptance_criteria": {
+    "path": ".spectra/plans/first-run-polish-20260928.md",
+    "sha256": "183a3fb461cadf7a9cbac9eb5639d972c68ef9ea56edb18aac857916a1914f30"
+  }
+}

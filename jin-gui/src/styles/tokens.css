@@ -179,6 +179,8 @@
   --glass-blur-regular: 30px;
   --glass-blur-thick: 50px;
   --glass-tint: rgba(255, 255, 255, 0.72);
+  --sidebar-glass-tint: rgba(255, 255, 255, 0.72);
+  --sidebar-native-glass-tint: rgba(255, 255, 255, 0.18);
   --specular-highlight: rgba(255, 255, 255, 0.5);
   --elevation-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 
@@ -351,6 +353,8 @@
     --editor-canvas: var(--workspace-canvas);
 
     --glass-tint: rgba(28, 28, 30, 0.72);
+    --sidebar-glass-tint: rgba(28, 28, 30, 0.72);
+    --sidebar-native-glass-tint: rgba(20, 21, 24, 0.22);
     --specular-highlight: rgba(255, 255, 255, 0.12);
     --elevation-shadow: 0 8px 32px rgba(0, 0, 0, 0.48);
 
@@ -450,6 +454,8 @@
   --editor-canvas: var(--workspace-canvas);
 
   --glass-tint: rgba(28, 28, 30, 0.72);
+  --sidebar-glass-tint: rgba(28, 28, 30, 0.72);
+  --sidebar-native-glass-tint: rgba(20, 21, 24, 0.22);
   --specular-highlight: rgba(255, 255, 255, 0.12);
   --elevation-shadow: 0 8px 32px rgba(0, 0, 0, 0.48);
 

@@ -37,6 +37,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { saveNotesExplorerView } from '../lib/notes/explorerPrefs';
 import type { NoteDto, BacklinkDto, FolderDto, LinkDto } from '../types/dto';
 import type { EditorHandle } from '../lib/notes/editor';
 import {
@@ -3922,6 +3923,10 @@ describe('VG-A11Y-KEBAB — kebab button accessibility invariants', () => {
       expect(document.querySelector('[data-notes-target="cardsViewButton"]')?.getAttribute('aria-pressed')).toBe('true');
       document.querySelector<HTMLButtonElement>('[data-notes-target="listViewButton"]')!.click();
       expect(list.classList.contains('notes-explorer__cards')).toBe(false);
+      expect(ids()).toEqual([NOTE_ID]);
+      expect(listNotes).toHaveBeenCalledTimes(calls);
+      saveNotesExplorerView('cards');
+      expect(list.classList.contains('notes-explorer__cards')).toBe(true);
       expect(ids()).toEqual([NOTE_ID]);
       expect(listNotes).toHaveBeenCalledTimes(calls);
     });

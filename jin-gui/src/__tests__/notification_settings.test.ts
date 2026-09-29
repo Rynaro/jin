@@ -294,11 +294,13 @@ describe('notification settings bridge and UI', () => {
   });
 
   it('styles distinct permission pills and fixture results stay truthful', () => {
+    const html = readFileSync(`${root}/index.html`, 'utf8');
     const css = readFileSync(`${root}/src/styles/settings.css`, 'utf8');
     const typography = readFileSync(`${root}/src/styles/typography.css`, 'utf8');
     const fixture = readFileSync(`${root}/tools/tauri-fixture-init.js`, 'utf8');
     expect(css).toContain('.notification-status-pill[data-permission="granted"]');
-    expect(css).toMatch(/\.notification-busy-row\s*\{[^}]*min-block-size:\s*calc\(var\(--text-callout-line\) \+ 2 \* var\(--space-1\)\)/s);
+    expect(css).toContain('.notification-busy-row:has(.hidden) { display: none; }');
+    expect(html).toContain('class="settings-loading hidden"');
     expect(css).toMatch(/\.settings-loading\s*\{[^}]*line-height:\s*var\(--text-callout-line\)[^}]*padding-block:\s*var\(--space-1\)/s);
     expect(css).toContain('.notification-reason');
     expect(typography).toContain(':where(a[href], button, input, select, textarea, summary, [tabindex]');

@@ -18,6 +18,7 @@
  */
 
 import type { AppConfigDto } from '../../types/dto';
+import { DYNAMIC_TYPE_STEPS } from '../appearance/state';
 import type {
   AuthStatusView,
   SyncResultView,
@@ -388,6 +389,16 @@ export interface SettingsAppearanceElements {
   textSizeRange: HTMLInputElement;
 }
 
+export function textSizeIndex(scale: number): number {
+  return DYNAMIC_TYPE_STEPS.reduce((best, step, index) =>
+    Math.abs(step - scale) < Math.abs(DYNAMIC_TYPE_STEPS[best] - scale) ? index : best, 3);
+}
+
+export function textSizeLabel(scale: number): string {
+  const size = Number((17 * scale).toFixed(2));
+  return `${size} px · ${Math.round(scale * 100)}%`;
+}
+
 /**
  * initAppearanceControls — initializes the Settings appearance controls to
  * reflect the currently-persisted preferences.
@@ -418,5 +429,5 @@ export function initAppearanceControls(
   el.reduceMotionToggle.checked = prefs.reduceMotion;
 
   // Text size slider
-  el.textSizeRange.valueAsNumber = prefs.textSizeScale;
+  el.textSizeRange.valueAsNumber = textSizeIndex(prefs.textSizeScale);
 }

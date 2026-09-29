@@ -93,6 +93,53 @@ fn concurrent_startup_reads_wait_for_canonical_operation_boundary() {
     }
 }
 
+#[test]
+fn first_inbox_load_waits_for_canonical_operation_boundary() {
+    use std::fs::OpenOptions;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let tmp = init_root();
+    let root = tmp.path().to_path_buf();
+    assert!(!root.join("lists/inbox.md").exists());
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(root.join(".jin/operations.lock"))
+        .expect("open canonical operation lock");
+    lock.lock().expect("hold canonical operation boundary");
+
+    let (tx, rx) = mpsc::channel();
+    let readers = (0..2)
+        .map(|_| {
+            let root = root.clone();
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                tx.send(jin_gui::commands::lists::list_lists_fn(&root))
+                    .expect("report first Inbox load");
+            })
+        })
+        .collect::<Vec<_>>();
+    drop(tx);
+    assert!(matches!(
+        rx.recv_timeout(Duration::from_millis(50)),
+        Err(mpsc::RecvTimeoutError::Timeout)
+    ));
+    drop(lock);
+
+    for _ in 0..2 {
+        let lists = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("Inbox load completes after convergence")
+            .expect("Inbox load succeeds");
+        assert_eq!(lists.iter().filter(|list| list.id == "inbox").count(), 1);
+    }
+    assert!(tmp.path().join("lists/inbox.md").exists());
+    for reader in readers {
+        reader.join().expect("join Inbox reader");
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // VG4 / VG-GUI-1 — no rusqlite direct dependency
 // ──────────────────────────────────────────────────────────────────────────────

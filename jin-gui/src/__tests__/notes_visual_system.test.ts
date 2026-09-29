@@ -265,8 +265,9 @@ describe('Continuous Ink Workspace', () => {
     ]) expect(markup).toContain(`id="${id}"`);
     expect(markup.match(/class="jin-switch"/g)).toHaveLength(3);
     expect(markup).toContain('class="jin-checkbox__mark"');
-    expect(markup).toContain('class="jin-range"');
-    expect(settings).toMatch(/\.settings-section \{[\s\S]*?background: var\(--bg-secondary\);[\s\S]*?border: 0\.5px solid var\(--separator\);/);
+    expect(markup).toContain('class="settings-text-size"');
+    expect(markup).toContain('type="range"');
+    expect(settings).toMatch(/\.settings-section \{[\s\S]*?background: transparent;[\s\S]*?border-block-end: 1px solid var\(--separator\);/);
   });
 
   it('composes Settings as a persistent four-pane split view', () => {
@@ -276,7 +277,8 @@ describe('Continuous Ink Workspace', () => {
     expect(settings).toContain('grid-template-columns: var(--context-rail-width) minmax(0, 1fr)');
 
     const labels = ['General', 'Calendars &amp; Sync', 'Notifications', 'Data &amp; Storage'];
-    const offsets = labels.map(label => markup.indexOf(`>${label}</span></button>`));
+    const settingsNav = markup.slice(markup.indexOf('<nav class="settings-nav__items'), markup.indexOf('</nav>', markup.indexOf('<nav class="settings-nav__items')));
+    const offsets = labels.map(label => settingsNav.indexOf(`>${label}</span></button>`));
     expect(offsets.every(offset => offset >= 0)).toBe(true);
     expect(offsets).toEqual([...offsets].sort((a, b) => a - b));
     expect(markup.match(/data-settings-target="settingsPane"/g)).toHaveLength(4);
@@ -326,7 +328,7 @@ describe('Continuous Ink Workspace', () => {
       'click->settings#submitExport', 'click->settings#changeStoreFolder',
       'change->settings#changeEventLocale', 'click->appearance#setLight',
       'click->appearance#setDark', 'click->appearance#setAuto',
-      'input->appearance#setTextSize', 'change->appearance#toggleReduceTransparency',
+      'input->settings#changeTextSize input->appearance#setTextSize', 'change->appearance#toggleReduceTransparency',
       'change->appearance#toggleIncreaseContrast', 'change->appearance#toggleReduceMotion',
     ]) expect(markup).toContain(`data-action="${action}"`);
   });

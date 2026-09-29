@@ -90,6 +90,14 @@
     border-inline-end: 1px solid var(--separator-opaque) !important;
     box-shadow: none !important;
   }
+  .jin-shell > .jin-sidebar {
+    background: var(--workspace-context) !important;
+    border: 0 !important;
+    border-inline-end: 1px solid var(--separator-opaque) !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+            backdrop-filter: none !important;
+  }
 }
 
 [data-reduce-transparency="1"] .jin-navigation-rail {
@@ -97,6 +105,14 @@
   border: 0 !important;
   border-inline-end: 1px solid var(--separator-opaque) !important;
   box-shadow: none !important;
+}
+[data-reduce-transparency="1"] .jin-shell > .jin-sidebar {
+  background: var(--workspace-context) !important;
+  border: 0 !important;
+  border-inline-end: 1px solid var(--separator-opaque) !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+          backdrop-filter: none !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -119,6 +135,11 @@
   .action-dialog,
   .capture-modal {
     border-color: var(--separator-opaque) !important;
+  }
+  .jin-shell > .jin-sidebar {
+    background: var(--workspace-context) !important;
+    -webkit-backdrop-filter: none !important;
+            backdrop-filter: none !important;
   }
 
   .jin-navigation-row[aria-current="page"]::before,
@@ -150,6 +171,11 @@
 [data-increase-contrast="1"] .action-dialog,
 [data-increase-contrast="1"] .capture-modal {
   border-color: var(--separator-opaque) !important;
+}
+[data-increase-contrast="1"] .jin-shell > .jin-sidebar {
+  background: var(--workspace-context) !important;
+  -webkit-backdrop-filter: none !important;
+          backdrop-filter: none !important;
 }
 
 [data-increase-contrast="1"] .jin-navigation-row[aria-current="page"]::before,
@@ -317,6 +343,12 @@
   .today-event-row {
     border-color: CanvasText;
     box-shadow: none;
+  }
+  .jin-shell > .jin-sidebar {
+    background: Canvas !important;
+    color: CanvasText;
+    -webkit-backdrop-filter: none !important;
+            backdrop-filter: none !important;
   }
 
   .today-event-row--overlap {

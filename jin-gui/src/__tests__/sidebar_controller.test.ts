@@ -42,7 +42,7 @@ describe('one adaptive SidebarController', () => {
   it('keeps one shared host while contextual navigation remains under route owners', async () => {
     await mount();
     expect(app.getControllerForElementAndIdentifier(shell(), 'sidebar')).toBeTruthy();
-    for (const route of ['notes', 'tasks', 'settings']) {
+    for (const route of ['notes', 'tasks', 'events', 'settings']) {
       const context = document.querySelector(`[data-sidebar-context="${route}"]`)!;
       expect(context.closest(`[data-section-name="${route}"]`)).toBeTruthy();
     }
@@ -148,6 +148,20 @@ describe('one adaptive SidebarController', () => {
     expect(shell().dataset.navVisible).toBe('false');
     expect(document.activeElement).toBe(document.querySelector('[data-section-name="notes"] [data-sidebar-workspace]'));
     expect(document.activeElement?.closest('[data-sidebar-context]')).toBeNull();
+  });
+
+  it('traps the Events drawer and skips to its visible workspace', async () => {
+    await mount(959);
+    shell().hidden = false;
+    window.dispatchEvent(new CustomEvent('jin:route-committed', { detail: { section: 'events' } }));
+    document.querySelector<HTMLElement>('[data-section-name="events"]')!.classList.remove('hidden');
+    reveal().click();
+    expect(document.querySelector('[data-sidebar-context="events"]')?.hasAttribute('inert')).toBe(false);
+    expect(document.querySelector('[data-section-name="events"] .calendar-workspace')?.hasAttribute('inert')).toBe(true);
+    expect(document.querySelector('[data-section-name="events"] .events-detail-pane')?.hasAttribute('inert')).toBe(true);
+    document.querySelector<HTMLAnchorElement>('.skip-to-content')!.click();
+    expect(document.activeElement).toBe(document.querySelector('[data-section-name="events"] .calendar-workspace'));
+    expect(shell().dataset.navVisible).toBe('false');
   });
 
   it('keeps the first rapid Tab in the reopened drawer while context visibility settles', async () => {

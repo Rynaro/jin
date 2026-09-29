@@ -1,4 +1,5 @@
 export type NotesExplorerView = 'list' | 'cards';
+export const NOTES_EXPLORER_VIEW_CHANGED = 'jin:notes-explorer-view-changed';
 
 const STORAGE_KEY = 'jin_notes_explorer_view';
 
@@ -17,4 +18,5 @@ export function saveNotesExplorerView(view: NotesExplorerView): void {
   } catch {
     // The in-memory view remains usable when local storage is unavailable.
   }
+  window.dispatchEvent(new CustomEvent<NotesExplorerView>(NOTES_EXPLORER_VIEW_CHANGED, { detail: view }));
 }

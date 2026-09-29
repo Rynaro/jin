@@ -80,6 +80,7 @@ function makeEvent(overrides: Partial<EventDto> = {}): EventDto {
 function fixture(): string {
   return `
     <section data-controller="calendar-view" data-action="jin:events-mutated@window->calendar-view#handleMutation" aria-label="Calendar">
+      <aside aria-label="Calendar navigation"><div data-calendar-view-target="filterHost"></div></aside>
       <div data-calendar-view-target="workspace"><div data-calendar-view-target="field">
       <div data-calendar-view-target="monthView"><div data-calendar-view-target="monthViewContent"></div></div>
       <div data-calendar-view-target="dayView" class="hidden"><div data-calendar-view-target="dayViewContent"></div></div>

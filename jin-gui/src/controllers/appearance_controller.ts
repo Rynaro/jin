@@ -33,6 +33,7 @@ import {
   loadPrefs,
   savePrefs,
   clampTextScale,
+  DYNAMIC_TYPE_STEPS,
   togglePref,
 } from '../lib/appearance/state';
 
@@ -113,7 +114,9 @@ export default class AppearanceController extends Controller {
       scale = scaleOrEvent;
     } else {
       const input = (scaleOrEvent as InputEvent).target as HTMLInputElement;
-      scale = input.valueAsNumber;
+      scale = input.dataset.settingsTextSize === 'index'
+        ? DYNAMIC_TYPE_STEPS[input.valueAsNumber] ?? 1
+        : input.valueAsNumber;
     }
     this.prefs = { ...this.prefs, textSizeScale: clampTextScale(scale) };
     this.apply();

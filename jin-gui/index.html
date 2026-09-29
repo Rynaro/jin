@@ -11,43 +11,53 @@
   </head>
   <body data-controller="appearance">
     <section class="first-run" data-first-run-root data-controller="first-run" aria-label="Jin setup" hidden>
-      <div class="first-run__artwork" aria-hidden="true">
-        <img class="first-run__logo-accent" src="/jin-logo.png" alt="" />
-      </div>
       <div class="first-run__rail" aria-label="Setup progress">
-        <p class="first-run__brand">Jin</p>
+        <div class="first-run__identity">
+          <p class="first-run__brand">Jin</p>
+          <p class="first-run__rail-caption">A place for the work that matters.</p>
+        </div>
         <ol>
           <li data-first-run-target="railItem" data-first-run-rail="welcome" aria-current="step">Welcome</li>
           <li data-first-run-target="railItem" data-first-run-rail="storage">Storage</li>
-          <li data-first-run-target="railItem" data-first-run-rail="functions">Functions</li>
-          <li data-first-run-target="railItem" data-first-run-rail="settings">Settings</li>
+          <li data-first-run-target="railItem" data-first-run-rail="functions">Essentials</li>
+          <li data-first-run-target="railItem" data-first-run-rail="settings">Appearance</li>
           <li data-first-run-target="railItem" data-first-run-rail="review">Review</li>
         </ol>
+        <div class="first-run__artwork" aria-hidden="true"><img src="/jin-logo.png" alt="" /></div>
       </div>
       <div class="first-run__content">
         <p class="first-run__eyebrow" data-first-run-target="eyebrow">First-time setup</p>
         <p class="first-run__error" data-first-run-target="error" role="alert" hidden></p>
 
         <section data-first-run-target="step" data-first-run-step="welcome">
-          <h1 id="first-run-title" tabindex="-1" data-first-run-target="heading">Welcome to your Jin desk.</h1>
+          <h1 id="first-run-title" tabindex="-1" data-first-run-target="heading">Welcome to Jin.</h1>
           <p>Set up where Jin keeps your data, see the essentials, and choose a comfortable appearance before you begin.</p>
-          <div class="first-run__actions"><button type="button" class="btn-primary tap-target" data-action="click->first-run#next">Begin setup</button></div>
+          <div class="first-run__actions first-run__actions--single"><button type="button" class="btn-primary tap-target" data-action="click->first-run#next">Begin setup</button></div>
         </section>
 
         <section data-first-run-target="step" data-first-run-step="storage" hidden>
-          <h1 tabindex="-1" data-first-run-target="heading">Choose your Jin storage.</h1>
+          <h1 tabindex="-1" data-first-run-target="heading">Choose where Jin stores your work.</h1>
           <p>Jin stores your notes, tasks, and settings in the folder you choose. Select an empty folder or one already initialized by Jin.</p>
-          <div class="first-run__path" data-first-run-target="selectedRoot" aria-live="polite">No folder selected yet</div>
+          <div class="first-run__storage-field">
+            <p class="first-run__field-label">Selected folder</p>
+            <div class="first-run__path" data-first-run-target="selectedRoot" aria-live="polite">No folder selected yet</div>
+          </div>
+          <div class="first-run__folder-options">
+            <div class="first-run__suggestion"><span class="first-run__field-label">Suggested folder</span><span class="first-run__suggested-path" data-first-run-suggested></span></div>
+            <div class="first-run__folder-actions">
+              <button type="button" class="btn-secondary tap-target" data-action="click->first-run#useSuggestedFolder">Use suggested folder</button>
+              <button type="button" class="btn-secondary tap-target" data-action="click->first-run#chooseFolder">Choose folder…</button>
+            </div>
+          </div>
           <div class="first-run__actions">
-            <button type="button" class="btn-secondary tap-target" data-action="click->first-run#useSuggestedFolder">Use <span data-first-run-suggested>the suggested folder</span></button>
-            <button type="button" class="btn-primary tap-target" data-action="click->first-run#chooseFolder">Choose folder…</button>
             <button type="button" class="btn-secondary tap-target" data-action="click->first-run#previous">Back</button>
-            <button type="button" class="btn-secondary tap-target" data-action="click->first-run#next">Continue</button>
+            <button type="button" class="btn-primary tap-target" data-action="click->first-run#next">Continue</button>
           </div>
         </section>
 
         <section data-first-run-target="step" data-first-run-step="functions" hidden>
-          <h1 tabindex="-1" data-first-run-target="heading">A calm place for daily work.</h1>
+          <h1 tabindex="-1" data-first-run-target="heading">The essentials, close at hand.</h1>
+          <p>Everything you need to plan your day and keep work moving.</p>
           <ul class="first-run__tour">
             <li><strong>Today</strong><span>See events, focused work, and what follows.</span></li>
             <li><strong>Capture</strong><span>Quickly add a note or task with Capture. Use Command+N on macOS, or Ctrl+N elsewhere.</span></li>
@@ -59,7 +69,8 @@
         </section>
 
         <section data-first-run-target="step" data-first-run-step="settings" hidden>
-          <h1 tabindex="-1" data-first-run-target="heading">Make Jin comfortable to read.</h1>
+          <h1 tabindex="-1" data-first-run-target="heading">Make Jin comfortable for you.</h1>
+          <p>Choose how your workspace looks and feels. You can change these settings later.</p>
           <fieldset class="first-run__fieldset"><legend>Appearance</legend><div class="first-run__choices" role="group" aria-label="Appearance"><button type="button" class="btn-secondary" data-first-run-target="appearanceButton" data-appearance="auto" data-action="click->first-run#setAppearance" aria-pressed="true">Automatic</button><button type="button" class="btn-secondary" data-first-run-target="appearanceButton" data-appearance="light" data-action="click->first-run#setAppearance">Light</button><button type="button" class="btn-secondary" data-first-run-target="appearanceButton" data-appearance="dark" data-action="click->first-run#setAppearance">Dark</button></div></fieldset>
           <label class="first-run__range" for="first-run-text-size">Text size <input id="first-run-text-size" type="range" min="0.82" max="3.1" step="0.01" value="1" data-first-run-target="textSize" data-action="input->first-run#setTextSize" /></label>
           <label class="first-run__toggle"><input type="checkbox" data-first-run-target="reduceMotion" data-action="change->first-run#setReduceMotion" /> Reduce motion</label>
@@ -67,7 +78,7 @@
         </section>
 
         <section data-first-run-target="step" data-first-run-step="review" hidden>
-          <h1 tabindex="-1" data-first-run-target="heading">Ready to begin.</h1>
+          <h1 tabindex="-1" data-first-run-target="heading">Review your setup.</h1>
           <p>Jin will prepare this folder, then restart into your new workspace.</p>
           <dl class="first-run__review"><div><dt>Storage</dt><dd data-first-run-target="reviewRoot">No folder selected yet</dd></div><div><dt>Appearance</dt><dd data-first-run-target="reviewAppearance">Automatic</dd></div><div><dt>Text size</dt><dd data-first-run-target="reviewTextSize">100%</dd></div><div><dt>Motion</dt><dd data-first-run-target="reviewMotion">Standard motion</dd></div></dl>
           <div class="first-run__actions"><button type="button" class="btn-secondary tap-target" data-action="click->first-run#previous">Back</button><button type="button" class="btn-primary tap-target" data-first-run-target="finish" data-action="click->first-run#finish">Finish setup</button></div>
@@ -76,8 +87,10 @@
         <section data-first-run-target="recovery" class="first-run__recovery" hidden>
           <h1 tabindex="-1" data-first-run-target="heading">Jin needs its storage folder.</h1>
           <p data-first-run-recovery-message></p>
-          <button type="button" class="btn-primary tap-target" data-first-run-retry data-action="click->first-run#retry">Try again</button>
-          <button type="button" class="btn-secondary tap-target" data-first-run-replace data-action="click->first-run#chooseReplacement">Choose a replacement folder…</button>
+          <div class="first-run__actions first-run__actions--recovery">
+            <button type="button" class="btn-primary tap-target" data-first-run-retry data-action="click->first-run#retry">Try again</button>
+            <button type="button" class="btn-secondary tap-target" data-first-run-replace data-action="click->first-run#chooseReplacement">Choose a replacement folder…</button>
+          </div>
         </section>
       </div>
     </section>
@@ -1694,6 +1707,13 @@
           data-router-target="section"
           data-section-name="events"
         >
+          <aside class="calendar-context-rail jin-context-rail jin-navigation-rail" data-sidebar-context="events" aria-label="Calendar navigation">
+            <div data-calendar-view-target="filterHost"></div>
+            <nav class="calendar-context-actions jin-navigation-list" aria-label="Calendar actions">
+              <button type="button" class="jin-navigation-row tap-target" data-calendar-view-target="notificationsLink" data-action="click->calendar-view#openNotifications"><i data-lucide="bell" class="jin-navigation-row__icon" aria-hidden="true"></i><span class="jin-navigation-row__label">Notifications</span></button>
+              <button type="button" class="jin-navigation-row tap-target" data-calendar-view-target="manageCalendarsLink" data-action="click->calendar-view#openCalendarSettings"><i data-lucide="settings" class="jin-navigation-row__icon" aria-hidden="true"></i><span class="jin-navigation-row__label">Calendars &amp; Sync</span></button>
+            </nav>
+          </aside>
           <div class="calendar-route-toolbar">
             <button
               type="button"
@@ -1703,7 +1723,7 @@
               data-action="click->calendar-view#openEventCreate"
             >+ Add Event</button>
           </div>
-          <div class="calendar-workspace" data-calendar-view-target="workspace">
+          <div class="calendar-workspace" data-calendar-view-target="workspace" data-sidebar-workspace>
             <div class="calendar-field" data-calendar-view-target="field">
               <!-- Month view (primary view) -->
               <div data-calendar-view-target="monthView" class="calendar-month-view" tabindex="0" aria-label="Calendar month">
@@ -1727,7 +1747,7 @@
             <div data-events-target="emptyState"></div>
             <ul data-events-target="list"></ul>
           </div>
-          <div data-events-target="detailPanel" class="events-detail-pane hidden">
+          <div data-events-target="detailPanel" class="events-detail-pane hidden" data-sidebar-workspace>
             <button type="button" class="calendar-back-btn tap-target" data-action="click->events#showList">
               <i data-lucide="arrow-left" aria-hidden="true"></i><span>Calendar</span>
             </button>
@@ -2079,7 +2099,7 @@
                 Checking your operating system notification settings…
               </p>
               <div class="notification-busy-row">
-                <div class="settings-loading" role="status" aria-live="polite" data-settings-target="notificationLoading">
+                <div class="settings-loading hidden" role="status" aria-live="polite" data-settings-target="notificationLoading">
                   <i data-lucide="loader" aria-hidden="true"></i><span>Checking…</span>
                 </div>
               </div>
@@ -2287,23 +2307,14 @@
                   <h2 id="settings-pane-general-title" class="settings-pane__title">General</h2>
                   <p class="settings-pane__description">Personalize Jin's appearance, language, motion, and readability.</p>
                 </header>
-            <section class="settings-section" aria-label="Appearance and accessibility">
-              <h3 class="settings-section__heading">Appearance &amp; Accessibility</h3>
-
-              <div class="settings-row">
-                <label class="settings-row__label" for="event-locale-select">Calendar &amp; Events language</label>
-                <select
-                  id="event-locale-select"
-                  class="form-select"
-                  data-settings-target="eventLocaleSelect"
-                  data-action="change->settings#changeEventLocale"
-                ></select>
-              </div>
+            <section class="settings-section" aria-label="Appearance">
+              <h3 class="settings-section__heading">Appearance</h3>
 
               <!-- Appearance mode: Light / Dark / Auto -->
               <div class="settings-row">
                 <div>
-                  <p class="settings-row__label" id="appearance-mode-label">Appearance</p>
+                  <p class="settings-row__label" id="appearance-mode-label">Theme</p>
+                  <p class="settings-row__description">Choose a look or follow your system.</p>
                 </div>
                 <div
                   class="appearance-mode-group"
@@ -2355,30 +2366,41 @@
               <!-- Text size -->
               <div class="settings-row">
                 <div>
-                  <p class="settings-row__label" id="text-size-label">Text Size</p>
-                  <p class="settings-row__description">Scales all text proportionally (Dynamic Type).</p>
+                  <p class="settings-row__label" id="text-size-label">Text size</p>
+                  <p class="settings-row__description">Scales text throughout Jin.</p>
                 </div>
-                <label class="jin-range" for="text-size-range">
-                  <span class="visually-hidden">Text size scale</span>
+                <div class="settings-text-size">
                   <input
                     id="text-size-range"
                     type="range"
-                    min="0.82"
-                    max="3.1"
-                    step="0.01"
-                    aria-label="Text size scale"
+                    min="0"
+                    max="11"
+                    step="1"
+                    value="3"
                     aria-labelledby="text-size-label"
                     data-settings-target="textSizeRange"
-                    data-action="input->appearance#setTextSize"
+                    data-settings-text-size="index"
+                    data-action="input->settings#changeTextSize input->appearance#setTextSize"
                   />
-                </label>
+                  <div class="settings-text-size__below"><span class="settings-text-size__default">Default</span></div>
+                  <div class="settings-text-size__exact">
+                    <label for="text-size-select">Body size</label>
+                    <select id="text-size-select" class="form-select" data-settings-target="textSizeSelect" data-action="change->settings#selectTextSize"></select>
+                    <span data-settings-target="textSizeValue" class="settings-text-size__value" aria-live="polite"></span>
+                    <button type="button" class="btn-secondary tap-target" data-settings-target="textSizeDefault" data-action="click->settings#resetTextSize">Use default</button>
+                  </div>
+                </div>
               </div>
+            </section>
+
+            <section class="settings-section" aria-label="Accessibility">
+              <h3 class="settings-section__heading">Accessibility</h3>
 
               <!-- Reduce transparency -->
               <div class="settings-row">
                 <div>
                   <p class="settings-row__label" id="reduce-transparency-label">
-                    Reduce Transparency
+                    Reduce transparency
                   </p>
                   <p class="settings-row__description">
                     Replaces glass/blur effects with solid backgrounds.
@@ -2402,7 +2424,7 @@
               <div class="settings-row">
                 <div>
                   <p class="settings-row__label" id="increase-contrast-label">
-                    Increase Contrast
+                    Increase contrast
                   </p>
                   <p class="settings-row__description">
                     Makes separators and secondary labels more prominent.
@@ -2425,7 +2447,7 @@
               <!-- Reduce motion -->
               <div class="settings-row">
                 <div>
-                  <p class="settings-row__label" id="reduce-motion-label">Reduce Motion</p>
+                  <p class="settings-row__label" id="reduce-motion-label">Reduce motion</p>
                   <p class="settings-row__description">
                     Disables animations and transitions throughout the app.
                   </p>
@@ -2442,6 +2464,31 @@
                   />
                   <span class="jin-switch__track" aria-hidden="true"></span>
                 </label>
+              </div>
+            </section>
+
+            <section class="settings-section" aria-label="Workspace">
+              <h3 class="settings-section__heading">Workspace</h3>
+              <div class="settings-row">
+                <div>
+                  <p class="settings-row__label" id="notes-layout-label">Notes layout</p>
+                  <p class="settings-row__description">Preferred layout when browsing notes.</p>
+                </div>
+                <div class="settings-choice-group" role="group" aria-labelledby="notes-layout-label">
+                  <button type="button" class="settings-choice-button tap-target" data-settings-target="notesList" data-action="click->settings#selectNotesLayout" data-notes-layout="list" aria-pressed="true"><i data-lucide="list" aria-hidden="true"></i>List</button>
+                  <button type="button" class="settings-choice-button tap-target" data-settings-target="notesCards" data-action="click->settings#selectNotesLayout" data-notes-layout="cards" aria-pressed="false"><i data-lucide="layout-grid" aria-hidden="true"></i>Cards</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-section" aria-label="Language">
+              <h3 class="settings-section__heading">Language</h3>
+              <div class="settings-row">
+                <div>
+                  <label class="settings-row__label" for="event-locale-select">Calendar and events language</label>
+                  <p class="settings-row__description">Used for dates and labels in calendars and events.</p>
+                </div>
+                <select id="event-locale-select" class="form-select" data-settings-target="eventLocaleSelect" data-action="change->settings#changeEventLocale"></select>
               </div>
             </section>
 
