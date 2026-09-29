@@ -33,7 +33,7 @@
     "@lezer/highlight": "^1.2.3",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
-    "dompurify": "^3.4.11",
+    "dompurify": "^3.4.13",
     "highlight.js": "^11.11.1",
     "lucide": "^0.523.0",
     "markdown-it": "^14.2.0"
