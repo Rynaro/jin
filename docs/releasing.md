@@ -13,9 +13,10 @@ or separately pushed tag cannot build or serve binaries.
 Release Please owns version changes through `release-please-config.json` and
 `.release-please-manifest.json`. Use Conventional Commit titles (`feat:`,
 `fix:`, and `feat!:` for breaking changes) so it can choose the next version.
-The Rust strategy updates `jin`, `jin-core`, `jin-gui/src-tauri`, and
-`Cargo.lock`; configured JSON paths update the Tauri and npm package versions,
-including both root version fields in `package-lock.json`.
+Configured TOML paths update `jin`, `jin-core`, `jin-gui/src-tauri`, and their
+`Cargo.lock` entries. JSON paths update the Tauri and npm package versions,
+including both root version fields in `package-lock.json`. The root Cargo
+workspace has no package of its own, so version paths name each crate.
 
 The manifest starts at `0.8.1`, the latest existing tag. The first release
 change uses `Release-As: 1.0.0` in the migration commit to bridge to the
