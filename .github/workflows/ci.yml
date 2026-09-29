@@ -14,6 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check first-party version agreement
+        run: python3 scripts/check-release-version.py
+
       # The core `verify` job runs on the same ~14 GB-free ubuntu-latest runners
       # as `verify-gui`, and has begun hitting "No space left on device" during
       # `make verify` (both the push- and PR-triggered runs). Reclaim the same
