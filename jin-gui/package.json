@@ -1,6 +1,6 @@
 {
   "name": "jin-gui",
-  "version": "0.22.1",
+  "version": "1.0.0",
   "license": "AGPL-3.0-only",
   "description": "Jin GUI — Tauri 2.x consumer of jin-core",
   "type": "module",

@@ -4,167 +4,112 @@
 
 # Jin
 
-**One local workspace for notes, tasks, and calendar context.**
+**Notes, tasks, and calendar context in one local workspace.**
 
 [![CI](https://github.com/Rynaro/jin/actions/workflows/ci.yml/badge.svg)](https://github.com/Rynaro/jin/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
-[![Built with Rust and TypeScript](https://img.shields.io/badge/built%20with-Rust%20%2B%20TypeScript-orange)](#architecture)
 
-[Build from source](#build-from-source) · [Read the docs](#documentation) · [Contribute](CONTRIBUTING.md)
+[Downloads](https://github.com/Rynaro/jin/releases) · [Quick start](#quick-start) · [Build from source](#build-from-source) · [Contribute](CONTRIBUTING.md)
 
 </div>
 
-Jin is an open-source, local-first productivity app for the daily seams between
-notes, tasks, and calendar events. Its canonical data is Markdown and YAML
-files you control; SQLite is a rebuildable index. The Rust core powers both a
-scriptable CLI and a desktop GUI, so the two surfaces share one model rather
-than drifting apart.
+Jin stores your notes, tasks, and events as Markdown and YAML files you control.
+SQLite is a rebuildable index. The desktop app and scriptable CLI share the same
+Rust core and local data model. Google Calendar sync is optional.
 
-> Jin exists first to solve my own needs. If it works for you too, that’s
-> wonderful. I’m happy to review thoughtful augmentations, fixes, and
-> suggestions, while keeping the project aligned with the problems it was
-> created to solve.
+## Download and install
 
-## What it is for
+The [Releases page](https://github.com/Rynaro/jin/releases) is the source of
+published binaries. Release Please builds these files for a version when its
+release pull request is merged and the draft release is published (shown here
+for v1.0.0):
 
-- Capture a note, task, or event without splitting context across separate apps.
-- Link preparation notes to appointments and promote a task into scheduled time.
-- See a single local agenda, with optional Google Calendar synchronization.
-- Use desktop reminders and native notifications while the Jin GUI is running.
-- Keep the primary store inspectable and portable instead of trapped in a service.
+| System | Desktop app | CLI |
+| --- | --- | --- |
+| macOS, Apple Silicon (arm64) | DMG | jin-cli-1.0.0-macos-aarch64.tar.gz |
+| Linux, x86-64 | DEB or AppImage | jin-cli-1.0.0-linux-x86_64.tar.gz |
+| Windows, x86-64 | NSIS setup EXE | jin-cli-1.0.0-windows-x86_64.zip |
 
-## Development preview
+On macOS, open the DMG and drag Jin to Applications. On Linux, install the DEB
+with your package manager, or mark the AppImage executable and run it. On
+Windows, run the setup EXE. The CLI archives contain a single jin executable
+(jin.exe on Windows); extract it and place it on your PATH.
 
-![Jin Today view — light Living Agenda demo with Q3 Review, Sprint Planning, Team Standup, and Partner review](docs/assets/jin-today-preview.png)
+The macOS app uses ad-hoc signing and is **not Apple notarized**. Windows
+installers are **not code signed**. Your operating system may display an
+unverified-developer warning. The Linux packages are built on Ubuntu 24.04 x64
+and need a graphical desktop with WebKitGTK support. Other distributions may
+need different system libraries. Published releases include SHA256SUMS; compare the
+downloaded file's SHA-256 hash before running it.
 
-This screenshot shows the current paper-and-ink Today interface using Jin's
-deterministic Living Agenda demo data. It is useful for showing the interface,
-but it is not proof of native Tauri behavior or cross-platform visual sign-off.
+## Quick start
 
-## The workflow
+The desktop app guides you through choosing a local storage folder on first
+launch. The CLI can initialize a store explicitly:
 
 ```console
-$ jin init
-$ jin note add "Roadmap review notes"
-$ jin task add "Draft quarterly roadmap"
-$ jin promote <task-id> --when 2026-07-01T10:00:00 --tz UTC
-$ jin attach <note-id> <event-id>
-$ jin today --date 2026-07-01
+$ jin --root ~/jin-store init
+$ jin --root ~/jin-store note add "Roadmap review notes"
+$ jin --root ~/jin-store task add "Draft quarterly roadmap"
+$ jin --root ~/jin-store today
 ```
 
-`jin promote` turns a task into a calendar event; `jin attach` preserves the
-relationship between an event and its prep notes. The `today` agenda brings the
-linked context back together.
+Run `jin --help` for commands and `jin <command> --help` for options. Jin can
+link preparation notes to events and promote a task into scheduled time.
+Reminders are delivered locally while the desktop app is running; reminder
+state does not sync between devices.
 
-Reminder delivery is device-local and depends on the desktop GUI being
-available; reminder state is not canonical data and is not synced between
-devices.
+## A look at Jin
+
+![Jin Today view with deterministic example data](docs/assets/jin-today-preview.png)
+
+This Today screenshot uses demo data. It illustrates the interface; it does
+not establish native rendering quality on every supported system.
 
 ## Build from source
 
-Jin is currently distributed as a source project. You need Rust, Node.js 20+
-and npm 10+ for the GUI. On Linux, install the system dependencies required by
-[Tauri](https://v2.tauri.app/start/prerequisites/); on macOS, install Xcode
-Command Line Tools.
+Install stable Rust, Node.js 20+ and npm 10+ for the desktop app. macOS needs
+Xcode Command Line Tools. Linux needs the [Tauri system prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```bash
 git clone https://github.com/Rynaro/jin.git
 cd jin
-
-# Core checks and CLI build
+python3 scripts/check-release-version.py
 make verify
-cargo build --release -p jin
-
-# Start a local store
+cargo build --release --locked -p jin
 ./target/release/jin --root ~/jin-store init
-./target/release/jin --root ~/jin-store note add "First note"
-./target/release/jin --root ~/jin-store --json task list
 ```
 
-To work on the desktop GUI:
+To run the desktop app during development:
 
 ```bash
 cd jin-gui
 npm ci
-npx tauri dev
+npm run tauri -- dev
 ```
 
-For the full GUI verification gate, run `make verify-gui`; `make verify-all`
-runs the core and GUI gates in sequence.
+`make verify-gui` runs the GUI logic gate; `make verify-all` runs both gates.
+Native bundle checks, release assets, and publication steps are documented in
+the [release runbook](docs/releasing.md).
 
-### Google Calendar: bring your own OAuth client
+## Data, sync, and current limits
 
-Source builds use your own Google Desktop OAuth client. Set
-`JIN_GOOGLE_CLIENT_ID` and `JIN_GOOGLE_CLIENT_SECRET`, or configure the
-per-vault `[google]` section. Jin uses PKCE; nevertheless, never commit a real
-credential. Follow the [Google smoke-test guide](docs/google-smoke-test.md)
-before using a real account.
+The canonical store is local Markdown and YAML. The Rust core provides the CLI
+and desktop app with one model for notes, tasks, events, and links. The SQLite
+index can be rebuilt. Optional Google Calendar sync uses your own Desktop
+OAuth client; see the [Google setup and smoke test](docs/google-smoke-test.md).
 
-## Architecture
-
-```text
-CLI + Tauri GUI
-       │
-       ▼
-  jin-core (Rust)
-  model · links · sync · audit
-       │
-       ▼
-Markdown + YAML (canonical) ──► SQLite (rebuildable index)
-```
-
-- **One model:** typed notes, tasks, events, and first-class links.
-- **Local ownership:** files are canonical; the index can be rebuilt.
-- **Shared core:** the GUI is a consumer of the same headless Rust core as the CLI.
-- **Optional calendar sync:** Google synchronization includes conflict handling and audit data.
-
-More context is in the [architecture ADRs](docs/adr/) and
-[data-model decision](docs/adr/0001-data-model-and-linking.md).
-
-## Status and limits
-
-Jin is an active, pre-1.0 personal project. The core and CLI are at `0.14.0`;
-the GUI package is `0.22.1` while its Tauri application configuration reports
-`0.14.0`. These version lines are not yet a promise of release stability.
-
-The project has automated core and GUI logic checks, including deterministic
-core verification. Headless checks do not certify native rendering. Real-account
+Version 1.0.0 identifies the first coordinated binary release. Real-account
 OAuth validation, recurring-event editing, multi-device synchronization, rich
-notes, and mobile capture remain work in progress. Reminder delivery is also
-dependent on the local desktop environment. See
-[GUI testing](docs/gui-testing.md) and [testing](docs/testing.md) for the
-current verification boundaries.
+notes, and mobile capture remain work in progress. Automated GUI checks cover
+logic, while native appearance and interaction require a human pass on each
+platform. See [GUI testing](docs/gui-testing.md) and [testing](docs/testing.md).
 
-## Design Philosophy
+## Contributing and license
 
-Jin's current GUI language is a calm working surface: continuous warm paper,
-near-black ink, indigo for focus and linkage, and restrained vermilion for
-capture and today's attention. Typography, spacing, adaptive appearance,
-accessibility behavior, screen recipes, and stylesheet ownership are recorded
-in the [visual-language dossier](docs/visual-language/README.md).
-
-Apple's Human Interface Guidelines remain an inspiration for clarity,
-deference, depth, and harmony. The Tauri GUI may use glass for chrome and
-transient elevation, with opaque fallbacks for reduced transparency; Liquid
-Glass and the historical [`design.md`](design.md) are background references,
-not the product's complete visual authority. The dossier is the source to
-extend when implementing a new surface or reviewing visual drift.
-
-## Documentation
-
-- [Getting oriented](discovery/00-discovery-and-gaps.md)
-- [Architecture decisions](docs/adr/)
-- [Testing strategy](docs/testing.md)
-- [GUI testing and visual-QA boundaries](docs/gui-testing.md)
-- [Google Calendar smoke test](docs/google-smoke-test.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security reporting](SECURITY.md)
-
-## Contributing
-
-Issues, focused fixes, and well-scoped augmentations are welcome. Please read
-[CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and the review checklist.
-
-## License
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and checks, and
+[SECURITY.md](SECURITY.md) for security reporting. Architecture decisions live
+in [docs/adr](docs/adr/), and the GUI's visual language is described in
+[docs/visual-language](docs/visual-language/README.md).
 
 Jin is licensed under the [GNU Affero General Public License v3.0](LICENSE).

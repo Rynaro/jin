@@ -1,0 +1,197 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release_please:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+      # Pull requests opened with GITHUB_TOKEN do not trigger pull_request CI.
+      # workflow_dispatch is an exception, so run CI on the new PR branch.
+      - name: Run CI on Release Please pull request
+        if: steps.release.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PR: ${{ steps.release.outputs.pr }}
+        run: |
+          branch="$(jq -r '.headBranchName' <<< "$RELEASE_PR")"
+          test -n "$branch" && test "$branch" != null
+          gh workflow run ci.yml --ref "$branch"
+
+  version:
+    if: needs.release_please.outputs.release_created == 'true'
+    needs: release_please
+    runs-on: ubuntu-24.04
+    outputs:
+      release_version: ${{ steps.validate.outputs.release_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release_please.outputs.sha }}
+      - name: Check first-party versions and tag
+        id: validate
+        env:
+          RELEASE_TAG: ${{ needs.release_please.outputs.tag_name }}
+        run: |
+          version="$(python3 scripts/check-release-version.py --tag "$RELEASE_TAG" --version-only)"
+          echo "release_version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: [release_please, version]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: macos-aarch64
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+          - os: windows-2022
+            platform: windows-x86_64
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    env:
+      CARGO_BUILD_TARGET: ${{ matrix.target }}
+      CARGO_BUILD_JOBS: '2'
+      RELEASE_VERSION: ${{ needs.version.outputs.release_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release_please.outputs.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.platform }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: jin-gui/package-lock.json
+      - name: Free Linux disk space
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+      - name: Install Linux GUI dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libxdo-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+      - name: Confirm native runner architecture
+        shell: bash
+        run: |
+          case '${{ matrix.platform }}' in
+            macos-aarch64) test "$(uname -m)" = arm64 ;;
+            linux-x86_64) test "$(uname -m)" = x86_64 ;;
+            windows-x86_64) test "$PROCESSOR_ARCHITECTURE" = AMD64 ;;
+          esac
+      - name: Build CLI
+        shell: bash
+        run: cargo build --release --locked -p jin
+      - name: Smoke-test CLI
+        shell: bash
+        run: |
+          cli="target/${{ matrix.target }}/release/jin"
+          if [[ '${{ runner.os }}' == Windows ]]; then cli="$cli.exe"; fi
+          "$cli" --version | grep -F "jin $RELEASE_VERSION"
+          "$cli" --help > /dev/null
+      - name: Install frontend dependencies
+        working-directory: jin-gui
+        run: npm ci
+      - name: Build GUI bundles
+        working-directory: jin-gui
+        shell: bash
+        run: npm run tauri -- build --target '${{ matrix.target }}' --bundles '${{ matrix.bundles }}'
+      - name: Package and inspect release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist package
+          cli="target/${{ matrix.target }}/release/jin"
+          bundle="target/${{ matrix.target }}/release/bundle"
+          if [[ '${{ runner.os }}' == Windows ]]; then
+            cp "$cli.exe" package/jin.exe
+            (cd package && 7z a "../dist/jin-cli-$RELEASE_VERSION-windows-x86_64.zip" jin.exe)
+            find "$bundle/nsis" -maxdepth 1 -name '*.exe' -exec cp {} dist/ \;
+            test "$(find dist -maxdepth 1 -name '*.exe' | wc -l)" -ge 1
+          else
+            cp "$cli" package/jin
+            tar -czf "dist/jin-cli-$RELEASE_VERSION-${{ matrix.platform }}.tar.gz" -C package jin
+            if [[ '${{ runner.os }}' == macOS ]]; then
+              find "$bundle/dmg" -maxdepth 1 -name '*.dmg' -exec cp {} dist/ \;
+              test "$(find dist -maxdepth 1 -name '*.dmg' | wc -l)" -ge 1
+              file "$cli" | grep -F arm64
+            else
+              find "$bundle/deb" -maxdepth 1 -name '*.deb' -exec cp {} dist/ \;
+              find "$bundle/appimage" -maxdepth 1 -name '*.AppImage' -exec cp {} dist/ \;
+              test "$(find dist -maxdepth 1 -name '*.deb' | wc -l)" -ge 1
+              test "$(find dist -maxdepth 1 -name '*.AppImage' | wc -l)" -ge 1
+              file "$cli" | grep -F 'x86-64'
+              for deb in dist/*.deb; do test "$(dpkg-deb -f "$deb" Architecture)" = amd64; done
+            fi
+          fi
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -ge 2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  attach_assets:
+    needs: [release_please, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release_please.outputs.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Check complete asset set and write checksums
+        run: |
+          set -euo pipefail
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 7
+          test "$(find dist -maxdepth 1 -name 'jin-cli-*' | wc -l)" -eq 3
+          for ext in dmg AppImage deb exe zip; do
+            test "$(find dist -maxdepth 1 -name "*.$ext" | wc -l)" -eq 1
+          done
+          (cd dist && sha256sum -- ./* > SHA256SUMS && sha256sum --check SHA256SUMS)
+      - name: Attach assets to Release Please draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release_please.outputs.tag_name }}
+        run: |
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
+          gh release upload "$RELEASE_TAG" dist/* --clobber
