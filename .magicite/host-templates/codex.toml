@@ -1,0 +1,8 @@
+# Template only: replace all example paths after administrator setup.
+[mcp_servers.magicite]
+command = "/absolute/path/to/magicite/venv-1.0.0/bin/magicite"
+args = ["serve", "--project-root", "/absolute/path/to/jin"]
+
+[mcp_servers.magicite.env]
+MAGICITE_EMBEDDING_OFFLINE = "1"
+FASTEMBED_CACHE_PATH = "/absolute/path/to/magicite/model-cache"

@@ -87,6 +87,12 @@ editing, multi-device sync, and mobile capture remain work in progress.
 Automated GUI checks cover logic; native appearance and installer behavior
 need platform testing.
 
+## AI-assisted development
+
+Contributors can optionally use [Magicite project skills](docs/magicite.md)
+with Claude Code or Codex. The guide covers the pinned client, protected setup,
+offline model cache, and review of Jin’s authored engrams.
+
 ## Build from source
 
 Install stable Rust and, for the desktop app, Node.js 20+ and npm 10+. macOS
