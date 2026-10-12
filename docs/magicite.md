@@ -44,8 +44,11 @@ export MAGICITE_EMBEDDING_OFFLINE=1
 Expect `1.0.0` and no dependency conflicts. `fetch-model` is an intentional
 network download of `BAAI/bge-small-en-v1.5`; later inference uses the same
 cache offline. Set these variables in each terminal where you run the checks.
-See the [published installation guide](https://github.com/Rynaro/magicite/blob/v1.0.0/docs/install.md)
-for distribution and provenance verification.
+The pinned release is available on [PyPI](https://pypi.org/project/magicite/1.0.0/);
+the [PyPI publication receipt](https://github.com/Rynaro/magicite/releases/download/v1.0.0/pypi-publication-receipt.json)
+records that channel’s verified delivery. For optional manual GitHub artifact
+provenance verification, use the [tagged installation guide](https://github.com/Rynaro/magicite/blob/v1.0.0/docs/install.md).
+Its original PyPI availability text predates the later publication receipt.
 
 ## 2. Complete protected project setup before connecting
 
