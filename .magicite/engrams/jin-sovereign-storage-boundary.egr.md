@@ -1,31 +1,77 @@
 ---
-spec: engram/0.2
+spec: engram/1.0
 name: jin-sovereign-storage-boundary
 id: egr_a81df514
 version: 1
-provenance: authored
 intent:
-  does: "Preserve Jin's canonical human-readable files, derived SQLite index, and operational sync-state boundary"
-  use_when: "changing persistence, export, indexing, store layout, or any code that could make SQLite authoritative"
-  not_when: "working only on presentation styling with no persistence or export effect"
-triggers:
+  does: Preserve Jin's canonical human-readable files, derived SQLite index, and operational sync-state boundary
+  use_when: changing persistence, export, indexing, store layout, or any code that could make SQLite authoritative
+  not_when: working only on presentation styling with no persistence or export effect
+capabilities:
+  requires: []
+  produces: []
+  alternatives: []
+  conflicts_with: []
+relations:
+  requires: []
+  before: []
+  supersedes: []
+risk:
+  filesystem: write-project
+  subprocess:
+    mode: declared-tools
+    tools:
+    - cargo
+    - pnpm
+  network:
+    mode: none
+    destinations: []
+  secrets: none
+routing:
   positive:
-    - "change Jin canonical storage or the .jin index"
-    - "add persisted fields to notes tasks events lists or tags"
-    - "modify export sovereignty or deterministic index rebuild behavior"
-    - "decide whether data belongs in owner files index or sync state"
+  - change Jin canonical storage or the .jin index
+  - add persisted fields to notes tasks events lists or tags
+  - modify export sovereignty or deterministic index rebuild behavior
+  - decide whether data belongs in owner files index or sync state
   negative:
-    - "adjust a GUI-only CSS token without touching persisted data"
-context_affinity: [jin-core, storage, sovereignty, index, export]
-plasticity: {storage_strength: 0.0, exposure_count: 0, outcome: {success: 0, failure: 0}, excitability: 0.05, status: nascent}
-needs: []
-yields: [sovereignty-preserving-storage-change]
-composes: [jin-core-operation-pattern, jin-verification-gates]
-inhibits: [jin-gui-controller-transform-render]
-provenance_journal:
-  - {version: 1, timestamp: '2026-08-18T00:00:00Z', author: vivi, event: authored, note: "Grounded in ADR 0002 and rebuild/export gates"}
-trust: {origin: authored, verification_status: pending}
-exports: {skill_md: true}
+  - adjust a GUI-only CSS token without touching persisted data
+  body_digest: 1929770c3652637e54285d355bdd98d02b3bf58eb5027a6978c0067f7424bfbd
+origin:
+  channel: authored
+  verification_status: pending
+  content_hashes:
+    body_sha256: 1929770c3652637e54285d355bdd98d02b3bf58eb5027a6978c0067f7424bfbd
+    content_sha256: d959b4c1962324a7af3f29fa3f4f271c72713cdd1444571eb69fb69fb04f720a
+  journal:
+  - version: 1
+    timestamp: '2026-08-18T00:00:00Z'
+    author: vivi
+    event: authored
+    note: Grounded in ADR 0002 and rebuild/export gates
+legacy:
+  plasticity:
+    storage_strength: 0.0
+    exposure_count: 0
+    outcome:
+      success: 0
+      failure: 0
+    last_applied:
+    excitability: 0.05
+    last_checkpoint:
+    status: nascent
+  yields:
+  - sovereignty-preserving-storage-change
+  composes: []
+  inhibits:
+  - jin-gui-controller-transform-render
+  context_affinity:
+  - jin-core
+  - storage
+  - sovereignty
+  - index
+  - export
+  exports:
+    skill_md: true
 ---
 ## Procedure
 1. Classify every byte as canonical owner data, derived index data, or operational sync state using `docs/adr/0002-storage-format.md` and `jin-core/src/config.rs`.

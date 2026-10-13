@@ -1,31 +1,77 @@
 ---
-spec: engram/0.2
+spec: engram/1.0
 name: jin-rfc5545-time-discipline
 id: egr_e3437c59
 version: 1
-provenance: authored
 intent:
-  does: "Preserve RFC-5545 temporal distinctions, IANA timezone identity, and explicit DST resolution policy"
-  use_when: "changing events, agenda dates, due timestamps, recurrence-ready fields, timezone conversion, or Google time mapping"
-  not_when: "sorting records by non-temporal fields or changing unrelated UI layout"
-triggers:
+  does: Preserve RFC-5545 temporal distinctions, IANA timezone identity, and explicit DST resolution policy
+  use_when: changing events, agenda dates, due timestamps, recurrence-ready fields, timezone conversion, or Google time mapping
+  not_when: sorting records by non-temporal fields or changing unrelated UI layout
+capabilities:
+  requires: []
+  produces: []
+  alternatives: []
+  conflicts_with: []
+relations:
+  requires: []
+  before: []
+  supersedes: []
+risk:
+  filesystem: write-project
+  subprocess:
+    mode: declared-tools
+    tools:
+    - cargo
+  network:
+    mode: none
+    destinations: []
+  secrets: none
+routing:
   positive:
-    - "change all-day timed or floating event handling"
-    - "resolve an IANA timezone or daylight saving transition"
-    - "modify RFC 5545 event fields or recurrence-ready storage"
-    - "map Google Calendar times into Jin events"
+  - change all-day timed or floating event handling
+  - resolve an IANA timezone or daylight saving transition
+  - modify RFC 5545 event fields or recurrence-ready storage
+  - map Google Calendar times into Jin events
   negative:
-    - "sort tasks alphabetically without interpreting dates"
-context_affinity: [jin-core, rfc5545, timezone, dst, events]
-plasticity: {storage_strength: 0.0, exposure_count: 0, outcome: {success: 0, failure: 0}, excitability: 0.05, status: nascent}
-needs: [jin-core-operation-pattern]
-yields: [temporally-correct-change]
-composes: [jin-google-sync-safety, jin-verification-gates]
-inhibits: []
-provenance_journal:
-  - {version: 1, timestamp: '2026-08-18T00:00:00Z', author: vivi, event: authored, note: "Grounded in event model and VG9"}
-trust: {origin: authored, verification_status: pending}
-exports: {skill_md: true}
+  - sort tasks alphabetically without interpreting dates
+  body_digest: 4de0ef8a71f581970d383a5745614056cd82c1f0c5c502ff9cd38458f2131047
+origin:
+  channel: authored
+  verification_status: pending
+  content_hashes:
+    body_sha256: 4de0ef8a71f581970d383a5745614056cd82c1f0c5c502ff9cd38458f2131047
+    content_sha256: f52e90ead3e05a68fa8a992d0a872b188882922e35cd05df0af6acbbb7da1bda
+  journal:
+  - version: 1
+    timestamp: '2026-08-18T00:00:00Z'
+    author: vivi
+    event: authored
+    note: Grounded in event model and VG9
+legacy:
+  plasticity:
+    storage_strength: 0.0
+    exposure_count: 0
+    outcome:
+      success: 0
+      failure: 0
+    last_applied:
+    excitability: 0.05
+    last_checkpoint:
+    status: nascent
+  needs:
+  - jin-core-operation-pattern
+  yields:
+  - temporally-correct-change
+  composes:
+  - jin-verification-gates
+  context_affinity:
+  - jin-core
+  - rfc5545
+  - timezone
+  - dst
+  - events
+  exports:
+    skill_md: true
 ---
 ## Procedure
 1. Model dates and date-times distinctly using `TemporalValue` and `ValueType` in `jin-core/src/model/event.rs`; do not infer all-day from midnight.

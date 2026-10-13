@@ -1,31 +1,80 @@
 ---
-spec: engram/0.2
+spec: engram/1.0
 name: jin-core-operation-pattern
 id: egr_2074d709
 version: 1
-provenance: authored
 intent:
-  does: "Implement Jin mutations through model validation, ops orchestration, canonical file writes, refresh, and DTO projection"
-  use_when: "adding or changing a headless operation consumed by the CLI or Tauri bridge"
-  not_when: "the requested behavior is a pure frontend transformation with no core mutation"
-triggers:
+  does: Implement Jin mutations through model validation, ops orchestration, canonical file writes, refresh, and DTO projection
+  use_when: adding or changing a headless operation consumed by the CLI or Tauri bridge
+  not_when: the requested behavior is a pure frontend transformation with no core mutation
+capabilities:
+  requires: []
+  produces: []
+  alternatives: []
+  conflicts_with: []
+relations:
+  requires: []
+  before: []
+  supersedes: []
+risk:
+  filesystem: write-project
+  subprocess:
+    mode: declared-tools
+    tools:
+    - cargo
+    - pnpm
+  network:
+    mode: none
+    destinations: []
+  secrets: none
+routing:
   positive:
-    - "add a Jin core CRUD operation"
-    - "change task note event list tag attach link or promote behavior"
-    - "expose a new operation to both CLI and GUI"
-    - "preserve file-first writes followed by index refresh"
+  - add a Jin core CRUD operation
+  - change task note event list tag attach link or promote behavior
+  - expose a new operation to both CLI and GUI
+  - preserve file-first writes followed by index refresh
   negative:
-    - "refactor a pure TypeScript transform or renderer"
-context_affinity: [jin-core, ops, model, store, dto]
-plasticity: {storage_strength: 0.0, exposure_count: 0, outcome: {success: 0, failure: 0}, excitability: 0.05, status: nascent}
-needs: [jin-sovereign-storage-boundary]
-yields: [shared-headless-operation]
-composes: [jin-cli-json-contract, jin-tauri-thin-command-bridge, jin-verification-gates]
-inhibits: [jin-gui-controller-transform-render]
-provenance_journal:
-  - {version: 1, timestamp: '2026-08-18T00:00:00Z', author: vivi, event: authored, note: "Grounded in jin-core operation modules"}
-trust: {origin: authored, verification_status: pending}
-exports: {skill_md: true}
+  - refactor a pure TypeScript transform or renderer
+  body_digest: b92159094e220f71423125f99c38a6b065c97ca07eb499d679c764a7ef382a83
+origin:
+  channel: authored
+  verification_status: pending
+  content_hashes:
+    body_sha256: b92159094e220f71423125f99c38a6b065c97ca07eb499d679c764a7ef382a83
+    content_sha256: 22d1ff34e350318bd415564356ccb973cf1665d44cd5c8d96308e23909d9fcf4
+  journal:
+  - version: 1
+    timestamp: '2026-08-18T00:00:00Z'
+    author: vivi
+    event: authored
+    note: Grounded in jin-core operation modules
+legacy:
+  plasticity:
+    storage_strength: 0.0
+    exposure_count: 0
+    outcome:
+      success: 0
+      failure: 0
+    last_applied:
+    excitability: 0.05
+    last_checkpoint:
+    status: nascent
+  needs:
+  - jin-sovereign-storage-boundary
+  yields:
+  - shared-headless-operation
+  composes:
+  - jin-verification-gates
+  inhibits:
+  - jin-gui-controller-transform-render
+  context_affinity:
+  - jin-core
+  - ops
+  - model
+  - store
+  - dto
+  exports:
+    skill_md: true
 ---
 ## Procedure
 1. Start from the public behavior in `jin-core/src/ops/api.rs` and find the matching domain module under `jin-core/src/ops/` before adding a new abstraction.

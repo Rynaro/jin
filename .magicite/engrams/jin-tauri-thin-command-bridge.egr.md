@@ -1,31 +1,80 @@
 ---
-spec: engram/0.2
+spec: engram/1.0
 name: jin-tauri-thin-command-bridge
 id: egr_3a2708a8
 version: 1
-provenance: authored
 intent:
-  does: "Extend Jin's Tauri boundary as a thin typed adapter over jin-core with exact TypeScript/Rust argument parity"
-  use_when: "adding or changing a Tauri command or the frontend invoke wrapper"
-  not_when: "the feature can be completed entirely inside an existing frontend DTO and command surface"
-triggers:
+  does: Extend Jin's Tauri boundary as a thin typed adapter over jin-core with exact TypeScript/Rust argument parity
+  use_when: adding or changing a Tauri command or the frontend invoke wrapper
+  not_when: the feature can be completed entirely inside an existing frontend DTO and command surface
+capabilities:
+  requires: []
+  produces: []
+  alternatives: []
+  conflicts_with: []
+relations:
+  requires: []
+  before: []
+  supersedes: []
+risk:
+  filesystem: write-project
+  subprocess:
+    mode: declared-tools
+    tools:
+    - cargo
+    - pnpm
+  network:
+    mode: none
+    destinations: []
+  secrets: none
+routing:
   positive:
-    - "add a Tauri command for a Jin operation"
-    - "change invoke.ts arguments or return DTOs"
-    - "fix snake_case payload mismatch between TypeScript and Rust"
-    - "expose jin-core behavior to the desktop GUI"
+  - add a Tauri command for a Jin operation
+  - change invoke.ts arguments or return DTOs
+  - fix snake_case payload mismatch between TypeScript and Rust
+  - expose jin-core behavior to the desktop GUI
   negative:
-    - "implement business logic directly in the browser controller"
-context_affinity: [jin-gui, tauri, invoke, rust, typescript]
-plasticity: {storage_strength: 0.0, exposure_count: 0, outcome: {success: 0, failure: 0}, excitability: 0.05, status: nascent}
-needs: [jin-core-operation-pattern]
-yields: [typed-tauri-bridge]
-composes: [jin-gui-controller-transform-render, jin-verification-gates]
-inhibits: [jin-cli-json-contract]
-provenance_journal:
-  - {version: 1, timestamp: '2026-08-18T00:00:00Z', author: vivi, event: authored, note: "Grounded in Tauri command and invoke parity"}
-trust: {origin: authored, verification_status: pending}
-exports: {skill_md: true}
+  - implement business logic directly in the browser controller
+  body_digest: 3a87ae4a9be0b41edf6bb224c708c4fe14f8d98228f92bc0e1d453a891246aa5
+origin:
+  channel: authored
+  verification_status: pending
+  content_hashes:
+    body_sha256: 3a87ae4a9be0b41edf6bb224c708c4fe14f8d98228f92bc0e1d453a891246aa5
+    content_sha256: d30f80eb188b50c06c0c69fafc0a32554a355e967a6bc3eb1c517cc2dcc706d8
+  journal:
+  - version: 1
+    timestamp: '2026-08-18T00:00:00Z'
+    author: vivi
+    event: authored
+    note: Grounded in Tauri command and invoke parity
+legacy:
+  plasticity:
+    storage_strength: 0.0
+    exposure_count: 0
+    outcome:
+      success: 0
+      failure: 0
+    last_applied:
+    excitability: 0.05
+    last_checkpoint:
+    status: nascent
+  needs:
+  - jin-core-operation-pattern
+  yields:
+  - typed-tauri-bridge
+  composes:
+  - jin-verification-gates
+  inhibits:
+  - jin-cli-json-contract
+  context_affinity:
+  - jin-gui
+  - tauri
+  - invoke
+  - rust
+  - typescript
+  exports:
+    skill_md: true
 ---
 ## Procedure
 1. Add the testable `*_fn` adapter in `jin-gui/src-tauri/src/commands/`, taking `&Path` plus deserialized inputs and returning DTOs or `JinErrorDto`.

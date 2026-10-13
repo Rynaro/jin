@@ -9,6 +9,8 @@ theta_dw_commit = 0.01
 theta_prune = 0.10
 
 [routing]
+# Retrieval eligibility only; does not grant harness command execution.
+allowed_tools = ["cargo", "pnpm"]
 ppr_restart = 0.85
 declared_edge_strength = 1.0
 plan_max_depth = 5

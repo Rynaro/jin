@@ -57,3 +57,13 @@ eidolons.mcp.lock
 
 # Keep this ignore after Eidolons' managed exceptions above.
 .eidolons/harness/manifest.json
+
+# Machine-local Magicite installation, enrollment, and harness ownership.
+.magicite-install-backups/
+.magicite/venv/
+.magicite/install-assets/
+.magicite/install-prepared/
+.magicite/trust/
+.magicite/harnesses.json
+.magicite/instructions.md
+opencode.json

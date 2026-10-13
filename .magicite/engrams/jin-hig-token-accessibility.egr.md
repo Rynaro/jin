@@ -1,31 +1,77 @@
 ---
-spec: engram/0.2
+spec: engram/1.0
 name: jin-hig-token-accessibility
 id: egr_c7c5e966
 version: 1
-provenance: authored
 intent:
-  does: "Extend Jin's HIG-inspired visual system through semantic tokens and accessibility fallbacks"
-  use_when: "changing CSS colors, typography, spacing, materials, motion, focus, status indicators, or accessible interaction"
-  not_when: "changing headless Rust behavior with no visual or interaction effect"
-triggers:
+  does: Extend Jin's HIG-inspired visual system through semantic tokens and accessibility fallbacks
+  use_when: changing CSS colors, typography, spacing, materials, motion, focus, status indicators, or accessible interaction
+  not_when: changing headless Rust behavior with no visual or interaction effect
+capabilities:
+  requires: []
+  produces: []
+  alternatives: []
+  conflicts_with: []
+relations:
+  requires: []
+  before: []
+  supersedes: []
+risk:
+  filesystem: write-project
+  subprocess:
+    mode: declared-tools
+    tools:
+    - pnpm
+  network:
+    mode: none
+    destinations: []
+  secrets: none
+routing:
   positive:
-    - "add or change a Jin CSS design token"
-    - "implement dark mode contrast reduced motion or transparency fallback"
-    - "style a status without relying on color alone"
-    - "preserve keyboard focus and accessible hit targets"
+  - add or change a Jin CSS design token
+  - implement dark mode contrast reduced motion or transparency fallback
+  - style a status without relying on color alone
+  - preserve keyboard focus and accessible hit targets
   negative:
-    - "change a jin-core storage or sync invariant"
-context_affinity: [jin-gui, hig, css, tokens, accessibility]
-plasticity: {storage_strength: 0.0, exposure_count: 0, outcome: {success: 0, failure: 0}, excitability: 0.05, status: nascent}
-needs: [jin-gui-controller-transform-render]
-yields: [accessible-token-disciplined-ui]
-composes: [jin-verification-gates]
-inhibits: []
-provenance_journal:
-  - {version: 1, timestamp: '2026-08-18T00:00:00Z', author: vivi, event: authored, note: "Grounded in GUI token and a11y gates"}
-trust: {origin: authored, verification_status: pending}
-exports: {skill_md: true}
+  - change a jin-core storage or sync invariant
+  body_digest: 3e7060ee33942197c2789eb7482f6b992a673e06b86a23563da4ff5bc902ad9c
+origin:
+  channel: authored
+  verification_status: pending
+  content_hashes:
+    body_sha256: 3e7060ee33942197c2789eb7482f6b992a673e06b86a23563da4ff5bc902ad9c
+    content_sha256: 7d792db6061dd4d2594561f2d5eb8dec3770c4bae18f875d68f1782c9dc1e7c2
+  journal:
+  - version: 1
+    timestamp: '2026-08-18T00:00:00Z'
+    author: vivi
+    event: authored
+    note: Grounded in GUI token and a11y gates
+legacy:
+  plasticity:
+    storage_strength: 0.0
+    exposure_count: 0
+    outcome:
+      success: 0
+      failure: 0
+    last_applied:
+    excitability: 0.05
+    last_checkpoint:
+    status: nascent
+  needs:
+  - jin-gui-controller-transform-render
+  yields:
+  - accessible-token-disciplined-ui
+  composes:
+  - jin-verification-gates
+  context_affinity:
+  - jin-gui
+  - hig
+  - css
+  - tokens
+  - accessibility
+  exports:
+    skill_md: true
 ---
 ## Procedure
 1. Reuse semantic variables from `jin-gui/src/styles/tokens.css`; add a token there before using a new bare `var(--name)` elsewhere.
