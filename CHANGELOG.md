@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/Rynaro/jin/compare/v1.0.1...v1.1.0) (2026-10-30)
+
+
+### Features
+
+* **tasks:** add persistent recurring routines ([#29](https://github.com/Rynaro/jin/issues/29)) ([5ef96d3](https://github.com/Rynaro/jin/commit/5ef96d366804d9a510e0b56e7151c02dd2fa37a4))
+
 ## [1.0.1](https://github.com/Rynaro/jin/compare/v1.0.0...v1.0.1) (2026-09-29)
 
 
