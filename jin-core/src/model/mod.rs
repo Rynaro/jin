@@ -18,4 +18,7 @@ pub use note::{
     CanonicalLink, Note, NoteFrontmatter, NoteStatus, PropertyValue, UnlinkedMention,
 };
 pub use tag::{Tag, TagFrontmatter};
-pub use task::{AgendaBucket, DueDate, Priority, Reminder, Task, TaskFrontmatter, TaskStatus};
+pub use task::{
+    next_recurrence_date, AgendaBucket, DueDate, Priority, RecurrenceEnd, RecurrenceFrequency,
+    RecurrenceMode, Reminder, Task, TaskCompletion, TaskFrontmatter, TaskRecurrence, TaskStatus,
+};

@@ -187,6 +187,19 @@
     event({ id: 'e11', title: 'Call São Paulo', start: '2026-08-20T22:45:00', end: '2026-08-20T23:15:00' }),
     event({ id: 'e12', title: 'Google focus interview', start: '2026-08-20T16:00:00', end: '2026-08-20T16:45:00', source: 'google', authority: 'google', reminders: { useDefault: false }, sync_context: syncContext('acct-personal', 'family-shared') })
   ];
+  // Scenario-only records exercise the Month overflow control without changing
+  // the normal event list or the Today projection. They are deliberately
+  // artificial, stable, and returned only by calendar_range_projection.
+  var denseCalendarEvents = [
+    event({ id: 'fixture-dense-calendar-all-day-1', title: 'Dense all-day review', start: '2026-08-20', end: '2026-08-21', is_all_day: true }),
+    event({ id: 'fixture-dense-calendar-all-day-2', title: 'Dense all-day handoff', start: '2026-08-20', end: '2026-08-21', is_all_day: true }),
+    event({ id: 'fixture-dense-calendar-01', title: 'Dense planning block', start: '2026-08-20T07:00:00', end: '2026-08-20T07:30:00' }),
+    event({ id: 'fixture-dense-calendar-02', title: 'Dense design review', start: '2026-08-20T08:00:00', end: '2026-08-20T08:30:00' }),
+    event({ id: 'fixture-dense-calendar-03', title: 'Dense research sync', start: '2026-08-20T13:30:00', end: '2026-08-20T14:00:00' }),
+    event({ id: 'fixture-dense-calendar-04', title: 'Dense provider handoff', start: '2026-08-20T14:30:00', end: '2026-08-20T15:00:00', source: 'google', authority: 'google', sync_context: syncContext('acct-work', 'work-primary') }),
+    event({ id: 'fixture-dense-calendar-05', title: 'Dense focus review', start: '2026-08-20T15:30:00', end: '2026-08-20T16:00:00' }),
+    event({ id: 'fixture-dense-calendar-06', title: 'Dense release check', start: '2026-08-20T17:00:00', end: '2026-08-20T17:30:00' })
+  ];
   var nextEventSequence = 12;
   var eventEditOperations = {};
   var quarantinedOperations = [
@@ -270,6 +283,22 @@
   };
   function todayTask(id, title, due, bucket) {
     return { id: id, title: title, status: 'todo', priority: 'high', due: due, list: 'Work', position: id, parent: null, agenda_bucket: bucket || null };
+  }
+  function syncTodayProjectionTask(updatedTask) {
+    if (!fixtures || !fixtures.today_projection) return;
+    var projection = fixtures.today_projection;
+    var date = String(updatedTask.due || '').slice(0, 10);
+    var list = lists.find(function findTaskList(item) { return item.id === updatedTask.list; });
+    var lanes = ['attention_tasks', 'due_tasks', 'flexible_tasks'];
+    lanes.forEach(function removeTaskFromLane(name) {
+      projection[name] = projection[name].filter(function keepOtherTask(item) { return item.id !== updatedTask.id; });
+    });
+    if ((updatedTask.status !== 'todo' && updatedTask.status !== 'doing') || updatedTask.deleted_at !== null) return;
+    if (date === projection.current_date) {
+      projection.due_tasks.push({ id: updatedTask.id, title: updatedTask.title, status: updatedTask.status,
+        priority: updatedTask.priority, due: updatedTask.due, list: list ? list.name : updatedTask.list,
+        position: updatedTask.position, parent: updatedTask.parent, agenda_bucket: null });
+    }
   }
   fixtures.today_projection = {
     agenda: clone(fixtures.today_agenda), current_date: '2026-08-20', is_current_date: true,
@@ -393,7 +422,19 @@
     return notificationItems.find(function findNotification(item) { return item.id === id; });
   }
 
+  // Recovery uses the normal fixture's known queued and retryable records. The
+  // explicit name makes browser scenarios intentional and rejects typos rather
+  // than silently returning a different state.
+  function notificationScenario() {
+    var scenario = fixtureStorageGet('jin.fixture.notificationsScenario');
+    if (scenario && scenario !== 'recovery') {
+      throw new Error('Unsupported Jin notifications scenario: ' + scenario);
+    }
+    return scenario;
+  }
+
   function requireNotificationInput(options) {
+    notificationScenario();
     var input = options.input || {};
     var item = notificationById(input.item_id);
     if (!item) throw new Error('Notification not found: ' + input.item_id);
@@ -406,6 +447,7 @@
   }
 
   function notificationSummary() {
+    notificationScenario();
     var visible = notificationItems.filter(function visibleNotification(item) {
       return (item.status === 'active' || item.status === 'action_pending')
         && (item.visible_after === null || item.visible_after <= NOW);
@@ -425,6 +467,201 @@
     return JSON.parse(JSON.stringify(value));
   }
 
+  // Stored fixture occurrences mirror the native bridge's stable task identities.
+  var fixtureSeries = {};
+  try {
+    var savedRecurrences = JSON.parse(fixtureStorageGet('jin.fixture.recurringTasksState') || 'null');
+    if (savedRecurrences && savedRecurrences.version === 2) {
+      tasks = savedRecurrences.tasks; fixtureSeries = savedRecurrences.series;
+      nextTaskSequence = savedRecurrences.nextTaskSequence; fixtures.list_tasks = tasks;
+      tasks.forEach(syncTodayProjectionTask);
+    }
+  } catch (_) { /* malformed fixture state restores the deterministic seed */ }
+  function saveFixtureRecurrences() {
+    if (Object.keys(fixtureSeries).length) fixtureStorageSet('jin.fixture.recurringTasksState', JSON.stringify({ version: 2, tasks: tasks, series: fixtureSeries, nextTaskSequence: nextTaskSequence }));
+  }
+  function markFixtureException(item) {
+    if (item.recurrence_instance || item.parent) item.recurrence_exception = true;
+    var parent = tasks.find(function (candidate) { return candidate.id === item.parent; });
+    if (parent && parent.recurrence_instance) parent.recurrence_exception = true;
+  }
+  function recurrenceOwner(item) {
+    return item.recurrence_instance ? tasks.find(function (candidate) { return candidate.id === item.recurrence_instance.owner_task_id; }) : item;
+  }
+  function occurrenceDate(rule, ordinal) {
+    var anchor = new Date(rule.anchor_due.slice(0, 10) + 'T00:00:00Z');
+    var n = ordinal - 1;
+    var interval = rule.interval || 1;
+    if (rule.frequency === 'monthly' || rule.frequency === 'yearly') {
+      var day = anchor.getUTCDate();
+      anchor.setUTCDate(1);
+      anchor.setUTCMonth(anchor.getUTCMonth() + n * interval * (rule.frequency === 'yearly' ? 12 : 1));
+      var last = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + 1, 0)).getUTCDate();
+      anchor.setUTCDate(Math.min(day, last));
+    } else if (rule.frequency === 'weekly' && rule.weekdays && rule.weekdays.length) {
+      if (n) {
+        var weekdays = Array.from(new Set(rule.weekdays)).sort();
+        var anchorDay = (anchor.getUTCDay() + 6) % 7 + 1;
+        var first = weekdays.filter(function (day) { return day > anchorDay; });
+        var offset;
+        if (n <= first.length) offset = first[n - 1] - anchorDay;
+        else {
+          var rest = n - first.length - 1;
+          offset = (Math.floor(rest / weekdays.length) + 1) * interval * 7 + weekdays[rest % weekdays.length] - anchorDay;
+        }
+        anchor.setUTCDate(anchor.getUTCDate() + offset);
+      }
+    } else anchor.setUTCDate(anchor.getUTCDate() + n * interval * (rule.frequency === 'weekly' ? 7 : 1));
+    return anchor.toISOString().slice(0, 10) + rule.anchor_due.slice(10);
+  }
+  function recurrenceAllowed(rule, sequence, due) {
+    return !(rule.end.kind === 'count' && sequence > rule.end.count)
+      && !(rule.end.kind === 'until' && due.slice(0, 10) > rule.end.date);
+  }
+  function recurrenceEffect(item) {
+    var instance = item.recurrence_instance;
+    var next = instance && tasks.filter(function (candidate) {
+      var other = candidate.recurrence_instance;
+      return other && other.series_id === instance.series_id && other.revision === instance.revision
+        && other.sequence > instance.sequence && !other.detached && !candidate.deleted_at
+        && ['todo', 'doing'].indexOf(candidate.status) !== -1;
+    }).sort(function (a, b) { return a.recurrence_instance.sequence - b.recurrence_instance.sequence; })[0];
+    return { created_ids: [], next_occurrence_id: next ? next.id : null, next_due: next ? next.due : null, preserved_exception_count: 0, retired_count: 0 };
+  }
+  function materializeOccurrence(owner, state, sequence, due, predecessor) {
+    var series = owner.recurrence_series;
+    var present = tasks.find(function (candidate) {
+      var i = candidate.recurrence_instance;
+      return i && i.series_id === series.series_id && i.revision === series.revision && (i.sequence === sequence || (predecessor && i.completion_predecessor_id === predecessor));
+    });
+    if (present) return present;
+    var copy = clone(state.template);
+    copy.id = 'fixture-occurrence-' + series.series_id + '-' + series.revision + '-' + sequence;
+    copy.due = due; copy.status = 'todo'; copy.completed_at = null; copy.deleted_at = null;
+    copy.recurrence_series = null; copy.recurrence_exception = false; copy.agenda_bucket = null;
+    copy.completion_history = []; copy.recurrence = clone(series.rule);
+    copy.reminders = (copy.reminders || []).filter(function (reminder) { return reminder.kind === 'relative'; });
+    copy.recurrence_instance = { owner_task_id: owner.id, series_id: series.series_id, revision: series.revision, sequence: sequence, originally_scheduled_due: due, completion_predecessor_id: predecessor || null, detached: false };
+    var list = lists.find(function (candidate) { return candidate.id === copy.list; });
+    copy.board_column_id = list && list.workflow_kind === 'board' ? list.initial_column_id : null;
+    tasks.push(copy);
+    state.children.forEach(function (child, index) {
+      var generatedChild = clone(child);
+      generatedChild.id = copy.id + '-child-' + (index + 1); generatedChild.parent = copy.id;
+      generatedChild.status = 'todo'; generatedChild.completed_at = null; generatedChild.deleted_at = null;
+      generatedChild.due = null; generatedChild.reminders = []; generatedChild.agenda_bucket = null;
+      tasks.push(generatedChild);
+    });
+    syncTodayProjectionTask(copy);
+    return copy;
+  }
+  function maintainFixtureRecurrences() {
+    Object.keys(fixtureSeries).forEach(function (ownerId) {
+      var owner = tasks.find(function (candidate) { return candidate.id === ownerId; });
+      var series = owner && owner.recurrence_series;
+      if (!series || !series.enabled || series.rule.mode !== 'scheduled') return;
+      var rule = series.rule;
+      var today = fixtures.today_projection.current_date;
+      var target = series.upcoming_count == null ? 10 : series.upcoming_count;
+      var upcoming = tasks.filter(function (candidate) {
+        var i = candidate.recurrence_instance;
+        return i && i.series_id === series.series_id && i.revision === series.revision && !i.detached
+          && ['todo', 'doing'].indexOf(candidate.status) !== -1 && candidate.due && candidate.due.slice(0, 10) >= today;
+      }).length;
+      // Binary seek avoids iterating through years of skipped scheduled slots.
+      var state = fixtureSeries[ownerId];
+      var low = Math.max(2, state.nextSequence || 2), high = low;
+      while (high < 1000000 && occurrenceDate(rule, high).slice(0, 10) < today) high *= 2;
+      while (low < high) { var middle = Math.floor((low + high) / 2); if (occurrenceDate(rule, middle).slice(0, 10) < today) low = middle + 1; else high = middle; }
+      for (var ordinal = low; upcoming < target; ordinal++) {
+        var due = occurrenceDate(rule, ordinal);
+        if (!recurrenceAllowed(rule, ordinal, due)) break;
+        var before = tasks.length;
+        materializeOccurrence(owner, state, ordinal, due, null);
+        if (tasks.length > before) upcoming++;
+        state.nextSequence = ordinal + 1;
+      }
+    });
+  }
+  function configureFixtureRecurrence(item, input) {
+    var owner = recurrenceOwner(item);
+    var old = owner && owner.recurrence_series;
+    var count = input.recurrence_upcoming_count;
+    if (count != null && (!Number.isInteger(count) || count < 1 || count > 365)) throw new Error('Keep upcoming entries must be from 1 through 365');
+    if (count != null && input.clear_recurrence) throw new Error('Cannot stop Repeat and set upcoming entries together');
+    var instance = item.recurrence_instance;
+    if (input.recurrence_expected && (!old || input.recurrence_expected.series_id !== old.series_id || input.recurrence_expected.revision !== old.revision || input.recurrence_expected.enabled !== old.enabled)) throw new Error('Repeat changed elsewhere; reload repeat settings before applying changes');
+    if (!input.recurrence && !input.clear_recurrence) {
+      if (!old || !old.enabled || count == null) throw new Error('Enable Repeat before changing upcoming entries');
+      if (input.recurrence_scope !== 'this_and_following') throw new Error('Changing upcoming entries requires This and following scope');
+      if (owner.id !== item.id && (!instance || instance.detached || instance.revision !== old.revision || instance.series_id !== old.series_id || ['todo', 'doing'].indexOf(item.status) === -1)) throw new Error('Select an active occurrence from the current recurrence revision');
+      old.upcoming_count = count;
+      var beforeCount = tasks.length; maintainFixtureRecurrences();
+      item.recurrence_effect = recurrenceEffect(item); item.recurrence_effect.created_ids = tasks.slice(beforeCount).map(function (candidate) { return candidate.id; });
+      return;
+    }
+    if (old && old.enabled) {
+      var ownerStop = input.clear_recurrence && owner.id === item.id;
+      if (!ownerStop && (!instance || instance.detached || instance.revision !== old.revision || instance.series_id !== old.series_id)) throw new Error('Select an occurrence from the current recurrence revision');
+      if (!input.clear_recurrence && (input.recurrence_scope !== 'this_and_following' || ['done', 'cancelled', 'deleted'].indexOf(item.status) !== -1)) throw new Error('Changing Repeat requires an active occurrence and This and following scope');
+    }
+    if (!input.clear_recurrence && (!item.due || item.parent || ['done', 'cancelled', 'deleted'].indexOf(item.status) !== -1)) throw new Error('Repeat requires an active parent task with a due date');
+    var effect = { created_ids: [], next_occurrence_id: null, next_due: null, preserved_exception_count: 0, retired_count: 0 };
+    if (old && old.enabled) {
+      tasks.forEach(function (candidate) {
+        var i = candidate.recurrence_instance;
+        if (candidate.id === item.id || !i || i.series_id !== old.series_id || i.revision !== old.revision || candidate.status === 'done' || candidate.deleted_at) return;
+        if (!(input.clear_recurrence && owner.id === item.id) && i.sequence < instance.sequence + (input.clear_recurrence ? 1 : 0)) return;
+        var children = tasks.filter(function (child) { return child.parent === candidate.id && !child.deleted_at; });
+        if (candidate.recurrence_exception || candidate.status !== 'todo' || children.some(function (child) { return child.recurrence_exception || child.status !== 'todo'; })) {
+          i.detached = true; effect.preserved_exception_count++;
+        } else {
+          candidate.deleted_at = NOW; candidate.status = 'deleted'; effect.retired_count++;
+          children.forEach(function (child) { child.deleted_at = NOW; child.status = 'deleted'; });
+          syncTodayProjectionTask(candidate);
+        }
+      });
+    }
+    if (input.clear_recurrence) { if (old) old.enabled = false; item.recurrence_effect = effect; return; }
+    var rule = clone(input.recurrence);
+    var revision = old && old.enabled ? old.revision + 1 : 1;
+    rule.series_id = old && old.enabled ? old.series_id : 'fixture-series-' + item.id + '-' + String(nextTaskSequence++);
+    rule.anchor_due = item.due; rule.sequence = 1;
+    owner = owner || item;
+    owner.recurrence_series = { schema_version: 2, series_id: rule.series_id, enabled: true, revision: revision, rule: rule, upcoming_count: count == null ? old && old.upcoming_count || 10 : count, outstanding_task_id: item.id };
+    item.recurrence = clone(rule); item.recurrence_exception = false;
+    item.recurrence_instance = { owner_task_id: owner.id, series_id: rule.series_id, revision: revision, sequence: 1, originally_scheduled_due: item.due, completion_predecessor_id: null, detached: false };
+    fixtureSeries[owner.id] = { template: clone(item), children: clone(tasks.filter(function (child) { return child.parent === item.id && !child.deleted_at; })) };
+    var before = tasks.length;
+    maintainFixtureRecurrences();
+    var nextEffect = recurrenceEffect(item); effect.next_occurrence_id = nextEffect.next_occurrence_id; effect.next_due = nextEffect.next_due; effect.created_ids = tasks.slice(before).map(function (candidate) { return candidate.id; });
+    item.recurrence_effect = effect;
+  }
+  function completeFixtureOccurrence(item) {
+    var owner = recurrenceOwner(item), series = owner && owner.recurrence_series, i = item.recurrence_instance;
+    if (!series || !series.enabled || !i || i.detached || i.revision !== series.revision || series.rule.mode !== 'completion' || series.outstanding_task_id !== item.id) return;
+    var sequence = i.sequence + 1;
+    var completionRule = Object.assign({}, series.rule, { anchor_due: NOW });
+    var due = occurrenceDate(completionRule, 2);
+    if (series.rule.anchor_due.length === 10) due = due.slice(0, 10);
+    if (!recurrenceAllowed(series.rule, sequence, due)) return;
+    var next = materializeOccurrence(owner, fixtureSeries[owner.id], sequence, due, item.id);
+    series.outstanding_task_id = next.id;
+  }
+
+  function calendarScenario() {
+    var scenario = fixtureStorageGet('jin.fixture.calendarScenario');
+    if (scenario && scenario !== 'dense') {
+      throw new Error('Unsupported Jin calendar scenario: ' + scenario);
+    }
+    return scenario;
+  }
+
+  function calendarEventById(id) {
+    var source = calendarScenario() === 'dense' ? events.concat(denseCalendarEvents) : events;
+    return source.find(function findCalendarEvent(item) { return item.id === id; });
+  }
+
   function fixtureCalendarProjection(input) {
     if (!input || !/^\d{4}-\d{2}-\d{2}$/.test(input.from || '') || !/^\d{4}-\d{2}-\d{2}$/.test(input.to || '') || input.to < input.from) {
       throw new Error('calendar_range_projection requires an inclusive from/to date window');
@@ -441,7 +678,8 @@
       }
       return dates;
     }
-    var entries = events.filter(function active(item) { return item.status !== 'cancelled'; }).map(function project(item) {
+    var projectionEvents = calendarScenario() === 'dense' ? events.concat(denseCalendarEvents) : events;
+    var entries = projectionEvents.filter(function active(item) { return item.status !== 'cancelled'; }).map(function project(item) {
       var allDay = Boolean(item.is_all_day);
       var floating = Boolean(item.floating);
       var startDisplay = allDay ? item.start.slice(0, 10) : item.start.length === 16 ? item.start + ':00' : item.start;
@@ -647,6 +885,15 @@
         lists[listIndex].position = String(options.position || '');
         return Promise.resolve(clone(lists[listIndex]));
       }
+      if (cmd === 'maintain_task_recurrences') { maintainFixtureRecurrences(); saveFixtureRecurrences(); return Promise.resolve({ changed: false }); }
+      if (cmd === 'delete_task') {
+        var deleting = tasks.find(function (candidate) { return candidate.id === options.id; });
+        if (!deleting) return Promise.reject(new Error('Task not found'));
+        if (deleting.recurrence_series && deleting.recurrence_series.enabled) configureFixtureRecurrence(deleting, { clear_recurrence: true });
+        deleting.status = 'deleted'; deleting.deleted_at = NOW; deleting.recurrence_exception = true;
+        tasks.filter(function (candidate) { return candidate.parent === deleting.id; }).forEach(function (child) { child.status = 'deleted'; child.deleted_at = NOW; });
+        syncTodayProjectionTask(deleting); saveFixtureRecurrences(); return Promise.resolve(clone(deleting));
+      }
       if (cmd === 'list_tasks') {
         var matchingTasks = tasks.filter(function matchesTask(item) {
           if (!options.include_deleted && item.deleted_at !== null) return false;
@@ -695,12 +942,18 @@
           position: ''
         });
         tasks.push(createdTask);
+        if (createInput.recurrence) configureFixtureRecurrence(createdTask, { recurrence: createInput.recurrence, recurrence_upcoming_count: createInput.recurrence_upcoming_count });
+        syncTodayProjectionTask(createdTask);
+        saveFixtureRecurrences();
         return Promise.resolve(clone(createdTask));
       }
       if (cmd === 'edit_task') {
         var taskIndex = tasks.findIndex(function findTaskIndex(item) { return item.id === options.id; });
         if (taskIndex === -1) return Promise.reject(new Error('Task not found: ' + options.id));
         var input = options.input || {};
+        var targetTask = tasks[taskIndex];
+        var snapshot = clone(targetTask);
+        if ((input.recurrence || input.clear_recurrence) && input.recurrence_scope === 'this_occurrence') return Promise.reject(new Error('Repeat requires This and following scope'));
         var editableKeys = ['title', 'body', 'priority', 'due', 'list', 'tags', 'section_id', 'reminders', 'parent'];
         editableKeys.forEach(function applyEdit(key) {
           if (Object.prototype.hasOwnProperty.call(input, key)) tasks[taskIndex][key] = clone(input[key]);
@@ -708,7 +961,18 @@
         if (input.clear_due) tasks[taskIndex].due = null;
         if (input.clear_section) tasks[taskIndex].section_id = null;
         if (input.clear_parent) tasks[taskIndex].parent = null;
+        try {
+          if (input.recurrence || input.clear_recurrence || input.recurrence_upcoming_count != null) configureFixtureRecurrence(targetTask, input);
+          else {
+            if (targetTask.recurrence_instance || targetTask.parent) targetTask.recurrence_exception = true;
+            var parent = tasks.find(function (candidate) { return candidate.id === targetTask.parent; });
+            if (parent && parent.recurrence_instance) parent.recurrence_exception = true;
+          }
+        } catch (error) { tasks[taskIndex] = snapshot; return Promise.reject(error); }
+        maintainFixtureRecurrences();
         tasks[taskIndex].updated = NOW;
+        syncTodayProjectionTask(tasks[taskIndex]);
+        saveFixtureRecurrences();
         return Promise.resolve(clone(tasks[taskIndex]));
       }
       if (cmd === 'set_task_status') {
@@ -728,7 +992,13 @@
         }
         statusTask.status = requestedStatus;
         statusTask.completed_at = requestedStatus === 'done' ? statusTask.completed_at || NOW : null;
+        if (requestedStatus === 'done') completeFixtureOccurrence(statusTask);
+        markFixtureException(statusTask);
+        maintainFixtureRecurrences();
+        statusTask.recurrence_effect = recurrenceEffect(statusTask);
         statusTask.updated = NOW;
+        syncTodayProjectionTask(statusTask);
+        saveFixtureRecurrences();
         return Promise.resolve(clone(statusTask));
       }
       if (cmd === 'move_task') {
@@ -775,6 +1045,11 @@
         moveTask.completed_at = nextStatus === 'done' ? moveTask.completed_at || NOW : null;
         if (moveInput.position !== undefined) moveTask.position = moveInput.position;
         moveTask.updated = NOW;
+        if (nextStatus === 'done') completeFixtureOccurrence(moveTask);
+        markFixtureException(moveTask);
+        maintainFixtureRecurrences();
+        moveTask.recurrence_effect = recurrenceEffect(moveTask);
+        syncTodayProjectionTask(moveTask); saveFixtureRecurrences();
         return Promise.resolve(clone(moveTask));
       }
       if (cmd === 'list_notes') {
@@ -917,7 +1192,8 @@
         return Promise.resolve({ mime: 'image/png', bytes: [137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,6,0,0,0,31,21,196,137,0,0,0,13,73,68,65,84,8,215,99,248,207,192,240,31,0,5,0,1,255,137,153,61,29,0,0,0,0,73,69,78,68,174,66,96,130] });
       }
       if (cmd === 'list_events') {
-        var matchingEvents = events.filter(function matchesEvent(item) {
+        var visibleEventSource = calendarScenario() === 'dense' ? events.concat(denseCalendarEvents) : events;
+        var matchingEvents = visibleEventSource.filter(function matchesEvent(item) {
           if (!options.include_deleted && item.status === 'cancelled') return false;
           return true;
         });
@@ -992,12 +1268,12 @@
         return Promise.resolve();
       }
       if (cmd === 'get_event') {
-        var requestedEvent = events.find(function findEvent(item) { return item.id === options.id; });
+        var requestedEvent = calendarEventById(options.id);
         if (!requestedEvent) return Promise.reject(new Error('Event not found: ' + options.id));
         return Promise.resolve(clone(requestedEvent));
       }
       if (cmd === 'get_event_detail') {
-        var detailEvent = events.find(function findEvent(item) { return item.id === options.id; });
+        var detailEvent = calendarEventById(options.id);
         if (!detailEvent) return Promise.reject(new Error('Event not found: ' + options.id));
         var origin = detailEvent.derived_from
           ? tasks.find(function findOrigin(item) { return item.id === detailEvent.derived_from; })
@@ -1278,6 +1554,7 @@
         return Promise.resolve(clone(notificationSummary()));
       }
       if (cmd === 'list_notification_items') {
+        notificationScenario();
         var listInput = options.input || {};
         var notificationFilter = listInput.filter || 'all';
         var visibleNotifications = notificationItems.filter(function filterNotification(item) {
@@ -1365,6 +1642,8 @@
           if (!notificationTask) throw new Error('Task not found: ' + completeMutation.item.task_id);
           notificationTask.status = 'done';
           notificationTask.completed_at = NOW;
+          completeFixtureOccurrence(notificationTask);
+          syncTodayProjectionTask(notificationTask); saveFixtureRecurrences();
           completeMutation.item.status = 'acted';
           completeMutation.item.requested_action = 'complete_task';
           completeMutation.item.action_state = 'succeeded';
@@ -1378,22 +1657,39 @@
         var projection = clone(fixtures.today_projection);
         var todayScenario = fixtureStorageGet('jin.fixture.todayScenario');
         if (todayScenario) {
-          if (todayScenario !== 'sparse') {
+          if (todayScenario !== 'sparse' && todayScenario !== 'dense') {
             return Promise.reject(new Error('Unsupported Jin today scenario: ' + todayScenario));
           }
-          projection.agenda.all_day_events = [];
-          projection.agenda.timed_events = projection.agenda.timed_events
-            .filter(function sparseTimedEvent(event) { return event.id === 'e8'; })
-            .map(function sparseOrdinaryEvent(event) {
-              return Object.assign({}, event, { originating_task: null, prep_notes: [] });
+          if (todayScenario === 'sparse') {
+            projection.agenda.all_day_events = [];
+            projection.agenda.timed_events = projection.agenda.timed_events
+              .filter(function sparseTimedEvent(event) { return event.id === 'e8'; })
+              .map(function sparseOrdinaryEvent(event) {
+                return Object.assign({}, event, { originating_task: null, prep_notes: [] });
+              });
+            projection.attention_tasks = projection.attention_tasks.filter(function sparseAttentionTask(task) {
+              return task.id === 't1';
             });
-          projection.attention_tasks = projection.attention_tasks.filter(function sparseAttentionTask(task) {
-            return task.id === 't1';
-          });
-          projection.due_tasks = [];
-          projection.flexible_tasks = [];
-          projection.active_events = [];
-          projection.next_event = null;
+            projection.due_tasks = [];
+            projection.flexible_tasks = [];
+            projection.active_events = [];
+            projection.next_event = null;
+          } else {
+            projection.agenda.all_day_events.push({
+              id: 'fixture-dense-today-all-day', title: 'Dense all-day coordination', start: '2026-08-20', end: '2026-08-21', is_all_day: true,
+              start_tzid: null, floating: false, status: 'confirmed', source: 'jin', authority: 'jin', ical_uid: null,
+              derived_from: null, recurrence_unexpanded: false, created: NOW, updated: NOW, display_start: 'all-day', originating_task: null, prep_notes: []
+            });
+            for (var denseIndex = 0; denseIndex < 8; denseIndex += 1) {
+              var denseHour = String(13 + denseIndex).padStart(2, '0');
+              projection.agenda.timed_events.push({
+                id: 'fixture-dense-today-' + denseIndex, title: 'Dense Today event ' + (denseIndex + 1),
+                start: '2026-08-20T' + denseHour + ':00:00', end: '2026-08-20T' + denseHour + ':30:00', is_all_day: false,
+                start_tzid: null, floating: false, status: 'confirmed', source: 'jin', authority: 'jin', ical_uid: null,
+                derived_from: null, recurrence_unexpanded: false, created: NOW, updated: NOW, display_start: denseHour + ':00', originating_task: null, prep_notes: []
+              });
+            }
+          }
         }
         function activeTodayTask(task) {
           var source = tasks.find(function matchingTask(item) { return item.id === task.id; });

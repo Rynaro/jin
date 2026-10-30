@@ -32,6 +32,7 @@ pub fn capture_fn(
         let task = jin_core::ops::workflows::create_task(
             root,
             tasks::CreateTaskParams {
+                recurrence_upcoming_count: None,
                 title: text,
                 body: String::new(),
                 priority: None,
@@ -40,6 +41,7 @@ pub fn capture_fn(
                 tags: None,
                 reminders: None,
                 parent: None,
+                recurrence: None,
             },
             None,
         )

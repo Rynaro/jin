@@ -211,6 +211,7 @@ mod tests {
         let task = create_task(
             &cfg.tasks_dir(),
             CreateTaskParams {
+                recurrence_upcoming_count: None,
                 title: "Tagged task".to_string(),
                 body: String::new(),
                 priority: None,
@@ -219,6 +220,7 @@ mod tests {
                 tags: None,
                 reminders: None,
                 parent: None,
+                recurrence: None,
             },
         )
         .unwrap();
@@ -229,6 +231,8 @@ mod tests {
             &cfg.tasks_dir(),
             task.frontmatter.id.as_str(),
             EditTaskParams {
+                recurrence_expected: None,
+                recurrence_upcoming_count: None,
                 title: None,
                 priority: None,
                 due: None,
@@ -239,6 +243,9 @@ mod tests {
                 clear_section: false,
                 reminders: None,
                 parent: None,
+                recurrence: None,
+                clear_recurrence: false,
+                recurrence_scope: None,
             },
         )
         .unwrap();
@@ -279,6 +286,7 @@ mod tests {
         let task1 = create_task(
             &cfg.tasks_dir(),
             CreateTaskParams {
+                recurrence_upcoming_count: None,
                 title: "Tagged".to_string(),
                 body: String::new(),
                 priority: None,
@@ -287,12 +295,14 @@ mod tests {
                 tags: None,
                 reminders: None,
                 parent: None,
+                recurrence: None,
             },
         )
         .unwrap();
         let _task2 = create_task(
             &cfg.tasks_dir(),
             CreateTaskParams {
+                recurrence_upcoming_count: None,
                 title: "Untagged".to_string(),
                 body: String::new(),
                 priority: None,
@@ -301,6 +311,7 @@ mod tests {
                 tags: None,
                 reminders: None,
                 parent: None,
+                recurrence: None,
             },
         )
         .unwrap();
@@ -310,6 +321,8 @@ mod tests {
             &cfg.tasks_dir(),
             task1.frontmatter.id.as_str(),
             EditTaskParams {
+                recurrence_expected: None,
+                recurrence_upcoming_count: None,
                 title: None,
                 priority: None,
                 due: None,
@@ -320,6 +333,9 @@ mod tests {
                 clear_section: false,
                 reminders: None,
                 parent: None,
+                recurrence: None,
+                clear_recurrence: false,
+                recurrence_scope: None,
             },
         )
         .unwrap();

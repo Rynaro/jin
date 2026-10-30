@@ -451,6 +451,7 @@ mod ipc_tests {
             workflows::create_task(
                 root.path(),
                 tasks::CreateTaskParams {
+                    recurrence_upcoming_count: None,
                     title,
                     body: String::new(),
                     priority: None,
@@ -459,6 +460,7 @@ mod ipc_tests {
                     tags: None,
                     reminders: None,
                     parent,
+                    recurrence: None,
                 },
                 None,
             )
@@ -679,6 +681,7 @@ mod ipc_tests {
         let doing_task = workflows::create_task(
             root.path(),
             tasks::CreateTaskParams {
+                recurrence_upcoming_count: None,
                 title: "In progress".into(),
                 body: String::new(),
                 priority: None,
@@ -687,6 +690,7 @@ mod ipc_tests {
                 tags: None,
                 reminders: None,
                 parent: None,
+                recurrence: None,
             },
             Some(&doing_id),
         )

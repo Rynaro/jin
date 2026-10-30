@@ -407,3 +407,16 @@ describe('filter bar / applyFilter path — no regression after enhancement', ()
     expect(emittedValue).toBe('proj-1');
   });
 });
+
+
+describe('hidden and rendered select interoperability', () => {
+  it('hides the entire native shell and chevron with its hidden value source', async () => {
+    const select = buildSelect(); select.hidden = true;
+    const field = JinSelect.enhance(select);
+    const shell = select.parentElement!;
+    expect(shell.hidden).toBe(true);
+    select.hidden = false; await Promise.resolve();
+    expect(shell.hidden).toBe(false); expect(field.getValue()).toBe('');
+    select.hidden = true; await Promise.resolve(); expect(shell.hidden).toBe(true);
+  });
+});

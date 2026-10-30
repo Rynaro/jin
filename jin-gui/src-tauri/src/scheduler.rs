@@ -6,7 +6,7 @@ use std::time::Duration as StdDuration;
 
 use chrono::{DateTime, Utc};
 use jin_core::reminders::ReminderEngine;
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::Notify;
 
 use crate::notifications::{NativeNotificationTransport, NotificationTransport};
@@ -30,6 +30,9 @@ pub fn spawn<R: Runtime>(app: AppHandle<R>, root: PathBuf, wake: Arc<Notify>) {
 
 async fn run_blocking_once<R: Runtime>(app: AppHandle<R>, root: PathBuf) {
     let result = tokio::task::spawn_blocking(move || {
+        if jin_core::ops::recurrence::maintain_task_recurrences(&root, Utc::now())? {
+            let _ = app.emit("tasks-changed", ());
+        }
         let sink = NativeNotificationTransport::new(app);
         process_once_at(&root, &sink, Utc::now())
     })
@@ -48,6 +51,7 @@ pub(crate) fn process_once_at(
     sink: &dyn NotificationTransport,
     now: DateTime<Utc>,
 ) -> jin_core::Result<()> {
+    jin_core::ops::recurrence::maintain_task_recurrences(root, now)?;
     let cfg = jin_core::Config::load(root)?;
     let mut center =
         jin_core::notification_center::NotificationCenter::open(&cfg.notification_center_path())?;

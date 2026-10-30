@@ -1658,6 +1658,35 @@ describe('TodayController — task and event previews', () => {
     expect(failedRow.querySelector('.today-task-row__feedback')?.textContent).toContain('Could not mark complete');
   });
 
+  it('keeps the original occurrence complete and reports a distinct persisted successor', async () => {
+    const dueTask: AgendaTaskDto = {
+      id: 'routine-inline', title: 'Morning review', status: 'todo', priority: 'none', due: '2026-06-27',
+      list: 'Work', position: '', parent: null, agenda_bucket: 'due',
+    };
+    invokeMocks.todayProjection
+      .mockResolvedValueOnce({ ...makeProjection('2026-06-27'), due_tasks: [dueTask] })
+      // The post-mutation projection can fail independently. The existing row
+      // must still keep the returned original complete.
+      .mockRejectedValueOnce(new Error('projection temporarily unavailable'));
+    invokeMocks.setTaskStatus.mockResolvedValue(makePreviewTask({
+      id: 'routine-inline', status: 'done', due: '2026-06-27',
+      recurrence_effect: { created_ids: ['routine-next'], next_occurrence_id: 'routine-next', next_due: '2026-06-28', preserved_exception_count: 0, retired_count: 0 },
+    }));
+    const mounted = await mountLifecycleController();
+    app = mounted.app;
+    await flushController();
+    const complete = mounted.section.querySelector<HTMLButtonElement>('.today-task-row__complete')!;
+    complete.click();
+    await flushController();
+
+    const row = mounted.section.querySelector('.today-task-row')!;
+    expect(row.dataset.state).toBe('complete');
+    expect(complete.disabled).toBe(true);
+    expect(complete.getAttribute('aria-label')).toBe('Task is complete');
+    expect(invokeMocks.setTaskStatus).toHaveBeenCalledWith('routine-inline', 'done');
+    expect(row.querySelector('.today-task-row__feedback')?.textContent).toContain('Next:');
+  });
+
   it('opens Calendar through the existing router navigation event', async () => {
     invokeMocks.todayProjection.mockResolvedValue(makeProjection('2026-06-27'));
     const mounted = await mountLifecycleController();

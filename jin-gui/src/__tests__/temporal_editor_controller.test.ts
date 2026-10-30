@@ -132,6 +132,13 @@ describe('TemporalEditorController', () => {
     expect(document.activeElement).toBe(opener);
   });
 
+  it('notifies cancellation exactly once without emitting a clear commit', () => {
+    const onCancel = vi.fn(); const onCommit = vi.fn();
+    editor.open({ initialDue: null, onCommit, onCancel });
+    editor.cancelDraft(); editor.cancelDraft();
+    expect(onCancel).toHaveBeenCalledTimes(1); expect(onCommit).not.toHaveBeenCalled();
+  });
+
   it('replaces an active session without committing its abandoned draft', () => {
     const firstCommit = vi.fn();
     editor.open({ initialDue: '2026-07-15', onCommit: firstCommit });
@@ -226,6 +233,42 @@ describe('TemporalEditorController', () => {
     expect(dialog.querySelector('[data-temporal-editor-target="title"]')?.textContent).toBe('Set Due Date');
     expect(dialog.querySelector('[data-temporal-editor-target="confirm"]')?.textContent).toBe('Set Date');
     expect(dialog.querySelector('[data-temporal-editor-target="summary"]')?.textContent).toBe('No due date selected');
+  });
+
+  it('uses the shared calendar as a date-only repeat-until editor without a time or offset', () => {
+    editor.open({
+      initialDue: '2026-08-01',
+      presentation: 'recurrence',
+      onCommit: (result) => commits.push(result),
+    });
+
+    const time = dialog.querySelector<HTMLInputElement>('[data-temporal-editor-target="time"]')!;
+    expect(dialog.getAttribute('aria-label')).toBe('Choose repeat end date');
+    expect(dialog.querySelector('[data-temporal-editor-target="title"]')?.textContent).toBe('Repeat until');
+    expect(dialog.querySelector('[data-temporal-editor-target="confirm"]')?.textContent).toBe('Set date');
+    expect(dialog.querySelector('[data-temporal-editor-target="naturalLabel"]')?.textContent).toBe('Date');
+    expect(dialog.querySelector<HTMLInputElement>('[data-temporal-editor-target="natural"]')?.placeholder).toBe('Tomorrow');
+    expect(time.disabled).toBe(true);
+    expect(time.closest('label')?.hidden).toBe(true);
+
+    dialog.dispatchEvent(new CustomEvent('calendar:selected', {
+      bubbles: true,
+      detail: { iso: '2026-08-28' },
+    }));
+    editor.confirm();
+
+    expect(commits).toEqual([{
+      kind: 'set', due: '2026-08-28', date: '2026-08-28', time: '',
+    }]);
+  });
+
+  it('cancels a repeat-until picker without emitting its clear or changing its existing draft', () => {
+    editor.open({ initialDue: '2026-08-01', presentation: 'recurrence', onCommit: (result) => commits.push(result) });
+    dialog.dispatchEvent(new CustomEvent('calendar:selected', { bubbles: true, detail: { iso: '2026-08-28' } }));
+    editor.cancelDraft();
+
+    expect(commits).toEqual([]);
+    expect(dialog.open).toBe(false);
   });
 
   it('uses notification presentation, requires time, and keeps custom validation in the dialog', () => {

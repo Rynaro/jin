@@ -98,6 +98,7 @@ fn vg6_promote_task_file_unchanged() {
     let task = tasks::create_task(
         &root.join("tasks"),
         tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Book dentist".to_string(),
             body: String::new(),
             priority: None,
@@ -106,6 +107,7 @@ fn vg6_promote_task_file_unchanged() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();

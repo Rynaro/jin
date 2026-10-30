@@ -27,9 +27,12 @@
  * section grouping stays a LIST-view-only concern.
  */
 
-import type { TaskDto, TaskBacklinkDto, SectionDto, ReminderDto } from '../../types/dto';
+import type { TaskDto, TaskBacklinkDto, SectionDto, ReminderDto, TaskRecurrence } from '../../types/dto';
+import { repeatSummary, savedRepeatDraft, sameRepeatRule, type TaskRepeatDraft } from './repeat';
 import { applyJinColor } from '../ui/color_picker';
+import { JinSelectField } from '../ui/select';
 import {
+  recurrenceEligibility,
   taskStatusLabel,
   taskStatusGlyph,
   taskPriorityLabel,
@@ -49,6 +52,7 @@ import type { BrowseNavigateCallback } from '../notes/render';
 import { buildTaskItem, createTaskDragPreview, wirePointerDrag, type TaskRowCallbacks } from './item';
 import { configureTaskCompletion } from './completion';
 import { guardNativeDrag } from '../ui/movement';
+import { createCompactNumberStepper } from '../ui/number_stepper';
 import { between } from './rank';
 import type { FlexibleTaskGroup } from './scopes';
 import type { ListDto } from '../../types/dto';
@@ -118,6 +122,12 @@ export interface SectionCallbacks {
  */
 export interface TaskDetailCallbacks {
   owningList?: ListDto;
+  recurrenceOwner?: TaskDto | null;
+  recurrenceDraft?: TaskRepeatDraft;
+  recurrencePending?: boolean;
+  recurrenceConflict?: boolean;
+  onResetRecurrenceDraft?: () => void;
+  onRecurrenceDraftChange?: (draft: TaskRepeatDraft) => void;
   onSaveColumn?: (taskId: string, columnId: string) => Promise<void>;
   /** Called on title blur / Enter. Should call edit_task({title}). */
   onSaveTitle?: (taskId: string, title: string) => Promise<void>;
@@ -133,8 +143,22 @@ export interface TaskDetailCallbacks {
    * dueString is '' when the user cleared the date.
    */
   onPickDue?: (currentDue: string | null, onSelected: (dueString: string) => void) => void;
+  /**
+   * Opens the shared calendar for a recurrence end date. The value is a plain
+   * calendar date: cancellation leaves the local draft alone and an explicit
+   * clear returns null.
+   */
+  onPickRecurrenceUntil?: (currentUntil: string | null, onSelected: (until: string | null) => void) => void;
   /** Called when the inline "Clear" affordance is clicked. Should call edit_task({clear_due:true}). */
   onClearDue?: (taskId: string) => Promise<void>;
+  /** Save or clear the task's typed repeat rule. */
+  onSaveRecurrence?: (taskId: string, recurrence: TaskDto['recurrence'] | null | undefined, upcomingCount?: number) => Promise<void | boolean>;
+  /**
+   * Collect a due date, then save the recurrence against that authoritative
+   * date. Recurrence rules require a due date, but their draft controls remain
+   * available so setting up a routine is a single deliberate action.
+   */
+  onSetDueAndSaveRecurrence?: (taskId: string, recurrence: NonNullable<TaskDto['recurrence']>, upcomingCount?: number) => Promise<void | boolean>;
   /** Called when the list selector changes. Should call edit_task({list}). */
   onSaveList?: (taskId: string, listId: string) => Promise<void>;
   /** Called when section selector changes. sectionId null = clear. Should call edit_task({section_id}) / clear_section. */
@@ -1167,10 +1191,11 @@ export function renderTaskPane(
 ): void {
   el.detailContent.innerHTML = '';
 
-  // ── Pane header: Delete + Close (S3) ────────────────────────────────────
+  // ── Pane header: task identity + Delete + Close (S3) ────────────────────
+  let paneHeader: HTMLDivElement | null = null;
   if (onClose || onDeleteRequest) {
-    const header = document.createElement('div');
-    header.className = 'tasks-detail-pane__header';
+    paneHeader = document.createElement('div');
+    paneHeader.className = 'tasks-detail-pane__header';
 
     const actions = document.createElement('div');
     actions.className = 'tasks-detail-pane__header-actions';
@@ -1201,8 +1226,7 @@ export function renderTaskPane(
       actions.appendChild(closeBtn);
     }
 
-    header.appendChild(actions);
-    el.detailContent.appendChild(header);
+    paneHeader.appendChild(actions);
   }
 
   // ── Title ─────────────────────────────────────────────────────────────────
@@ -1233,7 +1257,12 @@ export function renderTaskPane(
     }
   }
 
-  el.detailContent.appendChild(titleEl);
+  if (paneHeader) {
+    paneHeader.prepend(titleEl);
+    el.detailContent.appendChild(paneHeader);
+  } else {
+    el.detailContent.appendChild(titleEl);
+  }
 
   // ── Body (P1) ────────────────────────────────────────────────────────────
   const bodySection = document.createElement('div');
@@ -1342,6 +1371,13 @@ export function renderTaskPane(
     dueEl.appendChild(dueLabelEl);
     dueEl.appendChild(dueValueEl);
     el.detailContent.appendChild(dueEl);
+    if (task.recurrence) {
+      const repeatEl = document.createElement('p');
+      repeatEl.className = 'task-detail__due text-callout';
+      repeatEl.setAttribute('aria-label', 'Repeats');
+      repeatEl.textContent = `Repeats: ${task.recurrence.frequency}${task.recurrence.mode === 'completion' ? ' after completion' : ''}`;
+      el.detailContent.appendChild(repeatEl);
+    }
 
     const listEl = document.createElement('p');
     listEl.className = 'task-detail__list text-callout';
@@ -1400,6 +1436,23 @@ export function renderTaskPane(
     if (chipsEl) el.detailContent.appendChild(chipsEl);
   }
 
+  if ((task.completion_history?.length ?? 0) > 0) {
+    const history = document.createElement('section');
+    history.className = 'task-detail__reminders';
+    const heading = document.createElement('h3'); heading.textContent = 'Routine history';
+    const list = document.createElement('ul');
+    for (const entry of task.completion_history ?? []) {
+      const item = document.createElement('li');
+      const completed = new Date(entry.completed_at);
+      const due = typeof entry.due === 'string' ? formatTaskDue(entry.due) : String(entry.due);
+      const time = document.createElement('time'); time.dateTime = entry.completed_at;
+      time.textContent = Number.isNaN(completed.valueOf()) ? entry.completed_at : completed.toLocaleString();
+      item.append(`Occurrence ${entry.sequence} · due ${due} · completed `, time);
+      list.appendChild(item);
+    }
+    history.append(heading, list); el.detailContent.appendChild(history);
+  }
+
   // ── S6 — Subtasks section (Approach §6 action plan item 6) ───────────────
   // Hidden when `task` is ITSELF a subtask — depth is capped at one, so a
   // subtask can never have children of its own.
@@ -1428,7 +1481,12 @@ export function renderTaskPane(
   const header = existing.find((node) => node.classList.contains('tasks-detail-pane__header'));
   if (header) main.appendChild(header);
 
-  const title = existing.find((node) => node.classList.contains('browse-detail__title'));
+  // The title belongs to the inspector header when it has close/delete actions.
+  // Look through that header as well as the legacy direct-child location before
+  // assembling the completion/context row; otherwise moving the title into the
+  // header silently removes completion from an editable task detail.
+  const title = header?.querySelector('.browse-detail__title')
+    ?? existing.find((node) => node.classList.contains('browse-detail__title'));
   if (title) {
     const titleRow = document.createElement('div');
     titleRow.className = 'task-detail__title-row';
@@ -1447,7 +1505,11 @@ export function renderTaskPane(
     context.textContent = `${listNameById(resolverLists, task.list)} · ${taskStatusLabel(task.status)}`;
     titleCopy.appendChild(context);
     titleRow.appendChild(titleCopy);
-    main.appendChild(titleRow);
+    if (header) {
+      header.insertBefore(titleRow, header.querySelector('.tasks-detail-pane__header-actions'));
+    } else {
+      main.appendChild(titleRow);
+    }
   }
 
   const appendKind = (kind: string) => {
@@ -1935,6 +1997,356 @@ function buildDetailFields(task: TaskDto, cbs: TaskDetailCallbacks): HTMLElement
     fields.appendChild(row);
   }
 
+  // ── Repeat ─────────────────────────────────────────────────────────────────
+  if (cbs.onSaveRecurrence) {
+    const row = buildFieldRow('Repeat');
+    const eligibility = recurrenceEligibility(task, cbs.recurrenceOwner);
+    const owner = cbs.recurrenceOwner ?? task;
+    const draft = cbs.recurrenceDraft ?? savedRepeatDraft(task, owner);
+    const canKeepUpcoming = !!owner.recurrence_series?.enabled && (eligibility.canEdit || (owner.id === task.id && eligibility.canStop));
+    const hasSeries = !!(task.recurrence_instance || task.recurrence);
+    row.classList.add('task-detail__repeat');
+    const savedSummary = repeatSummary(task, owner);
+    const summary = document.createElement('div'); summary.className = 'task-detail__repeat-summary';
+    const summaryCopy = document.createElement('div'); summaryCopy.className = 'task-detail__repeat-summary-copy';
+    const summaryTitle = document.createElement('span'); summaryTitle.className = 'task-detail__repeat-summary-title'; summaryTitle.textContent = savedSummary.title;
+    const summaryDetail = document.createElement('span'); summaryDetail.className = 'task-detail__repeat-summary-detail'; summaryDetail.textContent = savedSummary.detail;
+    summaryDetail.hidden = !savedSummary.detail;
+    summaryCopy.append(summaryTitle, summaryDetail);
+    const editRepeat = document.createElement('button'); editRepeat.type = 'button';
+    editRepeat.className = 'task-detail__repeat-edit'; editRepeat.textContent = savedSummary.detail ? 'Edit' : 'Set up';
+    editRepeat.setAttribute('aria-label', savedSummary.detail ? 'Edit repeat' : 'Set up repeat');
+    editRepeat.setAttribute('aria-expanded', 'false');
+    editRepeat.setAttribute('aria-controls', `task-repeat-editor-${task.id}`);
+    editRepeat.hidden = !eligibility.canEdit && !canKeepUpcoming && !eligibility.canStop;
+    summary.append(summaryCopy, editRepeat);
+    const editor = document.createElement('div'); editor.className = 'task-detail__repeat-editor';
+    editor.id = `task-repeat-editor-${task.id}`;
+    editor.setAttribute('role', 'group'); editor.setAttribute('aria-label', 'Repeat settings');
+    const scopeNote = document.createElement('p'); scopeNote.className = 'task-detail__repeat-scope';
+    scopeNote.textContent = hasSeries ? 'Changes apply to this and following occurrences.' : 'Create a routine from this task.';
+    const schedule = document.createElement('div'); schedule.className = 'task-detail__repeat-schedule';
+    const options = document.createElement('div'); options.className = 'task-detail__repeat-options';
+    let isEditing = !!cbs.recurrenceDraft || !!cbs.recurrencePending || !!cbs.recurrenceConflict;
+    const stop = document.createElement('button'); stop.type = 'button';
+    stop.className = 'task-detail__repeat-stop'; stop.textContent = 'Stop repeating';
+    stop.setAttribute('aria-label', 'Stop repeating'); stop.hidden = !eligibility.canStop;
+    const stopHelp = document.createElement('p'); stopHelp.className = 'task-detail__repeat-help text-footnote';
+    stopHelp.hidden = !eligibility.canStop;
+    stopHelp.textContent = 'Stop repeating removes untouched future entries. Completed and edited entries are kept.';
+
+    const select = document.createElement('select');
+    select.className = 'task-detail__repeat-select form-select';
+    select.setAttribute('aria-label', 'Task repeat');
+    const values = ['never', 'daily', 'weekdays', 'weekly', 'monthly', 'yearly'];
+    const selected = draft.preset;
+    for (const value of values) {
+      const option = document.createElement('option'); option.value = value;
+      option.textContent = value === 'never' ? 'Never' : value[0].toUpperCase() + value.slice(1);
+      option.selected = value === selected; select.appendChild(option);
+    }
+    const mode = document.createElement('select');
+    mode.className = 'task-detail__repeat-select form-select';
+    mode.setAttribute('aria-label', 'Repeat mode');
+    for (const value of ['scheduled', 'completion']) { const option = document.createElement('option'); option.value = value; option.textContent = value === 'scheduled' ? 'On schedule' : 'After completion'; option.selected = draft.mode === value; mode.appendChild(option); }
+    const intervalStepper = createCompactNumberStepper({
+      value: Number(draft.interval), min: 1, max: 65535,
+      inputLabel: 'Repeat interval', decrementLabel: 'Decrease repeat interval', incrementLabel: 'Increase repeat interval',
+    });
+    const interval = intervalStepper.input; interval.value = draft.interval;
+    const end = document.createElement('select'); end.className = 'task-detail__repeat-select form-select'; end.setAttribute('aria-label', 'Repeat end');
+    for (const value of ['never', 'count', 'until']) { const option = document.createElement('option'); option.value = value; option.textContent = value === 'never' ? 'Never ends' : value === 'count' ? 'After count' : 'Until date'; option.selected = draft.end === value; end.appendChild(option); }
+    const endCountStepper = createCompactNumberStepper({
+      value: Number(draft.count), min: 1, max: 65535,
+      inputLabel: 'Repeat end value', decrementLabel: 'Decrease repeat count', incrementLabel: 'Increase repeat count',
+    });
+    const endValue = endCountStepper.input; endValue.value = draft.count;
+    let untilDate = draft.until;
+    const endDate = document.createElement('button');
+    endDate.type = 'button';
+    endDate.className = 'task-detail__repeat-date-picker due-picker-trigger';
+    endDate.setAttribute('aria-haspopup', 'dialog');
+    endDate.setAttribute('aria-controls', 'jin-due-date-dialog');
+    const endDateText = document.createElement('span');
+    endDateText.className = 'due-picker-trigger__label';
+    endDate.appendChild(endDateText);
+    const clearEndDate = document.createElement('button');
+    clearEndDate.type = 'button';
+    clearEndDate.className = 'task-detail__repeat-date-clear jin-control';
+    clearEndDate.textContent = 'Clear';
+    clearEndDate.setAttribute('aria-label', 'Clear repeat end date');
+    const updateUntilDate = () => {
+      const label = untilDate ? formatTaskDue(untilDate) : 'Choose date…';
+      endDateText.textContent = label;
+      endDate.setAttribute('aria-label', untilDate ? `Repeat until ${label}` : 'Choose repeat end date');
+      endDate.setAttribute('aria-invalid', 'false');
+      clearEndDate.hidden = !untilDate;
+    };
+    updateUntilDate();
+    const label = (text: string, control: HTMLElement) => {
+      // A stepper owns buttons as well as its input. A wrapping <label> would
+      // associate its caption with the first button in some browsers, so use a
+      // neutral field container; each control already has an explicit name.
+      const node = document.createElement('div'); node.className = 'task-detail__repeat-control';
+      const caption = document.createElement('span'); caption.className = 'task-detail__repeat-caption'; caption.textContent = text;
+      node.append(caption, control); return node;
+    };
+    const intervalControl = label('Every', intervalStepper.element);
+    const intervalValueRow = document.createElement('div'); intervalValueRow.className = 'task-detail__repeat-stepper-row';
+    const intervalUnit = document.createElement('span'); intervalUnit.className = 'task-detail__repeat-unit';
+    intervalValueRow.append(intervalStepper.element, intervalUnit); intervalControl.appendChild(intervalValueRow);
+    const endCountControl = label('Count', endCountStepper.element);
+    const endCountValueRow = document.createElement('div'); endCountValueRow.className = 'task-detail__repeat-stepper-row';
+    const endCountUnit = document.createElement('span'); endCountUnit.className = 'task-detail__repeat-unit';
+    endCountValueRow.append(endCountStepper.element, endCountUnit); endCountControl.appendChild(endCountValueRow);
+    const endDateValueRow = document.createElement('div'); endDateValueRow.className = 'task-detail__repeat-date-row';
+    endDateValueRow.append(endDate, clearEndDate);
+    const endDateControl = label('Until', endDateValueRow);
+    const upcomingStepper = createCompactNumberStepper({
+      value: Number(draft.upcomingCount), min: 1, max: 365,
+      inputLabel: 'Keep upcoming entries', decrementLabel: 'Decrease upcoming entries', incrementLabel: 'Increase upcoming entries',
+    });
+    const upcoming = upcomingStepper.input; upcoming.value = draft.upcomingCount;
+    const upcomingRow = document.createElement('div'); upcomingRow.className = 'task-detail__repeat-stepper-row';
+    const upcomingUnit = document.createElement('span'); upcomingUnit.className = 'task-detail__repeat-unit'; upcomingUnit.textContent = 'upcoming entries';
+    upcomingRow.append(upcomingStepper.element, upcomingUnit);
+    const upcomingControl = label('Plan ahead', upcomingRow);
+    const save = cbs.onSaveRecurrence;
+    const setDueAndSave = cbs.onSetDueAndSaveRecurrence;
+    const weekdayValues = new Set(draft.weekdays);
+    const weekdays = document.createElement('div'); weekdays.className = 'task-detail__repeat-weekdays'; weekdays.setAttribute('role', 'group'); weekdays.setAttribute('aria-label', 'Repeat weekdays');
+    const weekdayButtons: HTMLButtonElement[] = [];
+    ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach((dayLabel, index) => {
+      const day = index + 1;
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'task-detail__repeat-weekday'; button.textContent = dayLabel;
+      button.setAttribute('aria-pressed', String(weekdayValues.has(day)));
+      button.addEventListener('click', () => {
+        if (button.disabled) return;
+        weekdayValues.has(day) ? weekdayValues.delete(day) : weekdayValues.add(day);
+        button.setAttribute('aria-pressed', String(weekdayValues.has(day)));
+        notifyDraft();
+      });
+      weekdayButtons.push(button); weekdays.appendChild(button);
+    });
+    const help = document.createElement('p');
+    help.className = 'task-detail__repeat-help text-footnote';
+    const reloadRepeat = document.createElement('button'); reloadRepeat.type = 'button';
+    reloadRepeat.className = 'jin-control jin-control--secondary'; reloadRepeat.textContent = 'Reload repeat settings';
+    reloadRepeat.hidden = !cbs.recurrenceConflict;
+    reloadRepeat.addEventListener('click', () => cbs.onResetRecurrenceDraft?.());
+    const cancel = document.createElement('button'); cancel.type = 'button';
+    cancel.className = 'jin-control jin-control--secondary'; cancel.textContent = 'Cancel'; cancel.setAttribute('aria-label', 'Cancel repeat changes');
+    const apply = document.createElement('button');
+    apply.type = 'button'; apply.className = 'jin-control jin-control--primary';
+    apply.textContent = 'Save repeat'; apply.setAttribute('aria-label', 'Save repeat');
+    const notifyDraft = () => cbs.onRecurrenceDraftChange?.({
+      preset: select.value as TaskRepeatDraft['preset'], interval: interval.value,
+      weekdays: [...weekdayValues].sort(), mode: mode.value as TaskRepeatDraft['mode'],
+      end: end.value as TaskRepeatDraft['end'], count: endValue.value, until: untilDate,
+      scope: 'this_and_following', upcomingCount: upcoming.value,
+    });
+    let isSaving = false;
+    const repeatControls: Array<HTMLInputElement | HTMLSelectElement | HTMLButtonElement> = [
+      select, mode, interval, end, endValue, endDate, clearEndDate, upcoming, ...weekdayButtons, apply, stop,
+    ];
+    const setPending = (pending: boolean) => {
+      isSaving = pending;
+      cancel.disabled = pending;
+      row.setAttribute('aria-busy', String(pending));
+      editor.setAttribute('aria-busy', String(pending));
+      if (pending) {
+        repeatControls.forEach((control) => { control.disabled = true; });
+        intervalStepper.setDisabled(true); endCountStepper.setDisabled(true); upcomingStepper.setDisabled(true);
+        help.textContent = 'Saving repeat…';
+      } else {
+        setEditingState();
+      }
+    };
+    const showConflict = () => {
+      if (!cbs.recurrenceConflict) return;
+      apply.disabled = true;
+      help.textContent = 'Repeat changed elsewhere. Your draft is kept. Reload repeat settings to use the saved rule before applying changes.';
+    };
+    const setEditingState = () => {
+      if (isSaving) return;
+      const noDue = !task.due;
+      const fixedWeekdays = select.value === 'weekdays';
+      const repeatOff = select.value === 'never';
+      options.hidden = repeatOff;
+      intervalControl.hidden = repeatOff || fixedWeekdays;
+      weekdays.hidden = select.value !== 'weekly';
+      endCountControl.hidden = end.value !== 'count';
+      endDateControl.hidden = end.value !== 'until';
+      updateIntervalUnit(); updateCountUnit();
+      if (isSubtask || !eligibility.canEdit) {
+        repeatControls.forEach((control) => { control.disabled = true; });
+        intervalStepper.setDisabled(true); endCountStepper.setDisabled(true); upcomingStepper.setDisabled(!canKeepUpcoming);
+        apply.textContent = canKeepUpcoming ? 'Save repeat' : 'Repeat unavailable';
+        apply.setAttribute('aria-label', canKeepUpcoming ? 'Save repeat' : isSubtask ? 'Repeat unavailable for subtasks' : 'Repeat unavailable');
+        help.textContent = isSubtask ? 'Subtasks cannot repeat. Create the routine on its parent task instead.' : eligibility.reason;
+        stop.disabled = !eligibility.canStop;
+        apply.disabled = !canKeepUpcoming;
+        upcomingControl.hidden = !canKeepUpcoming || mode.value === 'completion';
+        showConflict();
+        return;
+      }
+      [select, mode, interval, end, endValue, endDate, clearEndDate].forEach((control) => { control.disabled = false; });
+      intervalStepper.setDisabled(fixedWeekdays); endCountStepper.setDisabled(false); upcomingStepper.setDisabled(select.value === 'never');
+      upcomingControl.hidden = select.value === 'never' || mode.value === 'completion';
+      weekdayButtons.forEach((button) => { button.disabled = fixedWeekdays; });
+      apply.textContent = noDue && select.value !== 'never' ? 'Set due date and save' : 'Save repeat';
+      apply.setAttribute('aria-label', apply.textContent);
+      stop.disabled = !eligibility.canStop;
+      apply.disabled = (noDue && select.value !== 'never' && !setDueAndSave) || (hasSeries && select.value === 'never');
+      help.textContent = noDue
+        ? (setDueAndSave ? 'Choose a due date when you apply this routine.' : 'Set a due date to make this task repeat.')
+        : mode.value === 'completion' ? 'Next occurrence is created when this one is completed.'
+        : `Keeps ${upcoming.value || '10'} open entries from today onward. Completed and overdue entries stay in your history. Reducing this number keeps entries already saved.`;
+      if (owner.recurrence_series && !owner.recurrence_series.enabled && select.value === 'never') help.textContent = 'Repeating stopped. Choose a preset to start again.';
+      updateIntervalUnit();
+      updateCountUnit();
+      endCountControl.hidden = end.value !== 'count';
+      endDateControl.hidden = end.value !== 'until';
+      endCountStepper.setDisabled(end.value !== 'count');
+      endDate.disabled = end.value !== 'until' || !cbs.onPickRecurrenceUntil;
+      clearEndDate.disabled = end.value !== 'until' || !untilDate;
+      showConflict();
+    };
+    const updateIntervalUnit = () => {
+      const singularUnits: Record<string, string> = { daily: 'day', weekdays: 'week', weekly: 'week', monthly: 'month', yearly: 'year' };
+      const unit = singularUnits[select.value] ?? 'day';
+      intervalUnit.textContent = Number(interval.value) === 1 ? unit : `${unit}s`;
+    };
+    const updateCountUnit = () => {
+      endCountUnit.textContent = Number(endValue.value) === 1 ? 'occurrence' : 'occurrences';
+    };
+    const draftChanged = () => { notifyDraft(); setEditingState(); };
+    mode.addEventListener('change', draftChanged);
+    stop.addEventListener('click', () => {
+      if (stop.disabled) return;
+      setPending(true);
+      void save(task.id, null).finally(() => { setPending(false); });
+    });
+    select.addEventListener('change', () => { if (select.value === 'weekdays') interval.value = '1'; draftChanged(); });
+    end.addEventListener('change', draftChanged);
+    interval.addEventListener('input', draftChanged);
+    endValue.addEventListener('input', draftChanged);
+    upcoming.addEventListener('input', draftChanged);
+    endDate.addEventListener('click', () => {
+      if (endDate.disabled || !cbs.onPickRecurrenceUntil) return;
+      cbs.onPickRecurrenceUntil(untilDate || null, (selectedUntil) => {
+        untilDate = selectedUntil ?? '';
+        updateUntilDate();
+        draftChanged();
+      });
+    });
+    clearEndDate.addEventListener('click', () => {
+      if (clearEndDate.disabled) return;
+      untilDate = '';
+      updateUntilDate();
+      draftChanged();
+    });
+    setEditingState();
+    if (cbs.recurrencePending) setPending(true);
+    apply.addEventListener('click', () => {
+      if (apply.disabled) return;
+      notifyDraft();
+      const upcomingCount = Number(upcoming.value);
+      if (select.value !== 'never' && (!Number.isInteger(upcomingCount) || upcomingCount < 1 || upcomingCount > 365)) {
+        upcoming.setCustomValidity('Keep from 1 through 365 upcoming entries.'); upcoming.reportValidity(); return;
+      }
+      upcoming.setCustomValidity('');
+      if (!eligibility.canEdit && canKeepUpcoming) {
+        setPending(true); void save(task.id, undefined, upcomingCount).finally(() => { setPending(false); }); return;
+      }
+      if (select.value === 'never') {
+        setPending(true);
+        void save(task.id, null).finally(() => { setPending(false); });
+        return;
+      }
+      const parsedInterval = Number(interval.value);
+      if (!Number.isInteger(parsedInterval) || parsedInterval < 1 || parsedInterval > 65535) {
+        interval.setCustomValidity('Enter an interval of at least 1.'); interval.reportValidity(); return;
+      }
+      interval.setCustomValidity('');
+      let endRule: TaskRecurrence['end'] = { kind: 'never' };
+      if (end.value === 'count') {
+        const count = Number(endValue.value);
+        if (!Number.isInteger(count) || count < 1 || count > 65535) { endValue.setCustomValidity('Enter a count of at least 1.'); endValue.reportValidity(); return; }
+        endRule = { kind: 'count', count };
+      } else if (end.value === 'until') {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(untilDate)) {
+          endDate.setAttribute('aria-invalid', 'true'); endDate.focus();
+          help.textContent = 'Choose an end date from the calendar.';
+          return;
+        }
+        endRule = { kind: 'until', date: untilDate };
+      }
+      endValue.setCustomValidity('');
+      endDate.setAttribute('aria-invalid', 'false');
+      const isWeekdaysPreset = select.value === 'weekdays';
+      const recurrence = {
+        editor_preset: select.value as NonNullable<TaskRecurrence['editor_preset']>,
+        series_id: task.recurrence?.series_id ?? '',
+        frequency: (isWeekdaysPreset ? 'weekly' : select.value) as 'daily' | 'weekly' | 'monthly' | 'yearly',
+        interval: isWeekdaysPreset ? 1 : parsedInterval,
+        weekdays: isWeekdaysPreset ? [1, 2, 3, 4, 5] : select.value === 'weekly' ? [...weekdayValues].sort() : [],
+        mode: mode.value as 'scheduled' | 'completion',
+        end: endRule,
+        // The no-due pathway replaces this placeholder with the date chosen
+        // in the shared picker before it crosses the command boundary.
+        anchor_due: task.recurrence?.anchor_due ?? task.due ?? '',
+        sequence: task.recurrence?.sequence ?? 1,
+      };
+      const currentRule = owner.recurrence_series?.enabled ? owner.recurrence_series.rule : null;
+      const persist = task.due
+        ? save(task.id, currentRule && sameRepeatRule(currentRule, recurrence) ? undefined : recurrence, upcomingCount)
+        : setDueAndSave?.(task.id, recurrence, upcomingCount);
+      // A caller without the due-date flow cannot save a rule without its
+      // required anchor. Restore the control instead of leaving a dead button.
+      if (!persist) { setEditingState(); return; }
+      setPending(true);
+      void persist.finally(() => { setPending(false); });
+    });
+    const footer = document.createElement('div'); footer.className = 'task-detail__repeat-actions'; footer.append(cancel, apply);
+    const stopping = document.createElement('div'); stopping.className = 'task-detail__repeat-stopping';
+    stopping.hidden = !eligibility.canStop; stopping.append(stop, stopHelp);
+    const updateEditorVisibility = () => {
+      editor.hidden = !isEditing;
+      summary.hidden = isEditing;
+      editRepeat.setAttribute('aria-expanded', String(isEditing));
+    };
+    editRepeat.addEventListener('click', () => {
+      isEditing = true;
+      if (select.value === 'never') { JinSelectField.setValue(select, 'daily'); setEditingState(); }
+      notifyDraft(); updateEditorVisibility();
+      (editor.querySelector<HTMLButtonElement>('.jin-select-field__trigger') ?? select).focus();
+    });
+    cancel.addEventListener('click', () => {
+      if (isSaving) return;
+      const saved = savedRepeatDraft(task, owner);
+      JinSelectField.setValue(select, saved.preset); interval.value = saved.interval;
+      JinSelectField.setValue(mode, saved.mode); JinSelectField.setValue(end, saved.end);
+      endValue.value = saved.count; untilDate = saved.until; upcoming.value = saved.upcomingCount;
+      weekdayValues.clear(); saved.weekdays.forEach(day => weekdayValues.add(day));
+      weekdayButtons.forEach((button, index) => button.setAttribute('aria-pressed', String(weekdayValues.has(index + 1))));
+      updateUntilDate(); setEditingState();
+      isEditing = false; updateEditorVisibility();
+      cbs.onResetRecurrenceDraft?.();
+      editRepeat.focus();
+    });
+    schedule.append(label('Frequency', select), intervalControl, weekdays);
+    options.append(label('Timing', mode), label('Ends', end), endCountControl, endDateControl, upcomingControl);
+    editor.append(scopeNote, schedule, options, help, reloadRepeat, footer, stopping);
+    if (!eligibility.canEdit && !canKeepUpcoming && !eligibility.canStop) {
+      summaryDetail.textContent = isSubtask ? 'Set the routine on its parent task.' : eligibility.reason;
+      summaryDetail.hidden = false;
+    }
+    updateEditorVisibility();
+    row.append(summary, editor); fields.appendChild(row);
+  }
+
   // ── List ─────────────────────────────────────────────────────────────────────
   if (cbs.onSaveList && cbs.availableLists && cbs.availableLists.length > 0) {
     const row = buildFieldRow(workflow === 'board' ? 'Board' : 'List');
@@ -2043,7 +2455,7 @@ function buildDetailFields(task: TaskDto, cbs: TaskDetailCallbacks): HTMLElement
   timing.appendChild(heading('Timing'));
   organization.appendChild(heading('Organization'));
   for (const row of Array.from(fields.children)) {
-    (row.querySelector('.task-detail__field-label')?.textContent === 'Due' ? timing : organization).appendChild(row);
+    (['Due', 'Repeat'].includes(row.querySelector('.task-detail__field-label')?.textContent ?? '') ? timing : organization).appendChild(row);
   }
   fields.replaceChildren(timing, organization);
   return fields;

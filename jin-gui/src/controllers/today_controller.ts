@@ -56,6 +56,7 @@ import {
   hideLoading,
   renderTodayView,
 } from '../lib/agenda/render';
+import { formatTaskDue } from '../lib/tasks/transform';
 import { initIcons } from '../lib/icons';
 import { JinModal } from '../lib/ui/modal';
 import {
@@ -66,7 +67,6 @@ import {
 } from '../lib/events/draft';
 import { EventCompanion, type CompanionSaveResult } from '../lib/ui/companion';
 import type { SupportedRecurrenceScope } from '../lib/events/recurrence_scope';
-import { formatTaskDue } from '../lib/tasks/transform';
 import { resolveEventLocale } from '../lib/events/locale';
 
 class TodayPreviewModal extends JinModal {
@@ -445,14 +445,23 @@ export default class TodayController extends Controller {
   ): Promise<void> {
     const wasFocused = document.activeElement === controls.button;
     try {
-      await setTaskStatus(taskId, 'done');
+      const updated = await setTaskStatus(taskId, 'done');
       if (controls.row.isConnected) {
         controls.row.dataset.state = 'complete';
         controls.status.textContent = 'Complete';
         controls.button.querySelector<HTMLElement>('.visually-hidden')!.textContent = 'Completed';
         controls.button.setAttribute('aria-label', 'Task is complete');
+        controls.button.disabled = true;
         controls.button.removeAttribute('aria-busy');
-        controls.feedback.textContent = 'Completed.';
+        const effect = updated.recurrence_effect;
+        controls.feedback.textContent = effect?.next_occurrence_id && effect.next_due
+          ? `Completed. Next: ${formatTaskDue(effect.next_due)}` : 'Completed.';
+        if (effect?.next_occurrence_id && effect.next_due) {
+          const next = document.createElement('button'); next.type = 'button';
+          next.className = 'jin-control'; next.textContent = 'Open next occurrence';
+          next.addEventListener('click', () => this.navigateDirect('tasks', effect.next_occurrence_id!));
+          controls.feedback.append(' ', next);
+        }
       }
       // This is the established Today refresh seam; it updates every real
       // appearance of the task from the next authoritative projection.

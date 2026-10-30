@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset, NaiveDate};
+use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 use super::edge::LinkEntry;
@@ -8,7 +8,7 @@ use super::edge::LinkEntry;
 /// `kind` is either `"relative"` (e.g. `"-1h"`, `"-30m"`, `"-1d"`) or
 /// `"absolute"` (an RFC-3339 timestamp). The desktop scheduler resolves and
 /// fires these values while the Tauri GUI is running.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Reminder {
     pub kind: String,
     pub value: String,
@@ -92,15 +92,305 @@ impl std::fmt::Display for Priority {
 }
 
 /// Due date: either a bare date or a datetime with offset.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum DueDate {
     Date(NaiveDate),
     DateTime(DateTime<FixedOffset>),
 }
 
+/// The repeat cadence for a task routine.  This intentionally stays smaller
+/// than event RRULE support: task routines are user-owned Markdown records,
+/// not provider calendar events.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RecurrenceFrequency {
+    Daily,
+    Weekly,
+    Monthly,
+    Yearly,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RecurrenceMode {
+    Scheduled,
+    Completion,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum RecurrenceEnd {
+    Never,
+    Until { date: NaiveDate },
+    Count { count: u16 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskRecurrence {
+    /// Optional editor choice, preserving Weekly versus the equivalent Weekdays preset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor_preset: Option<String>,
+    pub series_id: String,
+    pub frequency: RecurrenceFrequency,
+    pub interval: u16,
+    #[serde(default)]
+    pub weekdays: Vec<u32>, // ISO weekday, Monday = 1
+    #[serde(default = "default_recurrence_mode")]
+    pub mode: RecurrenceMode,
+    #[serde(default = "default_recurrence_end")]
+    pub end: RecurrenceEnd,
+    pub anchor_due: DueDate,
+    #[serde(default = "default_sequence")]
+    pub sequence: u16,
+}
+
+fn default_recurrence_mode() -> RecurrenceMode {
+    RecurrenceMode::Scheduled
+}
+fn default_recurrence_end() -> RecurrenceEnd {
+    RecurrenceEnd::Never
+}
+fn default_sequence() -> u16 {
+    1
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskCompletion {
+    pub series_id: String,
+    pub sequence: u16,
+    pub completed_at: DateTime<FixedOffset>,
+    pub due: DueDate,
+}
+
+impl TaskRecurrence {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.interval == 0 {
+            return Err("repeat interval must be at least one".into());
+        }
+        if self.sequence == 0 {
+            return Err("repeat sequence must be at least one".into());
+        }
+        if matches!(self.end, RecurrenceEnd::Count { count: 0 }) {
+            return Err("repeat count must be at least one".into());
+        }
+        if !self.weekdays.iter().all(|day| (1..=7).contains(day)) {
+            return Err("repeat weekdays must be ISO values from 1 through 7".into());
+        }
+        if !self.weekdays.is_empty() && !matches!(self.frequency, RecurrenceFrequency::Weekly) {
+            return Err("repeat weekdays are supported only for weekly rules".into());
+        }
+        if let Some(preset) = self.editor_preset.as_deref() {
+            let compatible = match preset {
+                "daily" => self.frequency == RecurrenceFrequency::Daily,
+                "weekly" => self.frequency == RecurrenceFrequency::Weekly,
+                "monthly" => self.frequency == RecurrenceFrequency::Monthly,
+                "yearly" => self.frequency == RecurrenceFrequency::Yearly,
+                "weekdays" => {
+                    self.frequency == RecurrenceFrequency::Weekly
+                        && self.interval == 1
+                        && self.weekdays == [1, 2, 3, 4, 5]
+                }
+                _ => false,
+            };
+            if !compatible {
+                return Err("repeat preset must match its cadence".into());
+            }
+        }
+        Ok(())
+    }
+}
+
+pub fn default_recurrence_upcoming_count() -> u16 {
+    10
+}
+pub fn validate_recurrence_upcoming_count(count: u16) -> Result<(), String> {
+    if !(1..=365).contains(&count) {
+        return Err("keep upcoming entries must be from 1 through 365".into());
+    }
+    Ok(())
+}
+
+fn last_day(year: i32, month: u32) -> Option<u32> {
+    // Search within the requested month, including Chrono's final supported month.
+    (28..=31)
+        .rev()
+        .find(|day| NaiveDate::from_ymd_opt(year, month, *day).is_some())
+}
+
+fn add_months(anchor: NaiveDate, months: i32) -> Option<NaiveDate> {
+    let total = anchor
+        .year()
+        .checked_mul(12)?
+        .checked_add(anchor.month0() as i32)?
+        .checked_add(months)?;
+    let year = total.div_euclid(12);
+    let month = total.rem_euclid(12) as u32 + 1;
+    NaiveDate::from_ymd_opt(year, month, anchor.day().min(last_day(year, month)?))
+}
+
+/// Compute a routine's next date-only occurrence. Scheduled routines use the
+/// immutable anchor and skip every candidate at or before `after`; completion
+/// routines use `current` as their fresh anchor.
+pub fn next_recurrence_date(
+    rule: &TaskRecurrence,
+    current: NaiveDate,
+    after: NaiveDate,
+) -> Option<NaiveDate> {
+    if rule.validate().is_err() {
+        return None;
+    }
+    let threshold = current.max(after);
+    let anchor = match rule.anchor_due {
+        DueDate::Date(date) => date,
+        DueDate::DateTime(dt) => dt.date_naive(),
+    };
+    let base = if matches!(rule.mode, RecurrenceMode::Completion) {
+        current
+    } else {
+        anchor
+    };
+    let candidate = match rule.frequency {
+        RecurrenceFrequency::Daily => {
+            let delta = (threshold - base).num_days().max(0) / rule.interval as i64 + 1;
+            base.checked_add_signed(Duration::days(delta * rule.interval as i64))?
+        }
+        RecurrenceFrequency::Weekly => {
+            let mut days = rule.weekdays.clone();
+            if days.is_empty() {
+                days.push(base.weekday().number_from_monday());
+            }
+            days.sort_unstable();
+            days.dedup();
+            let anchor_week = base
+                .checked_sub_signed(Duration::days(base.weekday().num_days_from_monday() as i64))?;
+            let elapsed_weeks = (threshold - anchor_week).num_days().div_euclid(7).max(0);
+            let interval = i64::from(rule.interval);
+            let active_week = elapsed_weeks.div_euclid(interval) * interval;
+            [active_week, active_week + interval]
+                .into_iter()
+                .flat_map(|week| {
+                    days.iter().filter_map(move |day| {
+                        anchor_week
+                            .checked_add_signed(Duration::days(week * 7 + i64::from(*day) - 1))
+                    })
+                })
+                .find(|candidate| *candidate > threshold)?
+        }
+        RecurrenceFrequency::Monthly => {
+            let months = (threshold.year() - base.year()) * 12 + threshold.month0() as i32
+                - base.month0() as i32;
+            let mut n = (months.max(0) / rule.interval as i32) * rule.interval as i32;
+            let cadence_anchor = if matches!(rule.mode, RecurrenceMode::Completion) {
+                base
+            } else {
+                anchor
+            };
+            let mut d = add_months(cadence_anchor, n)?;
+            while d <= threshold {
+                n += rule.interval as i32;
+                d = add_months(cadence_anchor, n)?;
+            }
+            d
+        }
+        RecurrenceFrequency::Yearly => {
+            let mut year = base.year()
+                + ((threshold.year() - base.year()).max(0) / rule.interval as i32)
+                    * rule.interval as i32;
+            let cadence_anchor = if matches!(rule.mode, RecurrenceMode::Completion) {
+                base
+            } else {
+                anchor
+            };
+            let mut d = NaiveDate::from_ymd_opt(
+                year,
+                cadence_anchor.month(),
+                cadence_anchor
+                    .day()
+                    .min(last_day(year, cadence_anchor.month())?),
+            )?;
+            while d <= threshold {
+                year += rule.interval as i32;
+                d = NaiveDate::from_ymd_opt(
+                    year,
+                    cadence_anchor.month(),
+                    cadence_anchor
+                        .day()
+                        .min(last_day(year, cadence_anchor.month())?),
+                )?;
+            }
+            d
+        }
+    };
+    if let RecurrenceEnd::Until { date } = rule.end {
+        if candidate > date {
+            return None;
+        }
+    }
+    Some(candidate)
+}
+
 fn default_list() -> String {
     "inbox".to_string()
+}
+
+/// A durable logical occurrence, independent of its task's stable ULID.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecurrenceInstance {
+    pub owner_task_id: String,
+    pub series_id: String,
+    pub revision: u32,
+    pub sequence: u64,
+    pub originally_scheduled_due: DueDate,
+    #[serde(default)]
+    pub completion_predecessor_id: Option<String>,
+    #[serde(default)]
+    pub detached: bool,
+}
+
+/// Canonical immutable content used when materializing another occurrence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurrenceTemplate {
+    pub frontmatter: Box<TaskFrontmatter>,
+    pub body: String,
+    #[serde(default)]
+    pub children: Vec<RecurrenceTemplate>,
+}
+
+/// Only the owner contains this authority. Occurrences never infer an owner.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurrenceSeries {
+    #[serde(default = "default_recurrence_upcoming_count")]
+    pub upcoming_count: u16,
+    pub schema_version: u8,
+    pub series_id: String,
+    pub enabled: bool,
+    pub revision: u32,
+    pub rule: TaskRecurrence,
+    pub template: RecurrenceTemplate,
+    pub next_sequence: u64,
+    pub cursor: DueDate,
+    /// Unmaterialized dates strictly before this monotonic boundary are consumed.
+    /// Separate from the last materialized slot so an exhausted end rule still
+    /// records a seek without inventing an occurrence or an off-schedule due.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skipped_before: Option<NaiveDate>,
+    pub outstanding_task_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecurrenceScope {
+    ThisOccurrence,
+    ThisAndFollowing,
+}
+
+/// Optional optimistic guard for series edits made from a hydrated editor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurrenceRevision {
+    pub series_id: String,
+    pub revision: u32,
+    pub enabled: bool,
 }
 
 /// YAML frontmatter for a Task file.
@@ -155,6 +445,23 @@ pub struct TaskFrontmatter {
     /// Optional agenda placement. Missing legacy values mean no explicit bucket.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agenda_bucket: Option<AgendaBucket>,
+    /// Recurrence remains canonical Markdown so routines survive index rebuilds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recurrence: Option<TaskRecurrence>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub completion_history: Vec<TaskCompletion>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recurrence_series: Option<RecurrenceSeries>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub retired_recurrence_series: Vec<RecurrenceSeries>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recurrence_instance: Option<RecurrenceInstance>,
+    #[serde(default)]
+    pub recurrence_exception: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recurrence_baseline: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recurrence_retired_reason: Option<String>,
 }
 
 /// A parsed Task (frontmatter + optional body).
@@ -248,6 +555,61 @@ list: inbox
 "#;
         let fm: TaskFrontmatter = frontmatter::parse_fm(yaml).unwrap();
         assert!(fm.agenda_bucket.is_none());
+    }
+
+    #[test]
+    fn recurring_task_legacy_serde() {
+        let yaml = r#"id: "LEGACY04"
+type: task
+title: Legacy task
+created: "2026-01-01T00:00:00+00:00"
+updated: "2026-01-01T00:00:00+00:00"
+list: inbox
+"#;
+        let fm: TaskFrontmatter = frontmatter::parse_fm(yaml).unwrap();
+        assert!(fm.recurrence.is_none());
+        assert!(fm.completion_history.is_empty());
+    }
+
+    fn daily(anchor: NaiveDate) -> TaskRecurrence {
+        TaskRecurrence {
+            editor_preset: None,
+            series_id: "series".into(),
+            frequency: RecurrenceFrequency::Daily,
+            interval: 1,
+            weekdays: vec![],
+            mode: RecurrenceMode::Scheduled,
+            end: RecurrenceEnd::Never,
+            anchor_due: DueDate::Date(anchor),
+            sequence: 1,
+        }
+    }
+
+    #[test]
+    fn scheduled_repeat_skips_overdue_slots() {
+        let rule = daily(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
+        assert_eq!(
+            next_recurrence_date(
+                &rule,
+                NaiveDate::from_ymd_opt(2026, 1, 2).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 1, 5).unwrap()
+            ),
+            Some(NaiveDate::from_ymd_opt(2026, 1, 6).unwrap())
+        );
+    }
+
+    #[test]
+    fn scheduled_repeat_preserves_calendar_anchor() {
+        let mut rule = daily(NaiveDate::from_ymd_opt(2026, 1, 31).unwrap());
+        rule.frequency = RecurrenceFrequency::Monthly;
+        assert_eq!(
+            next_recurrence_date(
+                &rule,
+                NaiveDate::from_ymd_opt(2026, 2, 28).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 2, 28).unwrap()
+            ),
+            Some(NaiveDate::from_ymd_opt(2026, 3, 31).unwrap())
+        );
     }
 
     /// VG-P2 serde round-trip: a task file WITH all new P2 fields set correctly

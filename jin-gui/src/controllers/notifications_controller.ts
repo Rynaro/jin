@@ -6,6 +6,7 @@ import {
   deferNotificationItem,
   dismissNotificationItem,
   getEventDetailById,
+  getTaskById,
   listNotificationItems,
   newOperationId,
   notificationCenterSummary,
@@ -33,6 +34,7 @@ import type {
   NotificationItemDto,
 } from '../types/dto';
 import { renderRecurrenceScope } from '../lib/events/recurrence_scope';
+import { formatTaskDue } from '../lib/tasks/transform';
 import type TemporalEditorController from './temporal_editor_controller';
 import type { TemporalEditorCommit } from './temporal_editor_controller';
 
@@ -308,7 +310,17 @@ export default class NotificationsController extends Controller {
           expected_item_version: item.version,
           operation_id: newOperationId('complete-notification-task'),
         }),
-        'Task marked done.',
+        async () => {
+          try {
+            const updatedTask = await getTaskById(item.task_id);
+            const effect = updatedTask.recurrence_effect;
+            return effect?.next_occurrence_id && effect.next_due
+              ? `Task marked done. Next: ${formatTaskDue(effect.next_due)}` : 'Task marked done.';
+          } catch {
+            // Completion succeeded; a read failure must not recast it as an action failure.
+            return 'Task occurrence completed.';
+          }
+        },
         control as HTMLElement,
         true,
       );
@@ -431,7 +443,7 @@ export default class NotificationsController extends Controller {
 
   private async runMutation(
     mutate: () => Promise<NotificationItemDto>,
-    successMessage: string,
+    successMessage: string | ((updated: NotificationItemDto) => string | Promise<string>),
     focus: HTMLElement | null,
     tasksChanged = false,
   ): Promise<void> {
@@ -445,7 +457,7 @@ export default class NotificationsController extends Controller {
       this.replaceItem(updated);
       if (tasksChanged) this.dispatch('tasks-changed', { prefix: 'jin', bubbles: true });
       await this.refresh();
-      this.announce(successMessage);
+      this.announce(typeof successMessage === 'function' ? await successMessage(updated) : successMessage);
     } catch (error: unknown) {
       if (isNotificationError(error) && error.item) this.replaceItem(error.item);
       await this.refresh();

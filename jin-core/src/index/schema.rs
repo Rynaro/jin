@@ -14,7 +14,7 @@ static APPLY_LOCK: Mutex<()> = Mutex::new(());
 /// wave3-tasks-v1: adds lists/sections/tags/task_tags tables + 4 new tasks columns (P2).
 /// wave3-tasks-v2: S6 — adds the `parent` column to `tasks` (subtasks).
 /// calendar-m1-v1: adds explicit flexible agenda placement to tasks.
-pub(crate) const SCHEMA_VERSION: &str = "tasks-workflows-v2";
+pub(crate) const SCHEMA_VERSION: &str = "persistent-task-recurrence-v3";
 
 pub const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -70,7 +70,12 @@ CREATE TABLE IF NOT EXISTS tasks (
     reminders    TEXT NOT NULL DEFAULT '[]', -- P2: JSON array of Reminder objects
     parent       TEXT,                     -- S6: parent task id (subtasks); NULL = top-level
     agenda_bucket TEXT,                    -- M1: explicit agenda placement; NULL = none
-    board_column_id TEXT                   -- Canonical board placement; NULL for checklists/legacy
+    board_column_id TEXT,                  -- Canonical board placement; NULL for checklists/legacy
+    recurrence TEXT NOT NULL DEFAULT 'null',
+    recurrence_series TEXT NOT NULL DEFAULT 'null',
+    recurrence_instance TEXT NOT NULL DEFAULT 'null',
+    recurrence_exception INTEGER NOT NULL DEFAULT 0,
+    completion_history TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -261,6 +266,27 @@ pub fn apply(conn: &Connection) -> SqlResult<()> {
         }
         if !has_column(conn, "tasks", "board_column_id")? {
             conn.execute_batch("ALTER TABLE tasks ADD COLUMN board_column_id TEXT")?;
+        }
+        if !has_column(conn, "tasks", "recurrence")? {
+            conn.execute_batch(
+                "ALTER TABLE tasks ADD COLUMN recurrence TEXT NOT NULL DEFAULT 'null'",
+            )?;
+        }
+        if !has_column(conn, "tasks", "completion_history")? {
+            conn.execute_batch(
+                "ALTER TABLE tasks ADD COLUMN completion_history TEXT NOT NULL DEFAULT '[]'",
+            )?;
+        }
+        for (column, definition) in [
+            ("recurrence_series", "TEXT NOT NULL DEFAULT 'null'"),
+            ("recurrence_instance", "TEXT NOT NULL DEFAULT 'null'"),
+            ("recurrence_exception", "INTEGER NOT NULL DEFAULT 0"),
+        ] {
+            if !has_column(conn, "tasks", column)? {
+                conn.execute_batch(&format!(
+                    "ALTER TABLE tasks ADD COLUMN {column} {definition}"
+                ))?;
+            }
         }
         if !has_column(conn, "lists", "workflow_kind")? {
             conn.execute_batch("ALTER TABLE lists ADD COLUMN workflow_kind TEXT")?;

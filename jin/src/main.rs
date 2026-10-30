@@ -270,6 +270,21 @@ enum TaskAction {
         /// S6: id of the parent task, if this is a subtask.
         #[arg(long)]
         parent: Option<String>,
+        #[arg(long, value_parser = ["daily", "weekdays", "weekly", "monthly", "yearly"])]
+        repeat: Option<String>,
+        #[arg(long, default_value_t = 1)]
+        repeat_every: u16,
+        #[arg(long = "repeat-on")]
+        repeat_on: Vec<String>,
+        #[arg(long, default_value = "scheduled", value_parser = ["scheduled", "completion"])]
+        repeat_mode: String,
+        #[arg(long, conflicts_with = "repeat_count")]
+        repeat_until: Option<String>,
+        #[arg(long, conflicts_with = "repeat_until")]
+        repeat_count: Option<u16>,
+        /// Keep this many active upcoming entries (1–365).
+        #[arg(long)]
+        repeat_ahead: Option<u16>,
     },
     Edit {
         id: String,
@@ -294,7 +309,29 @@ enum TaskAction {
         /// S6: detach from the parent (set parent = None).
         #[arg(long)]
         clear_parent: bool,
+        #[arg(long, value_parser = ["daily", "weekdays", "weekly", "monthly", "yearly"])]
+        repeat: Option<String>,
+        #[arg(long, default_value_t = 1)]
+        repeat_every: u16,
+        #[arg(long = "repeat-on")]
+        repeat_on: Vec<String>,
+        #[arg(long, default_value = "scheduled", value_parser = ["scheduled", "completion"])]
+        repeat_mode: String,
+        #[arg(long, conflicts_with = "repeat_count")]
+        repeat_until: Option<String>,
+        #[arg(long, conflicts_with = "repeat_until")]
+        repeat_count: Option<u16>,
+        /// Keep this many active upcoming entries (1–365).
+        #[arg(long)]
+        repeat_ahead: Option<u16>,
+        #[arg(long)]
+        clear_repeat: bool,
+        /// Apply a rule change to this and following occurrences.
+        #[arg(long, value_parser = ["this_occurrence", "this_and_following"])]
+        recurrence_scope: Option<String>,
     },
+    /// Materialize the bounded recurring-task planning window.
+    Maintain,
     List {
         /// Filter by list name.
         #[arg(long)]
@@ -516,9 +553,31 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     priority,
                     due,
                     parent,
+                    repeat,
+                    repeat_every,
+                    repeat_on,
+                    repeat_mode,
+                    repeat_until,
+                    repeat_count,
+                    repeat_ahead,
                 } => {
                     let title = resolve_title(title, title_pos)?;
-                    cmd_task_add(&root, title, list, priority, due, parent, json)?;
+                    cmd_task_add(
+                        &root,
+                        title,
+                        list,
+                        priority,
+                        due,
+                        parent,
+                        repeat,
+                        repeat_every,
+                        repeat_on,
+                        repeat_mode,
+                        repeat_until,
+                        repeat_count,
+                        repeat_ahead,
+                        json,
+                    )?;
                 }
                 TaskAction::Edit {
                     id,
@@ -529,6 +588,15 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
                     list,
                     parent,
                     clear_parent,
+                    repeat,
+                    repeat_every,
+                    repeat_on,
+                    repeat_mode,
+                    repeat_until,
+                    repeat_count,
+                    repeat_ahead,
+                    clear_repeat,
+                    recurrence_scope,
                 } => {
                     cmd_task_edit(
                         &root,
@@ -540,8 +608,31 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
                         list,
                         parent,
                         clear_parent,
+                        repeat,
+                        repeat_every,
+                        repeat_on,
+                        repeat_mode,
+                        repeat_until,
+                        repeat_count,
+                        repeat_ahead,
+                        clear_repeat,
+                        recurrence_scope,
                         json,
                     )?;
+                }
+                TaskAction::Maintain => {
+                    let changed = jin_core::ops::recurrence::maintain_task_recurrences(
+                        &root,
+                        chrono::Utc::now(),
+                    )?;
+                    if json {
+                        output::print_json(&Envelope::ok(
+                            "result",
+                            serde_json::json!({"changed":changed}),
+                        ));
+                    } else {
+                        println!("Recurring task planning updated: {changed}");
+                    }
                 }
                 TaskAction::List {
                     list,
@@ -1031,6 +1122,71 @@ fn cmd_note_rm(root: &std::path::Path, id: &str, json: bool) -> anyhow::Result<(
     Ok(())
 }
 
+fn parse_recurrence(
+    repeat: Option<String>,
+    every: u16,
+    on: Vec<String>,
+    mode: String,
+    until: Option<String>,
+    count: Option<u16>,
+    due: Option<jin_core::model::DueDate>,
+) -> anyhow::Result<Option<jin_core::model::TaskRecurrence>> {
+    use jin_core::model::{
+        RecurrenceEnd, RecurrenceFrequency as F, RecurrenceMode as M, TaskRecurrence,
+    };
+    let Some(name) = repeat else { return Ok(None) };
+    let anchor_due = due.ok_or_else(|| anyhow::anyhow!("--repeat requires --due"))?;
+    let frequency = match name.as_str() {
+        "daily" => F::Daily,
+        "weekdays" | "weekly" => F::Weekly,
+        "monthly" => F::Monthly,
+        "yearly" => F::Yearly,
+        _ => unreachable!(),
+    };
+    let weekdays = if name == "weekdays" {
+        vec![1, 2, 3, 4, 5]
+    } else {
+        on.into_iter()
+            .map(|x| match x.as_str() {
+                "mon" => Ok(1),
+                "tue" => Ok(2),
+                "wed" => Ok(3),
+                "thu" => Ok(4),
+                "fri" => Ok(5),
+                "sat" => Ok(6),
+                "sun" => Ok(7),
+                _ => Err(anyhow::anyhow!("invalid --repeat-on: {x}")),
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?
+    };
+    let end = if let Some(value) = until {
+        RecurrenceEnd::Until {
+            date: chrono::NaiveDate::parse_from_str(&value, "%Y-%m-%d")?,
+        }
+    } else if let Some(count) = count {
+        RecurrenceEnd::Count { count }
+    } else {
+        RecurrenceEnd::Never
+    };
+    let rule = TaskRecurrence {
+        editor_preset: Some(name.clone()),
+        series_id: String::new(),
+        frequency,
+        interval: every,
+        weekdays,
+        mode: if mode == "completion" {
+            M::Completion
+        } else {
+            M::Scheduled
+        },
+        end,
+        anchor_due,
+        sequence: 1,
+    };
+    rule.validate().map_err(anyhow::Error::msg)?;
+    Ok(Some(rule))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn cmd_task_add(
     root: &std::path::Path,
@@ -1039,11 +1195,28 @@ fn cmd_task_add(
     priority: Option<String>,
     due: Option<String>,
     parent: Option<String>,
+    repeat: Option<String>,
+    repeat_every: u16,
+    repeat_on: Vec<String>,
+    repeat_mode: String,
+    repeat_until: Option<String>,
+    repeat_count: Option<u16>,
+    repeat_ahead: Option<u16>,
     json: bool,
 ) -> anyhow::Result<()> {
+    let before = jin_core::ops::recurrence::mutation_snapshot(root)?;
     let priority = priority.as_deref().map(parse_priority).transpose()?;
     let due = due.as_deref().map(parse_due_date).transpose()?;
 
+    let recurrence = parse_recurrence(
+        repeat,
+        repeat_every,
+        repeat_on,
+        repeat_mode,
+        repeat_until,
+        repeat_count,
+        due.clone(),
+    )?;
     let task = jin_core::ops::workflows::create_task(
         root,
         jin_core::ops::tasks::CreateTaskParams {
@@ -1055,12 +1228,14 @@ fn cmd_task_add(
             tags: None,
             reminders: None,
             parent,
+            recurrence,
+            recurrence_upcoming_count: repeat_ahead,
         },
         None,
     )?;
     api::refresh(root)?;
     if json {
-        let dto = jin_core::dto::TaskDto::from_model(&task);
+        let dto = jin_core::ops::recurrence::mutation_dto(root, &task, &before)?;
         let env = Envelope::ok("task", serde_json::to_value(&dto)?);
         output::print_json(&env);
     } else {
@@ -1116,7 +1291,7 @@ fn cmd_task_show(root: &std::path::Path, id: &str, json: bool) -> anyhow::Result
 }
 
 fn cmd_task_rm(root: &std::path::Path, id: &str, json: bool) -> anyhow::Result<()> {
-    let task = jin_core::ops::tasks::delete_task(&Config::load(root)?.tasks_dir(), id)?;
+    let task = jin_core::ops::workflows::delete_task(root, id)?;
     api::refresh(root)?;
     if json {
         let env = Envelope::ok(
@@ -1133,11 +1308,12 @@ fn cmd_task_rm(root: &std::path::Path, id: &str, json: bool) -> anyhow::Result<(
 }
 
 fn cmd_task_done(root: &std::path::Path, id: &str, json: bool) -> anyhow::Result<()> {
+    let before = jin_core::ops::recurrence::mutation_snapshot(root)?;
     let task =
         jin_core::ops::workflows::transition_task(root, id, jin_core::model::TaskStatus::Done)?;
     api::refresh(root)?;
     if json {
-        let dto = jin_core::dto::TaskDto::from_model(&task);
+        let dto = jin_core::ops::recurrence::mutation_dto(root, &task, &before)?;
         let env = Envelope::ok("task", serde_json::to_value(&dto)?);
         output::print_json(&env);
     } else {
@@ -1153,10 +1329,11 @@ fn cmd_task_transition(
     next: jin_core::model::TaskStatus,
     json: bool,
 ) -> anyhow::Result<()> {
+    let before = jin_core::ops::recurrence::mutation_snapshot(root)?;
     let task = jin_core::ops::workflows::transition_task(root, id, next)?;
     api::refresh(root)?;
     if json {
-        let dto = jin_core::dto::TaskDto::from_model(&task);
+        let dto = jin_core::ops::recurrence::mutation_dto(root, &task, &before)?;
         let env = Envelope::ok("task", serde_json::to_value(&dto)?);
         output::print_json(&env);
     } else {
@@ -1176,8 +1353,18 @@ fn cmd_task_edit(
     list: Option<String>,
     parent: Option<String>,
     clear_parent: bool,
+    repeat: Option<String>,
+    repeat_every: u16,
+    repeat_on: Vec<String>,
+    repeat_mode: String,
+    repeat_until: Option<String>,
+    repeat_count: Option<u16>,
+    repeat_ahead: Option<u16>,
+    clear_repeat: bool,
+    recurrence_scope: Option<String>,
     json: bool,
 ) -> anyhow::Result<()> {
+    let before = jin_core::ops::recurrence::mutation_snapshot(root)?;
     let priority = priority.as_deref().map(parse_priority).transpose()?;
     let due_param: Option<Option<jin_core::model::DueDate>> = if clear_due {
         Some(None)
@@ -1193,6 +1380,25 @@ fn cmd_task_edit(
         parent.map(Some)
     };
 
+    let recurrence_due = if due_param.is_some() {
+        due_param.clone().flatten()
+    } else if repeat.is_some() {
+        let cfg = Config::load(root)?;
+        jin_core::ops::tasks::get_task(&cfg.tasks_dir(), id)?
+            .frontmatter
+            .due
+    } else {
+        None
+    };
+    let recurrence = parse_recurrence(
+        repeat,
+        repeat_every,
+        repeat_on,
+        repeat_mode,
+        repeat_until,
+        repeat_count,
+        recurrence_due,
+    )?;
     let task = jin_core::ops::workflows::edit_task(
         root,
         id,
@@ -1207,11 +1413,22 @@ fn cmd_task_edit(
             clear_section: false,
             reminders: None,
             parent: parent_param,
+            recurrence,
+            recurrence_upcoming_count: repeat_ahead,
+            clear_recurrence: clear_repeat,
+            recurrence_expected: None,
+            recurrence_scope: recurrence_scope.as_deref().map(|s| {
+                if s == "this_and_following" {
+                    jin_core::model::task::RecurrenceScope::ThisAndFollowing
+                } else {
+                    jin_core::model::task::RecurrenceScope::ThisOccurrence
+                }
+            }),
         },
     )?;
     api::refresh(root)?;
     if json {
-        let dto = jin_core::dto::TaskDto::from_model(&task);
+        let dto = jin_core::ops::recurrence::mutation_dto(root, &task, &before)?;
         let env = Envelope::ok("task", serde_json::to_value(&dto)?);
         output::print_json(&env);
     } else {
@@ -1779,6 +1996,7 @@ fn cmd_capture(
         let task = jin_core::ops::workflows::create_task(
             root,
             jin_core::ops::tasks::CreateTaskParams {
+                recurrence_upcoming_count: None,
                 title: text,
                 body: String::new(),
                 priority: None,
@@ -1787,6 +2005,7 @@ fn cmd_capture(
                 tags: None,
                 reminders: None,
                 parent: None,
+                recurrence: None,
             },
             None,
         )?;

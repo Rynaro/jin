@@ -15,6 +15,7 @@ pub mod notes;
 pub mod promote;
 pub mod recoverable_operations;
 pub mod recovery;
+pub mod recurrence;
 pub mod remove_time_block;
 pub mod sync;
 pub mod tags;

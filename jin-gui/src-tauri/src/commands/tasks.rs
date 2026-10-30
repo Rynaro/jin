@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use jin_core::dto::TaskDto;
 use jin_core::model::task::Reminder;
-use jin_core::model::{DueDate, Priority, TaskStatus};
+use jin_core::model::{DueDate, Priority, TaskRecurrence, TaskStatus};
 use jin_core::ops::{api, tags as tags_ops, tasks, workflows};
 use jin_core::Config;
 
@@ -48,6 +48,10 @@ pub struct TaskInput {
     /// S6: id of the parent task, if this is a subtask. `None` = top-level.
     #[serde(default)]
     pub parent: Option<String>,
+    #[serde(default)]
+    pub recurrence: Option<TaskRecurrence>,
+    #[serde(default)]
+    pub recurrence_upcoming_count: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,6 +81,16 @@ pub struct EditTaskInput {
     /// over `parent` (mirrors the `clear_due` / `clear_section` idiom).
     #[serde(default)]
     pub clear_parent: bool,
+    #[serde(default)]
+    pub recurrence: Option<TaskRecurrence>,
+    #[serde(default)]
+    pub recurrence_upcoming_count: Option<u16>,
+    #[serde(default)]
+    pub clear_recurrence: bool,
+    #[serde(default)]
+    pub recurrence_scope: Option<jin_core::model::task::RecurrenceScope>,
+    #[serde(default)]
+    pub recurrence_expected: Option<jin_core::model::task::RecurrenceRevision>,
 }
 
 /// P9: input for the atomic drag/drop move command.
@@ -186,6 +200,7 @@ pub fn get_task_fn(root: &Path, id: String) -> Result<TaskDto, JinErrorDto> {
 }
 
 pub fn create_task_fn(root: &Path, input: TaskInput) -> Result<TaskDto, JinErrorDto> {
+    let before = jin_core::ops::recurrence::mutation_snapshot(root).map_err(JinErrorDto::from)?;
     let priority = input.priority.as_deref().map(parse_priority).transpose()?;
     let due = input.due.as_deref().map(parse_due).transpose()?;
 
@@ -217,15 +232,18 @@ pub fn create_task_fn(root: &Path, input: TaskInput) -> Result<TaskDto, JinError
             tags,
             reminders,
             parent: input.parent,
+            recurrence: input.recurrence,
+            recurrence_upcoming_count: input.recurrence_upcoming_count,
         },
         board_column_id.as_deref(),
     )
     .map_err(JinErrorDto::from)?;
     api::refresh(root).map_err(JinErrorDto::from)?;
-    Ok(TaskDto::from_model(&task))
+    jin_core::ops::recurrence::mutation_dto(root, &task, &before).map_err(JinErrorDto::from)
 }
 
 pub fn edit_task_fn(root: &Path, id: String, input: EditTaskInput) -> Result<TaskDto, JinErrorDto> {
+    let before = jin_core::ops::recurrence::mutation_snapshot(root).map_err(JinErrorDto::from)?;
     let priority = input.priority.as_deref().map(parse_priority).transpose()?;
     let due_param: Option<Option<DueDate>> = if input.clear_due {
         Some(None)
@@ -272,29 +290,36 @@ pub fn edit_task_fn(root: &Path, id: String, input: EditTaskInput) -> Result<Tas
             clear_section: input.clear_section,
             reminders,
             parent: parent_param,
+            recurrence: input.recurrence,
+            recurrence_upcoming_count: input.recurrence_upcoming_count,
+            clear_recurrence: input.clear_recurrence,
+            recurrence_scope: input.recurrence_scope,
+            recurrence_expected: input.recurrence_expected,
         },
     )
     .map_err(JinErrorDto::from)?;
     api::refresh(root).map_err(JinErrorDto::from)?;
-    Ok(TaskDto::from_model(&task))
+    jin_core::ops::recurrence::mutation_dto(root, &task, &before).map_err(JinErrorDto::from)
 }
 
 pub fn set_task_status_fn(root: &Path, id: String, status: String) -> Result<TaskDto, JinErrorDto> {
+    let before = jin_core::ops::recurrence::mutation_snapshot(root).map_err(JinErrorDto::from)?;
     let next = parse_status(&status)?;
     let task = workflows::transition_task(root, &id, next).map_err(JinErrorDto::from)?;
     api::refresh(root).map_err(JinErrorDto::from)?;
-    Ok(TaskDto::from_model(&task))
+    jin_core::ops::recurrence::mutation_dto(root, &task, &before).map_err(JinErrorDto::from)
 }
 
 pub fn delete_task_fn(root: &Path, id: String) -> Result<TaskDto, JinErrorDto> {
-    let cfg = Config::load(root).map_err(JinErrorDto::from)?;
-    let task = tasks::delete_task(&cfg.tasks_dir(), &id).map_err(JinErrorDto::from)?;
+    let before = jin_core::ops::recurrence::mutation_snapshot(root).map_err(JinErrorDto::from)?;
+    let task = workflows::delete_task(root, &id).map_err(JinErrorDto::from)?;
     api::refresh(root).map_err(JinErrorDto::from)?;
-    Ok(TaskDto::from_model(&task))
+    jin_core::ops::recurrence::mutation_dto(root, &task, &before).map_err(JinErrorDto::from)
 }
 
 /// P9 — Atomic drag/drop: set list, section_id, and position in one file write.
 pub fn move_task_fn(root: &Path, id: String, input: MoveTaskInput) -> Result<TaskDto, JinErrorDto> {
+    let before = jin_core::ops::recurrence::mutation_snapshot(root).map_err(JinErrorDto::from)?;
     let task = workflows::move_task(
         root,
         &id,
@@ -308,7 +333,7 @@ pub fn move_task_fn(root: &Path, id: String, input: MoveTaskInput) -> Result<Tas
     )
     .map_err(JinErrorDto::from)?;
     api::refresh(root).map_err(JinErrorDto::from)?;
-    Ok(TaskDto::from_model(&task))
+    jin_core::ops::recurrence::mutation_dto(root, &task, &before).map_err(JinErrorDto::from)
 }
 
 /// P9 — Reseed positions for the current display order.

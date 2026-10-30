@@ -12,6 +12,37 @@ import { decomposeDueString } from '../calendar/transform';
 // Re-export overdue helper from the calendar pure layer so callers only need one import.
 export { isTaskOverdue } from '../calendar/transform';
 
+/** A compact, deterministic summary for rows and detail timing. */
+export function recurrenceSummary(task: TaskDto): string | null {
+  const rule = task.recurrence;
+  if (!rule) return null;
+  const every = rule.interval === 1 ? '' : `Every ${rule.interval} `;
+  const frequency = rule.frequency === 'weekly' && rule.weekdays.length > 1
+    ? `${every}week on ${rule.weekdays.map((day) => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][day - 1]).join(', ')}`
+    : `${every}${rule.frequency}`;
+  return `${frequency}${rule.mode === 'completion' ? ' after completion' : ''}`;
+}
+
+/** Series controls require a fresh canonical owner, never a list projection. */
+export function recurrenceEligibility(task: TaskDto, owner: TaskDto | null = null): { canEdit: boolean; canStop: boolean; reason: string } {
+  const active = !task.deleted_at && ['todo', 'doing'].includes(task.status) && !task.parent;
+  const instance = task.recurrence_instance;
+  if (!instance) return { canEdit: active, canStop: !!task.recurrence, reason: active ? '' : 'Select an active parent task to change Repeat.' };
+  const authority = instance.owner_task_id === task.id ? task : owner;
+  const series = authority?.id === instance.owner_task_id ? authority.recurrence_series : null;
+  const ownerStop = !!series?.enabled && task.id === instance.owner_task_id;
+  if (series && !series.enabled && series.series_id === instance.series_id) return { canEdit: active, canStop: false, reason: active ? '' : 'Select an active occurrence to enable Repeat.' };
+  if (!series || series.series_id !== instance.series_id) {
+    return { canEdit: false, canStop: ownerStop, reason: 'Select an active occurrence from the current series to change Repeat.' };
+  }
+  const current = series.revision === instance.revision && !instance.detached;
+  return {
+    canEdit: active && current,
+    canStop: task.id === instance.owner_task_id || (active && current),
+    reason: !current ? 'Select an active occurrence from the current series to change Repeat.' : active ? '' : 'Select an active occurrence to change Repeat.',
+  };
+}
+
 // ── Filter ────────────────────────────────────────────────────────────────────
 
 export interface TasksFilter {

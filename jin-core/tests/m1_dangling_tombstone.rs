@@ -30,6 +30,7 @@ fn m1_tombstoned_target_is_dangling() {
     let task = tasks::create_task(
         &root.join("tasks"),
         tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Book dentist".to_string(),
             body: String::new(),
             priority: None,
@@ -38,6 +39,7 @@ fn m1_tombstoned_target_is_dangling() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();

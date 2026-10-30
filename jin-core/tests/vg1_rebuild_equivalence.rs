@@ -41,6 +41,7 @@ fn setup_store() -> TempDir {
     let _t1 = tasks::create_task(
         &root.join("tasks"),
         tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Book dentist".to_string(),
             body: String::new(),
             priority: None,
@@ -49,6 +50,7 @@ fn setup_store() -> TempDir {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();
@@ -56,6 +58,7 @@ fn setup_store() -> TempDir {
     let t2 = tasks::create_task(
         &root.join("tasks"),
         tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Review PR".to_string(),
             body: String::new(),
             priority: None,
@@ -64,6 +67,7 @@ fn setup_store() -> TempDir {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();

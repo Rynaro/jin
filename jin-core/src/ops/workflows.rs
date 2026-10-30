@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use chrono::Local;
+use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -57,7 +57,7 @@ fn matching_column(list: &List, kind: BoardColumnType) -> Option<&BoardColumn> {
         .min_by(|a, b| a.position.cmp(&b.position).then_with(|| a.id.cmp(&b.id)))
 }
 
-fn initial_column(list: &List) -> Result<&BoardColumn> {
+pub(crate) fn initial_column(list: &List) -> Result<&BoardColumn> {
     let selected = if let Some(id) = list.frontmatter.initial_column_id.as_deref() {
         list.frontmatter.columns.iter().find(|column| column.id == id)
             .ok_or_else(|| JinError::InvalidInput(format!("board/{} has an invalid initial column; choose a Queue or No status change column", list.id())))?
@@ -152,8 +152,12 @@ fn canonical_column<'a>(list: &'a List, column_id: &str) -> Result<&'a BoardColu
         })
 }
 
-fn apply_status(task: &mut Task, status: TaskStatus, column_id: Option<String>) {
-    let now = Local::now().fixed_offset();
+fn apply_status_at(
+    task: &mut Task,
+    status: TaskStatus,
+    column_id: Option<String>,
+    now: chrono::DateTime<chrono::FixedOffset>,
+) {
     task.frontmatter.completed_at = if status == TaskStatus::Done {
         task.frontmatter.completed_at.or(Some(now))
     } else {
@@ -168,6 +172,10 @@ fn apply_status(task: &mut Task, status: TaskStatus, column_id: Option<String>) 
     task.frontmatter.status = status;
     task.frontmatter.board_column_id = column_id;
     task.frontmatter.updated = now;
+}
+
+fn apply_status(task: &mut Task, status: TaskStatus, column_id: Option<String>) {
+    apply_status_at(task, status, column_id, Local::now().fixed_offset());
 }
 
 fn target_for_task(cfg: &Config, task: &Task) -> Result<TargetPlan> {
@@ -232,18 +240,24 @@ pub fn create_task(
                 }
             };
             params.list = Some(list_id);
+            let upcoming_count = params.recurrence_upcoming_count;
             let mut task =
                 tasks::prepare_new_task(&cfg.tasks_dir(), params, column, initial_status)?;
             task.frontmatter.id = id.clone();
+            super::recurrence::initialize_created(&mut task, upcoming_count)?;
             let path = cfg.tasks_dir().join(fs::task_filename(&id));
-            Ok((
-                id.clone(),
+            let plans = super::recurrence::plan(
+                &cfg,
                 vec![TargetPlan {
                     canonical_path: path,
                     before: None,
                     post: Some(fs::render_task_bytes(&task)?),
                 }],
-            ))
+                Utc::now(),
+                None,
+                None,
+            )?;
+            Ok((id.clone(), plans))
         },
     )?;
     tasks::get_task(&cfg.tasks_dir(), &id)
@@ -252,6 +266,19 @@ pub fn create_task(
 /// Status changes converge with Board placement and parent completion effects
 /// under one recoverable operation. `done` and `doing` are distinct only on Boards.
 pub fn transition_task(root: &Path, id: &str, next: TaskStatus) -> Result<Task> {
+    transition_task_at(root, id, next, Utc::now())
+}
+
+/// The clock-injected status transition is kept public for deterministic
+/// lifecycle tests and notification callers.  Date-only routines follow the
+/// owner's configured display timezone; timestamp routines retain their
+/// stored fixed-offset wall clock.
+pub fn transition_task_at(
+    root: &Path,
+    id: &str,
+    next: TaskStatus,
+    completed_at: DateTime<Utc>,
+) -> Result<Task> {
     let cfg = Config::load(root)?;
     let tasks_dir = cfg.tasks_dir();
     recoverable_operations::execute_task_operation(
@@ -259,6 +286,7 @@ pub fn transition_task(root: &Path, id: &str, next: TaskStatus) -> Result<Task> 
         &new_ulid(),
         "task_workflow_status",
         || {
+            let operation_now = completed_at.fixed_offset();
             let path = fs::find_task_path(&tasks_dir, id)?;
             let mut task = fs::read_task(&path)?;
             let list = owning_list(&cfg, &task.frontmatter.list)?;
@@ -313,7 +341,7 @@ pub fn transition_task(root: &Path, id: &str, next: TaskStatus) -> Result<Task> 
                     let child_column = column_for_status(&child_list, &child, &next)?
                         .map(|column| column.id.clone());
                     let before = std::fs::read(&child_path)?;
-                    apply_status(&mut child, next.clone(), child_column);
+                    apply_status_at(&mut child, next.clone(), child_column, operation_now);
                     plans.push(TargetPlan {
                         canonical_path: child_path,
                         before: Some(before),
@@ -322,8 +350,22 @@ pub fn transition_task(root: &Path, id: &str, next: TaskStatus) -> Result<Task> 
                 }
             }
             let column = column_for_status(&list, &task, &next)?.map(|column| column.id.clone());
-            apply_status(&mut task, next.clone(), column);
+            apply_status_at(&mut task, next.clone(), column, operation_now);
+            if task.frontmatter.recurrence_instance.is_some() {
+                task.frontmatter.recurrence_exception = true;
+            }
             plans.push(target_for_task(&cfg, &task)?);
+            let plans = super::recurrence::plan(
+                &cfg,
+                plans,
+                completed_at,
+                None,
+                if next == TaskStatus::Done {
+                    Some(id)
+                } else {
+                    None
+                },
+            )?;
             Ok((id.to_string(), plans))
         },
     )?;
@@ -341,6 +383,61 @@ pub fn edit_task(root: &Path, id: &str, mut params: EditTaskParams) -> Result<Ta
         "task_workflow_edit",
         || {
             let current = tasks::get_task(&cfg.tasks_dir(), id)?;
+            if let Some(count) = params.recurrence_upcoming_count {
+                crate::model::task::validate_recurrence_upcoming_count(count)
+                    .map_err(JinError::InvalidInput)?;
+                if params.clear_recurrence {
+                    return Err(JinError::InvalidInput(
+                        "cannot stop Repeat and set upcoming entries together".into(),
+                    ));
+                }
+                if params.recurrence.is_none()
+                    && current.frontmatter.recurrence_instance.is_none()
+                    && current.frontmatter.recurrence.is_none()
+                {
+                    return Err(JinError::InvalidInput(
+                        "upcoming entries require a Repeat rule".into(),
+                    ));
+                }
+            }
+            let upcoming_count = params.recurrence_upcoming_count.take();
+            let rule_change =
+                params.recurrence.is_some() || params.clear_recurrence || upcoming_count.is_some();
+            let action = if rule_change && current.frontmatter.recurrence_instance.is_some() {
+                Some(super::recurrence::RuleEdit {
+                    selected: id.into(),
+                    rule: params.recurrence.take(),
+                    upcoming_count,
+                    expected: params.recurrence_expected.take(),
+                    stop: params.clear_recurrence,
+                    scope: params.recurrence_scope,
+                })
+            } else if upcoming_count.is_some() {
+                Some(super::recurrence::RuleEdit {
+                    selected: id.into(),
+                    rule: None,
+                    upcoming_count,
+                    expected: params.recurrence_expected.take(),
+                    stop: false,
+                    scope: Some(crate::model::task::RecurrenceScope::ThisAndFollowing),
+                })
+            } else {
+                None
+            };
+            if action.is_some() {
+                params.clear_recurrence = false;
+            }
+            if current
+                .frontmatter
+                .recurrence_series
+                .as_ref()
+                .is_some_and(|s| s.enabled)
+                && matches!(params.parent, Some(Some(_)))
+            {
+                return Err(JinError::InvalidInput(
+                    "an enabled recurrence owner cannot become a subtask".into(),
+                ));
+            }
             let target_list = params
                 .list
                 .as_deref()
@@ -403,7 +500,40 @@ pub fn edit_task(root: &Path, id: &str, mut params: EditTaskParams) -> Result<Ta
                 }
                 plans.push(target_for_task(&cfg, &update)?);
             }
+            let plans = super::recurrence::plan(&cfg, plans, Utc::now(), action, None)?;
             Ok((id.to_string(), plans))
+        },
+    )?;
+    tasks::get_task(&cfg.tasks_dir(), id)
+}
+
+/// Deleting a series owner stops planning before preserving its tombstone.
+pub fn delete_task(root: &Path, id: &str) -> Result<Task> {
+    let cfg = Config::load(root)?;
+    recoverable_operations::execute_task_operation(
+        root,
+        &new_ulid(),
+        "task_workflow_delete",
+        || {
+            let mut task = tasks::get_task(&cfg.tasks_dir(), id)?;
+            if task.is_deleted() {
+                return Err(JinError::NotFound(format!("task/{id} is deleted")));
+            }
+            let now = Utc::now();
+            let mut plans = Vec::new();
+            let mut affected = tasks::find_children(&cfg.tasks_dir(), id, false)?;
+            affected.push(task.clone());
+            for t in &mut affected {
+                t.frontmatter.status = TaskStatus::Deleted;
+                t.frontmatter.deleted_at = Some(now.fixed_offset());
+                t.frontmatter.updated = now.fixed_offset();
+                t.frontmatter.agenda_bucket = None;
+                t.frontmatter.recurrence_exception = true;
+                plans.push(target_for_task(&cfg, t)?);
+            }
+            let plans = super::recurrence::plan(&cfg, plans, now, None, None)?;
+            task.frontmatter.status = TaskStatus::Deleted;
+            Ok((id.into(), plans))
         },
     )?;
     tasks::get_task(&cfg.tasks_dir(), id)
@@ -555,7 +685,19 @@ pub fn move_task(root: &Path, id: &str, params: MoveTaskParams) -> Result<Task> 
             task.frontmatter.list = params.list_id.clone();
             task.frontmatter.section_id = params.section_id.clone();
             task.frontmatter.position = params.position.clone();
+            if task.frontmatter.recurrence_instance.is_some() {
+                task.frontmatter.recurrence_exception = true;
+            }
             plans.push(target_for_task(&cfg, &task)?);
+            let entering_done =
+                task.frontmatter.status == TaskStatus::Done && old_status != TaskStatus::Done;
+            let plans = super::recurrence::plan(
+                &cfg,
+                plans,
+                Utc::now(),
+                None,
+                if entering_done { Some(id) } else { None },
+            )?;
             Ok((id.to_string(), plans))
         },
     )?;
@@ -969,6 +1111,9 @@ pub fn delete_column(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{
+        DueDate, RecurrenceEnd, RecurrenceFrequency, RecurrenceMode, TaskRecurrence,
+    };
     use crate::ops::{self, api, lists};
     use tempfile::TempDir;
 
@@ -1002,6 +1147,7 @@ mod tests {
         create_task(
             root,
             CreateTaskParams {
+                recurrence_upcoming_count: None,
                 title: title.into(),
                 body: "body stays".into(),
                 priority: None,
@@ -1010,10 +1156,376 @@ mod tests {
                 tags: None,
                 reminders: None,
                 parent: parent.map(str::to_string),
+                recurrence: None,
             },
             column,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn date_only_completion_uses_configured_display_timezone() {
+        use chrono::TimeZone;
+
+        let tmp = vault();
+        let root = tmp.path();
+        let mut cfg = Config::load(root).unwrap();
+        cfg.display_tz = "Pacific/Kiritimati".into();
+        cfg.save().unwrap();
+        let inbox = list(root, "Routines", WorkflowKind::Checklist);
+        let created = task(root, &inbox.id, "Take vitamins", None, None);
+        let due = chrono::NaiveDate::from_ymd_opt(2025, 12, 30).unwrap();
+        tasks::edit_task(
+            &cfg.tasks_dir(),
+            created.id(),
+            EditTaskParams {
+                due: Some(Some(DueDate::Date(due))),
+                recurrence: Some(TaskRecurrence {
+                    editor_preset: None,
+                    series_id: "ignored-on-edit".into(),
+                    frequency: RecurrenceFrequency::Daily,
+                    interval: 1,
+                    weekdays: vec![],
+                    mode: RecurrenceMode::Completion,
+                    end: RecurrenceEnd::Never,
+                    anchor_due: DueDate::Date(due),
+                    sequence: 1,
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        // This instant is Dec 31 in São Paulo but Jan 1 in Kiritimati. The
+        // owner sees Jan 1, so a daily completion routine's next due is Jan 2.
+        let now = chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 30, 0).unwrap();
+        let completed = transition_task_at(root, created.id(), TaskStatus::Done, now).unwrap();
+        assert_eq!(completed.id(), created.id());
+        assert_eq!(completed.frontmatter.status, TaskStatus::Done);
+        assert_eq!(completed.frontmatter.due, Some(DueDate::Date(due)));
+        assert_eq!(completed.frontmatter.completed_at, Some(now.fixed_offset()));
+        assert!(completed.frontmatter.completion_history.is_empty());
+        let successors = tasks::list_tasks(&cfg.tasks_dir(), None, None, false).unwrap();
+        assert_eq!(successors.len(), 2);
+        let successor = successors.iter().find(|t| t.id() != created.id()).unwrap();
+        assert_eq!(successor.frontmatter.status, TaskStatus::Todo);
+        assert_eq!(
+            successor.frontmatter.due,
+            Some(DueDate::Date(
+                chrono::NaiveDate::from_ymd_opt(2026, 1, 2).unwrap()
+            ))
+        );
+        assert!(successor.frontmatter.completion_history.is_empty());
+    }
+
+    fn daily_rule(due: chrono::NaiveDate, end: RecurrenceEnd) -> TaskRecurrence {
+        TaskRecurrence {
+            editor_preset: None,
+            series_id: "caller-value-is-replaced".into(),
+            frequency: RecurrenceFrequency::Daily,
+            interval: 1,
+            weekdays: vec![],
+            mode: RecurrenceMode::Scheduled,
+            end,
+            anchor_due: DueDate::Date(due),
+            sequence: 1,
+        }
+    }
+
+    #[test]
+    fn persistent_routine_keeps_completed_original_and_skips_unmaterialized_past_slots() {
+        use chrono::TimeZone;
+
+        let tmp = vault();
+        let root = tmp.path();
+        let cfg = Config::load(root).unwrap();
+        let inbox = list(root, "Routines", WorkflowKind::Checklist);
+        let created = task(root, &inbox.id, "Water plants", None, None);
+        let due = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        tasks::edit_task(
+            &cfg.tasks_dir(),
+            created.id(),
+            EditTaskParams {
+                due: Some(Some(DueDate::Date(due))),
+                recurrence: Some(daily_rule(due, RecurrenceEnd::Never)),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let completed = transition_task_at(
+            root,
+            created.id(),
+            TaskStatus::Done,
+            chrono::Utc.with_ymd_and_hms(2026, 1, 4, 12, 0, 0).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(completed.id(), created.id());
+        assert_eq!(completed.frontmatter.status, TaskStatus::Done);
+        assert_eq!(completed.frontmatter.due, Some(DueDate::Date(due)));
+        assert!(completed.frontmatter.completion_history.is_empty());
+        assert_eq!(
+            completed.frontmatter.recurrence.as_ref().unwrap().sequence,
+            1
+        );
+        let entries = tasks::list_tasks(&cfg.tasks_dir(), None, None, false).unwrap();
+        let futures: Vec<_> = entries.iter().filter(|t| t.id() != created.id()).collect();
+        assert!(!futures.is_empty());
+        let first = futures
+            .iter()
+            .min_by_key(|t| t.frontmatter.recurrence_instance.as_ref().unwrap().sequence)
+            .unwrap();
+        assert_eq!(
+            first.frontmatter.due,
+            Some(DueDate::Date(
+                chrono::NaiveDate::from_ymd_opt(2026, 1, 4).unwrap()
+            ))
+        );
+        assert!(futures.iter().all(|t|matches!(t.frontmatter.due,Some(DueDate::Date(day)) if day>=chrono::NaiveDate::from_ymd_opt(2026,1,4).unwrap())));
+        assert_eq!(
+            completed.frontmatter.completed_at,
+            Some(
+                chrono::Utc
+                    .with_ymd_and_hms(2026, 1, 4, 12, 0, 0)
+                    .unwrap()
+                    .fixed_offset()
+            )
+        );
+    }
+
+    #[test]
+    fn final_routine_completion_is_done_and_history_is_idempotent_after_reopen() {
+        use chrono::TimeZone;
+
+        let tmp = vault();
+        let root = tmp.path();
+        let cfg = Config::load(root).unwrap();
+        let inbox = list(root, "Routines", WorkflowKind::Checklist);
+        let created = task(root, &inbox.id, "File report", None, None);
+        let due = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+        tasks::edit_task(
+            &cfg.tasks_dir(),
+            created.id(),
+            EditTaskParams {
+                due: Some(Some(DueDate::Date(due))),
+                recurrence: Some(daily_rule(due, RecurrenceEnd::Count { count: 1 })),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let instant = chrono::Utc.with_ymd_and_hms(2026, 1, 1, 9, 0, 0).unwrap();
+        let final_completion =
+            transition_task_at(root, created.id(), TaskStatus::Done, instant).unwrap();
+        assert_eq!(final_completion.frontmatter.status, TaskStatus::Done);
+        assert_eq!(
+            final_completion.frontmatter.completed_at,
+            Some(instant.fixed_offset())
+        );
+        assert_eq!(final_completion.frontmatter.updated, instant.fixed_offset());
+        assert!(final_completion.frontmatter.completion_history.is_empty());
+        assert_eq!(final_completion.frontmatter.due, Some(DueDate::Date(due)));
+        assert_eq!(
+            tasks::list_tasks(&cfg.tasks_dir(), None, None, true)
+                .unwrap()
+                .len(),
+            1
+        );
+        transition_task_at(root, created.id(), TaskStatus::Todo, instant).unwrap();
+        let repeated = transition_task_at(root, created.id(), TaskStatus::Done, instant).unwrap();
+        assert_eq!(repeated.frontmatter.status, TaskStatus::Done);
+        assert!(repeated.frontmatter.completion_history.is_empty());
+        assert_eq!(repeated.id(), created.id());
+        assert_eq!(repeated.frontmatter.due, Some(DueDate::Date(due)));
+        assert_eq!(
+            tasks::list_tasks(&cfg.tasks_dir(), None, None, true)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn timed_weekly_schedule_uses_later_selected_slot_on_completion_day() {
+        use chrono::TimeZone;
+
+        let tmp = vault();
+        let root = tmp.path();
+        let cfg = Config::load(root).unwrap();
+        let inbox = list(root, "Routines", WorkflowKind::Checklist);
+        let created = task(root, &inbox.id, "Stretch", None, None);
+        let offset = chrono::FixedOffset::west_opt(3 * 60 * 60).unwrap();
+        let due_at = offset.with_ymd_and_hms(2026, 1, 5, 17, 0, 0).unwrap();
+        tasks::edit_task(
+            &cfg.tasks_dir(),
+            created.id(),
+            EditTaskParams {
+                due: Some(Some(DueDate::DateTime(due_at))),
+                recurrence: Some(TaskRecurrence {
+                    editor_preset: None,
+                    series_id: "ignored-on-edit".into(),
+                    frequency: RecurrenceFrequency::Weekly,
+                    interval: 1,
+                    weekdays: vec![1, 2],
+                    mode: RecurrenceMode::Scheduled,
+                    end: RecurrenceEnd::Never,
+                    anchor_due: DueDate::DateTime(due_at),
+                    sequence: 1,
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let completed_at = offset.with_ymd_and_hms(2026, 1, 6, 9, 0, 0).unwrap();
+        let completed = transition_task_at(
+            root,
+            created.id(),
+            TaskStatus::Done,
+            completed_at.with_timezone(&chrono::Utc),
+        )
+        .unwrap();
+        assert_eq!(completed.id(), created.id());
+        assert_eq!(completed.frontmatter.status, TaskStatus::Done);
+        assert_eq!(completed.frontmatter.due, Some(DueDate::DateTime(due_at)));
+        assert_eq!(
+            completed.frontmatter.completed_at,
+            Some(completed_at.with_timezone(&chrono::Utc).fixed_offset())
+        );
+        let entries = tasks::list_tasks(&cfg.tasks_dir(), None, None, false).unwrap();
+        let next = entries
+            .iter()
+            .filter(|t| t.id() != created.id())
+            .filter_map(|t| match t.frontmatter.due {
+                Some(DueDate::DateTime(due)) if due > completed_at => Some((t.id(), due)),
+                _ => None,
+            })
+            .min_by_key(|(_, due)| *due)
+            .unwrap();
+        assert_ne!(next.0, created.id());
+        assert_eq!(
+            next.1,
+            offset.with_ymd_and_hms(2026, 1, 6, 17, 0, 0).unwrap()
+        );
+    }
+
+    #[test]
+    fn timed_weekly_schedule_rejects_past_or_inactive_same_day_slots() {
+        use chrono::TimeZone;
+
+        let offset = chrono::FixedOffset::west_opt(3 * 60 * 60).unwrap();
+        let cases = [
+            // At or after the scheduled Tuesday 17:00 slot, the next active
+            // slot is the following Monday.
+            (
+                1,
+                offset.with_ymd_and_hms(2026, 1, 6, 17, 0, 0).unwrap(),
+                offset.with_ymd_and_hms(2026, 1, 12, 17, 0, 0).unwrap(),
+            ),
+            (
+                1,
+                offset.with_ymd_and_hms(2026, 1, 6, 18, 0, 0).unwrap(),
+                offset.with_ymd_and_hms(2026, 1, 12, 17, 0, 0).unwrap(),
+            ),
+            // Every other ISO week is inactive in the week beginning Jan 12.
+            (
+                2,
+                offset.with_ymd_and_hms(2026, 1, 13, 9, 0, 0).unwrap(),
+                offset.with_ymd_and_hms(2026, 1, 19, 17, 0, 0).unwrap(),
+            ),
+        ];
+        for (interval, completed_at, expected_due) in cases {
+            let tmp = vault();
+            let root = tmp.path();
+            let cfg = Config::load(root).unwrap();
+            let inbox = list(root, "Routines", WorkflowKind::Checklist);
+            let created = task(root, &inbox.id, "Stretch", None, None);
+            let due_at = offset.with_ymd_and_hms(2026, 1, 5, 17, 0, 0).unwrap();
+            tasks::edit_task(
+                &cfg.tasks_dir(),
+                created.id(),
+                EditTaskParams {
+                    due: Some(Some(DueDate::DateTime(due_at))),
+                    recurrence: Some(TaskRecurrence {
+                        editor_preset: None,
+                        series_id: "ignored-on-edit".into(),
+                        frequency: RecurrenceFrequency::Weekly,
+                        interval,
+                        weekdays: vec![1, 2],
+                        mode: RecurrenceMode::Scheduled,
+                        end: RecurrenceEnd::Never,
+                        anchor_due: DueDate::DateTime(due_at),
+                        sequence: 1,
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let completed = transition_task_at(
+                root,
+                created.id(),
+                TaskStatus::Done,
+                completed_at.with_timezone(&chrono::Utc),
+            )
+            .unwrap();
+            assert_eq!(completed.id(), created.id());
+            assert_eq!(completed.frontmatter.status, TaskStatus::Done);
+            assert_eq!(completed.frontmatter.due, Some(DueDate::DateTime(due_at)));
+            let entries = tasks::list_tasks(&cfg.tasks_dir(), None, None, false).unwrap();
+            let next = entries
+                .iter()
+                .filter(|t| t.id() != created.id())
+                .filter_map(|t| match t.frontmatter.due {
+                    Some(DueDate::DateTime(due)) if due > completed_at => Some(due),
+                    _ => None,
+                })
+                .min()
+                .unwrap();
+            assert_eq!(next, expected_due);
+        }
+    }
+
+    #[test]
+    fn timed_weekly_same_day_slot_respects_until_boundary() {
+        use chrono::TimeZone;
+
+        let tmp = vault();
+        let root = tmp.path();
+        let cfg = Config::load(root).unwrap();
+        let inbox = list(root, "Routines", WorkflowKind::Checklist);
+        let created = task(root, &inbox.id, "Stretch", None, None);
+        let offset = chrono::FixedOffset::west_opt(3 * 60 * 60).unwrap();
+        let due_at = offset.with_ymd_and_hms(2026, 1, 5, 17, 0, 0).unwrap();
+        tasks::edit_task(
+            &cfg.tasks_dir(),
+            created.id(),
+            EditTaskParams {
+                due: Some(Some(DueDate::DateTime(due_at))),
+                recurrence: Some(TaskRecurrence {
+                    editor_preset: None,
+                    series_id: "ignored-on-edit".into(),
+                    frequency: RecurrenceFrequency::Weekly,
+                    interval: 1,
+                    weekdays: vec![1, 2],
+                    mode: RecurrenceMode::Scheduled,
+                    end: RecurrenceEnd::Until {
+                        date: chrono::NaiveDate::from_ymd_opt(2026, 1, 5).unwrap(),
+                    },
+                    anchor_due: DueDate::DateTime(due_at),
+                    sequence: 1,
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let completed_at = offset.with_ymd_and_hms(2026, 1, 6, 9, 0, 0).unwrap();
+        let completed = transition_task_at(
+            root,
+            created.id(),
+            TaskStatus::Done,
+            completed_at.with_timezone(&chrono::Utc),
+        )
+        .unwrap();
+        assert_eq!(completed.frontmatter.status, TaskStatus::Done);
+        assert_eq!(completed.frontmatter.due, Some(DueDate::DateTime(due_at)));
     }
 
     #[test]
@@ -1369,6 +1881,7 @@ mod tests {
         assert!(create_task(
             root,
             CreateTaskParams {
+                recurrence_upcoming_count: None,
                 title: "Should fail".into(),
                 body: String::new(),
                 priority: None,
@@ -1377,6 +1890,7 @@ mod tests {
                 tags: None,
                 reminders: None,
                 parent: None,
+                recurrence: None,
             },
             None
         )

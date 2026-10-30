@@ -377,9 +377,17 @@ pub fn refresh(root: &Path) -> Result<Vec<JinError>> {
             reason: "canonical recovery is blocked by divergent content".to_string(),
         });
     }
+    // Malformed canonical records stop recurrence generation, while refresh
+    // keeps its established nonfatal scan-diagnostic contract.
+    let recurrence_error =
+        super::recurrence::maintain_task_recurrences(root, chrono::Utc::now()).err();
     let cfg = Config::load(root)?;
     let mut conn = index::open(&cfg.index_path())?;
-    rebuild::rebuild(&mut conn, root)
+    let mut diagnostics = rebuild::rebuild(&mut conn, root)?;
+    if let Some(error) = recurrence_error {
+        diagnostics.push(error);
+    }
+    Ok(diagnostics)
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────

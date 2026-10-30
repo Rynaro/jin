@@ -46,6 +46,7 @@ import {
   taskPriorityGlyph,
   formatTaskDue,
   formatTaskDueCompact,
+  recurrenceSummary,
   isTaskOverdue,
   type SubtaskDisplayInfo,
   type ParentBreadcrumb,
@@ -607,6 +608,15 @@ export function buildTaskItem(
   const metaEl = item.querySelector('.task-item__meta');
   if (task.due && metaEl) {
     metaEl.insertBefore(buildDueChipGroup(task, callbacks), metaEl.firstChild);
+  }
+  if (task.recurrence && metaEl) {
+    const repeat = document.createElement('span');
+    repeat.className = 'task-due-chip text-caption2';
+    repeat.textContent = '↻';
+    repeat.setAttribute('role', 'img');
+    repeat.setAttribute('aria-label', `Repeats: ${recurrenceSummary(task) ?? 'routine'}`);
+    repeat.title = recurrenceSummary(task) ?? 'Repeats';
+    metaEl.insertBefore(repeat, metaEl.firstChild);
   }
 
   // ── S6: parent breadcrumb chip (Approach §6 action plan item 6) ──────────

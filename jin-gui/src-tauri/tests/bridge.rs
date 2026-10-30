@@ -188,6 +188,7 @@ fn vg_gui_2_today_agenda_originating_task_and_prep_notes() {
     let task = jin_core::ops::tasks::create_task(
         &cfg.tasks_dir(),
         jin_core::ops::tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Review the proposal".to_string(),
             body: String::new(),
             priority: None,
@@ -196,6 +197,7 @@ fn vg_gui_2_today_agenda_originating_task_and_prep_notes() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .expect("create task");
@@ -1370,6 +1372,7 @@ fn bridge_create_task_round_trip() {
     let dto = jin_gui::commands::tasks::create_task_fn(
         tmp.path(),
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Write tests".to_string(),
             body: String::new(),
             priority: Some("high".to_string()),
@@ -1378,6 +1381,8 @@ fn bridge_create_task_round_trip() {
             tags: None,
             reminders: None,
             parent: None,
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -1403,6 +1408,7 @@ fn bridge_task_status_transition() {
     let task = jin_gui::commands::tasks::create_task_fn(
         tmp.path(),
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "My task".to_string(),
             body: String::new(),
             priority: None,
@@ -1411,6 +1417,8 @@ fn bridge_task_status_transition() {
             tags: None,
             reminders: None,
             parent: None,
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -1884,6 +1892,7 @@ fn bridge_promote_and_attach_round_trip() {
     let task = jin_core::ops::tasks::create_task(
         &cfg.tasks_dir(),
         jin_core::ops::tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Prepare presentation".to_string(),
             body: String::new(),
             priority: None,
@@ -1892,6 +1901,7 @@ fn bridge_promote_and_attach_round_trip() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .expect("create task");
@@ -2137,6 +2147,7 @@ fn vg_p1_edit_task_body_fix_persists_and_returns_via_get_task() {
     let task = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Body Fix Task".to_string(),
             body: "initial body".to_string(),
             priority: None,
@@ -2145,6 +2156,8 @@ fn vg_p1_edit_task_body_fix_persists_and_returns_via_get_task() {
             tags: None,
             reminders: None,
             parent: None,
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -2164,6 +2177,8 @@ fn vg_p1_edit_task_body_fix_persists_and_returns_via_get_task() {
         root,
         task.id.clone(),
         jin_gui::commands::tasks::EditTaskInput {
+            recurrence_expected: None,
+            recurrence_upcoming_count: None,
             title: Some("Updated Title".to_string()),
             priority: None,
             due: None,
@@ -2176,6 +2191,9 @@ fn vg_p1_edit_task_body_fix_persists_and_returns_via_get_task() {
             reminders: None,
             parent: None,
             clear_parent: false,
+            recurrence: None,
+            clear_recurrence: false,
+            recurrence_scope: None,
         },
     )
     .expect("VG-P1 BODY-FIX: edit_task must succeed");
@@ -2211,6 +2229,7 @@ fn vg_p1_complete_sets_status_and_completed_at_reopen_clears_it() {
     let task = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Complete Me".to_string(),
             body: String::new(),
             priority: None,
@@ -2219,6 +2238,8 @@ fn vg_p1_complete_sets_status_and_completed_at_reopen_clears_it() {
             tags: None,
             reminders: None,
             parent: None,
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -2267,6 +2288,7 @@ fn vg_p1_delete_task_sets_status_deleted_and_deleted_at() {
     let task = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Delete Me".to_string(),
             body: String::new(),
             priority: None,
@@ -2275,6 +2297,8 @@ fn vg_p1_delete_task_sets_status_deleted_and_deleted_at() {
             tags: None,
             reminders: None,
             parent: None,
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -2314,6 +2338,7 @@ fn vg_p1_create_task_with_typed_title_appears_in_list() {
     let created = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Typed From Create-In-Place".to_string(),
             body: String::new(),
             priority: None,
@@ -2322,6 +2347,8 @@ fn vg_p1_create_task_with_typed_title_appears_in_list() {
             tags: None,
             reminders: None,
             parent: None,
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -2405,6 +2432,7 @@ fn typed_board_bridge_create_move_and_projection_share_exact_column() {
     let task = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Sketch release".into(),
             body: String::new(),
             priority: None,
@@ -2414,6 +2442,7 @@ fn typed_board_bridge_create_move_and_projection_share_exact_column() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();
@@ -2554,6 +2583,7 @@ fn vg_p3_bridge_delete_list_reassigns_tasks() {
     let task = jin_core::ops::tasks::create_task(
         &cfg.tasks_dir(),
         jin_core::ops::tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Work item".to_string(),
             body: String::new(),
             priority: None,
@@ -2562,6 +2592,7 @@ fn vg_p3_bridge_delete_list_reassigns_tasks() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();
@@ -2595,6 +2626,7 @@ fn vg_p4_bridge_list_tags_with_count() {
     let task = jin_core::ops::tasks::create_task(
         &cfg.tasks_dir(),
         jin_core::ops::tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Tagged".to_string(),
             body: String::new(),
             priority: None,
@@ -2603,6 +2635,7 @@ fn vg_p4_bridge_list_tags_with_count() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();
@@ -2612,6 +2645,8 @@ fn vg_p4_bridge_list_tags_with_count() {
         root,
         task.frontmatter.id.clone(),
         jin_gui::commands::tasks::EditTaskInput {
+            recurrence_expected: None,
+            recurrence_upcoming_count: None,
             title: None,
             priority: None,
             due: None,
@@ -2624,6 +2659,9 @@ fn vg_p4_bridge_list_tags_with_count() {
             reminders: None,
             parent: None,
             clear_parent: false,
+            recurrence: None,
+            clear_recurrence: false,
+            recurrence_scope: None,
         },
     )
     .expect("VG-P4: edit_task with tags must succeed");
@@ -2648,6 +2686,7 @@ fn vg_p4_bridge_tag_filter_returns_only_tagged() {
     let task1 = jin_core::ops::tasks::create_task(
         &cfg.tasks_dir(),
         jin_core::ops::tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Tagged".to_string(),
             body: String::new(),
             priority: None,
@@ -2656,12 +2695,14 @@ fn vg_p4_bridge_tag_filter_returns_only_tagged() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();
     let _task2 = jin_core::ops::tasks::create_task(
         &cfg.tasks_dir(),
         jin_core::ops::tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Untagged".to_string(),
             body: String::new(),
             priority: None,
@@ -2670,6 +2711,7 @@ fn vg_p4_bridge_tag_filter_returns_only_tagged() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();
@@ -2678,6 +2720,8 @@ fn vg_p4_bridge_tag_filter_returns_only_tagged() {
         root,
         task1.frontmatter.id.clone(),
         jin_gui::commands::tasks::EditTaskInput {
+            recurrence_expected: None,
+            recurrence_upcoming_count: None,
             title: None,
             priority: None,
             due: None,
@@ -2690,6 +2734,9 @@ fn vg_p4_bridge_tag_filter_returns_only_tagged() {
             reminders: None,
             parent: None,
             clear_parent: false,
+            recurrence: None,
+            clear_recurrence: false,
+            recurrence_scope: None,
         },
     )
     .unwrap();
@@ -2727,6 +2774,7 @@ fn vg_p4_bridge_set_tag_color_persists() {
     let task = jin_core::ops::tasks::create_task(
         &cfg.tasks_dir(),
         jin_core::ops::tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Tagged for color test".to_string(),
             body: String::new(),
             priority: None,
@@ -2735,6 +2783,7 @@ fn vg_p4_bridge_set_tag_color_persists() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();
@@ -2742,6 +2791,8 @@ fn vg_p4_bridge_set_tag_color_persists() {
         root,
         task.frontmatter.id.clone(),
         jin_gui::commands::tasks::EditTaskInput {
+            recurrence_expected: None,
+            recurrence_upcoming_count: None,
             title: None,
             priority: None,
             due: None,
@@ -2754,6 +2805,9 @@ fn vg_p4_bridge_set_tag_color_persists() {
             reminders: None,
             parent: None,
             clear_parent: false,
+            recurrence: None,
+            clear_recurrence: false,
+            recurrence_scope: None,
         },
     )
     .unwrap();
@@ -2879,6 +2933,7 @@ fn vg_p5_bridge_delete_section_clears_tasks() {
     let task = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Task in section".to_string(),
             body: String::new(),
             priority: None,
@@ -2887,6 +2942,8 @@ fn vg_p5_bridge_delete_section_clears_tasks() {
             tags: None,
             reminders: None,
             parent: None,
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -2897,6 +2954,8 @@ fn vg_p5_bridge_delete_section_clears_tasks() {
         root,
         task.id.clone(),
         jin_gui::commands::tasks::EditTaskInput {
+            recurrence_expected: None,
+            recurrence_upcoming_count: None,
             title: None,
             priority: None,
             due: None,
@@ -2909,6 +2968,9 @@ fn vg_p5_bridge_delete_section_clears_tasks() {
             reminders: None,
             parent: None,
             clear_parent: false,
+            recurrence: None,
+            clear_recurrence: false,
+            recurrence_scope: None,
         },
     )
     .expect("VG-P5: edit_task section_id must succeed");
@@ -2971,6 +3033,7 @@ fn vg_p9_bridge_move_task_persists_position_change() {
     let task_a = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Task A".to_string(),
             body: String::new(),
             priority: None,
@@ -2980,6 +3043,8 @@ fn vg_p9_bridge_move_task_persists_position_change() {
             reminders: None,
             parent: None,
 
+            recurrence: None,
+
             board_column_id: None,
         },
     )
@@ -2988,6 +3053,7 @@ fn vg_p9_bridge_move_task_persists_position_change() {
     let task_b = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Task B".to_string(),
             body: String::new(),
             priority: None,
@@ -2996,6 +3062,8 @@ fn vg_p9_bridge_move_task_persists_position_change() {
             tags: None,
             reminders: None,
             parent: None,
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -3141,6 +3209,7 @@ fn vg_p9_bridge_move_task_cross_column() {
     let task = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Cross-column task".to_string(),
             body: String::new(),
             priority: None,
@@ -3149,6 +3218,8 @@ fn vg_p9_bridge_move_task_cross_column() {
             tags: None,
             reminders: None,
             parent: None,
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -3160,6 +3231,8 @@ fn vg_p9_bridge_move_task_cross_column() {
         root,
         task.id.clone(),
         jin_gui::commands::tasks::EditTaskInput {
+            recurrence_expected: None,
+            recurrence_upcoming_count: None,
             title: None,
             priority: None,
             due: None,
@@ -3172,6 +3245,9 @@ fn vg_p9_bridge_move_task_cross_column() {
             reminders: None,
             parent: None,
             clear_parent: false,
+            recurrence: None,
+            clear_recurrence: false,
+            recurrence_scope: None,
         },
     )
     .expect("VG-P9-CROSS: assign to To Do");
@@ -3248,6 +3324,7 @@ fn vg_p9_bridge_reseed_positions_assigns_ordered_keys() {
         let t = jin_gui::commands::tasks::create_task_fn(
             root,
             jin_gui::commands::tasks::TaskInput {
+                recurrence_upcoming_count: None,
                 title: format!("Task {}", i),
                 body: String::new(),
                 priority: None,
@@ -3256,6 +3333,8 @@ fn vg_p9_bridge_reseed_positions_assigns_ordered_keys() {
                 tags: None,
                 reminders: None,
                 parent: None,
+
+                recurrence: None,
 
                 board_column_id: None,
             },
@@ -3341,6 +3420,7 @@ fn vg_p10_bridge_reminders_persist_and_survive_rebuild() {
     let task = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Reminder task".to_string(),
             body: String::new(),
             priority: None,
@@ -3358,6 +3438,8 @@ fn vg_p10_bridge_reminders_persist_and_survive_rebuild() {
                 },
             ]),
             parent: None,
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -3416,6 +3498,7 @@ fn vg_p10_bridge_edit_task_replaces_reminders() {
     let task = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Editable reminder task".to_string(),
             body: String::new(),
             priority: None,
@@ -3427,6 +3510,8 @@ fn vg_p10_bridge_edit_task_replaces_reminders() {
                 value: "-30m".to_string(),
             }]),
             parent: None,
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -3444,6 +3529,8 @@ fn vg_p10_bridge_edit_task_replaces_reminders() {
         root,
         task.id.clone(),
         jin_gui::commands::tasks::EditTaskInput {
+            recurrence_expected: None,
+            recurrence_upcoming_count: None,
             title: None,
             priority: None,
             due: None,
@@ -3465,6 +3552,9 @@ fn vg_p10_bridge_edit_task_replaces_reminders() {
             ]),
             parent: None,
             clear_parent: false,
+            recurrence: None,
+            clear_recurrence: false,
+            recurrence_scope: None,
         },
     )
     .expect("VG-P10-EDIT: edit must succeed");
@@ -3482,6 +3572,8 @@ fn vg_p10_bridge_edit_task_replaces_reminders() {
         root,
         task.id.clone(),
         jin_gui::commands::tasks::EditTaskInput {
+            recurrence_expected: None,
+            recurrence_upcoming_count: None,
             title: None,
             priority: None,
             due: None,
@@ -3494,6 +3586,9 @@ fn vg_p10_bridge_edit_task_replaces_reminders() {
             reminders: Some(vec![]),
             parent: None,
             clear_parent: false,
+            recurrence: None,
+            clear_recurrence: false,
+            recurrence_scope: None,
         },
     )
     .expect("VG-P10-EDIT: clear reminders must succeed");
@@ -3597,6 +3692,7 @@ fn vg_p10_bridge_auto_reminder_seeded_for_due_datetime() {
     let task = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Auto-reminder task".to_string(),
             body: String::new(),
             priority: None,
@@ -3605,6 +3701,8 @@ fn vg_p10_bridge_auto_reminder_seeded_for_due_datetime() {
             tags: None,
             reminders: None, // no explicit reminders → auto-reminder should fire
             parent: None,
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -3640,6 +3738,7 @@ fn vg_p10_bridge_auto_reminder_seeded_for_due_datetime() {
     let date_only_task = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Date-only task".to_string(),
             body: String::new(),
             priority: None,
@@ -3648,6 +3747,8 @@ fn vg_p10_bridge_auto_reminder_seeded_for_due_datetime() {
             tags: None,
             reminders: None,
             parent: None,
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -3680,6 +3781,7 @@ fn s6_create_task_with_parent_persists_and_returns_it() {
     let parent = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Parent task".to_string(),
             body: String::new(),
             priority: None,
@@ -3689,6 +3791,8 @@ fn s6_create_task_with_parent_persists_and_returns_it() {
             reminders: None,
             parent: None,
 
+            recurrence: None,
+
             board_column_id: None,
         },
     )
@@ -3697,6 +3801,7 @@ fn s6_create_task_with_parent_persists_and_returns_it() {
     let child = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Child task".to_string(),
             body: String::new(),
             priority: None,
@@ -3705,6 +3810,8 @@ fn s6_create_task_with_parent_persists_and_returns_it() {
             tags: None,
             reminders: None,
             parent: Some(parent.id.clone()),
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -3737,6 +3844,7 @@ fn s6_create_task_rejects_depth_two_parent_via_bridge() {
     let a = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "A".to_string(),
             body: String::new(),
             priority: None,
@@ -3746,6 +3854,8 @@ fn s6_create_task_rejects_depth_two_parent_via_bridge() {
             reminders: None,
             parent: None,
 
+            recurrence: None,
+
             board_column_id: None,
         },
     )
@@ -3753,6 +3863,7 @@ fn s6_create_task_rejects_depth_two_parent_via_bridge() {
     let b = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "B".to_string(),
             body: String::new(),
             priority: None,
@@ -3762,6 +3873,8 @@ fn s6_create_task_rejects_depth_two_parent_via_bridge() {
             reminders: None,
             parent: Some(a.id.clone()),
 
+            recurrence: None,
+
             board_column_id: None,
         },
     )
@@ -3770,6 +3883,7 @@ fn s6_create_task_rejects_depth_two_parent_via_bridge() {
     let result = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "C".to_string(),
             body: String::new(),
             priority: None,
@@ -3778,6 +3892,8 @@ fn s6_create_task_rejects_depth_two_parent_via_bridge() {
             tags: None,
             reminders: None,
             parent: Some(b.id.clone()),
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -3800,6 +3916,7 @@ fn s6_edit_task_clear_parent_detaches_subtask() {
     let parent = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Parent".to_string(),
             body: String::new(),
             priority: None,
@@ -3809,6 +3926,8 @@ fn s6_edit_task_clear_parent_detaches_subtask() {
             reminders: None,
             parent: None,
 
+            recurrence: None,
+
             board_column_id: None,
         },
     )
@@ -3816,6 +3935,7 @@ fn s6_edit_task_clear_parent_detaches_subtask() {
     let child = jin_gui::commands::tasks::create_task_fn(
         root,
         jin_gui::commands::tasks::TaskInput {
+            recurrence_upcoming_count: None,
             title: "Child".to_string(),
             body: String::new(),
             priority: None,
@@ -3824,6 +3944,8 @@ fn s6_edit_task_clear_parent_detaches_subtask() {
             tags: None,
             reminders: None,
             parent: Some(parent.id.clone()),
+
+            recurrence: None,
 
             board_column_id: None,
         },
@@ -3835,6 +3957,8 @@ fn s6_edit_task_clear_parent_detaches_subtask() {
         root,
         child.id.clone(),
         jin_gui::commands::tasks::EditTaskInput {
+            recurrence_expected: None,
+            recurrence_upcoming_count: None,
             title: None,
             priority: None,
             due: None,
@@ -3847,6 +3971,9 @@ fn s6_edit_task_clear_parent_detaches_subtask() {
             reminders: None,
             parent: None,
             clear_parent: true,
+            recurrence: None,
+            clear_recurrence: false,
+            recurrence_scope: None,
         },
     )
     .expect("S6: clear_parent edit must succeed");
@@ -4200,4 +4327,51 @@ fn bridge_notes_collections_recovery_preview_and_stale_details_are_safe() {
         notes::get_note_fn(root, note.id).is_ok(),
         "deleting a collection must never delete canonical notes"
     );
+}
+
+#[test]
+fn recurring_task_target_and_preset_round_trip_through_typed_bridge() {
+    use jin_gui::commands::tasks;
+    let tmp = init_root();
+    let root = tmp.path();
+    let due = chrono::Utc::now().date_naive().to_string();
+    let input: tasks::TaskInput = serde_json::from_value(serde_json::json!({
+        "title": "Weekly routine", "due": due, "recurrence_upcoming_count": 3,
+        "recurrence": { "editor_preset": "weekly", "series_id": "", "frequency": "weekly", "interval": 1,
+            "weekdays": [1,2,3,4,5], "mode": "scheduled", "end": {"kind":"never"}, "anchor_due": due, "sequence": 1 }
+    })).unwrap();
+    let original = tasks::create_task_fn(root, input).unwrap();
+    assert_eq!(
+        original
+            .recurrence
+            .as_ref()
+            .unwrap()
+            .editor_preset
+            .as_deref(),
+        Some("weekly")
+    );
+    let authority = original.recurrence_series.as_ref().unwrap();
+    assert_eq!(authority.upcoming_count, 3);
+    let before = jin_core::ops::api::list_tasks(root, None, None, None, false).unwrap();
+    assert_eq!(before.len(), 3);
+    let edit: tasks::EditTaskInput = serde_json::from_value(serde_json::json!({
+        "recurrence_upcoming_count": 5, "recurrence_scope": "this_and_following",
+        "recurrence_expected": { "series_id": authority.series_id, "revision": authority.revision, "enabled": true }
+    })).unwrap();
+    let updated = tasks::edit_task_fn(root, original.id.clone(), edit).unwrap();
+    assert_eq!(
+        updated.recurrence_series.as_ref().unwrap().upcoming_count,
+        5
+    );
+    assert_eq!(
+        updated.recurrence_series.as_ref().unwrap().revision,
+        authority.revision
+    );
+    let after = jin_core::ops::api::list_tasks(root, None, None, None, false).unwrap();
+    assert_eq!(after.len(), 5);
+    for task in before {
+        assert!(after
+            .iter()
+            .any(|candidate| candidate.id == task.id && candidate.due == task.due));
+    }
 }

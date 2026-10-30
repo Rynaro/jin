@@ -1832,6 +1832,7 @@ mod tests {
         let task = crate::ops::tasks::create_task(
             &cfg.tasks_dir(),
             crate::ops::tasks::CreateTaskParams {
+                recurrence_upcoming_count: None,
                 title: "Deploy v2".to_string(),
                 body: String::new(),
                 priority: None,
@@ -1840,6 +1841,7 @@ mod tests {
                 tags: None,
                 reminders: None,
                 parent: None,
+                recurrence: None,
             },
         )
         .unwrap();

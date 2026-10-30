@@ -37,6 +37,7 @@ import {
   evaluateCollection,
   listTasks,
   createTask,
+  editTask,
   setTaskStatus,
   deleteTask,
   listEvents,
@@ -624,4 +625,25 @@ describe('setTagColor', () => {
     await setTagColor('email', 'sky');
     expect(mockInvoke).toHaveBeenCalledWith('set_tag_color', { slug: 'email', color: 'sky' });
   });
+});
+
+
+describe('task recurrence scope wire contract', () => {
+  it('forwards both occurrence scopes and deliberate Stop without event scope aliases', async () => {
+    mockInvoke.mockResolvedValue({ id: 'original', status: 'done', due: '2026-08-20' });
+    await editTask('original', { due: '2026-08-22', recurrence_scope: 'this_occurrence' });
+    expect(mockInvoke).toHaveBeenLastCalledWith('edit_task', { id: 'original', input: { due: '2026-08-22', recurrence_scope: 'this_occurrence' } });
+    await editTask('original', { clear_recurrence: true, recurrence_scope: 'this_and_following' });
+    expect(mockInvoke).toHaveBeenLastCalledWith('edit_task', { id: 'original', input: { clear_recurrence: true, recurrence_scope: 'this_and_following' } });
+    await editTask('original', { title: 'Only this task' });
+    expect(mockInvoke).toHaveBeenLastCalledWith('edit_task', { id: 'original', input: { title: 'Only this task' } });
+  });
+});
+
+it('forwards upcoming entry targets and optimistic series guards with exact snake_case keys', async () => {
+  vi.mocked(invoke).mockResolvedValue({ id: 'routine' });
+  const input = { recurrence_upcoming_count: 4, recurrence_scope: 'this_and_following' as const,
+    recurrence_expected: { series_id: 'series', revision: 2, enabled: true } };
+  await editTask('routine', input);
+  expect(invoke).toHaveBeenCalledWith('edit_task', { id: 'routine', input });
 });

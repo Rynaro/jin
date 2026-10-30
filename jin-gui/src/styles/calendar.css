@@ -560,6 +560,12 @@
   padding-bottom: var(--space-2);
 }
 
+/* The recurrence cutoff is a civil date, never a timed due instant. The
+ * component's own presentation state wins over this row's flex layout. */
+.calendar-dialog[data-temporal-editor-presentation='recurrence'] .calendar-dialog__time-row {
+  display: none;
+}
+
 .calendar-dialog__summary {
   min-block-size: var(--text-caption2-line);
   margin: 0;

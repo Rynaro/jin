@@ -51,6 +51,7 @@
  *   tasks#confirmDeleteTask — confirm button in delete dialog (P1 S1.3)
  */
 
+import { repeatAuthority, savedRepeatDraft, type TaskRepeatDraft } from '../lib/tasks/repeat';
 import { Controller } from '@hotwired/stimulus';
 import {
   listTasks,
@@ -79,7 +80,7 @@ import {
 import { ConfirmDialog } from '../lib/ui/confirm_dialog';
 import { JinModal } from '../lib/ui/modal';
 import { TagColorDialog } from '../lib/ui/tag_color_dialog';
-import { JinSelect } from '../lib/ui/select';
+import { JinSelect, JinSelectField } from '../lib/ui/select';
 import { installNavigationGuard } from '../lib/ui/navigation_guard';
 import { between } from '../lib/tasks/rank';
 import { isJinErrorDto, toSyntheticErrorDto } from '../types/error';
@@ -119,7 +120,7 @@ import {
 } from '../lib/tasks/render';
 import { initIcons } from '../lib/icons';
 import type TemporalEditorController from './temporal_editor_controller';
-import type { TemporalEditorCommit } from './temporal_editor_controller';
+import type { TemporalEditorCommit, TemporalEditorSession } from './temporal_editor_controller';
 
 // ── Module-level helpers ──────────────────────────────────────────────────────
 
@@ -327,6 +328,10 @@ export default class TasksController extends Controller {
   private detailHydrationVersion = 0;
   private detailTransitionVersion = 0;
   private detailDraftTaskId: string | null = null;
+  private repeatDrafts = new Map<string, { value: TaskRepeatDraft; version: number; authority: string }>();
+  private repeatDraftVersion = 0;
+  private repeatPending = new Set<string>();
+  private repeatSelectFields: JinSelectField[] = [];
   private detailSavedTitle = '';
   private detailSavedBody = '';
   private pendingDetailSave: Promise<boolean> | null = null;
@@ -537,6 +542,7 @@ export default class TasksController extends Controller {
   }
 
   disconnect(): void {
+    this.destroyRepeatSelectFields();
     ++this.loadGeneration;
     ++this.detailTransitionVersion;
     ++this.detailHydrationVersion;
@@ -700,6 +706,7 @@ export default class TasksController extends Controller {
       this.selectedTaskIds.clear();
       this.selectionAnchorId = null;
       this.setDetailOpen(false);
+      this.destroyRepeatSelectFields();
       this.detailContentTarget.replaceChildren();
       this.detailDraftTaskId = null;
       this.currentScope = ce.detail.scope;
@@ -967,14 +974,16 @@ export default class TasksController extends Controller {
   private openTemporalEditor(
     currentDue: string | null,
     onCommit: (result: TemporalEditorCommit) => void,
+    options: Pick<TemporalEditorSession, 'presentation' | 'requireDate' | 'onCancel'> = {},
   ): void {
     const dialog = document.getElementById('jin-due-date-dialog') as HTMLDialogElement | null;
-    if (!dialog) return;
+    if (!dialog) { options.onCancel?.(); return; }
     const editor = this.application.getControllerForElementAndIdentifier(
       dialog,
       'temporal-editor',
     ) as TemporalEditorController | null;
-    editor?.open({ initialDue: currentDue, onCommit });
+    if (editor) editor.open({ initialDue: currentDue, onCommit, ...options });
+    else options.onCancel?.();
   }
 
   /**
@@ -990,10 +999,17 @@ export default class TasksController extends Controller {
   /**
    * ITEM 5: Open the shared calendar for detail-field due editing.
    */
-  private openCalendarForDetail(currentDue: string | null, onSelected: (dueString: string) => void): void {
+  private openCalendarForDetail(currentDue: string | null, onSelected: (dueString: string) => void, onCancel?: () => void): void {
     this.openTemporalEditor(currentDue, (result) => {
       onSelected(result.kind === 'set' ? result.due : '');
-    });
+    }, { onCancel });
+  }
+
+  /** Opens the shared calendar as a date-only recurrence cutoff editor. */
+  private openCalendarForRecurrenceUntil(currentUntil: string | null, onSelected: (until: string | null) => void): void {
+    this.openTemporalEditor(currentUntil, (result) => {
+      onSelected(result.kind === 'set' ? result.date : null);
+    }, { presentation: 'recurrence' });
   }
 
   private async handleReschedule(taskId: string, newDue: string): Promise<void> {
@@ -1537,6 +1553,7 @@ export default class TasksController extends Controller {
     this.selectedTaskId = taskId;
     this.renderList();
     this.setDetailOpen(true);
+    this.destroyRepeatSelectFields();
     this.viewElements.detailContent.innerHTML = '';
     const task = await this.fetchTaskForPane(taskId);
     if (task === undefined) return;
@@ -1556,8 +1573,9 @@ export default class TasksController extends Controller {
   private async refreshPane(taskId: string): Promise<void> {
     if (this.selectedTaskId !== taskId) return;
     if (!await this.flushDetailDraft()) return;
+    const refreshVersion = ++this.detailHydrationVersion;
     const task = await this.fetchTaskForPane(taskId);
-    if (task === undefined) return;
+    if (task === undefined || refreshVersion !== this.detailHydrationVersion || this.selectedTaskId !== taskId) return;
     await this.hydratePaneFromTask(task);
   }
 
@@ -1577,6 +1595,7 @@ export default class TasksController extends Controller {
     this.selectedTaskId = null;
     this.detailDraftTaskId = null;
     this.setDetailOpen(false);
+    this.destroyRepeatSelectFields();
     this.viewElements.detailContent.innerHTML = '';
     this.renderList();
     if (closedTaskId) {
@@ -1820,6 +1839,7 @@ export default class TasksController extends Controller {
       },
     };
 
+    this.destroyRepeatSelectFields();
     renderBulkPanel(el, selected.length, statusOptions, availableLists, bulkCallbacks);
     JinSelect.enhanceAll(el.detailContent);
   }
@@ -2018,6 +2038,7 @@ export default class TasksController extends Controller {
     this.selectedTaskId = nextTask.id;
     this.selectionAnchorId = nextTask.id;
     this.setDetailOpen(false);
+    this.destroyRepeatSelectFields();
     this.viewElements.detailContent.innerHTML = '';
     this.renderList();
     this.focusItemElement(nextTask.id);
@@ -2144,8 +2165,31 @@ export default class TasksController extends Controller {
 
     if (hydrationVersion !== this.detailHydrationVersion || this.selectedTaskId !== task.id) return;
 
+    const recurrenceOwner = task.recurrence_instance && task.recurrence_instance.owner_task_id !== task.id
+      ? await this.guarded(() => getTaskById(task.recurrence_instance!.owner_task_id), 'hydratePane:recurrenceOwner')
+      : task;
+    if (hydrationVersion !== this.detailHydrationVersion || this.selectedTaskId !== task.id) return;
+
+    const authority = repeatAuthority(task, recurrenceOwner ?? task);
+    let repeatMount: Element | null = null;
     const detailCbs: TaskDetailCallbacks = {
       owningList,
+      recurrenceOwner: recurrenceOwner ?? null,
+      recurrenceDraft: this.repeatDrafts.get(task.id)?.value,
+      recurrencePending: this.repeatPending.has(task.id),
+      recurrenceConflict: this.repeatDrafts.has(task.id) && this.repeatDrafts.get(task.id)!.authority !== authority,
+      onResetRecurrenceDraft: () => {
+        if (!repeatMount?.isConnected) return;
+        this.repeatDrafts.delete(task.id);
+        void this.refreshPane(task.id).then(() => {
+          if (this.selectedTaskId === task.id) this.viewElements.detailContent.querySelector<HTMLButtonElement>('.task-detail__repeat-edit')?.focus();
+        });
+      },
+      onRecurrenceDraftChange: (value) => {
+        // Detached calendar callbacks must not overwrite a newer mounted editor.
+        if (this.selectedTaskId !== task.id || !repeatMount?.isConnected) return;
+        this.repeatDrafts.set(task.id, { value, version: ++this.repeatDraftVersion, authority: this.repeatDrafts.get(task.id)?.authority ?? authority });
+      },
       onSaveColumn: async (taskId, columnId) => {
         const target = owningList;
         if (!target || target.workflow_kind !== 'board') return;
@@ -2183,16 +2227,47 @@ export default class TasksController extends Controller {
             : { clear_due: true as const };
           void (async () => {
             const result = await this.mutate(() => editTask(task.id, editInput), 'onPickDue');
-            if (result !== undefined) void this.loadList(this.currentFilter);
+            if (result === undefined) return;
+            void this.loadList(this.currentFilter);
+            void this.refreshPane(task.id);
+            onSelected(dueString);
           })();
-          onSelected(dueString);
+        });
+      },
+      onPickRecurrenceUntil: (currentUntil, onSelected) => {
+        this.openCalendarForRecurrenceUntil(currentUntil, (until) => {
+          if (this.selectedTaskId !== task.id) return;
+          const current = this.repeatDrafts.get(task.id);
+          const value = current?.value ?? savedRepeatDraft(task, recurrenceOwner ?? task);
+          if (value.until !== (currentUntil ?? '')) return;
+          this.repeatDrafts.set(task.id, { value: { ...value, until: until ?? '' },
+            version: ++this.repeatDraftVersion, authority: current?.authority ?? authority });
+          if (repeatMount?.isConnected) onSelected(until);
+          else void this.refreshPane(task.id);
         });
       },
       onClearDue: async (taskId) => {
         const result = await this.mutate(() => editTask(taskId, { clear_due: true }), 'onClearDue');
         if (result === undefined) return;
         void this.loadList(this.currentFilter);
+        void this.refreshPane(taskId);
       },
+      onSaveRecurrence: async (taskId, recurrence, upcomingCount) => {
+        return this.persistRepeat(taskId, recurrence, upcomingCount);
+      },
+      onSetDueAndSaveRecurrence: async (taskId, recurrence, upcomingCount) => new Promise<boolean>((resolve) => {
+        const version = this.repeatDrafts.get(taskId)?.version;
+        this.repeatPending.add(taskId);
+        const cancel = () => {
+          this.repeatPending.delete(taskId);
+          if (this.selectedTaskId === taskId) void this.refreshPane(taskId);
+          resolve(false);
+        };
+        this.openCalendarForDetail(null, (dueString) => {
+          if (!dueString) { cancel(); return; }
+          void this.persistRepeat(taskId, { ...recurrence, anchor_due: dueString }, upcomingCount, dueString, version).then(resolve);
+        }, cancel);
+      }),
       onSaveList: async (taskId, listId) => {
         if (listId === task.list) return;
         const target = this.currentLists.find((list) => list.id === listId);
@@ -2291,6 +2366,7 @@ export default class TasksController extends Controller {
       this.detailSavedTitle = task.title;
       this.detailSavedBody = task.body ?? '';
     }
+    this.destroyRepeatSelectFields();
     renderTaskPane(
       el,
       this.viewTemplates,
@@ -2303,9 +2379,60 @@ export default class TasksController extends Controller {
       (taskId, taskTitle) => { this.openDeleteDialog(taskId, taskTitle); },
     );
 
+    repeatMount = el.detailContent.firstElementChild;
+    this.repeatSelectFields = Array.from(el.detailContent.querySelectorAll<HTMLSelectElement>('.task-detail__repeat-select'))
+      .map(select => {
+        const field = JinSelectField.enhance(select);
+        const popupId = select.parentElement?.querySelector('[aria-controls]')?.getAttribute('aria-controls');
+        if (popupId) document.getElementById(popupId)?.classList.add('task-detail__repeat-popup');
+        return field;
+      });
     JinSelect.enhanceAll(el.detailContent);
     initIcons();
     this.updateDetailOverlayAccessibility();
+  }
+
+  private destroyRepeatSelectFields(): void {
+    this.repeatSelectFields.forEach(field => field.destroy());
+    this.repeatSelectFields = [];
+  }
+
+  private async persistRepeat(
+    taskId: string, recurrence: TaskDto['recurrence'] | null | undefined, upcomingCount?: number,
+    due?: string, draftVersion = this.repeatDrafts.get(taskId)?.version,
+  ): Promise<boolean> {
+    this.repeatPending.add(taskId);
+    const authority = this.repeatDrafts.get(taskId)?.authority;
+    const parts = authority?.split(':');
+    const expected = parts?.[0] ? { series_id: parts[0], revision: Number(parts[1]), enabled: parts[2] === 'true' } : undefined;
+    const input = recurrence === null
+      ? { clear_recurrence: true, recurrence_scope: 'this_and_following' as const }
+      : { ...(recurrence ? { recurrence } : {}), ...(due ? { due } : {}),
+        recurrence_upcoming_count: upcomingCount, recurrence_expected: expected, recurrence_scope: 'this_and_following' as const };
+    const result = await this.mutate(() => editTask(taskId, input), 'onSaveRecurrence');
+    this.repeatPending.delete(taskId);
+    if (result !== undefined) {
+      const draft = this.repeatDrafts.get(taskId);
+      if (draft?.version === draftVersion) this.repeatDrafts.delete(taskId);
+      else if (draft) draft.authority = repeatAuthority(result);
+    }
+    if (result !== undefined) void this.loadList(this.currentFilter);
+    if (this.selectedTaskId === taskId) {
+      const active = document.activeElement;
+      const calendar = document.getElementById('jin-due-date-dialog') as HTMLDialogElement | null;
+      // Chromium can retain the closed dialog's confirm button as the active
+      // element until its close task runs. It still belongs to this commit.
+      const calendarCommitFocus = Boolean(due && calendar && !calendar.open && calendar.contains(active));
+      // Disabled Save controls and closed native dialogs can both drop focus
+      // to body. Restore this Repeat action only when no other field owns it.
+      const canRestoreFocus = active === document.body || active === document.documentElement
+        || calendarCommitFocus || (this.viewElements.detailContent.querySelector('.task-detail__repeat-editor')?.contains(active) ?? false);
+      await this.refreshPane(taskId);
+      if (result !== undefined && canRestoreFocus && !this.repeatDrafts.has(taskId) && this.selectedTaskId === taskId) {
+        this.viewElements.detailContent.querySelector<HTMLButtonElement>('.task-detail__repeat-edit')?.focus();
+      }
+    }
+    return result !== undefined;
   }
 
   // ── P1 S1.1 — Status toggle (complete/reopen) ─────────────────────────────
@@ -2554,12 +2681,14 @@ export default class TasksController extends Controller {
 
     const result = await this.mutate(() => deleteTask(id), 'confirmDeleteTask');
     if (result === undefined) return;
+    this.repeatDrafts.delete(id);
     // S3 (AC-S3-07): deleting the task currently open in the pane closes it —
     // there is nothing left to show.
     if (this.selectedTaskId === id) {
       this.selectedTaskId = null;
       this.setDetailOpen(false);
-      this.viewElements.detailContent.innerHTML = '';
+      this.destroyRepeatSelectFields();
+    this.viewElements.detailContent.innerHTML = '';
     } else if (this.selectedTaskId) {
       // S6: the deleted task may have been a subtask of the currently open
       // pane — refresh it so the Subtasks section drops the deleted row.
