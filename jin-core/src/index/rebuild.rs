@@ -185,8 +185,8 @@ pub fn rebuild(conn: &mut Connection, root: &Path) -> Result<Vec<JinError>> {
                 "INSERT OR REPLACE INTO tasks
                  (id, title, status, priority, due, list_name, completed_at, deleted_at,
                   created, updated, file_path, section_id, tags, position, reminders, parent,
-                  agenda_bucket, board_column_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                  agenda_bucket, board_column_id, recurrence, completion_history, recurrence_series, recurrence_instance, recurrence_exception)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
                 params![
                     task.frontmatter.id,
                     task.frontmatter.title,
@@ -206,6 +206,11 @@ pub fn rebuild(conn: &mut Connection, root: &Path) -> Result<Vec<JinError>> {
                     task.frontmatter.parent,
                     task.frontmatter.agenda_bucket.as_ref().map(|_| "flexible"),
                     task.frontmatter.board_column_id,
+                    serde_json::to_string(&task.frontmatter.recurrence).unwrap_or_else(|_| "null".to_string()),
+                    serde_json::to_string(&task.frontmatter.completion_history).unwrap_or_else(|_| "[]".to_string()),
+                    serde_json::to_string(&task.frontmatter.recurrence_series).unwrap_or_else(|_| "null".to_string()),
+                    serde_json::to_string(&task.frontmatter.recurrence_instance).unwrap_or_else(|_| "null".to_string()),
+                    task.frontmatter.recurrence_exception as i32,
                 ],
             )
             .map_err(JinError::Index)?;
@@ -588,6 +593,14 @@ mod tests {
             reminders,
             parent: None,
             agenda_bucket: None,
+            recurrence: None,
+            completion_history: vec![],
+            recurrence_series: None,
+            retired_recurrence_series: vec![],
+            recurrence_instance: None,
+            recurrence_exception: false,
+            recurrence_baseline: None,
+            recurrence_retired_reason: None,
         };
         let task = Task {
             frontmatter: fm,
@@ -620,6 +633,14 @@ mod tests {
             reminders: vec![],
             parent,
             agenda_bucket: None,
+            recurrence: None,
+            completion_history: vec![],
+            recurrence_series: None,
+            retired_recurrence_series: vec![],
+            recurrence_instance: None,
+            recurrence_exception: false,
+            recurrence_baseline: None,
+            recurrence_retired_reason: None,
         };
         let task = Task {
             frontmatter: fm,

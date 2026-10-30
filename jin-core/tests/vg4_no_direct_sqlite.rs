@@ -65,6 +65,7 @@ fn vg4_public_api_returns_dto_types_not_raw_sql() {
     let task = tasks::create_task(
         &root.join("tasks"),
         tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "VG4 task".to_string(),
             body: String::new(),
             priority: None,
@@ -73,6 +74,7 @@ fn vg4_public_api_returns_dto_types_not_raw_sql() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();

@@ -56,6 +56,7 @@ fn vg3_task_dto_has_version() {
     let task = tasks::create_task(
         &tmp.path().join("tasks"),
         tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Do thing".to_string(),
             body: String::new(),
             priority: None,
@@ -64,6 +65,7 @@ fn vg3_task_dto_has_version() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();

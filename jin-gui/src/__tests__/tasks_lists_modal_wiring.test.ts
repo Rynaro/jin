@@ -436,6 +436,82 @@ describe('real-index modal wiring (RISK-1 gate)', () => {
 
       expect(editTask).toHaveBeenCalledWith('task-001', { clear_due: true });
     });
+
+    it('uses the real shared calendar for a date-only repeat-until cutoff and saves the exact civil date', async () => {
+      const bodyBtn = document.querySelector<HTMLButtonElement>('.task-item__body');
+      bodyBtn!.click();
+      await new Promise<void>((res) => setTimeout(res, 50));
+
+      const preset = document.querySelector<HTMLSelectElement>('[aria-label="Task repeat"]')!;
+      preset.value = 'daily';
+      preset.dispatchEvent(new Event('change'));
+      const end = document.querySelector<HTMLSelectElement>('[aria-label="Repeat end"]')!;
+      end.value = 'until';
+      end.dispatchEvent(new Event('change'));
+      const until = document.querySelector<HTMLButtonElement>('[aria-label="Choose repeat end date"]')!;
+      until.click();
+
+      const dueDialog = document.getElementById('jin-due-date-dialog') as HTMLDialogElement;
+      const timeRow = dueDialog.querySelector<HTMLElement>('.calendar-dialog__time-row')!;
+      expect(dueDialog.open).toBe(true);
+      expect(dueDialog.dataset.temporalEditorPresentation).toBe('recurrence');
+      expect(timeRow.hidden).toBe(true);
+      expect(timeRow.querySelector<HTMLInputElement>('#jin-due-time')?.disabled).toBe(true);
+      expect(dueDialog.querySelector('[data-temporal-editor-target="naturalLabel"]')?.textContent).toBe('Date');
+
+      const dateButton = dueDialog.querySelector<HTMLButtonElement>('[data-iso] button')!;
+      const chosenUntil = (dateButton.closest('[data-iso]') as HTMLElement).dataset.iso!;
+      dateButton.click();
+      dueDialog.querySelector<HTMLButtonElement>('#jin-due-date-confirm')!.click();
+      expect(until.getAttribute('aria-label')).toContain('Repeat until');
+
+      document.querySelector<HTMLButtonElement>('[aria-label="Save repeat"]')!.click();
+      await new Promise<void>((res) => setTimeout(res, 0));
+      expect(editTask).toHaveBeenCalledWith('task-001', expect.objectContaining({
+        recurrence: expect.objectContaining({ end: { kind: 'until', date: chosenUntil } }),
+      }));
+    });
+
+    it('sets an undated routine atomically through the real calendar and focuses the saved Repeat summary', async () => {
+      const undated = makeTask({ due: null });
+      vi.mocked(getTaskById).mockResolvedValue(undated);
+      vi.mocked(editTask).mockImplementation(async (_id, input) => {
+        const saved = makeTask({ due: input.due, recurrence: input.recurrence ?? undefined });
+        vi.mocked(getTaskById).mockResolvedValue(saved);
+        return saved;
+      });
+      const bodyBtn = document.querySelector<HTMLButtonElement>('.task-item__body');
+      bodyBtn!.click();
+      await new Promise<void>((res) => setTimeout(res, 50));
+
+      document.querySelector<HTMLButtonElement>('[aria-label="Set up repeat"]')!.click();
+      const save = document.querySelector<HTMLButtonElement>('[aria-label="Set due date and save"]')!;
+      // A disabled origin can have already dropped focus before this flow
+      // starts. The save must not rely on capturing the old focused control.
+      (document.activeElement as HTMLElement).blur();
+      expect(document.activeElement).toBe(document.body);
+      save.click();
+      const dueDialog = document.getElementById('jin-due-date-dialog') as HTMLDialogElement;
+      const dateButton = dueDialog.querySelector<HTMLButtonElement>('[data-iso] button')!;
+      const chosenDue = (dateButton.closest('[data-iso]') as HTMLElement).dataset.iso!;
+      dateButton.click();
+      const confirm = dueDialog.querySelector<HTMLButtonElement>('#jin-due-date-confirm')!;
+      confirm.focus(); confirm.click();
+      // Match the real Chromium trace: the closed dialog still owns focus
+      // while the commit promise runs, because the old Save is disabled.
+      expect(dueDialog.open).toBe(false);
+      expect(document.activeElement).toBe(confirm);
+      await new Promise<void>((res) => setTimeout(res, 0));
+
+      expect(dueDialog.open).toBe(false);
+      expect(document.querySelector<HTMLElement>('.task-detail__repeat-editor')?.hidden).toBe(true);
+      expect(document.activeElement?.getAttribute('aria-label')).toBe('Edit repeat');
+      expect(editTask).toHaveBeenCalledTimes(1);
+      expect(editTask).toHaveBeenCalledWith('task-001', expect.objectContaining({
+        due: chosenDue,
+        recurrence: expect.objectContaining({ frequency: 'daily', anchor_due: chosenDue }),
+      }));
+    });
   });
 
   // ── S3: Capture regression ────────────────────────────────────────────────

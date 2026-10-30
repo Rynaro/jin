@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::index::query::{BacklinkRow, TaskRow};
-use crate::model::task::{Reminder, Task};
+use crate::model::task::{Reminder, Task, TaskCompletion, TaskRecurrence};
 
 /// DTO projection of a Reminder (mirrors `model::task::Reminder`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +53,46 @@ pub struct TaskDto {
     /// constructors reads back `None` on whichever bridge path uses the other.
     pub parent: Option<String>,
     pub agenda_bucket: Option<String>,
+    pub recurrence: Option<TaskRecurrence>,
+    pub completion_history: Vec<TaskCompletion>,
+    pub recurrence_series: Option<RecurrenceSeriesDto>,
+    pub recurrence_instance: Option<crate::model::task::RecurrenceInstance>,
+    pub recurrence_exception: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recurrence_effect: Option<RecurrenceEffectDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurrenceSeriesDto {
+    pub upcoming_count: u16,
+    pub schema_version: u8,
+    pub series_id: String,
+    pub enabled: bool,
+    pub revision: u32,
+    pub rule: TaskRecurrence,
+    pub outstanding_task_id: String,
+}
+impl From<&crate::model::task::RecurrenceSeries> for RecurrenceSeriesDto {
+    fn from(s: &crate::model::task::RecurrenceSeries) -> Self {
+        Self {
+            upcoming_count: s.upcoming_count,
+            schema_version: s.schema_version,
+            series_id: s.series_id.clone(),
+            enabled: s.enabled,
+            revision: s.revision,
+            rule: s.rule.clone(),
+            outstanding_task_id: s.outstanding_task_id.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RecurrenceEffectDto {
+    pub created_ids: Vec<String>,
+    pub next_occurrence_id: Option<String>,
+    pub next_due: Option<String>,
+    pub preserved_exception_count: usize,
+    pub retired_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,6 +139,16 @@ impl TaskDto {
                 .agenda_bucket
                 .as_ref()
                 .map(|_| "flexible".to_string()),
+            recurrence: task.frontmatter.recurrence.clone(),
+            completion_history: task.frontmatter.completion_history.clone(),
+            recurrence_series: task
+                .frontmatter
+                .recurrence_series
+                .as_ref()
+                .map(RecurrenceSeriesDto::from),
+            recurrence_instance: task.frontmatter.recurrence_instance.clone(),
+            recurrence_exception: task.frontmatter.recurrence_exception,
+            recurrence_effect: None,
         }
     }
 
@@ -125,6 +175,18 @@ impl TaskDto {
             reminders,
             parent: row.parent.clone(),
             agenda_bucket: row.agenda_bucket.clone(),
+            recurrence: serde_json::from_str(&row.recurrence).unwrap_or(None),
+            completion_history: serde_json::from_str(&row.completion_history).unwrap_or_default(),
+            recurrence_series:
+                serde_json::from_str::<Option<crate::model::task::RecurrenceSeries>>(
+                    &row.recurrence_series,
+                )
+                .unwrap_or(None)
+                .as_ref()
+                .map(RecurrenceSeriesDto::from),
+            recurrence_instance: serde_json::from_str(&row.recurrence_instance).unwrap_or(None),
+            recurrence_exception: row.recurrence_exception,
+            recurrence_effect: None,
         }
     }
 

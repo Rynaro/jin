@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { JSDOM } from 'jsdom';
+import type { TaskDto, TaskRecurrence } from '../types/dto';
 
 interface FixtureBridge {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+  reload: () => FixtureBridge;
 }
 
-function loadFixture(todayScenario?: string): FixtureBridge {
+function loadFixture(scenarios: { today?: string; calendar?: string; notifications?: string } = {}): FixtureBridge {
   const source = readFileSync(
     fileURLToPath(new URL('../../tools/tauri-fixture-init.js', import.meta.url)),
     'utf8',
@@ -16,11 +18,12 @@ function loadFixture(todayScenario?: string): FixtureBridge {
     url: 'http://127.0.0.1:1420',
     runScripts: 'outside-only',
   });
-  if (todayScenario !== undefined) {
-    dom.window.localStorage.setItem('jin.fixture.todayScenario', todayScenario);
-  }
+  if (scenarios.today !== undefined) dom.window.localStorage.setItem('jin.fixture.todayScenario', scenarios.today);
+  if (scenarios.calendar !== undefined) dom.window.localStorage.setItem('jin.fixture.calendarScenario', scenarios.calendar);
+  if (scenarios.notifications !== undefined) dom.window.localStorage.setItem('jin.fixture.notificationsScenario', scenarios.notifications);
   dom.window.eval(source);
   const bridge = (dom.window as unknown as { __TAURI_INTERNALS__: FixtureBridge }).__TAURI_INTERNALS__;
+  bridge.reload = () => { dom.window.eval(source); return (dom.window as unknown as { __TAURI_INTERNALS__: FixtureBridge }).__TAURI_INTERNALS__; };
   return bridge;
 }
 
@@ -236,6 +239,19 @@ describe('deterministic Tauri visual-QA fixture', () => {
       .rejects.toThrow('Task not found: missing');
   });
 
+  it('exposes the explicit notification recovery scenario with failed and queued actions', async () => {
+    const bridge = loadFixture({ notifications: 'recovery' });
+    const page = await bridge.invoke('list_notification_items', { input: { filter: 'all' } }) as { items: Array<Record<string, any>> };
+    expect(page.items.find((item) => item.id === 'notification-invite-pending')).toMatchObject({
+      status: 'action_pending', action_state: 'queued', requested_action: 'maybe',
+    });
+    expect(page.items.find((item) => item.id === 'notification-invite-retryable')).toMatchObject({
+      status: 'active', action_state: 'failed_retryable', action_error: { retryable: true },
+    });
+    expect(() => loadFixture({ notifications: 'unknown' }).invoke('list_notification_items', { input: { filter: 'all' } }))
+      .toThrow('Unsupported Jin notifications scenario: unknown');
+  });
+
   it('provides deterministic chronological-grid states for source, Time block, and nighttime QA', async () => {
     const events = await loadFixture().invoke('list_events', {}) as Array<Record<string, unknown>>;
     expect(events.find(event => event.id === 'e8')).toMatchObject({ source: 'google', authority: 'google' });
@@ -245,7 +261,7 @@ describe('deterministic Tauri visual-QA fixture', () => {
   });
 
   it('supports a sparse Today projection scenario for bounded layout QA', async () => {
-    const bridge = loadFixture('sparse');
+    const bridge = loadFixture({ today: 'sparse' });
     const projection = await bridge.invoke('today_projection', { date: '2026-08-20' }) as Record<string, any>;
 
     expect(projection.current_date).toBe('2026-08-20');
@@ -263,10 +279,37 @@ describe('deterministic Tauri visual-QA fixture', () => {
     expect(projection.next_event).toBeNull();
   });
 
+  it('supports dense Calendar and Today scenarios without changing their defaults', async () => {
+    const calendar = await loadFixture({ calendar: 'dense' }).invoke('calendar_range_projection', {
+      input: { from: '2026-08-01', to: '2026-08-31' },
+    }) as { entries: Array<Record<string, unknown>> };
+    const denseCalendar = calendar.entries.filter((entry) => String(entry.event_id).startsWith('fixture-dense-calendar-'));
+    expect(denseCalendar).toHaveLength(8);
+    expect(denseCalendar.map((entry) => entry.event_id)).toEqual([
+      'fixture-dense-calendar-all-day-1', 'fixture-dense-calendar-all-day-2',
+      'fixture-dense-calendar-01', 'fixture-dense-calendar-02', 'fixture-dense-calendar-03',
+      'fixture-dense-calendar-04', 'fixture-dense-calendar-05', 'fixture-dense-calendar-06',
+    ]);
+    expect(denseCalendar.every((entry) => entry.start_date === '2026-08-20')).toBe(true);
+    const denseBridge = loadFixture({ calendar: 'dense' });
+    await expect(denseBridge.invoke('get_event', { id: 'fixture-dense-calendar-04' }))
+      .resolves.toMatchObject({ id: 'fixture-dense-calendar-04', source: 'google', authority: 'google' });
+    await expect(denseBridge.invoke('get_event_detail', { id: 'fixture-dense-calendar-04' }))
+      .resolves.toMatchObject({ event: { id: 'fixture-dense-calendar-04' } });
+    const today = await loadFixture({ today: 'dense' }).invoke('today_projection', { date: '2026-08-20' }) as Record<string, any>;
+    expect(today.agenda.all_day_events.some((event: Record<string, unknown>) => event.id === 'fixture-dense-today-all-day')).toBe(true);
+    expect(today.agenda.timed_events.filter((event: Record<string, unknown>) => String(event.id).startsWith('fixture-dense-today-'))).toHaveLength(8);
+    const defaultToday = await loadFixture().invoke('today_projection', { date: '2026-08-20' }) as Record<string, any>;
+    expect(defaultToday.agenda.timed_events.some((event: Record<string, unknown>) => String(event.id).startsWith('fixture-dense-today-'))).toBe(false);
+    expect(() => loadFixture({ calendar: 'unknown' }).invoke('calendar_range_projection', {
+      input: { from: '2026-08-01', to: '2026-08-31' },
+    })).toThrow('Unsupported Jin calendar scenario: unknown');
+  });
+
   it('rejects unknown Today fixture scenarios explicitly', async () => {
-    const bridge = loadFixture('dense');
+    const bridge = loadFixture({ today: 'unrecognized' });
     await expect(bridge.invoke('today_projection', { date: '2026-08-20' }))
-      .rejects.toThrow('Unsupported Jin today scenario: dense');
+      .rejects.toThrow('Unsupported Jin today scenario: unrecognized');
   });
 
   it('provides rich, default, and explicit-none Google meeting metadata states', async () => {
@@ -428,5 +471,194 @@ describe('deterministic Tauri visual-QA fixture', () => {
     expect(removed.originating_task.agenda_bucket).toBe('flexible');
     const flexible = await bridge.invoke('list_tasks', {}) as Array<Record<string, unknown>>;
     expect(flexible.find(task => task.id === 't2')?.agenda_bucket).toBe('flexible');
+  });
+});
+
+
+describe('persistent recurring task fixture contract', () => {
+  const rule = (overrides: Partial<TaskRecurrence> = {}): TaskRecurrence => ({
+    series_id: '', frequency: 'daily', interval: 1, weekdays: [], mode: 'scheduled',
+    end: { kind: 'count', count: 3 }, anchor_due: '2026-08-20', sequence: 1, ...overrides,
+  });
+  const rows = async (bridge: FixtureBridge) => await bridge.invoke('list_tasks') as TaskDto[];
+  const get = async (bridge: FixtureBridge, id: string) => await bridge.invoke('get_task', { id }) as TaskDto;
+  const enable = async (bridge: FixtureBridge, recurrence = rule()) => await bridge.invoke('edit_task', {
+    id: 't2', input: { due: '2026-08-20', recurrence, recurrence_scope: 'this_and_following' },
+  }) as TaskDto;
+
+  it('saves real distinct future IDs immediately and preserves them across fixture reload', async () => {
+    let bridge = loadFixture();
+    await enable(bridge);
+    const before = (await rows(bridge)).filter(task => task.recurrence_instance);
+    expect(before.map(task => task.due)).toEqual(['2026-08-20', '2026-08-21', '2026-08-22']);
+    expect(new Set(before.map(task => task.id)).size).toBe(3);
+    expect(before.filter(task => task.recurrence_series)).toHaveLength(1);
+    bridge = bridge.reload();
+    expect((await rows(bridge)).filter(task => task.recurrence_instance)).toEqual(before);
+  });
+
+  it('keeps the completed original ID and due, and does not duplicate slots on maintenance or retry', async () => {
+    const bridge = loadFixture(); await enable(bridge);
+    const done = await bridge.invoke('set_task_status', { id: 't2', status: 'done' }) as TaskDto;
+    expect(done).toMatchObject({ id: 't2', status: 'done', due: '2026-08-20' });
+    expect(done.recurrence_effect?.next_occurrence_id).not.toBe('t2');
+    await bridge.invoke('maintain_task_recurrences');
+    await bridge.invoke('set_task_status', { id: 't2', status: 'done' });
+    expect((await rows(bridge)).filter(task => task.recurrence_instance)).toHaveLength(3);
+    expect(await get(bridge, 't2')).toMatchObject({ status: 'done', due: '2026-08-20' });
+  });
+
+  it('keeps ten upcoming entries independent of cadence', async () => {
+    const bridge = loadFixture(); await enable(bridge, rule({ end: { kind: 'never' } }));
+    const daily = (await rows(bridge)).filter(task => task.recurrence_instance);
+    expect(daily).toHaveLength(10);
+    expect(daily.at(-1)?.due).toBe('2026-08-29');
+    const yearly = loadFixture(); await enable(yearly, rule({ frequency: 'yearly', end: { kind: 'never' } }));
+    expect((await rows(yearly)).filter(task => task.recurrence_instance)).toHaveLength(10);
+    expect((await rows(yearly)).filter(task => task.recurrence_instance).at(-1)?.due).toBe('2035-08-20');
+  });
+
+  it('persists configurable targets and refills without replacing previously saved IDs', async () => {
+    const bridge = loadFixture();
+    const owner = await bridge.invoke('edit_task', { id: 't2', input: { due: '2026-08-20', recurrence: rule({ end: { kind: 'never' } }), recurrence_upcoming_count: 3 } }) as TaskDto;
+    const initial = (await rows(bridge)).filter(task => task.recurrence_instance);
+    expect(initial).toHaveLength(3);
+    const authority = owner.recurrence_series!;
+    await bridge.invoke('edit_task', { id: 't2', input: { recurrence_upcoming_count: 5, recurrence_scope: 'this_and_following' } });
+    const expanded = (await rows(bridge)).filter(task => task.recurrence_instance);
+    expect(expanded).toHaveLength(5); expect(initial.every(task => expanded.some(candidate => candidate.id === task.id))).toBe(true);
+    expect((await get(bridge, 't2')).recurrence_series?.revision).toBe(authority.revision);
+    await bridge.invoke('edit_task', { id: 't2', input: { recurrence_upcoming_count: 2, recurrence_scope: 'this_and_following' } });
+    expect((await rows(bridge)).filter(task => task.recurrence_instance)).toHaveLength(5);
+    const restored = bridge.reload(); expect((await get(restored, 't2')).recurrence_series?.upcoming_count).toBe(2);
+  });
+
+  it('immediately replenishes the configured open target when a scheduled occurrence is completed', async () => {
+    const bridge = loadFixture();
+    await bridge.invoke('edit_task', { id: 't2', input: { due: '2026-08-20', recurrence: rule({ end: { kind: 'never' } }), recurrence_upcoming_count: 3 } });
+    const before = (await rows(bridge)).filter(task => task.recurrence_instance);
+    await bridge.invoke('set_task_status', { id: 't2', status: 'done' });
+    const after = (await rows(bridge)).filter(task => task.recurrence_instance);
+    expect(after).toHaveLength(4); expect(after.filter(task => task.status === 'todo')).toHaveLength(3);
+    expect(before.every(task => after.some(candidate => candidate.id === task.id))).toBe(true);
+  });
+
+  it('honors inclusive Until and anchored month-end arithmetic', async () => {
+    const bridge = loadFixture();
+    await enable(bridge, rule({ end: { kind: 'until', date: '2026-08-21' } }));
+    expect((await rows(bridge)).filter(task => task.recurrence_instance).map(task => task.due)).toEqual(['2026-08-20', '2026-08-21']);
+    const monthly = loadFixture();
+    await monthly.invoke('edit_task', { id: 't2', input: { due: '2026-01-31', recurrence: rule({ frequency: 'monthly', end: { kind: 'count', count: 12 } }) } });
+    const dates = (await rows(monthly)).filter(task => task.recurrence_instance).map(task => task.due);
+    expect(dates).toContain('2026-08-31'); expect(dates).toContain('2026-09-30'); expect(dates).toContain('2026-10-31');
+  });
+
+  it('preserves an edited future as a detached exception when Stop retires untouched futures', async () => {
+    const bridge = loadFixture(); await enable(bridge);
+    const future = (await rows(bridge)).filter(task => task.id !== 't2' && task.recurrence_instance);
+    await bridge.invoke('edit_task', { id: future[0].id, input: { body: 'Keep my edits', due: '2026-09-01', recurrence_scope: 'this_occurrence' } });
+    const stopped = await bridge.invoke('edit_task', { id: 't2', input: { clear_recurrence: true } }) as TaskDto;
+    expect(stopped.recurrence_effect).toMatchObject({ retired_count: 1, preserved_exception_count: 1 });
+    expect(await get(bridge, future[0].id)).toMatchObject({ body: 'Keep my edits', due: '2026-09-01', deleted_at: null, recurrence_instance: { detached: true } });
+    expect(await get(bridge, future[1].id)).toMatchObject({ status: 'deleted' });
+    await bridge.invoke('maintain_task_recurrences');
+    expect((await rows(bridge)).filter(task => task.recurrence_instance)).toHaveLength(2);
+  });
+
+  it('requires explicit rule scope, changes only the current revision, and allows owner Stop', async () => {
+    const bridge = loadFixture(); await enable(bridge);
+    const future = (await rows(bridge)).filter(task => task.id !== 't2' && task.recurrence_instance);
+    await expect(bridge.invoke('edit_task', { id: future[0].id, input: { recurrence: rule() } })).rejects.toThrow(/scope/i);
+    await bridge.invoke('edit_task', { id: future[0].id, input: { recurrence: rule({ frequency: 'weekly' }), recurrence_scope: 'this_and_following' } });
+    expect((await get(bridge, 't2')).recurrence_series?.revision).toBe(2);
+    await expect(bridge.invoke('edit_task', { id: 't2', input: { recurrence: rule(), recurrence_scope: 'this_and_following' } })).rejects.toThrow(/current recurrence revision/i);
+    await bridge.invoke('edit_task', { id: 't2', input: { clear_recurrence: true } });
+    expect((await get(bridge, 't2')).recurrence_series?.enabled).toBe(false);
+  });
+
+  it('creates completion-relative successors once, using actual completion, with count one boundary', async () => {
+    const bridge = loadFixture(); await enable(bridge, rule({ mode: 'completion', end: { kind: 'count', count: 2 } }));
+    expect((await rows(bridge)).filter(task => task.recurrence_instance)).toHaveLength(1);
+    await bridge.invoke('set_task_status', { id: 't2', status: 'done' });
+    let instances = (await rows(bridge)).filter(task => task.recurrence_instance);
+    expect(instances).toHaveLength(2);
+    expect(instances[1]).toMatchObject({ due: '2026-07-02', recurrence_instance: { completion_predecessor_id: 't2' } });
+    await bridge.invoke('set_task_status', { id: 't2', status: 'todo' });
+    await bridge.invoke('set_task_status', { id: 't2', status: 'done' });
+    instances = (await rows(bridge)).filter(task => task.recurrence_instance);
+    expect(instances).toHaveLength(2);
+    const only = loadFixture(); await enable(only, rule({ mode: 'completion', end: { kind: 'count', count: 1 } }));
+    await only.invoke('set_task_status', { id: 't2', status: 'done' });
+    expect((await rows(only)).filter(task => task.recurrence_instance)).toHaveLength(1);
+  });
+
+  it('clones checklist content to new IDs without child dates, reminders or completion', async () => {
+    const bridge = loadFixture();
+    const child = await bridge.invoke('create_task', { input: { title: 'Checklist', parent: 't2', list: 'work', due: '2026-08-25', reminders: [{ kind: 'relative', value: '-1h' }] } }) as TaskDto;
+    await enable(bridge);
+    const all = await rows(bridge); const next = all.find(task => task.recurrence_instance?.sequence === 2)!;
+    const newChild = all.find(task => task.parent === next.id)!;
+    expect(newChild).toMatchObject({ title: 'Checklist', status: 'todo', due: null, reminders: [] });
+    expect(newChild.id).not.toBe(child.id);
+    expect(await get(bridge, child.id)).toMatchObject({ due: '2026-08-25', reminders: [{ kind: 'relative', value: '-1h' }] });
+  });
+
+  it('uses fresh unique task IDs after Stop and restart and keeps owner Stop available', async () => {
+    const bridge = loadFixture(); await enable(bridge);
+    const old = (await rows(bridge)).filter(task => task.recurrence_instance).map(task => task.id);
+    await bridge.invoke('edit_task', { id: 't2', input: { clear_recurrence: true } });
+    await enable(bridge);
+    const active = (await rows(bridge)).filter(task => task.recurrence_instance);
+    expect(active).toHaveLength(3);
+    expect(active.filter(task => task.id !== 't2').every(task => !old.includes(task.id))).toBe(true);
+    for (const task of active) expect(await get(bridge, task.id)).toMatchObject({ id: task.id, deleted_at: null });
+    const selected = active.find(task => task.id !== 't2')!;
+    await bridge.invoke('edit_task', { id: selected.id, input: { body: 'Keep active for restart' } });
+    await bridge.invoke('edit_task', { id: 't2', input: { clear_recurrence: true } });
+    await bridge.invoke('edit_task', { id: selected.id, input: { recurrence: rule(), recurrence_scope: 'this_and_following' } });
+    await bridge.invoke('edit_task', { id: 't2', input: { clear_recurrence: true } });
+    expect((await get(bridge, 't2')).recurrence_series?.enabled).toBe(false);
+  });
+
+  it('keeps child touch markers sticky across Done and reopen so Stop preserves the family', async () => {
+    const bridge = loadFixture();
+    await bridge.invoke('create_task', { input: { title: 'Checklist', parent: 't2', list: 'work' } });
+    await enable(bridge);
+    const all = await rows(bridge); const next = all.find(task => task.recurrence_instance?.sequence === 2)!;
+    const child = all.find(task => task.parent === next.id)!;
+    await bridge.invoke('set_task_status', { id: child.id, status: 'done' });
+    await bridge.invoke('set_task_status', { id: child.id, status: 'todo' });
+    const stopped = await bridge.invoke('edit_task', { id: 't2', input: { clear_recurrence: true } }) as TaskDto;
+    expect(stopped.recurrence_effect?.preserved_exception_count).toBe(1);
+    expect(await get(bridge, next.id)).toMatchObject({ deleted_at: null, recurrence_instance: { detached: true } });
+    expect(await get(bridge, child.id)).toMatchObject({ deleted_at: null, recurrence_exception: true });
+  });
+
+  it('preserves revision retirement and exception counts in the mutation effect', async () => {
+    const bridge = loadFixture(); await enable(bridge);
+    const future = (await rows(bridge)).filter(task => task.id !== 't2' && task.recurrence_instance);
+    await bridge.invoke('edit_task', { id: future[0].id, input: { title: 'My exception' } });
+    const revised = await bridge.invoke('edit_task', { id: 't2', input: { recurrence: rule({ frequency: 'weekly' }), recurrence_scope: 'this_and_following' } }) as TaskDto;
+    expect(revised.recurrence_effect).toMatchObject({ preserved_exception_count: 1, retired_count: 1 });
+  });
+
+  it('runs completion recurrence on board move and persists both records across reload', async () => {
+    let bridge = loadFixture();
+    await bridge.invoke('edit_task', { id: 't7', input: { due: '2026-08-20', recurrence: rule({ mode: 'completion', end: { kind: 'count', count: 2 } }) } });
+    const result = await bridge.invoke('move_task', { id: 't7', input: { list_id: 'project', board_column_id: 'project-done', position: 'W' } }) as TaskDto;
+    expect(result).toMatchObject({ id: 't7', status: 'done', due: '2026-08-20', board_column_id: 'project-done' });
+    expect(result.recurrence_effect?.next_occurrence_id).toBeTruthy();
+    bridge = bridge.reload();
+    expect(await get(bridge, 't7')).toMatchObject({ status: 'done', board_column_id: 'project-done' });
+    expect(await get(bridge, result.recurrence_effect!.next_occurrence_id!)).toMatchObject({ status: 'todo', board_column_id: 'project-queue' });
+  });
+
+  it('never regenerates a deleted future slot', async () => {
+    const bridge = loadFixture(); await enable(bridge);
+    const next = (await rows(bridge)).find(task => task.recurrence_instance?.sequence === 2)!;
+    await bridge.invoke('delete_task', { id: next.id });
+    await bridge.invoke('maintain_task_recurrences');
+    expect((await rows(bridge)).filter(task => task.recurrence_instance)).toHaveLength(2);
+    expect(await get(bridge, next.id)).toMatchObject({ deleted_at: expect.any(String) });
   });
 });

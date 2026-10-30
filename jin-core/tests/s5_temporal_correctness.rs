@@ -304,6 +304,7 @@ fn s5_promote_with_tzid_anchors_event() {
     let task = tasks::create_task(
         &root.join("tasks"),
         tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Prepare quarterly report".to_string(),
             body: String::new(),
             priority: None,
@@ -312,6 +313,7 @@ fn s5_promote_with_tzid_anchors_event() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();
@@ -389,6 +391,7 @@ fn s5_promote_without_tzid_is_floating() {
     let task = tasks::create_task(
         &root.join("tasks"),
         tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Quick call".to_string(),
             body: String::new(),
             priority: None,
@@ -397,6 +400,7 @@ fn s5_promote_without_tzid_is_floating() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();
@@ -432,6 +436,7 @@ fn s5_promote_invalid_tzid_returns_error() {
     let task = tasks::create_task(
         &root.join("tasks"),
         tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Does not matter".to_string(),
             body: String::new(),
             priority: None,
@@ -440,6 +445,7 @@ fn s5_promote_invalid_tzid_returns_error() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();

@@ -126,6 +126,7 @@ fn s1_task_soft_delete_tombstone() {
     let task = tasks::create_task(
         &root.join("tasks"),
         tasks::CreateTaskParams {
+            recurrence_upcoming_count: None,
             title: "Ephemeral".to_string(),
             body: String::new(),
             priority: None,
@@ -134,6 +135,7 @@ fn s1_task_soft_delete_tombstone() {
             tags: None,
             reminders: None,
             parent: None,
+            recurrence: None,
         },
     )
     .unwrap();

@@ -67,6 +67,10 @@ export class JinSelect {
     chevron.className = 'jin-select__chevron';
     chevron.setAttribute('aria-hidden', 'true');
     this._shell.appendChild(chevron);
+    // Hiding a native select must hide its affordance and layout slot too.
+    this._shell.hidden = selectEl.hidden;
+    new MutationObserver(() => { this._shell.hidden = selectEl.hidden; })
+      .observe(selectEl, { attributes: true, attributeFilter: ['hidden'] });
 
     // Forward the native change event to the optional callback subscribers.
     // We DO NOT stop propagation — the native event still reaches Stimulus
@@ -137,7 +141,8 @@ export class JinSelect {
     const selects: HTMLSelectElement[] = [];
     if (root instanceof HTMLSelectElement) selects.push(root);
     selects.push(...Array.from(root.querySelectorAll<HTMLSelectElement>('select')));
-    return selects.map((select) => JinSelect.enhance(select));
+    return selects.filter(select => !select.classList.contains('jin-select-field__native'))
+      .map((select) => JinSelect.enhance(select));
   }
 }
 
@@ -490,5 +495,12 @@ export class JinSelectField {
 
   static enhance(select: HTMLSelectElement): JinSelectField {
     return this.instances.get(select) ?? new JinSelectField(select);
+  }
+
+  /** Update a native bridge silently, including an already-rendered field. */
+  static setValue(select: HTMLSelectElement, value: string): void {
+    const field = this.instances.get(select);
+    if (field) field.setValue(value);
+    else select.value = value;
   }
 }

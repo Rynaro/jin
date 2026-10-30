@@ -791,6 +791,27 @@ where
     )
 }
 
+/// Task maintenance can validate an unchanged store without a journal write.
+pub(crate) fn execute_task_operation_allow_noop<F>(
+    root: &Path,
+    operation_id: &str,
+    kind: &str,
+    build: F,
+) -> Result<OperationOutcome>
+where
+    F: FnOnce() -> Result<(String, Vec<TargetPlan>)>,
+{
+    execute_operation_inner(
+        root,
+        operation_id,
+        kind,
+        OperationEffects::task(),
+        true,
+        None,
+        build,
+    )
+}
+
 /// Event mutation variant whose validated empty target set is a semantic no-op.
 pub fn execute_event_operation_allow_noop<F>(
     root: &Path,

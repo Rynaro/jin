@@ -44,6 +44,11 @@ pub(crate) struct TaskRow {
     pub(crate) parent: Option<String>,
     pub(crate) agenda_bucket: Option<String>,
     pub(crate) board_column_id: Option<String>,
+    pub(crate) recurrence: String,
+    pub(crate) completion_history: String,
+    pub(crate) recurrence_series: String,
+    pub(crate) recurrence_instance: String,
+    pub(crate) recurrence_exception: bool,
 }
 
 /// A summary row for lists (P2 — used by rebuild; full query surface in P3).
@@ -291,7 +296,7 @@ pub(crate) fn list_tasks(
     };
     let sql = format!(
         "SELECT id, title, status, priority, due, list_name, completed_at, deleted_at, \
-         created, updated, file_path, section_id, tags, position, reminders, parent, agenda_bucket, board_column_id \
+         created, updated, file_path, section_id, tags, position, reminders, parent, agenda_bucket, board_column_id, recurrence, completion_history, recurrence_series, recurrence_instance, recurrence_exception \
          FROM tasks {} ORDER BY id ASC",
         where_clause
     );
@@ -320,6 +325,15 @@ pub(crate) fn list_tasks(
             parent: row.get(15)?,
             agenda_bucket: row.get(16)?,
             board_column_id: row.get(17)?,
+            recurrence: row
+                .get::<_, Option<String>>(18)?
+                .unwrap_or_else(|| "null".into()),
+            recurrence_series: row.get(20)?,
+            recurrence_instance: row.get(21)?,
+            recurrence_exception: row.get::<_, i32>(22)? != 0,
+            completion_history: row
+                .get::<_, Option<String>>(19)?
+                .unwrap_or_else(|| "[]".into()),
         })
     })?;
     rows.collect()
@@ -328,7 +342,7 @@ pub(crate) fn list_tasks(
 pub(crate) fn get_task(conn: &Connection, id: &str) -> SqlResult<Option<TaskRow>> {
     let mut stmt = conn.prepare(
         "SELECT id, title, status, priority, due, list_name, completed_at, deleted_at, \
-         created, updated, file_path, section_id, tags, position, reminders, parent, agenda_bucket, board_column_id \
+         created, updated, file_path, section_id, tags, position, reminders, parent, agenda_bucket, board_column_id, recurrence, completion_history, recurrence_series, recurrence_instance, recurrence_exception \
          FROM tasks WHERE id = ?1",
     )?;
     let mut rows = stmt.query_map(params![id], |row| {
@@ -355,6 +369,15 @@ pub(crate) fn get_task(conn: &Connection, id: &str) -> SqlResult<Option<TaskRow>
             parent: row.get(15)?,
             agenda_bucket: row.get(16)?,
             board_column_id: row.get(17)?,
+            recurrence: row
+                .get::<_, Option<String>>(18)?
+                .unwrap_or_else(|| "null".into()),
+            recurrence_series: row.get(20)?,
+            recurrence_instance: row.get(21)?,
+            recurrence_exception: row.get::<_, i32>(22)? != 0,
+            completion_history: row
+                .get::<_, Option<String>>(19)?
+                .unwrap_or_else(|| "[]".into()),
         })
     })?;
     rows.next().transpose()

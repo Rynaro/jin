@@ -1149,3 +1149,55 @@ fn task_add_rejects_depth_two_parent() {
     let items = data(&env).as_array().unwrap();
     assert_eq!(items.len(), 2, "C must not have been written");
 }
+
+#[test]
+fn repeat_ahead_cli_keeps_configurable_entries_without_replacing_ids() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    run_json(root, &["init"]);
+    let due = chrono::Utc::now().date_naive().to_string();
+    let created = run_json(
+        root,
+        &[
+            "task",
+            "add",
+            "Predictable routine",
+            "--due",
+            &due,
+            "--repeat",
+            "daily",
+            "--repeat-ahead",
+            "3",
+        ],
+    );
+    let id = created["data"]["id"].as_str().unwrap();
+    assert_eq!(created["data"]["recurrence_series"]["upcoming_count"], 3);
+    let before = run_json(root, &["task", "list"]);
+    assert_eq!(before["data"].as_array().unwrap().len(), 3);
+    let changed = run_json(
+        root,
+        &[
+            "task",
+            "edit",
+            id,
+            "--repeat-ahead",
+            "5",
+            "--recurrence-scope",
+            "this_and_following",
+        ],
+    );
+    assert_eq!(changed["data"]["recurrence_series"]["upcoming_count"], 5);
+    assert_eq!(
+        changed["data"]["recurrence_series"]["revision"],
+        created["data"]["recurrence_series"]["revision"]
+    );
+    let after = run_json(root, &["task", "list"]);
+    assert_eq!(after["data"].as_array().unwrap().len(), 5);
+    for task in before["data"].as_array().unwrap() {
+        assert!(after["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|candidate| candidate["id"] == task["id"]));
+    }
+}

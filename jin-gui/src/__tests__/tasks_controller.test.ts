@@ -31,6 +31,7 @@ import type { TaskDto, TaskBacklinkDto, SectionDto, ReminderDto } from '../types
 import type { JinErrorDto } from '../types/error';
 import {
   filterTasksList,
+  recurrenceEligibility,
   sortTasksList,
   taskStatusLabel,
   taskStatusGlyph,
@@ -70,7 +71,7 @@ import { applyScope, groupFlexibleTasks } from '../lib/tasks/scopes';
 // via a genuine Stimulus Application, same pattern as tasks_dnd_autoselect.test.ts.
 // vi.mock calls are hoisted by Vitest regardless of source position, so they
 // take effect for the imports below even though they're declared mid-file.
-import { Application, defaultSchema } from '@hotwired/stimulus';
+import { Application, Controller, defaultSchema } from '@hotwired/stimulus';
 import type { ListDto } from '../types/dto';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -83,6 +84,7 @@ vi.mock('../lib/icons', () => ({ initIcons: vi.fn() }));
 
 // eslint-disable-next-line import/first -- must follow the vi.mock calls above.
 import TasksController from '../controllers/tasks_controller';
+import TemporalEditorController from '../controllers/temporal_editor_controller';
 // eslint-disable-next-line import/first
 import * as InvokeModule from '../invoke';
 
@@ -1610,6 +1612,30 @@ describe('ITEM 5 — renderTaskPane: per-field editable callbacks', () => {
     expect(titleEl?.getAttribute('contenteditable')).toBe('true');
   });
 
+  it('keeps completion with the grouped inspector title and actions', () => {
+    const detailEl = makeDetailEl();
+    const onSaveStatus = vi.fn().mockResolvedValue(undefined);
+    const task = makeTask({ id: 'task-header', title: 'Header task' });
+    renderTaskPane(
+      detailEl,
+      templates,
+      task,
+      noopNavigate,
+      undefined,
+      undefined,
+      { onSaveStatus },
+      vi.fn(),
+      vi.fn(),
+    );
+
+    const header = detailEl.detailContent.querySelector('.tasks-detail-pane__header');
+    expect(header?.querySelector('h2')?.textContent).toBe('Header task');
+    const completion = header?.querySelector<HTMLButtonElement>('[role="checkbox"]');
+    expect(completion?.getAttribute('aria-label')).toBe('Mark "Header task" as done');
+    completion?.click();
+    expect(onSaveStatus).toHaveBeenCalledWith('task-header', 'done');
+  });
+
   it('blurring title calls onSaveTitle with new title', () => {
     const onSaveTitle = vi.fn().mockResolvedValue(undefined);
     const detailEl = makeDetailEl();
@@ -1791,6 +1817,170 @@ describe('ITEM 5 — renderTaskPane: per-field editable callbacks', () => {
     expect(clearBtn).not.toBeNull();
     clearBtn!.click();
     expect(onClearDue).toHaveBeenCalledWith('task-clrdue');
+  });
+
+  it('applies one custom weekly repeat payload only after explicit Apply', async () => {
+    const onSaveRecurrence = vi.fn().mockResolvedValue(undefined);
+    const detailEl = makeDetailEl();
+    const task = makeTask({ id: 'task-repeat', due: '2026-07-01' });
+    renderTaskPane(detailEl, templates, task, noopNavigate, undefined, undefined, { onSaveRecurrence });
+
+    const preset = detailEl.detailContent.querySelector('[aria-label="Task repeat"]') as HTMLSelectElement;
+    const interval = detailEl.detailContent.querySelector('[aria-label="Repeat interval"]') as HTMLInputElement;
+    const mode = detailEl.detailContent.querySelector('[aria-label="Repeat mode"]') as HTMLSelectElement;
+    const end = detailEl.detailContent.querySelector('[aria-label="Repeat end"]') as HTMLSelectElement;
+    const endValue = detailEl.detailContent.querySelector('[aria-label="Repeat end value"]') as HTMLInputElement;
+    preset.value = 'weekly'; preset.dispatchEvent(new Event('change'));
+    interval.value = '3';
+    mode.value = 'completion';
+    end.value = 'count'; end.dispatchEvent(new Event('change'));
+    endValue.value = '4';
+    expect(onSaveRecurrence).not.toHaveBeenCalled();
+
+    const weekdayButtons = Array.from(detailEl.detailContent.querySelectorAll<HTMLButtonElement>('[aria-label="Repeat weekdays"] button'));
+    weekdayButtons.find((button) => button.textContent === 'Tue')?.click();
+    weekdayButtons.find((button) => button.textContent === 'Thu')?.click();
+    (detailEl.detailContent.querySelector('[aria-label="Save repeat"]') as HTMLButtonElement).click();
+    await Promise.resolve();
+
+    expect(onSaveRecurrence).toHaveBeenCalledTimes(1);
+    expect(onSaveRecurrence).toHaveBeenCalledWith('task-repeat', {
+      editor_preset: 'weekly', series_id: '', frequency: 'weekly', interval: 3, weekdays: [2, 4], mode: 'completion',
+      end: { kind: 'count', count: 4 }, anchor_due: '2026-07-01', sequence: 1,
+    }, 10);
+  });
+
+  it('clears repeat only after Apply and keeps an undated routine draft usable', async () => {
+    const onSaveRecurrence = vi.fn().mockResolvedValue(undefined);
+    const detailEl = makeDetailEl();
+    renderTaskPane(detailEl, templates, makeTask({ id: 'task-clear-repeat', due: '2026-07-01' }), noopNavigate, undefined, undefined, { onSaveRecurrence });
+    const preset = detailEl.detailContent.querySelector('[aria-label="Task repeat"]') as HTMLSelectElement;
+    preset.value = 'never'; preset.dispatchEvent(new Event('change'));
+    expect(onSaveRecurrence).not.toHaveBeenCalled();
+    (detailEl.detailContent.querySelector('[aria-label="Save repeat"]') as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(onSaveRecurrence).toHaveBeenCalledWith('task-clear-repeat', null);
+
+    const onSetDueAndSaveRecurrence = vi.fn().mockResolvedValue(undefined);
+    const noDue = makeDetailEl();
+    renderTaskPane(noDue, templates, makeTask({ id: 'task-no-due', due: null }), noopNavigate, undefined, undefined, {
+      onSaveRecurrence,
+      onSetDueAndSaveRecurrence,
+    });
+    const noDuePreset = noDue.detailContent.querySelector('[aria-label="Task repeat"]') as HTMLSelectElement;
+    const noDueInterval = noDue.detailContent.querySelector('[aria-label="Repeat interval"]') as HTMLInputElement;
+    expect(noDuePreset.disabled).toBe(false);
+    expect(noDueInterval.disabled).toBe(false);
+    expect(noDueInterval.classList).toContain('form-number-stepper__input');
+    noDuePreset.value = 'monthly'; noDuePreset.dispatchEvent(new Event('change'));
+    const noDueApply = noDue.detailContent.querySelector('[aria-label="Set due date and save"]') as HTMLButtonElement;
+    expect(noDueApply.disabled).toBe(false);
+    expect(noDue.detailContent.textContent).toContain('Choose a due date when you apply this routine.');
+    noDueInterval.value = '2';
+    noDueApply.click();
+    await Promise.resolve();
+    expect(onSetDueAndSaveRecurrence).toHaveBeenCalledWith('task-no-due', expect.objectContaining({
+      frequency: 'monthly', interval: 2, anchor_due: '',
+    }), 10);
+  });
+
+  it('preserves an explicitly chosen Weekly preset with Monday through Friday and fixes Weekdays interval visibly', () => {
+    const rule = { editor_preset: 'weekly' as const, series_id: 's', frequency: 'weekly' as const, interval: 1, weekdays: [1,2,3,4,5], mode: 'scheduled' as const, end: { kind: 'never' as const }, anchor_due: '2026-07-01', sequence: 1 };
+    const el = makeDetailEl(); renderTaskPane(el, templates, makeTask({ due: '2026-07-01', recurrence: rule }), noopNavigate, undefined, undefined, { onSaveRecurrence: vi.fn().mockResolvedValue(undefined) });
+    const preset = el.detailContent.querySelector<HTMLSelectElement>('[aria-label="Task repeat"]')!;
+    const interval = el.detailContent.querySelector<HTMLInputElement>('[aria-label="Repeat interval"]')!;
+    expect(preset.value).toBe('weekly'); interval.value = '2';
+    preset.value = 'weekdays'; preset.dispatchEvent(new Event('change'));
+    expect(interval.value).toBe('1'); expect(interval.disabled).toBe(true);
+  });
+
+  it('serializes the Weekdays preset as a weekly Monday through Friday rule', async () => {
+    const onSaveRecurrence = vi.fn().mockResolvedValue(undefined);
+    const detailEl = makeDetailEl();
+    renderTaskPane(detailEl, templates, makeTask({ id: 'task-weekdays', due: '2026-07-01' }), noopNavigate, undefined, undefined, { onSaveRecurrence });
+    const preset = detailEl.detailContent.querySelector('[aria-label="Task repeat"]') as HTMLSelectElement;
+    preset.value = 'weekdays'; preset.dispatchEvent(new Event('change'));
+    (detailEl.detailContent.querySelector('[aria-label="Save repeat"]') as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(onSaveRecurrence).toHaveBeenCalledWith('task-weekdays', expect.objectContaining({
+      frequency: 'weekly', interval: 1, weekdays: [1, 2, 3, 4, 5],
+    }), 10);
+  });
+
+  it('keeps compact count and date end controls distinct while switching end rules', () => {
+    const detailEl = makeDetailEl();
+    let pickUntil: ((until: string | null) => void) | undefined;
+    const onPickRecurrenceUntil = vi.fn((_currentUntil: string | null, onSelected: (until: string | null) => void) => {
+      pickUntil = onSelected;
+    });
+    renderTaskPane(detailEl, templates, makeTask({ id: 'task-repeat-ends', due: '2026-07-01' }), noopNavigate, undefined, undefined, {
+      onSaveRecurrence: vi.fn().mockResolvedValue(undefined),
+      onPickRecurrenceUntil,
+    });
+    const end = detailEl.detailContent.querySelector('[aria-label="Repeat end"]') as HTMLSelectElement;
+    const interval = detailEl.detailContent.querySelector('[aria-label="Repeat interval"]') as HTMLInputElement;
+    const intervalUnit = interval.closest('.task-detail__repeat-control')?.querySelector('.task-detail__repeat-unit') as HTMLElement;
+    const count = detailEl.detailContent.querySelector('[aria-label="Repeat end value"]') as HTMLInputElement;
+    const until = detailEl.detailContent.querySelector('[aria-label="Choose repeat end date"]') as HTMLButtonElement;
+    const countStepper = count.closest('.form-number-stepper') as HTMLElement;
+    end.value = 'count'; end.dispatchEvent(new Event('change'));
+    expect(intervalUnit.textContent).toBe('day');
+    interval.value = '2'; interval.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(intervalUnit.textContent).toBe('days');
+    expect(countStepper.hidden).toBe(false); expect(until.closest('.task-detail__repeat-control')?.hidden).toBe(true);
+    count.value = '4';
+    end.value = 'until'; end.dispatchEvent(new Event('change'));
+    expect(countStepper.closest('.task-detail__repeat-control')?.hidden).toBe(true);
+    expect(until.type).toBe('button'); expect(until.disabled).toBe(false);
+    until.click();
+    expect(onPickRecurrenceUntil).toHaveBeenCalledWith(null, expect.any(Function));
+    pickUntil?.('2026-08-01');
+    expect(until.getAttribute('aria-label')).toContain('Repeat until');
+    end.value = 'never'; end.dispatchEvent(new Event('change'));
+    expect(countStepper.closest('.task-detail__repeat-control')?.hidden).toBe(true);
+    expect(until.closest('.task-detail__repeat-control')?.hidden).toBe(true);
+    end.value = 'count'; end.dispatchEvent(new Event('change'));
+    expect(count.value).toBe('4');
+    end.value = 'until'; end.dispatchEvent(new Event('change'));
+    expect(until.getAttribute('aria-label')).toContain('Aug');
+  });
+
+  it('locks the entire repeat draft while a save is pending and restores it afterwards', async () => {
+    let resolveSave: (() => void) | undefined;
+    const onSaveRecurrence = vi.fn(() => new Promise<void>((resolve) => { resolveSave = resolve; }));
+    const detailEl = makeDetailEl();
+    renderTaskPane(detailEl, templates, makeTask({ id: 'task-pending-repeat', due: '2026-07-01' }), noopNavigate, undefined, undefined, { onSaveRecurrence });
+    const preset = detailEl.detailContent.querySelector('[aria-label="Task repeat"]') as HTMLSelectElement;
+    const interval = detailEl.detailContent.querySelector('[aria-label="Repeat interval"]') as HTMLInputElement;
+    const apply = detailEl.detailContent.querySelector('[aria-label="Save repeat"]') as HTMLButtonElement;
+    preset.value = 'daily'; preset.dispatchEvent(new Event('change'));
+    apply.click();
+    const repeatRow = apply.closest('.task-detail__field-row') as HTMLElement;
+    expect(repeatRow.getAttribute('aria-busy')).toBe('true');
+    expect(preset.disabled).toBe(true);
+    expect(interval.disabled).toBe(true);
+    expect(apply.disabled).toBe(true);
+    resolveSave?.();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(repeatRow.getAttribute('aria-busy')).toBe('false');
+    expect(preset.disabled).toBe(false);
+    expect(interval.disabled).toBe(false);
+  });
+
+  it('explains that a subtask cannot repeat without opening a due-date flow', () => {
+    const onSetDueAndSaveRecurrence = vi.fn().mockResolvedValue(undefined);
+    const detailEl = makeDetailEl();
+    renderTaskPane(detailEl, templates, makeTask({ id: 'subtask-repeat', due: null, parent: 'parent-1' }), noopNavigate, undefined, undefined, {
+      onSaveRecurrence: vi.fn().mockResolvedValue(undefined),
+      onSetDueAndSaveRecurrence,
+    });
+    const preset = detailEl.detailContent.querySelector('[aria-label="Task repeat"]') as HTMLSelectElement;
+    const apply = detailEl.detailContent.querySelector('[aria-label="Repeat unavailable for subtasks"]') as HTMLButtonElement;
+    expect(preset.disabled).toBe(true);
+    expect(apply.disabled).toBe(true);
+    expect(detailEl.detailContent.textContent).toContain('Subtasks cannot repeat');
+    apply.click();
+    expect(onSetDueAndSaveRecurrence).not.toHaveBeenCalled();
   });
 
   it('does NOT render editable fields (.task-detail__fields) when detailCallbacks is absent', () => {
@@ -3637,6 +3827,271 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     expect(params.body).not.toBe('');
   });
 
+  it('fetches fresh generated occurrence owner context and sends explicit Stop', async () => {
+    const owner = persistentTask('owner');
+    const generated = persistentTask('future');
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([makeDefaultListDto()]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([generated]);
+    const get = vi.spyOn(InvokeModule, 'getTaskById').mockImplementation(async (id) => id === 'owner' ? owner : generated);
+    const edit = vi.spyOn(InvokeModule, 'editTask').mockResolvedValue(generated);
+    startS3App(); await flushStimulusAsync(); clickItemBody('future'); await flushStimulusAsync();
+    expect(get).toHaveBeenCalledWith('owner');
+    expect(document.querySelector<HTMLElement>('.task-detail__repeat-editor')?.hidden).toBe(true);
+    document.querySelector<HTMLButtonElement>('[aria-label="Edit repeat"]')!.click();
+    expect(document.querySelector<HTMLElement>('.task-detail__repeat-editor')?.hidden).toBe(false);
+    expect(document.querySelector('[aria-label="Repeat edit scope"]')).toBeNull();
+    expect(document.querySelector<HTMLButtonElement>('[aria-label="Save repeat"]')?.disabled).toBe(false);
+    document.querySelector<HTMLButtonElement>('[aria-label="Stop repeating"]')!.click(); await flushStimulusAsync();
+    expect(edit).toHaveBeenCalledWith('future', { clear_recurrence: true, recurrence_scope: 'this_and_following' });
+  });
+
+  it('does not let a delayed owner response overwrite a newer task selection', async () => {
+    const generated = persistentTask('future');
+    const ordinary = makeTaskDtoForStimulus({ id: 'ordinary', title: 'New selection' });
+    let resolveOwner!: (task: TaskDto) => void;
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([makeDefaultListDto()]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([generated, ordinary]);
+    vi.spyOn(InvokeModule, 'getTaskById').mockImplementation((id) => id === 'owner'
+      ? new Promise(resolve => { resolveOwner = resolve; }) : Promise.resolve(id === 'future' ? generated : ordinary));
+    startS3App(); await flushStimulusAsync(); clickItemBody('future'); await flushStimulusAsync();
+    clickItemBody('ordinary'); await flushStimulusAsync();
+    resolveOwner(persistentTask('owner')); await flushStimulusAsync();
+    expect(document.querySelector('.browse-detail__title')?.textContent).toBe('New selection');
+    expect(document.querySelector('[aria-label="Repeat edit scope"]')).toBeNull();
+    expect(document.querySelector<HTMLElement>('.task-detail__repeat-editor')?.hidden).toBe(true);
+  });
+
+  it('controller_sends_one_typed_repeat_payload_after_apply_and_surfaces_a_rejection', async () => {
+    const task = makeTaskDtoForStimulus({ id: 'routine-1', due: '2026-07-01' });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([makeDefaultListDto()]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([task]);
+    vi.spyOn(InvokeModule, 'getTaskById').mockResolvedValue(task);
+    const edit = vi.spyOn(InvokeModule, 'editTask').mockRejectedValue({
+      code: 2, kind: 'usage', message: 'repeat rejected', retriable: false,
+    });
+    const errors: CustomEvent[] = [];
+    document.documentElement.addEventListener('app:error', (event) => errors.push(event as CustomEvent));
+
+    const recurrenceDialog = document.createElement('dialog');
+    recurrenceDialog.id = 'jin-due-date-dialog';
+    recurrenceDialog.setAttribute('data-controller', 'temporal-editor');
+    document.body.appendChild(recurrenceDialog);
+    const openTemporalEditor = vi.fn((session: { onCommit: (result: { kind: 'set'; due: string; date: string; time: string }) => void }) => {
+      session.onCommit({ kind: 'set', due: '2026-08-01', date: '2026-08-01', time: '' });
+    });
+    class TemporalEditorStub extends Controller<HTMLDialogElement> {
+      open = openTemporalEditor;
+    }
+
+    s3App = Application.start(document.documentElement, defaultSchema);
+    s3App.register('tasks', TasksController);
+    s3App.register('temporal-editor', TemporalEditorStub);
+    await flushStimulusAsync();
+    clickItemBody('routine-1');
+    await flushStimulusAsync();
+
+    const preset = document.querySelector('[aria-label="Task repeat"]') as HTMLSelectElement;
+    const interval = document.querySelector('[aria-label="Repeat interval"]') as HTMLInputElement;
+    const end = document.querySelector('[aria-label="Repeat end"]') as HTMLSelectElement;
+    preset.value = 'weekly'; preset.dispatchEvent(new Event('change'));
+    interval.value = '2';
+    end.value = 'until'; end.dispatchEvent(new Event('change'));
+    (document.querySelector('[aria-label="Choose repeat end date"]') as HTMLButtonElement).click();
+    expect(openTemporalEditor).toHaveBeenCalledWith(expect.objectContaining({
+      initialDue: null, presentation: 'recurrence',
+    }));
+    Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="Repeat weekdays"] button'))
+      .find((button) => button.textContent === 'Tue')?.click();
+    (document.querySelector('[aria-label="Save repeat"]') as HTMLButtonElement).click();
+    await flushStimulusAsync();
+
+    expect(edit).toHaveBeenCalledTimes(1);
+    expect(edit).toHaveBeenCalledWith('routine-1', { recurrence: {
+      editor_preset: 'weekly', series_id: '', frequency: 'weekly', interval: 2, weekdays: [2], mode: 'scheduled',
+      end: { kind: 'until', date: '2026-08-01' }, anchor_due: '2026-07-01', sequence: 1,
+    }, recurrence_upcoming_count: 10, recurrence_expected: undefined, recurrence_scope: 'this_and_following' });
+    expect(errors.some((event) => (event.detail as { message?: string }).message === 'repeat rejected')).toBe(true);
+  });
+
+
+  function setRepeatControl(label: string, value: string): void {
+    const control = document.querySelector<HTMLInputElement | HTMLSelectElement>(`[aria-label="${label}"]`)!;
+    control.value = value;
+    control.dispatchEvent(new Event(control.tagName === 'INPUT' ? 'input' : 'change', { bubbles: true }));
+  }
+  function repeatController(): TasksController {
+    return s3App!.getControllerForElementAndIdentifier(document.querySelector('[data-controller="tasks"]')!, 'tasks') as TasksController;
+  }
+  async function mountRepeatTask(task: TaskDto): Promise<void> {
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([makeDefaultListDto()]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([task]);
+    vi.spyOn(InvokeModule, 'getTaskById').mockResolvedValue(task);
+    startS3App(); await flushStimulusAsync(); clickItemBody(task.id); await flushStimulusAsync();
+  }
+  it('starts with a quiet saved summary, synchronizes Setup, and discards only Repeat on Cancel', async () => {
+    const task = makeTaskDtoForStimulus({ id: 'summary-repeat', due: '2026-08-20' }); await mountRepeatTask(task);
+    const editor = document.querySelector<HTMLElement>('.task-detail__repeat-editor')!;
+    expect(editor.hidden).toBe(true);
+    expect(document.querySelector('.task-detail__repeat-summary-title')?.textContent).toBe('Does not repeat');
+    expect(document.querySelector('[aria-label="Repeat edit scope"]')).toBeNull();
+    document.querySelector<HTMLButtonElement>('[aria-label="Set up repeat"]')!.click();
+    expect(editor.hidden).toBe(false);
+    const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="Task repeat"]')!;
+    expect(trigger.textContent).toBe('Daily');
+    expect(document.querySelector<HTMLSelectElement>('select[aria-label="Task repeat"]')?.value).toBe('daily');
+    expect(document.querySelector('.task-detail__repeat-editor select .jin-select')).toBeNull();
+    expect(Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Reload repeat settings')?.hidden).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>('[aria-label="Stop repeating"]')?.hidden).toBe(true);
+    setRepeatControl('Task repeat', 'monthly'); setRepeatControl('Repeat interval', '2');
+    document.querySelector<HTMLButtonElement>('[aria-label="Cancel repeat changes"]')!.click(); await flushStimulusAsync();
+    expect(document.querySelector<HTMLElement>('.task-detail__repeat-editor')?.hidden).toBe(true);
+    expect(document.querySelector<HTMLSelectElement>('select[aria-label="Task repeat"]')?.value).toBe('never');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Set up repeat');
+    document.querySelector<HTMLButtonElement>('[aria-label="Set up repeat"]')!.click();
+    expect(document.querySelector<HTMLButtonElement>('button[aria-label="Task repeat"]')?.textContent).toBe('Daily');
+    expect(document.querySelector<HTMLInputElement>('[aria-label="Repeat interval"]')?.value).toBe('1');
+  });
+
+  it('keeps a dirty editor open through hydration and destroys old dropdown portals', async () => {
+    const task = makeTaskDtoForStimulus({ id: 'portal-repeat', due: '2026-08-20' }); await mountRepeatTask(task);
+    document.querySelector<HTMLButtonElement>('[aria-label="Set up repeat"]')!.click();
+    setRepeatControl('Task repeat', 'weekly');
+    const count = document.querySelectorAll('.task-detail__repeat-popup').length;
+    expect(count).toBe(3);
+    repeatController().activateSection(); await flushStimulusAsync();
+    expect(document.querySelector<HTMLElement>('.task-detail__repeat-editor')?.hidden).toBe(false);
+    expect(document.querySelector<HTMLButtonElement>('button[aria-label="Task repeat"]')?.textContent).toBe('Weekly');
+    expect(document.querySelectorAll('.task-detail__repeat-popup')).toHaveLength(count);
+    expect(document.querySelectorAll('.task-detail__repeat .jin-select')).toHaveLength(0);
+    document.querySelector<HTMLButtonElement>('[aria-label="Close task details"]')!.click(); await flushStimulusAsync();
+    expect(document.querySelectorAll('.task-detail__repeat-popup')).toHaveLength(0);
+  });
+
+  it('destroys Repeat dropdown portals when changing sidebar scope', async () => {
+    const task = makeTaskDtoForStimulus({ id: 'scope-repeat', due: '2026-08-20' }); await mountRepeatTask(task);
+    document.querySelector<HTMLButtonElement>('[aria-label="Set up repeat"]')!.click();
+    expect(document.querySelectorAll('.task-detail__repeat-popup')).toHaveLength(3);
+    repeatController().setScope(new CustomEvent('jin:scope-changed', { detail: { scope: { kind: 'smart', id: 'upcoming' } } }));
+    await flushStimulusAsync();
+    expect(document.querySelectorAll('.task-detail__repeat-popup')).toHaveLength(0);
+    expect(document.querySelector('.task-detail__repeat-editor')).toBeNull();
+  });
+
+  it('only shows schedule-dependent fields and preserves Keep while completion mode hides it', async () => {
+    const task = makeTaskDtoForStimulus({ id: 'conditional-repeat', due: '2026-08-20' }); await mountRepeatTask(task);
+    document.querySelector<HTMLButtonElement>('[aria-label="Set up repeat"]')!.click();
+    const keep = document.querySelector<HTMLInputElement>('[aria-label="Keep upcoming entries"]')!;
+    setRepeatControl('Keep upcoming entries', '7'); setRepeatControl('Repeat mode', 'completion');
+    expect(keep.closest<HTMLElement>('.task-detail__repeat-control')?.hidden).toBe(true);
+    expect(document.querySelector('.task-detail__repeat-help')?.textContent).toContain('completed');
+    expect(document.querySelector<HTMLInputElement>('[aria-label="Repeat end value"]')?.closest<HTMLElement>('.task-detail__repeat-control')?.hidden).toBe(true);
+    expect(document.querySelector<HTMLButtonElement>('[aria-label="Choose repeat end date"]')?.closest<HTMLElement>('.task-detail__repeat-control')?.hidden).toBe(true);
+    setRepeatControl('Repeat mode', 'scheduled');
+    expect(keep.closest<HTMLElement>('.task-detail__repeat-control')?.hidden).toBe(false);
+    expect(keep.value).toBe('7');
+  });
+
+  it('keeps the exact dirty repeat draft through route return, due save and due clear', async () => {
+    const task = makeTaskDtoForStimulus({ id: 'stable-repeat', due: '2026-08-20' });
+    await mountRepeatTask(task);
+    vi.spyOn(InvokeModule, 'editTask').mockResolvedValue(task);
+    setRepeatControl('Task repeat', 'monthly'); setRepeatControl('Repeat interval', '2');
+    setRepeatControl('Keep upcoming entries', '3'); setRepeatControl('Repeat end', 'count'); setRepeatControl('Repeat end value', '7');
+    repeatController().activateSection(); await flushStimulusAsync();
+    expect(document.querySelector<HTMLSelectElement>('[aria-label="Task repeat"]')?.value).toBe('monthly');
+    expect(document.querySelector<HTMLInputElement>('[aria-label="Repeat interval"]')?.value).toBe('2');
+    document.querySelector<HTMLButtonElement>('[aria-label="Clear due date"]')!.click(); await flushStimulusAsync();
+    expect(document.querySelector<HTMLSelectElement>('[aria-label="Task repeat"]')?.value).toBe('monthly');
+    expect(document.querySelector<HTMLInputElement>('[aria-label="Keep upcoming entries"]')?.value).toBe('3');
+    expect(document.querySelector<HTMLInputElement>('[aria-label="Repeat end value"]')?.value).toBe('7');
+  });
+  it('keeps repeat input made while an older detail fetch is delayed', async () => {
+    const task = makeTaskDtoForStimulus({ id: 'delayed-repeat', due: '2026-08-20' }); await mountRepeatTask(task);
+    let resolveTask!: (task: TaskDto) => void;
+    vi.mocked(InvokeModule.getTaskById).mockImplementationOnce(() => new Promise(resolve => { resolveTask = resolve; }));
+    repeatController().activateSection(); await flushStimulusAsync();
+    setRepeatControl('Task repeat', 'yearly'); setRepeatControl('Repeat interval', '4');
+    resolveTask(task); await flushStimulusAsync();
+    expect(document.querySelector<HTMLSelectElement>('[aria-label="Task repeat"]')?.value).toBe('yearly');
+    expect(document.querySelector<HTMLInputElement>('[aria-label="Repeat interval"]')?.value).toBe('4');
+  });
+  it('retains the entire repeat draft after a rejected save and later refresh', async () => {
+    const task = makeTaskDtoForStimulus({ id: 'failed-repeat', due: '2026-08-20' }); await mountRepeatTask(task);
+    vi.spyOn(InvokeModule, 'editTask').mockRejectedValue({ code: 2, kind: 'usage', message: 'Try again', retriable: true });
+    setRepeatControl('Task repeat', 'weekly'); setRepeatControl('Repeat interval', '2'); setRepeatControl('Keep upcoming entries', '4');
+    document.querySelector<HTMLButtonElement>('[aria-label="Save repeat"]')!.click(); await flushStimulusAsync();
+    repeatController().activateSection(); await flushStimulusAsync();
+    expect(document.querySelector<HTMLSelectElement>('[aria-label="Task repeat"]')?.value).toBe('weekly');
+    expect(document.querySelector<HTMLInputElement>('[aria-label="Repeat interval"]')?.value).toBe('2');
+    expect(document.querySelector<HTMLInputElement>('[aria-label="Keep upcoming entries"]')?.value).toBe('4');
+  });
+  it('sends a count-only update for a legacy preset without revising its rule', async () => {
+    const task = persistentTask('owner'); await mountRepeatTask(task);
+    const edit = vi.spyOn(InvokeModule, 'editTask').mockResolvedValue(task);
+    document.querySelector<HTMLButtonElement>('[aria-label="Edit repeat"]')!.click(); setRepeatControl('Keep upcoming entries', '4');
+    document.querySelector<HTMLButtonElement>('[aria-label="Save repeat"]')!.click(); await flushStimulusAsync();
+    expect(edit).toHaveBeenCalledWith('owner', { recurrence_upcoming_count: 4, recurrence_expected: { series_id: 'series', revision: 2, enabled: true }, recurrence_scope: 'this_and_following' });
+  });
+  it('retains a dirty draft when the authority changes and requires explicit reload', async () => {
+    const task = persistentTask('owner'); await mountRepeatTask(task);
+    setRepeatControl('Task repeat', 'monthly'); document.querySelector<HTMLButtonElement>('[aria-label="Edit repeat"]')!.click();
+    const changed = persistentTask('owner', { recurrence_series: { ...task.recurrence_series!, revision: 3 } });
+    vi.mocked(InvokeModule.getTaskById).mockResolvedValue(changed);
+    repeatController().activateSection(); await flushStimulusAsync();
+    expect(document.querySelector<HTMLSelectElement>('[aria-label="Task repeat"]')?.value).toBe('monthly');
+    expect(document.querySelector<HTMLButtonElement>('[aria-label="Save repeat"]')?.disabled).toBe(true);
+    expect(document.querySelector('[data-tasks-target="detailContent"]')?.textContent).toContain('Repeat changed elsewhere');
+    Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === 'Reload repeat settings')!.click(); await flushStimulusAsync();
+    expect(document.querySelector<HTMLSelectElement>('[aria-label="Task repeat"]')?.value).toBe('daily');
+  });
+  it('real calendar Cancel and Escape settle an undated repeat Apply without losing or disabling its draft', async () => {
+    const task = makeTaskDtoForStimulus({ id: 'cancel-repeat', due: null }); await mountRepeatTask(task);
+    const edit = vi.spyOn(InvokeModule, 'editTask').mockResolvedValue(task);
+    document.body.insertAdjacentHTML('beforeend', `<dialog id="jin-due-date-dialog" data-controller="temporal-editor" data-action="cancel->temporal-editor#cancelDraft">
+      <h2 data-temporal-editor-target="title"></h2><label data-temporal-editor-target="naturalLabel"></label>
+      <input data-temporal-editor-target="natural"><button data-temporal-editor-target="naturalUse"></button><p data-temporal-editor-target="naturalPreview"></p>
+      <div data-temporal-editor-target="calendar"></div><span data-temporal-editor-target="timeLabel"></span><input data-temporal-editor-target="time">
+      <p data-temporal-editor-target="summary"></p><p data-temporal-editor-target="error"></p>
+      <button data-action="click->temporal-editor#cancelDraft">Cancel</button><button data-temporal-editor-target="confirm"></button>
+    </dialog>`);
+    s3App!.register('temporal-editor', TemporalEditorController); await flushStimulusAsync();
+    setRepeatControl('Task repeat', 'monthly'); setRepeatControl('Repeat interval', '2'); setRepeatControl('Keep upcoming entries', '3');
+    const dialog = document.querySelector<HTMLDialogElement>('#jin-due-date-dialog')!;
+    document.querySelector<HTMLButtonElement>('[aria-label="Set due date and save"]')!.click(); await flushStimulusAsync();
+    expect(dialog.open).toBe(true); dialog.querySelector<HTMLButtonElement>('[data-action="click->temporal-editor#cancelDraft"]')!.click(); await flushStimulusAsync();
+    expect(dialog.open).toBe(false);
+    expect(document.querySelector<HTMLButtonElement>('[aria-label="Set due date and save"]')?.disabled).toBe(false);
+    expect(document.querySelector<HTMLSelectElement>('[aria-label="Task repeat"]')?.value).toBe('monthly');
+    expect(document.querySelector<HTMLInputElement>('[aria-label="Repeat interval"]')?.value).toBe('2');
+    expect(document.querySelector<HTMLInputElement>('[aria-label="Keep upcoming entries"]')?.value).toBe('3');
+    document.querySelector<HTMLButtonElement>('[aria-label="Set due date and save"]')!.click(); await flushStimulusAsync();
+    expect(dialog.open).toBe(true); dialog.dispatchEvent(new Event('cancel', { cancelable: true })); await flushStimulusAsync();
+    expect(document.querySelector<HTMLButtonElement>('[aria-label="Set due date and save"]')?.disabled).toBe(false);
+    expect(edit).not.toHaveBeenCalled();
+  });
+
+  it('keeps an Until calendar choice when the same task refreshes while its picker is open', async () => {
+    const task = makeTaskDtoForStimulus({ id: 'calendar-repeat', due: '2026-08-20' }); await mountRepeatTask(task);
+    let choose!: (until: string | null) => void;
+    const controller = repeatController() as unknown as { openCalendarForRecurrenceUntil: (date: string | null, cb: (until: string | null) => void) => void; activateSection: () => void };
+    vi.spyOn(controller, 'openCalendarForRecurrenceUntil').mockImplementation((_date, cb) => { choose = cb; });
+    setRepeatControl('Task repeat', 'monthly'); setRepeatControl('Repeat end', 'until');
+    document.querySelector<HTMLButtonElement>('[aria-label="Choose repeat end date"]')!.click();
+    controller.activateSection(); await flushStimulusAsync(); choose('2027-01-31'); await flushStimulusAsync();
+    expect(document.querySelector<HTMLButtonElement>('[aria-label^="Repeat until"]')?.textContent).toContain('2027');
+    expect(document.querySelector<HTMLSelectElement>('[aria-label="Task repeat"]')?.value).toBe('monthly');
+  });
+  it('keeps newer input when an earlier Apply acknowledgement arrives', async () => {
+    const task = makeTaskDtoForStimulus({ id: 'saving-repeat', due: '2026-08-20' }); await mountRepeatTask(task);
+    let finish!: (task: TaskDto) => void;
+    vi.spyOn(InvokeModule, 'editTask').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    setRepeatControl('Task repeat', 'monthly'); setRepeatControl('Repeat interval', '2');
+    document.querySelector<HTMLButtonElement>('[aria-label="Save repeat"]')!.click(); await flushStimulusAsync();
+    // Represents an edit owned by a newer mounted draft while an older save is outstanding.
+    setRepeatControl('Repeat interval', '3'); finish(task); await flushStimulusAsync();
+    expect(document.querySelector<HTMLInputElement>('[aria-label="Repeat interval"]')?.value).toBe('3');
+  });
+
   it('pane_exposes_every_core_field', async () => {
     vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([makeDefaultListDto()]);
     vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([
@@ -5208,5 +5663,53 @@ describe('S8 — tag color picker wiring (AC-S8-02)', () => {
 
     expect(document.getElementById('jin-modal-root')?.querySelector('dialog[open]')).not.toBeNull();
     expect(InvokeModule.setTagColor).not.toHaveBeenCalled();
+  });
+});
+
+
+function persistentTask(id: string, overrides: Partial<TaskDto> = {}): TaskDto {
+  const recurrence: NonNullable<TaskDto['recurrence']> = {
+    series_id: 'series', frequency: 'daily', interval: 1, weekdays: [], mode: 'scheduled',
+    end: { kind: 'count', count: 3 }, anchor_due: '2026-08-20', sequence: 1,
+  };
+  return makeTask({ id, due: '2026-08-20', recurrence,
+    recurrence_instance: { owner_task_id: 'owner', series_id: 'series', revision: 2, sequence: id === 'owner' ? 1 : 2, originally_scheduled_due: '2026-08-20', detached: false },
+    recurrence_series: id === 'owner' ? { schema_version: 2, series_id: 'series', enabled: true, revision: 2, rule: recurrence, outstanding_task_id: 'future' } : null,
+    ...overrides,
+  });
+}
+
+describe('persistent recurrence control eligibility', () => {
+  it('uses canonical owner identity and revision for generated tasks', () => {
+    const task = persistentTask('future');
+    expect(recurrenceEligibility(task).canEdit).toBe(false);
+    expect(recurrenceEligibility(task, persistentTask('owner')).canEdit).toBe(true);
+    expect(recurrenceEligibility(task, persistentTask('wrong-owner', { recurrence_series: persistentTask('owner').recurrence_series })).canEdit).toBe(false);
+    expect(recurrenceEligibility(task, persistentTask('owner', { recurrence_series: { ...persistentTask('owner').recurrence_series!, revision: 3 } })).canEdit).toBe(false);
+  });
+
+  it('rejects terminal, detached and older-revision rule edits while keeping original owner Stop', () => {
+    const owner = persistentTask('owner');
+    for (const status of ['done', 'cancelled', 'deleted']) expect(recurrenceEligibility(persistentTask('future', { status }), owner).canEdit).toBe(false);
+    const oldOwner = persistentTask('owner', { status: 'done', recurrence_instance: { ...owner.recurrence_instance!, revision: 1, series_id: 'retired-series' } });
+    expect(recurrenceEligibility(oldOwner)).toMatchObject({ canEdit: false, canStop: true });
+    expect(recurrenceEligibility(persistentTask('future', { recurrence_instance: { ...owner.recurrence_instance!, detached: true } }), owner).canEdit).toBe(false);
+  });
+
+  it('uses a deliberate series editor and keeps Stop separate from Save', async () => {
+    const el = makeTasksViewElements(); const save = vi.fn().mockResolvedValue(undefined);
+    renderTaskPane(el, templates, persistentTask('future'), noopNavigate, undefined, undefined, { recurrenceOwner: persistentTask('owner'), onSaveRecurrence: save });
+    const apply = el.detailContent.querySelector<HTMLButtonElement>('[aria-label="Save repeat"]')!;
+    expect(el.detailContent.querySelector<HTMLElement>('.task-detail__repeat-editor')?.hidden).toBe(true);
+    expect(el.detailContent.querySelector('[aria-label="Repeat edit scope"]')).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    el.detailContent.querySelector<HTMLButtonElement>('[aria-label="Edit repeat"]')!.click();
+    expect(el.detailContent.textContent).toContain('Changes apply to this and following occurrences.');
+    apply.click();
+    expect(save).toHaveBeenCalledWith('future', undefined, 10);
+    await Promise.resolve(); await Promise.resolve();
+    el.detailContent.querySelector<HTMLButtonElement>('[aria-label="Stop repeating"]')!.click();
+    expect(save).toHaveBeenLastCalledWith('future', null);
+    expect(el.detailContent.textContent).toContain('Completed and edited entries are kept.');
   });
 });

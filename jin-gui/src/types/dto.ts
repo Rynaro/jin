@@ -210,7 +210,41 @@ export interface TaskDto {
   parent?: string | null;
   /** M1 explicit agenda placement; null means no flexible marker. */
   agenda_bucket?: 'flexible' | null;
+  recurrence?: TaskRecurrence | null;
+  completion_history?: TaskCompletion[];
+  recurrence_series?: TaskRecurrenceSeries | null;
+  recurrence_instance?: TaskRecurrenceInstance | null;
+  recurrence_exception?: boolean;
+  recurrence_effect?: TaskRecurrenceEffect;
+
 }
+
+export type TaskRecurrenceMutationScope = 'this_occurrence' | 'this_and_following';
+export interface TaskRecurrenceSeries {
+  schema_version: number; series_id: string; enabled: boolean; revision: number;
+  rule: TaskRecurrence; outstanding_task_id: string; upcoming_count?: number;
+}
+export interface TaskRecurrenceInstance {
+  owner_task_id: string; series_id: string; revision: number; sequence: number;
+  originally_scheduled_due: string; completion_predecessor_id?: string | null; detached: boolean;
+}
+export interface TaskRecurrenceEffect {
+  created_ids: string[]; next_occurrence_id: string | null; next_due: string | null;
+  preserved_exception_count: number; retired_count: number;
+}
+
+export interface TaskRecurrence {
+  editor_preset?: 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'yearly';
+  series_id: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  interval: number;
+  weekdays: number[];
+  mode: 'scheduled' | 'completion';
+  end: { kind: 'never' } | { kind: 'until'; date: string } | { kind: 'count'; count: number };
+  anchor_due: string;
+  sequence: number;
+}
+export interface TaskCompletion { series_id: string; sequence: number; completed_at: string; due: string; }
 
 // ── ListDto / SectionDto ───────────────────────────────────────────────────────
 

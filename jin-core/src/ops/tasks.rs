@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::id::new_ulid;
 use crate::model::task::Reminder;
-use crate::model::{DueDate, Priority, Task, TaskFrontmatter, TaskStatus};
+use crate::model::{DueDate, Priority, Task, TaskFrontmatter, TaskRecurrence, TaskStatus};
 use crate::store::fs;
 use crate::{JinError, Result};
 
@@ -32,6 +32,12 @@ pub struct EditTaskParams {
     /// no change. Validated by `validate_parent_assignment` (self-parenting,
     /// missing parent, and depth ≥ 2 are all rejected).
     pub parent: Option<Option<String>>,
+    /// Set a repeat rule; `clear_recurrence` takes precedence.
+    pub recurrence: Option<TaskRecurrence>,
+    pub recurrence_upcoming_count: Option<u16>,
+    pub clear_recurrence: bool,
+    pub recurrence_scope: Option<crate::model::task::RecurrenceScope>,
+    pub recurrence_expected: Option<crate::model::task::RecurrenceRevision>,
 }
 
 #[derive(Default)]
@@ -48,6 +54,8 @@ pub struct CreateTaskParams {
     /// S6: id of the parent task, if this is a subtask. `None` = top-level.
     /// Validated by `validate_parent_for_create` (missing parent, depth ≥ 2).
     pub parent: Option<String>,
+    pub recurrence: Option<TaskRecurrence>,
+    pub recurrence_upcoming_count: Option<u16>,
 }
 
 /// Parameters for the atomic drag/drop move operation (P9).
@@ -73,7 +81,9 @@ pub fn create_task_with_column(
     board_column_id: Option<String>,
     initial_status: TaskStatus,
 ) -> Result<Task> {
-    let task = prepare_new_task(tasks_dir, params, board_column_id, initial_status)?;
+    let upcoming_count = params.recurrence_upcoming_count;
+    let mut task = prepare_new_task(tasks_dir, params, board_column_id, initial_status)?;
+    super::recurrence::initialize_created(&mut task, upcoming_count)?;
     fs::write_task(tasks_dir, &task)?;
     Ok(task)
 }
@@ -84,6 +94,31 @@ pub(crate) fn prepare_new_task(
     board_column_id: Option<String>,
     initial_status: TaskStatus,
 ) -> Result<Task> {
+    if let Some(count) = params.recurrence_upcoming_count {
+        crate::model::task::validate_recurrence_upcoming_count(count)
+            .map_err(JinError::InvalidInput)?;
+        if params.recurrence.is_none() {
+            return Err(JinError::InvalidInput(
+                "upcoming entries require a Repeat rule".into(),
+            ));
+        }
+    }
+    if let Some(rule) = &params.recurrence {
+        if initial_status == TaskStatus::Done {
+            return Err(JinError::InvalidInput(
+                "a repeating task cannot start completed".into(),
+            ));
+        }
+        if params.due.is_none() {
+            return Err(JinError::InvalidInput(
+                "a repeating task needs a due date".into(),
+            ));
+        }
+        if params.parent.is_some() {
+            return Err(JinError::InvalidInput("subtasks cannot repeat".into()));
+        }
+        rule.validate().map_err(JinError::InvalidInput)?;
+    }
     // S6: validate the parent BEFORE anything is written — a rejection must
     // leave no file behind.
     if let Some(ref parent_id) = params.parent {
@@ -100,6 +135,14 @@ pub(crate) fn prepare_new_task(
         None => auto_reminder_if_time(&params.due),
     };
 
+    let recurrence = params.recurrence.map(|mut rule| {
+        rule.series_id = new_ulid();
+        rule.sequence = 1;
+        rule.anchor_due = params.due.clone().expect("validated recurrence due");
+        rule.weekdays.sort_unstable();
+        rule.weekdays.dedup();
+        rule
+    });
     let fm = TaskFrontmatter {
         id,
         kind: "task".to_string(),
@@ -125,6 +168,14 @@ pub(crate) fn prepare_new_task(
         reminders,
         parent: params.parent,
         agenda_bucket: None,
+        recurrence,
+        completion_history: vec![],
+        recurrence_series: None,
+        retired_recurrence_series: vec![],
+        recurrence_instance: None,
+        recurrence_exception: false,
+        recurrence_baseline: None,
+        recurrence_retired_reason: None,
     };
     let task = Task {
         frontmatter: fm,
@@ -258,6 +309,11 @@ pub(crate) fn prepare_edit_task(
     id: &str,
     params: EditTaskParams,
 ) -> Result<(Task, Vec<Task>)> {
+    if params.recurrence_upcoming_count.is_some() || params.recurrence_expected.is_some() {
+        return Err(JinError::InvalidInput(
+            "series planning edits must use the atomic task workflow".into(),
+        ));
+    }
     let path = fs::find_task_path(tasks_dir, id)?;
     let mut task = fs::read_task(&path)?;
     if task.is_deleted() {
@@ -320,12 +376,41 @@ pub(crate) fn prepare_edit_task(
     // S6: parent reassignment (already validated above). `Some(Some(id))` =
     // set; `Some(None)` = detach; `None` = no change (mirrors the `due` idiom).
     if let Some(parent) = params.parent {
+        if parent.is_some()
+            && task.frontmatter.recurrence.is_some()
+            && task.frontmatter.recurrence_instance.is_none()
+        {
+            return Err(JinError::InvalidInput("subtasks cannot repeat".into()));
+        }
         task.frontmatter.parent = parent;
+        changed = true;
+    }
+    if params.clear_recurrence {
+        task.frontmatter.recurrence = None;
+        changed = true;
+    } else if let Some(mut rule) = params.recurrence {
+        if task.frontmatter.due.is_none() {
+            return Err(JinError::InvalidInput(
+                "a repeating task needs a due date".into(),
+            ));
+        }
+        if task.frontmatter.parent.is_some() {
+            return Err(JinError::InvalidInput("subtasks cannot repeat".into()));
+        }
+        rule.validate().map_err(JinError::InvalidInput)?;
+        // A rule edit begins a new series, keeping old completions auditable.
+        rule.series_id = new_ulid();
+        rule.sequence = 1;
+        rule.anchor_due = task.frontmatter.due.clone().expect("checked due");
+        task.frontmatter.recurrence = Some(rule);
         changed = true;
     }
 
     let mut updates = Vec::new();
     if changed {
+        if task.frontmatter.recurrence_instance.is_some() {
+            task.frontmatter.recurrence_exception = true;
+        }
         // S6: a placement change (list and/or section) cascades to children
         // FIRST — they must live wherever their parent ends up, and the
         // parent write happens last (crash-safety, same ordering as the
@@ -468,7 +553,7 @@ fn auto_reminder_if_time(due: &Option<DueDate>) -> Vec<Reminder> {
 /// narrowly as the first absolute reminder whose value exactly matches the old
 /// timed due. Nonmatching reminders are never altered. A task without reminders
 /// still gains the default when it first receives a timed due.
-fn reconcile_auto_due_reminder(
+pub(crate) fn reconcile_auto_due_reminder(
     reminders: &mut Vec<Reminder>,
     old_due: &Option<DueDate>,
     new_due: &Option<DueDate>,
@@ -504,7 +589,11 @@ fn reconcile_auto_due_reminder(
 /// child never has children of its own — this is a flat, one-level lookup, no
 /// recursion. A plain filesystem scan, consistent with the rest of this
 /// module (`list_tasks` above) — no index dependency at the ops layer.
-fn find_children(tasks_dir: &Path, parent_id: &str, include_deleted: bool) -> Result<Vec<Task>> {
+pub(crate) fn find_children(
+    tasks_dir: &Path,
+    parent_id: &str,
+    include_deleted: bool,
+) -> Result<Vec<Task>> {
     let paths = fs::list_task_paths(tasks_dir)?;
     let mut children = Vec::new();
     for path in &paths {

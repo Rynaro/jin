@@ -829,6 +829,7 @@ mod tests {
         let task = create_task(
             &cfg.tasks_dir(),
             CreateTaskParams {
+                recurrence_upcoming_count: None,
                 title: "Inbox task".to_string(),
                 body: String::new(),
                 priority: None,
@@ -837,6 +838,7 @@ mod tests {
                 tags: None,
                 reminders: None,
                 parent: None,
+                recurrence: None,
             },
         )
         .unwrap();
@@ -1030,6 +1032,7 @@ mod tests {
         let task = create_task(
             &cfg.tasks_dir(),
             CreateTaskParams {
+                recurrence_upcoming_count: None,
                 title: "Write spec".to_string(),
                 body: String::new(),
                 priority: None,
@@ -1038,6 +1041,7 @@ mod tests {
                 tags: None,
                 reminders: None,
                 parent: None,
+                recurrence: None,
             },
         )
         .unwrap();
@@ -1048,6 +1052,8 @@ mod tests {
             &cfg.tasks_dir(),
             task.id(),
             crate::ops::tasks::EditTaskParams {
+                recurrence_expected: None,
+                recurrence_upcoming_count: None,
                 title: None,
                 priority: None,
                 due: None,
@@ -1058,6 +1064,9 @@ mod tests {
                 clear_section: false,
                 reminders: None,
                 parent: None,
+                recurrence: None,
+                clear_recurrence: false,
+                recurrence_scope: None,
             },
         )
         .unwrap();
@@ -1104,6 +1113,7 @@ mod tests {
         let t1 = create_task(
             &cfg.tasks_dir(),
             CreateTaskParams {
+                recurrence_upcoming_count: None,
                 title: "In section".to_string(),
                 body: String::new(),
                 priority: None,
@@ -1112,6 +1122,7 @@ mod tests {
                 tags: None,
                 reminders: None,
                 parent: None,
+                recurrence: None,
             },
         )
         .unwrap();
@@ -1120,6 +1131,8 @@ mod tests {
             &cfg.tasks_dir(),
             t1.id(),
             crate::ops::tasks::EditTaskParams {
+                recurrence_expected: None,
+                recurrence_upcoming_count: None,
                 title: None,
                 priority: None,
                 due: None,
@@ -1130,6 +1143,9 @@ mod tests {
                 clear_section: false,
                 reminders: None,
                 parent: None,
+                recurrence: None,
+                clear_recurrence: false,
+                recurrence_scope: None,
             },
         )
         .unwrap();
@@ -1137,6 +1153,7 @@ mod tests {
         let t2 = create_task(
             &cfg.tasks_dir(),
             CreateTaskParams {
+                recurrence_upcoming_count: None,
                 title: "No section".to_string(),
                 body: String::new(),
                 priority: None,
@@ -1145,6 +1162,7 @@ mod tests {
                 tags: None,
                 reminders: None,
                 parent: None,
+                recurrence: None,
             },
         )
         .unwrap();
@@ -1216,6 +1234,7 @@ mod tests {
         let task = create_task(
             &cfg.tasks_dir(),
             CreateTaskParams {
+                recurrence_upcoming_count: None,
                 title: "Work task".to_string(),
                 body: String::new(),
                 priority: None,
@@ -1224,6 +1243,7 @@ mod tests {
                 tags: None,
                 reminders: None,
                 parent: None,
+                recurrence: None,
             },
         )
         .unwrap();

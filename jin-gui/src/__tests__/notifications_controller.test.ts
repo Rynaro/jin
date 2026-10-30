@@ -285,6 +285,12 @@ describe('NotificationsController', () => {
         current = completed;
         return current;
       }
+      if (command === 'get_task') {
+        return {
+          id: current.task_id, title: current.title, status: 'done', priority: 'none', due: '2026-09-02',
+          list: 'inbox', completed_at: null, deleted_at: null, created: '', updated: '', backlinks: [],
+        };
+      }
       throw new Error(`Unexpected command: ${command}`);
     });
     activateNotifications(app);
@@ -298,6 +304,8 @@ describe('NotificationsController', () => {
     expect(mockInvoke.mock.calls.filter(([command]) => command === 'complete_notification_task')).toHaveLength(1);
     expect(changed).toHaveBeenCalledOnce();
     expect(document.querySelector<HTMLButtonElement>('[data-notification-action="complete-task"]')?.disabled).toBe(true);
+    expect(document.querySelector('[data-notifications-target="live"]')?.textContent).toContain('Task marked done.');
+    expect(document.querySelector('[data-notifications-target="live"]')?.textContent).not.toContain('Next:');
   });
 
   it('successful mutation refetches and applies the active filter', async () => {

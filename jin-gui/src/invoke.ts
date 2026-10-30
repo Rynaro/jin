@@ -282,6 +282,8 @@ export function createTask(input: {
   reminders?: Array<{ kind: string; value: string }>;
   /** S6: id of the parent task, if this is a subtask. Omit for a top-level task. */
   parent?: string;
+  recurrence?: import('./types/dto').TaskRecurrence;
+  recurrence_upcoming_count?: number;
 }): Promise<TaskDto> {
   return invoke<TaskDto>('create_task', { input });
 }
@@ -307,6 +309,11 @@ export function editTask(
     parent?: string;
     /** S6: if true, detach from the parent (set parent = null). */
     clear_parent?: boolean;
+    recurrence?: import('./types/dto').TaskRecurrence;
+  recurrence_upcoming_count?: number;
+    clear_recurrence?: boolean;
+    recurrence_scope?: import('./types/dto').TaskRecurrenceMutationScope;
+    recurrence_expected?: { series_id: string; revision: number; enabled: boolean };
   }
 ): Promise<TaskDto> {
   return invoke<TaskDto>('edit_task', { id, input });
