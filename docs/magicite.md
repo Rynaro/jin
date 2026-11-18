@@ -6,11 +6,16 @@ depend on it. The assistant host owns execution and its permissions.
 
 ## Portable project skills
 
-All thirteen `.magicite/engrams/` artifacts use `engram/1.0`. They preserve
+The original thirteen `.magicite/engrams/` artifacts use `engram/1.0`. They preserve
 Jin's storage, CLI, core, GUI, accessibility, temporal, sync, account, calendar,
 and onboarding procedures. Risk metadata declares project writes and only the
 applicable `cargo`/`pnpm` tools, without network or secret access. Verification
 guidance uses actual GUI scripts: `test`, `build`, and `lint:css`.
+
+The imported `jin-playwright-mcp` skill preserves the repository’s Playwright
+procedure. It declares npm, project writes for browser evidence, and the local
+Vite origin. To use it, review its exact content and ensure the local retrieval
+policy permits npm and the declared access. It ships as a draft.
 
 The legacy `needs` dependencies remain intact. Ten cyclic `composes` references
 were removed from six artifacts so the thirteen-skill graph has a valid order.
