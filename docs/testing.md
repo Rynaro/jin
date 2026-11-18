@@ -177,6 +177,10 @@ The test suite is deterministic by construction:
 
 ## 4. How to run the full verification
 
+The [development storage workflow](development-storage.md) documents the disk guard,
+scoped checks and reusable agent skill. Make verification targets emit storage
+reports under `.artifacts/storage/`. Python 3.9+ is required.
+
 ```
 make verify
 ```
@@ -185,7 +189,7 @@ This single command runs (in order):
 
 1. `cargo fmt --check` — formatting gate
 2. `cargo clippy --all-targets -- -D warnings` — lint gate
-3. `cargo test --workspace` — full test suite (all layers)
+3. `cargo test -p jin-core -p jin` — core and CLI test suite
 4. Determinism loop — 5 consecutive full-suite runs
 
 See the [Makefile](../Makefile) for the exact target definition.

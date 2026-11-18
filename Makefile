@@ -1,27 +1,47 @@
+.DEFAULT_GOAL := build
+
 .PHONY: build test check fmt clippy verify docker-build docker-test \
-        build-gui test-gui verify-gui verify-macos-app verify-all
+        build-gui test-gui verify-gui verify-macos-app verify-all \
+        verify-core-commands verify-gui-commands storage-inspect storage-clean-preview
+
+# Python 3.9+ is used by the portable storage guard. Tune these values using
+# .artifacts/storage reports. See docs/development-storage.md for debugger mode.
+PYTHON ?= python3
+STORAGE_RESERVE_GIB ?= 5
+STORAGE_BUDGET_GIB ?= 5
+VERIFY_MAKE = $(MAKE)
+STORAGE_RUN = $(PYTHON) scripts/dev_storage.py run --reserve-gib $(STORAGE_RESERVE_GIB) --budget-gib $(STORAGE_BUDGET_GIB)
+
+storage-inspect:
+	$(PYTHON) scripts/dev_storage.py inspect
+
+storage-clean-preview:
+	$(PYTHON) scripts/dev_storage.py cleanup cargo
 
 # ── Core (jin-core + jin CLI) ─────────────────────────────────────────────────
 
 build:
-	cargo build -p jin-core -p jin
+	$(STORAGE_RUN) --report .artifacts/storage/build.json -- cargo build -p jin-core -p jin
 
 test:
-	cargo test -p jin-core -p jin
+	$(STORAGE_RUN) --report .artifacts/storage/test.json -- cargo test -p jin-core -p jin
 
 check:
-	cargo check -p jin-core -p jin
+	$(STORAGE_RUN) --report .artifacts/storage/check.json -- cargo check -p jin-core -p jin
 
 fmt:
 	cargo fmt --all
 
 clippy:
-	cargo clippy -p jin-core -p jin --all-targets -- -D warnings
+	$(STORAGE_RUN) --report .artifacts/storage/clippy.json -- cargo clippy -p jin-core -p jin --all-targets -- -D warnings
 
 # Standing verification gate (S9) — core packages only.
 # The GUI is excluded from this path so the headless CI stays lean.
 # Run `make verify-gui` separately to gate the GUI scaffold.
 verify:
+	$(STORAGE_RUN) --report .artifacts/storage/verify.json -- $(VERIFY_MAKE) verify-core-commands
+
+verify-core-commands:
 	cargo fmt --check
 	cargo clippy -p jin-core -p jin --all-targets -- -D warnings
 	# SQLite-backed integration tests require serialization for deterministic, non-hanging gates.
@@ -37,16 +57,16 @@ verify:
 # ── GUI (jin-gui Tauri scaffold) ──────────────────────────────────────────────
 
 build-gui:
-	cargo build -p jin-gui
+	$(STORAGE_RUN) --report .artifacts/storage/build-gui.json -- cargo build -p jin-gui
 
 test-gui:
-	cargo test -p jin-gui
+	$(STORAGE_RUN) --report .artifacts/storage/test-gui.json -- cargo test -p jin-gui
 
 # Build and verify the locally signed macOS app. Tauri's ad-hoc signing pass
 # binds the full bundle and uses CFBundleIdentifier as the CodeDirectory ID.
 verify-macos-app:
 	@test "$$(uname -s)" = "Darwin" || { echo "verify-macos-app requires macOS" >&2; exit 1; }
-	cd jin-gui && npm run tauri -- build --debug --bundles app
+	$(STORAGE_RUN) --full-debug --cwd jin-gui --report .artifacts/storage/macos-app.json -- npm run tauri -- build --debug --bundles app
 	./jin-gui/tools/verify-macos-app-signing.sh target/debug/bundle/macos/Jin.app
 
 # GUI verification gate (GUI-S6): Rust fmt+clippy+bridge tests, then the full
@@ -59,6 +79,9 @@ verify-macos-app:
 #
 # Run this after making changes to jin-gui/.
 verify-gui:
+	$(STORAGE_RUN) --report .artifacts/storage/verify-gui.json -- $(VERIFY_MAKE) verify-gui-commands
+
+verify-gui-commands:
 	cargo fmt --check
 	cargo clippy -p jin-gui --all-targets -- -D warnings
 	cargo test -p jin-gui
