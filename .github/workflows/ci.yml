@@ -7,6 +7,21 @@ on:
   workflow_dispatch:
 
 jobs:
+  storage-runner:
+    name: storage runner (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Storage safety tests
+        run: python -m unittest discover -s scripts -p 'test_dev_storage.py'
+
   # ── Core gate (jin-core + jin CLI) ──────────────────────────────────────────
   verify:
     name: verify (stable)
@@ -14,6 +29,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Check first-party version agreement
         run: python3 scripts/check-release-version.py
@@ -40,20 +58,29 @@ jobs:
       - name: Install C compiler (required by rusqlite bundled)
         run: sudo apt-get update -y && sudo apt-get install -y gcc
 
-      - name: Cache cargo registry + build artefacts
+      - name: Cache Cargo downloads
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-stable-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-downloads-v1-stable-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-stable-
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-downloads-v1-stable-
+            ${{ runner.os }}-cargo-downloads-v1-
 
       - name: make verify
         run: make verify
+
+      - name: Upload storage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: storage-core
+          path: .artifacts/storage/*.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
 
   # ── GUI gate (jin-gui command bridge + frontend) ─────────────────────────────
   verify-gui:
@@ -62,6 +89,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       # A cache-cold Tauri debug build can exhaust the runner's ~14 GB of free
       # disk ("No space left on device", os error 28). Reclaim ~25 GB of
@@ -98,17 +128,16 @@ jobs:
             libsoup-3.0-dev \
             libjavascriptcoregtk-4.1-dev
 
-      - name: Cache cargo registry + build artefacts
+      - name: Cache Cargo downloads
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-gui-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-downloads-v1-gui-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-gui-
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-downloads-v1-gui-
+            ${{ runner.os }}-cargo-downloads-v1-
 
       # ── Node LTS (v24) ───────────────────────────────────────────────────────
       - name: Set up Node.js LTS (v24)
@@ -120,47 +149,40 @@ jobs:
 
       # ── Bridge tests (headless Rust) ─────────────────────────────────────────
       - name: Build jin-gui command bridge
-        run: cargo build -p jin-gui 2>&1
+        run: python3 scripts/dev_storage.py run --report .artifacts/storage/gui-build.json -- cargo build -p jin-gui
 
       - name: Run jin-gui bridge tests
-        run: cargo test -p jin-gui 2>&1
+        run: python3 scripts/dev_storage.py run --report .artifacts/storage/gui-test.json -- cargo test -p jin-gui
 
       - name: Clippy — jin-gui
-        run: cargo clippy -p jin-gui -- -D warnings 2>&1
+        run: python3 scripts/dev_storage.py run --report .artifacts/storage/gui-clippy.json -- cargo clippy -p jin-gui -- -D warnings
 
       - name: Fmt check — jin-gui
         run: cargo fmt -p jin-gui --check 2>&1
 
       # ── Frontend (TypeScript + Vite) ─────────────────────────────────────────
       - name: Install frontend dependencies
-        working-directory: jin-gui
-        run: npm ci
+        run: python3 scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/frontend-install.json -- npm ci
 
       - name: Install Playwright Chromium for production smoke
-        working-directory: jin-gui
-        run: npx playwright install --with-deps chromium
+        run: python3 scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/chromium-install.json -- npx playwright install --with-deps chromium
 
       - name: TypeScript type check
-        working-directory: jin-gui
-        run: npx tsc --noEmit
+        run: python3 scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/frontend-types.json -- npx tsc --noEmit
 
       - name: Vitest frontend tests
-        working-directory: jin-gui
-        run: npm test
+        run: python3 scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/frontend-test.json -- npm test
 
       # GUI-S1: stylelint token-discipline gate (VG-GUI-5)
       # Enforces no-raw-hex-in-components + color-named:never across src/styles/
       - name: Stylelint CSS token discipline (VG-GUI-5)
-        working-directory: jin-gui
-        run: npm run lint:css
+        run: python3 scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/frontend-css.json -- npm run lint:css
 
       - name: Vite production build
-        working-directory: jin-gui
-        run: npx vite build
+        run: python3 scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/frontend-build.json -- npx vite build
 
       - name: Production-bundle due editor smoke
-        working-directory: jin-gui
-        run: npm run test:production-due
+        run: python3 scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/frontend-smoke.json -- npm run test:production-due
 
       # VG-GUI-8: headless-honesty label — CI proves logic only, never visuals.
       # This step always runs last so it is visible in the job summary.
@@ -172,6 +194,16 @@ jobs:
           echo "See docs/gui-testing.md section 5 for the owner checklist."
           echo "======================================================="
 
+      - name: Upload storage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: storage-gui
+          path: .artifacts/storage/*.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+
   # Compile the cfg(windows) notification status/delivery adapter on its native
   # SDK. This catches WinRT feature or AUMID API drift that Unix CI cannot see.
   check-windows-notifications:
@@ -180,6 +212,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -192,10 +227,20 @@ jobs:
           cache-dependency-path: jin-gui/package-lock.json
 
       - name: Build frontend assets required by Tauri context
-        working-directory: jin-gui
         run: |
-          npm ci
-          npm run build
+          python scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/windows-install.json -- npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/windows-frontend.json -- npm run build
 
       - name: Compile-check Windows notification adapter
-        run: cargo check -p jin-gui --all-targets
+        run: python scripts/dev_storage.py run --report .artifacts/storage/windows-check.json -- cargo check -p jin-gui --all-targets
+
+      - name: Upload storage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: storage-windows
+          path: .artifacts/storage/*.json
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
