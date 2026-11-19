@@ -250,7 +250,11 @@ mod tests {
         assert_eq!(note_dto.outgoing_links[0].target_kind, "task");
         assert_eq!(note_dto.outgoing_links[0].label, task.title());
         let task_dto = api::get_task(root.path(), task.id()).unwrap();
-        assert_eq!(task_dto.backlinks[0].label, note.title());
+        assert_eq!(task_dto.backlinks[0].label, "referenced-by");
+        assert_eq!(
+            task_dto.backlinks[0].source_title.as_deref(),
+            Some(note.title())
+        );
         assert!(task_dto
             .backlinks
             .iter()

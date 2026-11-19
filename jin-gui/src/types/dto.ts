@@ -171,6 +171,7 @@ export interface TaskBacklinkDto {
   source_kind: string;
   edge_type: string;
   label: string;
+  source_title?: string | null;
 }
 
 /**

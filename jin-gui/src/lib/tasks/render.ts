@@ -2716,7 +2716,7 @@ function buildTaskBacklinkItem(
   const labelEl = row.querySelector('.browse-link-row__label');
   const idEl = row.querySelector('.browse-link-row__id');
 
-  const displayLabel = backlink.label || backlink.source_id;
+  const displayLabel = backlink.source_title || backlink.label || backlink.source_id;
   const relation = backlink.source_kind.toLowerCase() === 'note' ? 'Source note' : backlink.source_kind.toLowerCase() === 'event' ? 'Calendar event' : 'Task';
 
   if (btnEl) {

@@ -101,6 +101,9 @@ pub struct TaskBacklinkDto {
     pub source_kind: String,
     pub edge_type: String,
     pub label: String,
+    /// Current source title for presentation; `label` retains relationship semantics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_title: Option<String>,
 }
 
 impl TaskDto {
@@ -198,6 +201,7 @@ impl TaskDto {
                 source_kind: b.source_kind.clone(),
                 edge_type: b.edge_type.clone(),
                 label: b.backlink_label.clone(),
+                source_title: None,
             })
             .collect();
         self

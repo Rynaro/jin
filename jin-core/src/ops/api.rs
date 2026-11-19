@@ -180,8 +180,11 @@ pub fn get_task(root: &Path, id: &str) -> Result<TaskDto> {
         .ok_or_else(|| JinError::NotFound(format!("task/{}", id)))?;
     // D3: read body fresh from disk (never from the index — body is not stored there).
     let task_on_disk = fs::read_task(std::path::Path::new(&row.file_path))?;
-    let mut backlinks = query::get_backlinks(&conn, &row.id).map_err(JinError::Index)?;
-    for backlink in &mut backlinks {
+    let backlinks = query::get_backlinks(&conn, &row.id).map_err(JinError::Index)?;
+    let mut dto = TaskDto::from_row(&row)
+        .with_backlinks(&backlinks)
+        .with_body(task_on_disk.body);
+    for backlink in &mut dto.backlinks {
         let title = match backlink.source_kind.as_str() {
             "note" => query::get_note(&conn, &backlink.source_id)
                 .map_err(JinError::Index)?
@@ -191,13 +194,9 @@ pub fn get_task(root: &Path, id: &str) -> Result<TaskDto> {
                 .map(|source| source.title),
             _ => None,
         };
-        if let Some(title) = title {
-            backlink.backlink_label = title;
-        }
+        backlink.source_title = title;
     }
-    Ok(TaskDto::from_row(&row)
-        .with_backlinks(&backlinks)
-        .with_body(task_on_disk.body))
+    Ok(dto)
 }
 
 pub fn list_events(root: &Path, include_deleted: bool) -> Result<Vec<EventDto>> {

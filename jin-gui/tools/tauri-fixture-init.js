@@ -266,7 +266,7 @@
       sourceNote.links.push({ target: targetId, edge_type: 'references' });
     }
     if (!target.backlinks.some(function sameBacklink(link) { return link.source_id === noteId && link.edge_type === 'references'; })) {
-      target.backlinks.push({ source_id: noteId, source_kind: 'note', edge_type: 'references', label: sourceNote.title });
+      target.backlinks.push({ source_id: noteId, source_kind: 'note', edge_type: 'references', label: 'referenced-by', source_title: sourceNote.title });
     }
     return { edge_type: 'references', source_id: noteId, target_id: targetId };
   }
@@ -1086,7 +1086,7 @@
           var selectedList = lists.find(function findList(item) { return item.id === (linkedInput.list || 'inbox'); });
           if (!selectedList) return Promise.reject({ code: 3, message: 'List not found' });
           var initialColumn = selectedList.workflow_kind === 'board' ? selectedList.columns.find(function queue(item) { return item.id === selectedList.initial_column_id; }) : null;
-          var linkedTask = task({ id: 'fixture-task-' + String(nextTaskSequence++).padStart(3, '0'), title: linkedInput.title, body: linkedInput.excerpt, list: selectedList.id, board_column_id: initialColumn ? initialColumn.id : null, backlinks: [{ source_id: sourceNote.id, source_kind: 'note', edge_type: 'references', label: sourceNote.title }] });
+          var linkedTask = task({ id: 'fixture-task-' + String(nextTaskSequence++).padStart(3, '0'), title: linkedInput.title, body: linkedInput.excerpt, list: selectedList.id, board_column_id: initialColumn ? initialColumn.id : null, backlinks: [{ source_id: sourceNote.id, source_kind: 'note', edge_type: 'references', label: 'referenced-by', source_title: sourceNote.title }] });
           tasks.push(linkedTask);
           sourceNote.links = sourceNote.links.concat([{ target: linkedTask.id, edge_type: 'references' }]);
           sourceNote.outgoing_links = (sourceNote.outgoing_links || []).concat([{ target_id: linkedTask.id, target_kind: 'task', label: linkedTask.title, edge_type: 'references' }]);

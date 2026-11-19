@@ -665,6 +665,15 @@ describe('renderTaskPane — backlinks (reachability gate)', () => {
     expect(labelEl?.textContent).toBe(EVT_LABEL);
   });
 
+  it('displays source titles while retaining relationship labels in backlink data', () => {
+    const task = makeTask({
+      backlinks: [makeTaskBacklink({ source_id: EVT_ID, label: 'has-event', source_title: EVT_LABEL })],
+    });
+    renderTaskPane(el, templates, task, noopNavigate);
+    expect(el.detailContent.querySelector('.browse-link-row__label')?.textContent).toBe(EVT_LABEL);
+    expect(task.backlinks[0].label).toBe('has-event');
+  });
+
   it('keeps backlink identity in data while displaying a readable type', () => {
     const navigate = vi.fn();
     const task = makeTask({ backlinks: [makeTaskBacklink({ source_id: EVT_ID })] });
