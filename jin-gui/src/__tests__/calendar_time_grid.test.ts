@@ -174,6 +174,11 @@ describe('shared calendar wall-time geometry', () => {
     expect(identityRule).toContain('overflow: hidden');
     expect(gutterRule.match(/background:/g)).toHaveLength(1);
   });
+
+  it('keeps the disclosure agenda inaccessible until its details control opens', () => {
+    const css = readFileSync(fileURLToPath(new URL('../styles/calendar.css', import.meta.url)), 'utf8');
+    expect(css).toContain('.calendar-timegrid__agenda-disclosure:not([open]) > .calendar-timegrid__agenda { display: none; }');
+  });
 });
 
 describe('display-time DST slots (AC-CALX-022/023)', () => {

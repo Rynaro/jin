@@ -16,6 +16,7 @@ import {
 } from '../invoke';
 import { EventCompanion } from '../lib/ui/companion';
 import { resolveEventLocale } from '../lib/events/locale';
+import { updateSidebarUtilities } from '../lib/sidebar/utilities';
 import { initIcons } from '../lib/icons';
 import {
   notificationSourceErrorSummary,
@@ -531,15 +532,7 @@ export default class NotificationsController extends Controller {
   }
 
   private updateBadge(count: number): void {
-    const badge = document.querySelector<HTMLElement>('[data-notifications-badge]');
-    const label = document.querySelector<HTMLElement>('[data-notifications-badge-label]');
-    const nav = document.querySelector<HTMLElement>('[data-notifications-nav]');
-    if (badge) {
-      badge.textContent = count > 99 ? '99+' : String(count);
-      badge.hidden = count === 0;
-    }
-    if (label) label.textContent = `${count} unread notification${count === 1 ? '' : 's'}`;
-    if (nav) nav.setAttribute('aria-label', `Notifications, ${count} unread`);
+    updateSidebarUtilities(document, count);
   }
 
   private navigateToSource(kind: 'events' | 'tasks', id: string): void {

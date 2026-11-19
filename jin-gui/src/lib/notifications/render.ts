@@ -107,10 +107,9 @@ function providerResponseLabel(response: string | null): string | null {
 }
 
 /** Text-first state cues; every visual state remains understandable without color. */
-export function notificationStateLabels(item: NotificationItemDto, selected = false): string[] {
+export function notificationStateLabels(item: NotificationItemDto): string[] {
   const labels: string[] = [];
   if (!item.read_at) labels.push('Unread');
-  if (selected) labels.push('Selected');
   if (item.status === 'action_pending') {
     labels.push(`Pending sync: ${requestedActionLabel(item.requested_action)}`);
   }
@@ -161,7 +160,7 @@ export function renderNotificationList(
     row.append(element('span', 'notifications-row__title', item.title));
 
     const cues = element('span', 'notifications-state-cues');
-    for (const label of notificationStateLabels(item, selected)) {
+    for (const label of notificationStateLabels(item)) {
       cues.append(element('span', 'notifications-state-cue', label));
     }
     row.append(cues);
@@ -303,7 +302,7 @@ export function renderNotificationDetail(
 
   const cues = element('div', 'notifications-state-cues');
   cues.setAttribute('aria-label', 'Notification status');
-  for (const label of notificationStateLabels(item, true)) {
+  for (const label of notificationStateLabels(item)) {
     cues.append(element('span', 'notifications-state-cue', label));
   }
   article.append(cues);
@@ -321,7 +320,8 @@ export function renderNotificationDetail(
   }
 
   if (item.action_error) {
-    const error = element('p', 'notifications-action-error', `Failed: ${item.action_error.message}`);
+    const error = element('p', 'notifications-action-error jin-status-message', `Failed: ${item.action_error.message}`);
+    error.dataset.state = 'error';
     error.setAttribute('role', 'status');
     article.append(error);
   }

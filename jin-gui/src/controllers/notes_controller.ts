@@ -48,6 +48,7 @@ import {
   createFolder,
   editNote,
   createNote,
+  createTaskFromNote,
   searchNotes,
   listCollections,
   createCollection,
@@ -64,10 +65,11 @@ import {
   renameFolder as renameFolderInvoke,
   deleteFolder as deleteFolderInvoke,
 } from '../invoke';
-import { isJinErrorDto } from '../types/error';
+import { openLinkedCreation } from '../lib/ui/linked_creation';
+import { isJinErrorDto, toSyntheticErrorDto } from '../types/error';
 import type { CollectionDto, CollectionFilterDto, CollectionQueryDto } from '../types/dto';
 import { renderFormError, clearFormError } from '../lib/capture/render';
-import { filterNotesList, sortNotesList, formatNoteDate, noteDisplayTitle, type NotesFilter } from '../lib/notes/transform';
+import { filterNotesList, sortNotesList, formatNoteDate, noteDisplayTitle, deriveNoteExcerpt, type NotesFilter } from '../lib/notes/transform';
 import {
   type NotesViewElements,
   type NotesTemplates,
@@ -75,6 +77,7 @@ import {
   hideListLoading,
   renderNotesList,
   renderNoteDetail,
+  refreshNoteOutgoingLinks,
   renderFolderTree,
   setTreeItemExpanded,
   focusTreeItem,
@@ -237,6 +240,12 @@ export default class NotesController extends Controller {
   /** ID of the note currently shown in the detail panel. */
   private currentNoteId: string | null = null;
 
+  /** The library stays available beside an open document on wide windows. */
+  private libraryMedia: MediaQueryList | null = null;
+  private libraryCollapsed = false;
+  private libraryRootObserver: MutationObserver | null = null;
+  private readonly onLibraryLayoutChanged = (): void => { this.updateLibraryLayout(); };
+
   /** Body of the note as last successfully saved (dirty-check baseline). */
   private lastSavedBody = '';
 
@@ -315,6 +324,10 @@ export default class NotesController extends Controller {
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   connect(): void {
+    this.libraryMedia = window.matchMedia?.('(min-width: 1100px)') ?? null;
+    this.libraryMedia?.addEventListener?.('change', this.onLibraryLayoutChanged);
+    this.libraryRootObserver = new MutationObserver(this.onLibraryLayoutChanged);
+    this.libraryRootObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-text-scale'] });
     document.addEventListener('pointerdown', this.onCollectionOutsidePointer);
     window.addEventListener('jin:note-attachment-updated', this.onNoteAttachmentUpdated);
     // ── Restore tree prefs (D-PERSIST) ────────────────────────────────────
@@ -369,6 +382,10 @@ export default class NotesController extends Controller {
   }
 
   disconnect(): void {
+    this.libraryMedia?.removeEventListener?.('change', this.onLibraryLayoutChanged);
+    this.libraryMedia = null;
+    this.libraryRootObserver?.disconnect();
+    this.libraryRootObserver = null;
     this.listRequestId += 1;
     this.scopeSelectionId += 1;
     if (this.searchTimer !== null) clearTimeout(this.searchTimer);
@@ -546,15 +563,6 @@ export default class NotesController extends Controller {
     if (result.select === true) {
       void this.selectFolder(path);
     }
-  }
-
-  /**
-   * togglePane — collapse or reveal the folder-rail sidebar.
-   * data-action="click->notes#togglePane" on both the in-rail collapse button
-   * and the always-reachable reveal button in list/detail panes.
-   */
-  togglePane(): void {
-    window.dispatchEvent(new CustomEvent('jin:sidebar-toggle'));
   }
 
   // ── Private tree-pref helper ──────────────────────────────────────────────
@@ -1372,6 +1380,10 @@ export default class NotesController extends Controller {
             : 'No notes yet.';
       renderNotesList(this.viewElements, this.viewTemplates, notes, (kind, id) => {
         if (kind === 'notes') {
+          if (id === this.currentNoteId && this.editorHandle && this.element.classList.contains('detail-open')) {
+            this.editorHandle.focus();
+            return;
+          }
           this.returnNoteId = id;
           this.returnScrollTop = this.explorerBodyTarget.scrollTop;
           this.returnScopeKey = this.explorerScopeKey();
@@ -1380,6 +1392,7 @@ export default class NotesController extends Controller {
           this.navigateTo(kind, id);
         }
       }, { showFolder: searching || this.currentFolder === undefined || Boolean(collection) });
+      this.updateLibrarySelection();
       initIcons();
     }
 
@@ -1463,7 +1476,9 @@ export default class NotesController extends Controller {
     }
     this.detailPanelTarget.classList.add('hidden');
     this.element.classList.remove('detail-open');
+    this.element.classList.remove('notes-split');
     this.listPanelTarget.classList.remove('hidden');
+    this.updateLibrarySelection();
     const noteId = this.returnNoteId;
     const scrollTop = this.returnScrollTop;
     const scopeKey = this.returnScopeKey;
@@ -1499,7 +1514,7 @@ export default class NotesController extends Controller {
       await Promise.resolve();
       await this.noteMutation;
       if (selectionId !== undefined && selectionId !== this.scopeSelectionId) return false;
-      if (this.editorHandle !== editor) return false;
+      if (this.editorHandle !== editor || this.conflictActive) return false;
       editor.destroy();
       this.editorHandle = null;
       this.currentNoteId = null;
@@ -1537,7 +1552,7 @@ export default class NotesController extends Controller {
       // Body flushes and metadata edits share one queue. Do not replace the
       // mounted note identity until every outgoing revision has settled.
       await this.noteMutation;
-      if (requestId !== this.detailRequestId) return;
+      if (requestId !== this.detailRequestId || this.conflictActive) return;
       this.editorHandle.destroy();
       this.editorHandle = null;
     } else {
@@ -1548,10 +1563,10 @@ export default class NotesController extends Controller {
     this.currentNoteRevision = undefined;
     this.lastSavedBody = '';
 
-    // Show detail panel, hide list; expand grid to 3 columns.
-    this.listPanelTarget.classList.add('hidden');
+    // Window width changes presentation without replacing the live editor.
     this.detailPanelTarget.classList.remove('hidden');
     this.element.classList.add('detail-open');
+    this.updateLibraryLayout();
 
     // Show detail loading state.
     el.detailLoadingState.classList.remove('hidden');
@@ -1568,6 +1583,7 @@ export default class NotesController extends Controller {
 
       // Track state for onSave (dirty-check baseline — the LOADED body, not re-fetched).
       this.currentNoteId = note.id;
+      this.updateLibrarySelection();
       this.lastSavedBody = note.body_markdown ?? '';
       this.currentNoteRevision = note.revision ?? undefined;
 
@@ -1588,6 +1604,7 @@ export default class NotesController extends Controller {
         (noteId) => { void this.addAttachment(noteId); },
         (noteId) => { void this.openHistory(noteId); },
         async (addTags, removeTags) => { await this.updateTags(note.id, addTags, removeTags); },
+        excerpt => { void this.createSelectionTask(note.id, excerpt); },
       );
 
       // item 3: set breadcrumb from currentFolder (controller state, not note DTO —
@@ -1650,13 +1667,19 @@ export default class NotesController extends Controller {
         this.lastSavedBody = body;
         this.currentNoteRevision = updated.revision ?? undefined;
 
-        // 5. Targeted DOM update: refresh the list-row date from the returned NoteDto.
-        if (updated.updated) {
-          const rowInner = document.querySelector<HTMLElement>(
-            `.browse-row__inner[data-note-id="${id}"]`,
-          );
-          const dateEl = rowInner?.closest('.browse-row')?.querySelector('.note-row__date');
-          if (dateEl) dateEl.textContent = formatNoteDate(updated.updated);
+        // Refresh only the library metadata, leaving its focused row, scroll,
+        // and the mounted editor intact while typing continues.
+        const row = this.listTarget.querySelector<HTMLElement>(`[data-note-id="${id}"]`)?.closest('.browse-row');
+        const dateEl = row?.querySelector('.note-row__date');
+        if (dateEl && updated.updated) {
+          dateEl.textContent = formatNoteDate(updated.updated);
+          dateEl.setAttribute('datetime', updated.updated);
+        }
+        const snippet = row?.querySelector('.note-row__snippet');
+        if (snippet) {
+          const excerpt = updated.excerpt ?? deriveNoteExcerpt(updated.body_markdown ?? body);
+          snippet.textContent = excerpt || 'No preview';
+          snippet.classList.toggle('is-empty', !excerpt);
         }
       } catch (err: unknown) {
         if (id !== this.currentNoteId) return;
@@ -1866,12 +1889,15 @@ export default class NotesController extends Controller {
       this.restoreRevisionButtonTarget.disabled = false;
       // Markdown passes the same sanitizer chokepoint as Reading view. Assets
       // can only hydrate through the verified image-byte bridge.
-      const heading = document.createElement('h1');
-      heading.textContent = preview.title;
+      const titleContext = document.createElement('p');
+      titleContext.className = 'notes-history__preview-title';
+      titleContext.textContent = preview.title;
       const metadata = document.createElement('p');
       metadata.className = 'notes-history__preview-meta';
-      metadata.textContent = `Revision ${preview.revision} · ${preview.updated}`;
-      this.historyPreviewTarget.replaceChildren(heading, metadata, renderMarkdownFragment(preview.body_markdown));
+      metadata.textContent = `Revision ${preview.revision} · ${formatNoteDate(preview.updated)}`;
+      metadata.title = preview.updated;
+      metadata.setAttribute('aria-label', `Revision ${preview.revision}, updated ${preview.updated}`);
+      this.historyPreviewTarget.replaceChildren(titleContext, metadata, renderMarkdownFragment(preview.body_markdown));
       if (this.historyPreviewTarget.querySelector('.jin-asset-placeholder')) {
         void hydrateManagedImages(this.historyPreviewTarget, resolveImageAttachment).then((revoke) => {
           if (requestId === this.historyRequestId && this.selectedHistoryRevision === revision && noteId === this.currentNoteId && this.historyModalTarget.open) this.revokeHistoryMedia = revoke;
@@ -2089,6 +2115,91 @@ export default class NotesController extends Controller {
     });
   }
 
+  private async createSelectionTask(noteId: string, excerpt: string): Promise<void> {
+    if (this.conflictActive || noteId !== this.currentNoteId || !excerpt.trim()) return;
+    try {
+      await this.editorHandle?.flush();
+      await this.noteMutation;
+      if (this.conflictActive || noteId !== this.currentNoteId) return;
+      openLinkedCreation({
+        title: 'Create task from selection',
+        locale: 'en',
+        action: 'Create and open task',
+        stayAction: 'Create task',
+        initialTitle: excerpt.split('\n').find(line => line.trim())?.replace(/^\s*(?:[-*+]\s+(?:\[[ xX]\]\s*)?|#+\s*)/, '').trim().slice(0, 500) || '',
+        explanation: 'The selected text becomes the task description. The task stays linked to this note.',
+        excerpt,
+        chooseList: true,
+        submit: async input => {
+          let result: Awaited<ReturnType<typeof createTaskFromNote>> | undefined;
+          await this.enqueueNoteMutation(async () => {
+            if (this.conflictActive || noteId !== this.currentNoteId || this.currentNoteRevision === undefined) {
+              throw new Error('Reopen the source note before creating this task.');
+            }
+            try {
+              result = await createTaskFromNote({
+              operation_id: input.operationId,
+              note_id: noteId,
+              expected_revision: this.currentNoteRevision,
+              title: input.title,
+              excerpt,
+              list: input.list,
+              });
+            } catch (error) {
+              if (isJinErrorDto(error) && error.details?.type === 'stale_note') {
+                this.presentConflict(noteId, this.editorHandle?.getDoc() ?? this.lastSavedBody, error);
+              }
+              throw error;
+            }
+            const returnedBody = result.note.body_markdown;
+            if (typeof returnedBody === 'string' && returnedBody !== this.lastSavedBody) {
+              this.presentConflict(noteId, this.editorHandle?.getDoc() ?? this.lastSavedBody, {
+                code: 4,
+                kind: 'sync_conflict',
+                message: 'The task was created, and its source note changed elsewhere.',
+                retriable: false,
+                details: { type: 'stale_note', note_id: noteId, expected_revision: this.currentNoteRevision, current_revision: result.note.revision ?? this.currentNoteRevision },
+              });
+            } else this.currentNoteRevision = result.note.revision ?? undefined;
+          });
+          if (!result) throw new Error('The source note is unavailable.');
+          return result;
+        },
+        onReturnToSource: () => {
+          if (this.conflictActive) this.conflictPanelTarget.focus();
+          else this.editorHandle?.focus();
+        },
+        onCreated: (result, openAfterCreate) => {
+          this.dispatch('tasks-changed', { prefix: 'jin', bubbles: true });
+          refreshNoteOutgoingLinks(this.viewElements, this.viewTemplates, result.note, (kind, id) => this.navigateTo(kind, id));
+          if (openAfterCreate && !this.conflictActive) {
+            this.navigateTo('tasks', result.task.id);
+            return;
+          }
+          const footer = this.detailContentTarget.querySelector('.cm-footer');
+          footer?.querySelector('.note-task-confirmation')?.remove();
+          const confirmation = document.createElement('span');
+          confirmation.className = 'note-task-confirmation';
+          confirmation.setAttribute('role', 'status');
+          confirmation.setAttribute('aria-live', 'polite');
+          const label = document.createElement('span');
+          label.textContent = 'Task created. ';
+          const open = document.createElement('button');
+          open.type = 'button';
+          open.className = 'btn-secondary';
+          open.textContent = `Open task: ${result.task.title}`;
+          open.addEventListener('click', () => this.navigateTo('tasks', result.task.id));
+          confirmation.append(label, open);
+          footer?.append(confirmation);
+          if (this.conflictActive) this.conflictPanelTarget.focus();
+          else this.editorHandle?.focus();
+        },
+      });
+    } catch (error) {
+      this.dispatch('error', { detail: isJinErrorDto(error) ? error : toSyntheticErrorDto(error, 'Create task from selection'), prefix: 'app', bubbles: true });
+    }
+  }
+
   private async openAttachDialog(noteId: string, targetId: string): Promise<void> {
     if (this.conflictActive || noteId !== this.currentNoteId) {
       if (this.conflictActive) this.conflictPanelTarget.focus();
@@ -2176,6 +2287,41 @@ export default class NotesController extends Controller {
     this.listViewButtonTarget.setAttribute('aria-pressed', String(this.explorerView === 'list'));
     this.cardsViewButtonTarget.setAttribute('aria-pressed', String(this.explorerView === 'cards'));
     this.listTarget.setAttribute('aria-label', this.explorerView === 'cards' ? 'Notes cards' : 'Notes list');
+  }
+
+  private updateLibraryLayout(): void {
+    const open = this.element.classList.contains('detail-open');
+    const available = Boolean(this.libraryMedia?.matches) && document.documentElement.dataset.textScale !== 'accessibility';
+    const split = open && available && !this.libraryCollapsed;
+    this.element.classList.toggle('notes-split', split);
+    this.listPanelTarget.classList.toggle('hidden', open && !split);
+    const toggle = this.element.querySelector<HTMLButtonElement>('[data-notes-library-toggle]');
+    if (toggle) toggle.hidden = !available;
+    toggle?.setAttribute('aria-expanded', String(split));
+    toggle?.setAttribute('aria-label', split ? 'Hide note library' : 'Show note library');
+    toggle?.setAttribute('title', split ? 'Hide note library' : 'Show note library');
+    if (toggle) {
+      const icon = document.createElement('i');
+      icon.dataset.lucide = split ? 'panel-left-close' : 'panel-left-open';
+      icon.setAttribute('aria-hidden', 'true');
+      toggle.replaceChildren(icon);
+      initIcons();
+    }
+  }
+
+  toggleLibrary(): void {
+    this.libraryCollapsed = !this.libraryCollapsed;
+    this.updateLibraryLayout();
+    this.editorHandle?.focus();
+  }
+
+  private updateLibrarySelection(): void {
+    const open = this.element.classList.contains('detail-open');
+    for (const row of this.listTarget.querySelectorAll<HTMLElement>('[data-note-id]')) {
+      const selected = open && row.dataset.noteId === this.currentNoteId;
+      if (selected) row.setAttribute('aria-current', 'page');
+      else row.removeAttribute('aria-current');
+    }
   }
 
   private collapsePaneForCompactNavigation(): void {

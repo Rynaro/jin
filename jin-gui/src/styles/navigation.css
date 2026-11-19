@@ -35,14 +35,15 @@
   inline-size: 100%;
   min-inline-size: 0;
   min-block-size: var(--rail-row-height);
-  padding: 0 10px;
+  padding: var(--space-half) var(--space-1);
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--label-secondary);
+  color: var(--label);
+  transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
   box-shadow: none;
   font-family: var(--font-text);
-  font-size: var(--text-footnote-size);
+  font-size: var(--text-subheadline-size);
   font-weight: 400;
   line-height: var(--text-footnote-line);
   cursor: pointer;
@@ -154,4 +155,27 @@
     min-block-size: var(--coarse-hit-target);
     min-inline-size: var(--coarse-hit-target);
   }
+}
+
+/* Route icons carry a restrained identity through selection and context changes. */
+.jin-nav-item[data-section='today'] .jin-navigation-row__icon,
+.jin-nav-item[href='#today'] .jin-navigation-row__icon { color: var(--navigation-today); }
+.jin-nav-item[data-section='tasks'] .jin-navigation-row__icon,
+.jin-nav-item[href='#tasks'] .jin-navigation-row__icon { color: var(--navigation-tasks); }
+.jin-nav-item[data-section='notes'] .jin-navigation-row__icon,
+.jin-nav-item[href='#notes'] .jin-navigation-row__icon { color: var(--navigation-notes); }
+.jin-nav-item[data-section='events'] .jin-navigation-row__icon,
+.jin-nav-item[href='#events'] .jin-navigation-row__icon { color: var(--navigation-calendar); }
+
+/* Main destinations get a readable glyph silhouette with a restrained tinted well. */
+.jin-nav .jin-nav-item > .jin-navigation-row__icon {
+  box-sizing: content-box;
+  inline-size: 18px;
+  block-size: 18px;
+  min-inline-size: 18px;
+  max-inline-size: none;
+  padding: 6px;
+  border-radius: 9px;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  stroke-width: 1.8;
 }

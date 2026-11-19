@@ -36,6 +36,10 @@
   function fixtureStorageRemove(key) {
     try { if (window.localStorage) window.localStorage.removeItem(key); } catch (_) { /* fixture still works without storage */ }
   }
+  function noteExcerpt(body) {
+    var collapsed = String(body).split(/\p{White_Space}+/u).filter(Boolean).join(' ');
+    return Array.from(collapsed).slice(0, 200).join('');
+  }
   function firstRunEnabled() { return fixtureStorageGet('jin.fixture.firstRun') === 'true'; }
   function firstRunState() {
     try {
@@ -94,6 +98,7 @@
   ];
   var nextNoteSequence = 5;
   var createdNoteIds = {};
+  var linkedCreationOperations = {};
   var collections = [];
   var eventBase = { description: null, location: null, is_all_day: false, start_tzid: 'UTC', end_tzid: 'UTC', floating: false, status: 'confirmed', source: 'jin', authority: 'jin', ical_uid: null, derived_from: null, recurrence: [], recurring_event_id: null, original_start: null, master_id: null, recurrence_unexpanded: false, sequence: 0, organizer: null, attendees: null, attendees_omitted: null, conference_data: null, hangout_link: null, reminders: null, created: NOW, updated: NOW, backlinks: [], sync_context: null };
   function event(fields) {
@@ -202,6 +207,7 @@
   ];
   var nextEventSequence = 12;
   var eventEditOperations = {};
+  var promotionOperations = {};
   var quarantinedOperations = [
     { operation_id: 'fixture-paused-001', provider: 'google', operation: 'patch', jin_id: 'e8', recurrence_key: 'master', account_id: 'acct-work', account_alias: 'Work', calendar_id: 'work-primary', calendar_name: 'Team Calendar', pause_reason: 'provider_permission_changed' }
   ];
@@ -1061,6 +1067,44 @@
         });
         return Promise.resolve(clone(matchingNotes));
       }
+      if (cmd === 'create_task_from_note' || cmd === 'create_event_prep_note') {
+        var linkedInput = options.input || {};
+        var linkedKey = String(linkedInput.operation_id || '');
+        var linkedPayload = JSON.stringify({ command: cmd, input: linkedInput });
+        if (!linkedKey) return Promise.reject({ code: 4, message: 'Operation id is required' });
+        if (linkedCreationOperations[linkedKey]) {
+          var previousCreation = linkedCreationOperations[linkedKey];
+          if (previousCreation.payload !== linkedPayload) return Promise.reject({ code: 4, message: 'Operation payload changed' });
+          return Promise.resolve(clone(previousCreation.result));
+        }
+        if (!String(linkedInput.title || '').trim()) return Promise.reject({ code: 4, message: 'Title is required' });
+        var linkedResult;
+        if (cmd === 'create_task_from_note') {
+          var sourceNote = notes.find(function findSource(item) { return item.id === linkedInput.note_id; });
+          if (!sourceNote || sourceNote.deleted_at) return Promise.reject({ code: 3, message: 'Source note not found' });
+          if (sourceNote.revision !== linkedInput.expected_revision) return Promise.reject({ code: 4, message: 'Note revision is stale' });
+          var selectedList = lists.find(function findList(item) { return item.id === (linkedInput.list || 'inbox'); });
+          if (!selectedList) return Promise.reject({ code: 3, message: 'List not found' });
+          var initialColumn = selectedList.workflow_kind === 'board' ? selectedList.columns.find(function queue(item) { return item.id === selectedList.initial_column_id; }) : null;
+          var linkedTask = task({ id: 'fixture-task-' + String(nextTaskSequence++).padStart(3, '0'), title: linkedInput.title, body: linkedInput.excerpt, list: selectedList.id, board_column_id: initialColumn ? initialColumn.id : null, backlinks: [{ source_id: sourceNote.id, source_kind: 'note', edge_type: 'references', label: sourceNote.title }] });
+          tasks.push(linkedTask);
+          sourceNote.links = sourceNote.links.concat([{ target: linkedTask.id, edge_type: 'references' }]);
+          sourceNote.outgoing_links = (sourceNote.outgoing_links || []).concat([{ target_id: linkedTask.id, target_kind: 'task', label: linkedTask.title, edge_type: 'references' }]);
+          sourceNote.revision += 1;
+          linkedResult = { task: linkedTask, note: sourceNote };
+        } else {
+          var linkedEvent = calendarEventById(linkedInput.event_id);
+          if (!linkedEvent) return Promise.reject({ code: 3, message: 'Event not found' });
+          var prepNoteId = 'fixture-note-' + String(nextNoteSequence++);
+          var prepNote = Object.assign({}, noteBase, { id: prepNoteId, title: linkedInput.title, body_markdown: linkedInput.body, excerpt: linkedInput.body.slice(0, 160), tags: [], folder_path: '', links: [{ target: linkedEvent.id, edge_type: 'prep-for' }], outgoing_links: [{ target_id: linkedEvent.id, target_kind: 'event', label: linkedEvent.title, edge_type: 'prep-for' }], backlinks: [] });
+          createdNoteIds[prepNoteId] = true;
+          notes.push(prepNote);
+          linkedEvent.backlinks = linkedEvent.backlinks.concat([{ source_id: prepNoteId, source_kind: 'note', edge_type: 'prep-for', label: prepNote.title }]);
+          linkedResult = prepNote;
+        }
+        linkedCreationOperations[linkedKey] = { payload: linkedPayload, result: clone(linkedResult) };
+        return Promise.resolve(clone(linkedResult));
+      }
       if (cmd === 'create_note') {
         var createInput = options.input || {};
         var createdNoteId = 'fixture-note-' + String(nextNoteSequence++);
@@ -1079,12 +1123,10 @@
       if (cmd === 'get_note') {
         var note = notes.find(function findNote(item) { return item.id === options.id; });
         if (!note) return Promise.reject(new Error('Note not found: ' + options.id));
-        return Promise.resolve(clone(Object.assign({}, note, {
-          body_markdown: createdNoteIds[note.id]
-            ? note.body_markdown
-            : note.body_markdown || ('# ' + note.title + '\n\nA deterministic note body for visual QA.\n\n> Ink is reserved for meaning, not atmosphere.'),
-          folder_path: null
-        })));
+        if (!createdNoteIds[note.id] && !note.body_markdown) {
+          note.body_markdown = '# ' + note.title + '\n\nA deterministic note body for visual QA.\n\n> Ink is reserved for meaning, not atmosphere.';
+        }
+        return Promise.resolve(clone(note));
       }
       if (cmd === 'edit_note') {
         var editedNote = notes.find(function findNote(item) { return item.id === options.id; });
@@ -1094,11 +1136,16 @@
           return Promise.reject({ code: 4, message: 'Note revision is stale', details: { expected_revision: noteInput.expected_revision, current_revision: editedNote.revision } });
         }
         if (noteInput.title !== undefined) editedNote.title = String(noteInput.title);
-        if (noteInput.body !== undefined) editedNote.body_markdown = String(noteInput.body);
+        if (noteInput.body !== undefined) {
+          editedNote.body_markdown = String(noteInput.body);
+          editedNote.excerpt = noteExcerpt(editedNote.body_markdown);
+        }
         (noteInput.add_tags || []).forEach(function addTag(tag) { if (editedNote.tags.indexOf(tag) === -1) editedNote.tags.push(tag); });
         if (noteInput.rm_tags) editedNote.tags = editedNote.tags.filter(function keepTag(tag) { return noteInput.rm_tags.indexOf(tag) === -1; });
         editedNote.revision += 1; editedNote.updated = NOW;
-        return Promise.resolve(clone(editedNote));
+        // The native edit response projects the saved model, while the list
+        // projection contains the index-derived excerpt.
+        return Promise.resolve(Object.assign({}, clone(editedNote), { excerpt: null }));
       }
       if (cmd === 'search_notes') {
         var needle = String(options.text || '').toLowerCase();
@@ -1501,6 +1548,11 @@
       }
       if (cmd === 'promote_task') {
         if (!options.operation_id) return Promise.reject(new Error('operation_id is required'));
+        if (promotionOperations[options.operation_id]) {
+          var priorPromotion = promotionOperations[options.operation_id];
+          if (priorPromotion.derived_from !== options.task_id) return Promise.reject(new Error('operation already belongs to another task'));
+          return Promise.resolve(clone(priorPromotion));
+        }
         var promotionRoute = null;
         if (options.account_id || options.calendar_id) {
           promotionRoute = syncContext(options.account_id, options.calendar_id, 'pending');
@@ -1527,11 +1579,18 @@
         var existingPromotion = events.find(function findPromotion(item) {
           return item.derived_from === options.task_id && item.status !== 'cancelled';
         });
-        if (existingPromotion) return Promise.resolve(clone(existingPromotion));
+        if (existingPromotion) {
+          promotionOperations[options.operation_id] = clone(existingPromotion);
+          return Promise.resolve(clone(existingPromotion));
+        }
         var slot = options.slot || {};
+        var promotedDuration = options.duration_minutes === undefined ? 60 : options.duration_minutes;
+        if (!Number.isInteger(promotedDuration) || promotedDuration < 1 || promotedDuration > 1440) {
+          return Promise.reject(new Error('Choose a duration of 1–1440 minutes.'));
+        }
         var promotedStart = String(slot.when || NOW).slice(0, 19);
         var promotedEndDate = new Date(promotedStart);
-        promotedEndDate.setHours(promotedEndDate.getHours() + 1);
+        promotedEndDate.setMinutes(promotedEndDate.getMinutes() + promotedDuration);
         var promotedEnd = promotedEndDate.getFullYear() + '-' + String(promotedEndDate.getMonth() + 1).padStart(2, '0') + '-' + String(promotedEndDate.getDate()).padStart(2, '0') + 'T' + String(promotedEndDate.getHours()).padStart(2, '0') + ':' + String(promotedEndDate.getMinutes()).padStart(2, '0') + ':00';
         var promotedEvent = event({
           id: 'promoted-' + options.task_id + '-' + String(options.operation_id).replace(/[^a-z0-9-]/gi, '').toLowerCase(),
@@ -1546,6 +1605,7 @@
           sync_context: promotionRoute,
         });
         events.push(promotedEvent);
+        promotionOperations[options.operation_id] = clone(promotedEvent);
         promotedTask.agenda_bucket = null;
         fixtures.list_events = events;
         return Promise.resolve(clone(promotedEvent));

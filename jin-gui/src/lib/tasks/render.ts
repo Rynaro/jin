@@ -1406,7 +1406,7 @@ export function renderTaskPane(
     const promoteBtn = document.createElement('button');
     promoteBtn.type = 'button';
     promoteBtn.className = 'task-promote-btn jin-control jin-control--secondary jin-control--icon-label tap-target';
-    promoteBtn.setAttribute('aria-label', `Promote "${task.title}" to an event`);
+    promoteBtn.setAttribute('aria-label', `Schedule time for "${task.title}"`);
     promoteBtn.dataset.taskId = task.id;
 
     const promoteIcon = document.createElement('i');
@@ -1415,7 +1415,7 @@ export function renderTaskPane(
 
     const promoteLabelEl = document.createElement('span');
     promoteLabelEl.className = 'jin-control__label';
-    promoteLabelEl.textContent = 'Promote to Event';
+    promoteLabelEl.textContent = 'Schedule time';
 
     promoteBtn.appendChild(promoteIcon);
     promoteBtn.appendChild(promoteLabelEl);
@@ -2717,11 +2717,12 @@ function buildTaskBacklinkItem(
   const idEl = row.querySelector('.browse-link-row__id');
 
   const displayLabel = backlink.label || backlink.source_id;
+  const relation = backlink.source_kind.toLowerCase() === 'note' ? 'Source note' : backlink.source_kind.toLowerCase() === 'event' ? 'Calendar event' : 'Task';
 
   if (btnEl) {
     btnEl.dataset.linkId = backlink.source_id;
     btnEl.dataset.linkKind = backlink.source_kind;
-    btnEl.setAttribute('aria-label', `${backlink.source_kind}: ${displayLabel}`);
+    btnEl.setAttribute('aria-label', `${relation}: ${displayLabel}`);
     btnEl.addEventListener('click', () => {
       const kind = resolveTaskKind(backlink.source_kind);
       onNavigate(kind, backlink.source_id);
@@ -2729,7 +2730,7 @@ function buildTaskBacklinkItem(
   }
 
   if (labelEl) labelEl.textContent = displayLabel;
-  if (idEl) idEl.textContent = backlink.source_id;
+  if (idEl) idEl.textContent = relation;
 
   return row;
 }

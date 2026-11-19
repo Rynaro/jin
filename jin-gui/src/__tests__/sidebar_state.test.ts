@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  applySidebarCollapsed, DEFAULT_SIDEBAR_PREFS, loadSidebarPrefs,
+  DEFAULT_SIDEBAR_PREFS, loadSidebarPrefs,
   saveSidebarPrefs, SIDEBAR_STORAGE_KEY,
 } from '../lib/sidebar/state';
 
@@ -27,18 +27,5 @@ describe('versioned sidebar preference', () => {
       localStorage.setItem(SIDEBAR_STORAGE_KEY, raw);
       expect(loadSidebarPrefs()).toEqual(DEFAULT_SIDEBAR_PREFS);
     }
-  });
-});
-
-describe('legacy collapsed class compatibility', () => {
-  it('keeps the host class and accessible toggle state in sync', () => {
-    const aside = document.createElement('aside');
-    const button = document.createElement('button');
-    applySidebarCollapsed(aside, true, button);
-    expect(aside.classList.contains('is-collapsed')).toBe(true);
-    expect(button.getAttribute('aria-label')).toBe('Show navigation');
-    applySidebarCollapsed(aside, false, button);
-    expect(aside.classList.contains('is-collapsed')).toBe(false);
-    expect(button.getAttribute('aria-expanded')).toBe('true');
   });
 });

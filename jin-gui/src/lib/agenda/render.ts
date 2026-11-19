@@ -208,7 +208,10 @@ function renderFocus(el: TodayViewElements, grouped: GroupedAgenda, onNavigate: 
     range.className = 'today-focus-item__range';
     range.textContent = grouped.presentationById?.get(event.id)?.timeRange ?? event.display_start;
     range.setAttribute('aria-label', `Time: ${range.textContent}`);
-    item.append(label, button, range, minutes);
+    const metadata = document.createElement('div');
+    metadata.className = 'today-focus-item__meta';
+    metadata.append(range, minutes);
+    item.append(label, button, metadata);
     el.focusList.appendChild(item);
   }
   el.focusSection.classList.toggle('hidden', el.focusList.childElementCount === 0);
@@ -255,7 +258,7 @@ function renderTaskLane(
     complete.append(completeIcon, completeLabel);
     complete.setAttribute('aria-label', task.status === 'done' ? `${task.title} is complete` : `Mark ${task.title} complete`);
     const feedback = document.createElement('span');
-    feedback.className = 'today-task-row__feedback';
+    feedback.className = 'today-task-row__feedback jin-status-message';
     feedback.setAttribute('role', 'status');
     feedback.setAttribute('aria-live', 'polite');
     if (task.status === 'done') {

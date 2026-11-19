@@ -59,6 +59,8 @@ export default class ActionsController extends Controller {
     'promoteDialog',
     'promoteWhen',
     'promoteTzid',
+    'promoteDuration',
+    'promoteExisting',
     'promoteDestination',
     'promoteError',
     'promoteSubmit',
@@ -90,6 +92,10 @@ export default class ActionsController extends Controller {
   declare promoteDialogTarget: HTMLDialogElement;
   declare promoteWhenTarget: HTMLInputElement;
   declare promoteTzidTarget: HTMLInputElement;
+  declare promoteDurationTarget: HTMLInputElement;
+  declare readonly hasPromoteDurationTarget: boolean;
+  declare promoteExistingTarget: HTMLElement;
+  declare readonly hasPromoteExistingTarget: boolean;
   declare promoteDestinationTarget: HTMLSelectElement;
   declare readonly hasPromoteDestinationTarget: boolean;
   declare promoteErrorTarget: HTMLElement;
@@ -122,6 +128,16 @@ export default class ActionsController extends Controller {
 
   // Current task id for the promote action
   private currentTaskId = '';
+  private promoteOperationId = '';
+  private promoteSubmitting = false;
+  private promoteDiscovering = false;
+  private promoteSubmission: {
+    taskId: string;
+    slot: { when: string; tzid?: string; duration_minutes?: number };
+    destination?: { accountId: string; calendarId: string } | 'local';
+  } | null = null;
+  private promoteRequestId = 0;
+  private existingTimeBlock: EventDto | null = null;
   private attachContextual = false;
   private attachNoteEvent = false;
   private attachRequestId = 0;
@@ -149,33 +165,86 @@ export default class ActionsController extends Controller {
    * data-action="jin:open-promote->actions#openPromote" on .jin-shell.
    */
   openPromote(event: Event): void {
-    const ce = event as CustomEvent<{ taskId: string }>;
+    const ce = event as CustomEvent<{ taskId: string; when?: string; tzid?: string }>;
     if (!ce.detail?.taskId) return;
     this.currentTaskId = ce.detail.taskId;
+    const requestId = ++this.promoteRequestId;
+    this.promoteOperationId = newOperationId('promote');
+    this.promoteSubmitting = false;
+    this.promoteDiscovering = true;
+    this.promoteSubmission = null;
+    this.existingTimeBlock = null;
+    this.promoteSubmitTarget.hidden = false;
+    if (this.hasPromoteExistingTarget) this.promoteExistingTarget.replaceChildren();
+    this.promoteDialogTarget.querySelectorAll<HTMLElement>('[data-promotion-fields]')
+      .forEach(field => field.classList.remove('hidden'));
+    this.promoteDialogTarget.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-promotion-fields] input, [data-promotion-fields] select')
+      .forEach(field => { field.disabled = false; });
 
     // Reset form
-    this.promoteWhenTarget.value = '';
-    this.promoteTzidTarget.value = '';
+    this.promoteWhenTarget.value = ce.detail.when ?? '';
+    this.promoteTzidTarget.value = ce.detail.tzid ?? '';
+    if (this.hasPromoteDurationTarget) this.promoteDurationTarget.value = '60';
     clearFormError(this.promoteErrorTarget);
-    if (this.hasPromoteDestinationTarget) void this.populatePromoteDestinations();
+    setFormBusy(this.promoteSubmitTarget, true);
 
     this.promoteDialogTarget.showModal();
+    this.promoteDialogTarget.oncancel = (cancel) => {
+      if (this.promoteSubmitting) cancel.preventDefault();
+      else this.promoteRequestId += 1;
+    };
     this.promoteWhenTarget.focus();
     initIcons();
+    void Promise.all([this.populatePromoteDestinations(), this.loadExistingTimeBlock(requestId)]).finally(() => {
+      if (requestId !== this.promoteRequestId || !this.promoteDialogTarget.open) return;
+      this.promoteDiscovering = false;
+      setFormBusy(this.promoteSubmitTarget, false);
+    });
   }
 
   closePromote(): void {
+    if (this.promoteSubmitting) return;
+    this.promoteRequestId += 1;
     this.promoteDialogTarget.close();
   }
 
+  private async loadExistingTimeBlock(requestId: number): Promise<void> {
+    try {
+      const events = await listEvents();
+      if (requestId !== this.promoteRequestId || !this.promoteDialogTarget.open) return;
+      const existing = events.find(event => event.derived_from === this.currentTaskId && event.status !== 'cancelled');
+      if (!existing || !this.hasPromoteExistingTarget) return;
+      this.existingTimeBlock = existing;
+      this.promoteSubmitTarget.hidden = true;
+      this.promoteDialogTarget.querySelectorAll<HTMLElement>('[data-promotion-fields]')
+        .forEach(field => field.classList.add('hidden'));
+      const message = document.createElement('p');
+      message.textContent = `This task already has a time block: ${existing.title}. Open it to review or change its schedule.`;
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'btn-primary';
+      open.textContent = 'Open time block';
+      open.addEventListener('click', () => {
+        this.promoteDialogTarget.close();
+        this.navigateAfterAction('events', existing.id);
+      });
+      this.promoteExistingTarget.replaceChildren(message, open);
+      open.focus();
+    } catch {
+      // Canonical promotion still checks for an existing task time block.
+    }
+  }
+
   async submitPromote(): Promise<void> {
+    if (this.promoteSubmitting || this.promoteDiscovering || this.existingTimeBlock) return;
     const state: PromoteFormState = {
       when: this.promoteWhenTarget.value,
       tzid: this.promoteTzidTarget.value,
+      ...(this.hasPromoteDurationTarget ? { durationMinutes: this.promoteDurationTarget.value } : {}),
     };
     const validation = validatePromoteForm(state);
     if (!validation.valid) {
-      renderFormError(this.promoteErrorTarget, validation.errors['when'] ?? 'Invalid input.');
+      renderFormError(this.promoteErrorTarget, validation.errors['when'] ?? validation.errors['duration'] ?? 'Invalid input.');
       return;
     }
     clearAllFormErrors(this.promoteDialogTarget);
@@ -187,6 +256,7 @@ export default class ActionsController extends Controller {
       }
     }
     setFormBusy(this.promoteSubmitTarget, true);
+    this.promoteSubmitting = true;
     try {
       const payload = buildPromotePayload(this.currentTaskId, state);
       const selectedDestination = this.hasPromoteDestinationTarget
@@ -200,11 +270,14 @@ export default class ActionsController extends Controller {
             accountId: selectedDestination.dataset.accountId ?? '',
             calendarId: selectedDestination.dataset.calendarId ?? '',
             };
+      this.promoteSubmission ??= { taskId: payload.task_id, slot: payload.slot, destination };
+      this.promoteDialogTarget.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-promotion-fields] input, [data-promotion-fields] select')
+        .forEach(field => { field.disabled = true; });
       const newEvent = await promoteTask(
-        payload.task_id,
-        payload.slot,
-        newOperationId('promote'),
-        destination,
+        this.promoteSubmission.taskId,
+        this.promoteSubmission.slot,
+        this.promoteOperationId,
+        this.promoteSubmission.destination,
       );
       this.promoteDialogTarget.close();
       // Re-fetch: navigate to the new event (core is source of truth — SP3)
@@ -213,18 +286,28 @@ export default class ActionsController extends Controller {
       this.dispatch('refresh-today', { prefix: 'jin', bubbles: true });
     } catch (err: unknown) {
       if (isJinErrorDto(err)) {
-        // e.g. code 2 = invalid timezone "Foo/Bar" → surfaced as inline error, no crash
-        renderFormError(this.promoteErrorTarget, err.message);
+        if (err.code === 2 && err.kind === 'usage') {
+          this.promoteSubmission = null;
+          this.promoteOperationId = newOperationId('promote');
+          this.promoteDialogTarget.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-promotion-fields] input, [data-promotion-fields] select')
+            .forEach(field => { field.disabled = false; });
+          renderFormError(this.promoteErrorTarget, err.message);
+        } else {
+          renderFormError(this.promoteErrorTarget, `${err.message} Retry this schedule, or cancel to review another time.`);
+        }
       } else {
-        renderFormError(this.promoteErrorTarget, 'An unexpected error occurred. Please try again.');
+        const reason = err instanceof Error ? err.message : typeof err === 'string' ? err : 'The time block could not be confirmed.';
+        renderFormError(this.promoteErrorTarget, `${reason} Retry this schedule, or cancel to review another time.`);
       }
     } finally {
+      this.promoteSubmitting = false;
       setFormBusy(this.promoteSubmitTarget, false);
     }
   }
 
   private async populatePromoteDestinations(): Promise<void> {
     if (!this.hasPromoteDestinationTarget) return;
+    const requestId = this.promoteRequestId;
     const select = this.promoteDestinationTarget;
     select.replaceChildren();
     let destinations: Array<{ accountId: string; calendarId: string; label: string }> = [];
@@ -236,6 +319,7 @@ export default class ActionsController extends Controller {
     } catch {
       // Keep local-only promotion available when account discovery fails.
     }
+    if (requestId !== this.promoteRequestId || !select.isConnected) return;
     if (destinations.length > 1) select.append(new Option('Choose a destination', '', true, true));
     select.append(new Option('Jin only', 'local', destinations.length <= 1, destinations.length <= 1));
     for (const destination of destinations) {

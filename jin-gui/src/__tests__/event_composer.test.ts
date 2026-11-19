@@ -3,7 +3,7 @@
  * event_composer.test.ts — S6 recurrence composer rules (AC-CALX-030–033).
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { draftFromEvent, draftFromSlot, setAttendees, setConferenceIntent, setRecurrence } from '../lib/events/draft';
 import { renderEventComposer } from '../lib/events/composer';
 import { recurrenceFromRepeatValue } from '../lib/events/recurrence';
@@ -129,9 +129,39 @@ describe('event_composer restoration', () => {
     const title = view.root.querySelector<HTMLInputElement>('#event-composer-title')!;
     title.focus();
     title.blur();
+    expect(title.hasAttribute('aria-invalid')).toBe(false);
+    expect(view.root.querySelector('.event-composer__errors')?.textContent).toBe('');
+    view.showValidation();
     expect(title.getAttribute('aria-invalid')).toBe('true');
     expect(title.getAttribute('aria-describedby')).toBe('event-composer-errors');
     expect(view.root.querySelector('.event-composer__errors')?.textContent).toContain('A title is required');
+  });
+
+  it('keeps a cleared title quiet on blur and validates explicit Enter in either language', () => {
+    for (const [locale, required] of [['en', 'A title is required.'], ['pt-BR', 'Adicione um título.']] as const) {
+      const saved = vi.fn();
+      const draft = draftFromSlot({ date: '2026-09-23' });
+      const view = renderEventComposer({ draft, locale, onSave: saved });
+      document.body.replaceChildren(view.root, view.footer);
+      const title = view.root.querySelector<HTMLInputElement>('#event-composer-title')!;
+      title.value = 'Planning';
+      title.dispatchEvent(new Event('input'));
+      title.value = '';
+      title.dispatchEvent(new Event('input'));
+      title.focus();
+      title.blur();
+      expect(view.root.querySelector('.event-composer__errors')?.textContent).toBe('');
+      title.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: true }));
+      expect(view.root.querySelector('.event-composer__errors')?.textContent).toBe('');
+      title.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      expect(view.root.querySelector('.event-composer__errors')?.textContent).toBe(required);
+      expect(saved).not.toHaveBeenCalled();
+      title.value = 'Planning';
+      title.dispatchEvent(new Event('input'));
+      title.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      expect(saved).toHaveBeenCalledTimes(1);
+      expect(view.root.querySelector('.event-composer__errors')?.textContent).toBe('');
+    }
   });
 
   it('shows Meet intent truthfully in English and Portuguese without claiming pending work', () => {

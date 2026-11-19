@@ -127,7 +127,7 @@ describe('Notification Center accessibility', () => {
     });
 
     expect(list.textContent).toContain('Unread');
-    expect(list.textContent).toContain('Selected');
+    expect(list.textContent).not.toContain('Selected');
     expect(list.textContent).toContain('Pending sync: Maybe');
     expect(list.textContent).toContain('Failed: Offline');
     expect(list.textContent).toContain('Superseded by a newer response');
@@ -158,6 +158,16 @@ describe('Notification Center accessibility', () => {
     expect(rule).toContain('overflow-wrap: anywhere');
     expect(rule).toContain('word-break: break-word');
     expect(rule).toMatch(/line-height:\s*var\(--text-footnote-line\)/);
+  });
+
+  it('keeps selected list rows distinguishable without a redundant state chip', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/notifications.css'), 'utf8');
+    const a11y = readFileSync(resolve(process.cwd(), 'src/styles/a11y.css'), 'utf8');
+    const selected = css.match(/\.notifications-row--selected,[\s\S]*?\{([^}]+)\}/)?.[1] ?? '';
+
+    expect(selected).toContain('border-inline-start-color');
+    expect(css).toContain('border-inline-start: 3px solid transparent');
+    expect(a11y).toMatch(/@media \(forced-colors: active\)[\s\S]*?\.notifications-row--selected,[\s\S]*?outline: 2px solid CanvasText/);
   });
 
   it('empty workspace spans both columns and centers its single status group', () => {

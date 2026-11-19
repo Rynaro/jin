@@ -159,8 +159,6 @@ export default class TasksController extends Controller {
     'listPanel',
     'workspaceTitle',
     'workspaceCount',
-    'railToggleBtn',
-    'railCloseBtn',
     'list',
     'emptyState',
     'loadingState',
@@ -199,10 +197,6 @@ export default class TasksController extends Controller {
   declare hasWorkspaceTitleTarget: boolean;
   declare workspaceCountTarget: HTMLElement;
   declare hasWorkspaceCountTarget: boolean;
-  declare railToggleBtnTarget: HTMLButtonElement;
-  declare hasRailToggleBtnTarget: boolean;
-  declare railCloseBtnTarget: HTMLButtonElement;
-  declare hasRailCloseBtnTarget: boolean;
   declare listTarget: HTMLElement;
   declare emptyStateTarget: HTMLElement;
   declare loadingStateTarget: HTMLElement;
@@ -720,10 +714,6 @@ export default class TasksController extends Controller {
   activateSection(): void {
     void this.loadList(this.currentFilter, true);
     if (this.selectedTaskId) void this.refreshPane(this.selectedTaskId);
-  }
-
-  toggleRail(): void {
-    window.dispatchEvent(new CustomEvent('jin:sidebar-toggle'));
   }
 
   private setRailOpen(open: boolean): void {

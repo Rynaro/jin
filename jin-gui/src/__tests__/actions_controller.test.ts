@@ -806,7 +806,7 @@ describe('renderTaskPane — promote button rendered when onPromote provided', (
 
     const promoteBtn = el.detailContent.querySelector('.task-promote-btn');
     expect(promoteBtn).not.toBeNull();
-    expect(promoteBtn?.getAttribute('aria-label')).toContain('Promote');
+    expect(promoteBtn?.getAttribute('aria-label')).toContain('Schedule time');
     expect((promoteBtn as HTMLElement)?.dataset.taskId).toBe('task-promote-test');
 
     // Click fires callback with task id

@@ -6,7 +6,6 @@ export interface SidebarPrefs {
 
 export const SIDEBAR_STORAGE_KEY = 'jin_sidebar';
 export const DEFAULT_SIDEBAR_PREFS: SidebarPrefs = { version: 2, expanded: true };
-export const COLLAPSED_CLASS = 'is-collapsed';
 
 /** Accept the old {collapsed} shape without ever persisting a second store. */
 export function loadSidebarPrefs(): SidebarPrefs {
@@ -33,14 +32,5 @@ export function saveSidebarPrefs(prefs: SidebarPrefs): void {
     localStorage.setItem(SIDEBAR_STORAGE_KEY, JSON.stringify({ version: 2, expanded: prefs.expanded }));
   } catch {
     // A storage failure must not prevent local navigation.
-  }
-}
-
-/** Keep the legacy class as a compatibility hook while the host owns width. */
-export function applySidebarCollapsed(sidebar: HTMLElement, collapsed: boolean, toggle?: HTMLElement | null): void {
-  sidebar.classList.toggle(COLLAPSED_CLASS, collapsed);
-  if (toggle) {
-    toggle.setAttribute('aria-expanded', String(!collapsed));
-    toggle.setAttribute('aria-label', collapsed ? 'Show navigation' : 'Hide navigation');
   }
 }

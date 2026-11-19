@@ -179,10 +179,17 @@ jobs:
         run: python3 scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/frontend-css.json -- npm run lint:css
 
       - name: Vite production build
-        run: python3 scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/frontend-build.json -- npx vite build
+        run: python3 scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/frontend-build.json -- npm run build
 
       - name: Production-bundle due editor smoke
         run: python3 scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/frontend-smoke.json -- npm run test:production-due
+
+      - name: Notes writing surface smoke
+        run: python3 scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/frontend-notes-smoke.json -- npm run test:notes-writing-surface
+
+      # This checks the detector with temporary references on the runner.
+      - name: Visual reference detector selftest
+        run: python3 scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/frontend-visual-selftest.json -- npm run visual:selftest
 
       # VG-GUI-8: headless-honesty label — CI proves logic only, never visuals.
       # This step always runs last so it is visible in the job summary.

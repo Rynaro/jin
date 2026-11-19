@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "id": "calendar-dense-1440",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "locale": "en-US",
+  "timezone": "UTC",
+  "reducedMotion": "reduce",
+  "clock": "2026-08-20T10:00:00Z",
+  "storage": {
+    "jin.fixture.calendarScenario": "dense"
+  },
+  "browser": "156.0.8078.4",
+  "platform": "darwin",
+  "os": "darwin-arm64 27.0.0",
+  "theme": "system",
+  "fixture": "tauri-fixture-init.js",
+  "fonts": "bundled Inter + system fallback",
+  "reviewStatus": "agent-reviewed",
+  "reason": "Reviewed shared edge-to-edge desktop canvas across Calendar, Notes, Tasks and Notifications",
+  "recordedAt": "2026-11-19T20:53:42.507Z",
+  "sourceRevision": "b908959bd24127ed04c64b3015ca1d3230542a3c",
+  "workingTree": "dirty"
+}

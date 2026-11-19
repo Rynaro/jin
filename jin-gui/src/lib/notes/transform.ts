@@ -167,3 +167,8 @@ export function formatNoteDate(iso: string, now: number = Date.now()): string {
 
   return `${monthAbbr} ${noteDay}, ${noteYear}`;
 }
+/** Match core's stored preview: collapsed Unicode whitespace, 200 codepoints. */
+export function deriveNoteExcerpt(body: string): string {
+  const collapsed = body.split(/\p{White_Space}+/u).filter(Boolean).join(' ');
+  return Array.from(collapsed).slice(0, 200).join('');
+}

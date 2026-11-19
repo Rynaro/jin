@@ -1035,6 +1035,24 @@ describe('G-TOOLBAR-STRUCTURE — toolbar and footer DOM structure is present', 
     handle.destroy();
   });
 
+  it('keeps secondary commands reachable through More and restores its trigger on Escape', () => {
+    const container = makeContainer();
+    const handle = mountEditor(container, { doc: '', onSave: async () => {} });
+    const more = container.querySelector<HTMLDetailsElement>('.cm-toolbar__more')!;
+    const trigger = container.querySelector<HTMLElement>('.cm-toolbar__more-trigger')!;
+
+    expect(more.open).toBe(false);
+    expect(more.querySelector('[aria-label="Heading 1"]')).not.toBeNull();
+    expect(more.querySelector('[aria-label="Add image or attachment"]')).not.toBeNull();
+    expect(more.querySelector('[aria-label="Typewriter scrolling"]')).not.toBeNull();
+
+    more.open = true;
+    more.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(more.open).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+    handle.destroy();
+  });
+
   it('cm-scroll-region is present inside the parent', () => {
     const container = makeContainer();
     const handle = mountEditor(container, { doc: 'test', onSave: async () => {} });

@@ -91,7 +91,7 @@ describe('Notification Center rendering', () => {
     expect(empty.textContent).toContain('Choose a notification to review it.');
   });
 
-  it('renders native keyboard-operable list rows with selected text cues', () => {
+  it('renders native keyboard-operable list rows with semantic selected state', () => {
     const items = [invitationFixture(), taskReminderFixture()];
     renderNotificationList(container, items, { selectedId: items[0].id });
 
@@ -100,7 +100,8 @@ describe('Notification Center rendering', () => {
     expect(rows[0].tagName).toBe('BUTTON');
     expect(rows[0].getAttribute('aria-selected')).toBe('true');
     expect(rows[0].textContent).toContain('Unread');
-    expect(rows[0].textContent).toContain('Selected');
+    expect(rows[0].classList.contains('notifications-row--selected')).toBe(true);
+    expect(rows[0].textContent).not.toContain('Selected');
   });
 
   it('summarizes partial errors by safe provider category without diagnostic data', () => {
@@ -170,7 +171,7 @@ describe('Notification Center rendering', () => {
     }
   });
 
-  it('state labels carry failed superseded disabled and selected meaning in text', () => {
+  it('state labels carry failed superseded and disabled meaning in text', () => {
     const item = invitationFixture({
       status: 'superseded',
       action_error: { code: 'provider_failed', message: 'Try again later', retryable: true },
@@ -180,9 +181,8 @@ describe('Notification Center rendering', () => {
         disabled_reason: 'Account changed',
       },
     });
-    expect(notificationStateLabels(item, true)).toEqual(expect.arrayContaining([
+    expect(notificationStateLabels(item)).toEqual(expect.arrayContaining([
       'Unread',
-      'Selected',
       'Failed: Try again later',
       'Superseded by a newer response',
       'Disabled: Account changed',

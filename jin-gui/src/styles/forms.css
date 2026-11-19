@@ -20,7 +20,7 @@ dialog {
   background: var(--bg-elevated);
   border: 0.5px solid var(--separator);
   border-radius: var(--radius-lg);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
+  box-shadow: var(--elevation-shadow);
   color: var(--label);
   font-family: var(--font-text);
   max-inline-size: min(90vw, 480px);
@@ -47,14 +47,14 @@ dialog {
 }
 
 dialog::backdrop {
-  background: rgba(0, 0, 0, 0.48);
+  background: var(--modal-scrim);
   -webkit-backdrop-filter: blur(4px);
           backdrop-filter: blur(4px);
 }
 
 /* Reduced-transparency fallback: solid backdrop, no blur */
 [data-reduce-transparency="1"] dialog::backdrop {
-  background: rgba(0, 0, 0, 0.72);
+  background: var(--modal-scrim-contrast);
   -webkit-backdrop-filter: none;
           backdrop-filter: none;
 }
@@ -96,7 +96,8 @@ dialog::backdrop {
   color: var(--ink-primary);
   font-family: var(--font-text);
   font-size: var(--text-title3-size);
-  font-weight: var(--display-title-weight);
+  font-weight: 650;
+  letter-spacing: -0.025em;
   line-height: var(--text-title3-line);
   letter-spacing: var(--display-title-tracking);
   margin: 0;
@@ -116,7 +117,7 @@ dialog::backdrop {
   gap: 2px;
   margin: var(--space-2) var(--space-3) 0;
   padding: 2px;
-  border-radius: var(--radius-capsule);
+  border-radius: var(--radius-md);
   background: var(--control-track);
   role: tablist;
   flex: 0 0 auto;
@@ -130,7 +131,7 @@ dialog::backdrop {
   align-items: center;
   justify-content: center;
   gap: var(--space-1);
-  border-radius: var(--radius-capsule);
+  border-radius: var(--radius-md);
   font-size: var(--text-subheadline-size);
   font-family: inherit;
   font-weight: 400;
@@ -150,7 +151,7 @@ dialog::backdrop {
 
 .capture-modal__tab > span {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: flex-start;
   line-height: 1.1;
 }
@@ -299,7 +300,6 @@ dialog::backdrop {
 .capture-icon-field .form-input { flex: 1; }
 
 @media (max-width: 560px) {
-  .capture-modal__tab small { display: none; }
   .capture-modal__tab { flex-direction: column; gap: var(--space-half); }
   .capture-meta-row,
   .capture-task-options,
@@ -468,7 +468,7 @@ dialog::backdrop {
   padding: var(--space-1);
   background: transparent;
   border: none;
-  border-radius: var(--radius-capsule);
+  border-radius: var(--radius-md);
   color: var(--label-secondary);
   cursor: pointer;
   display: flex;
@@ -595,7 +595,7 @@ dialog::backdrop {
   gap: var(--space-1);
   min-block-size: var(--hit-target);
   padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-capsule);
+  border-radius: var(--radius-md);
   border: 0.5px solid var(--separator);
   background: var(--fill-primary);
   color: var(--accent);
@@ -834,7 +834,7 @@ dialog::backdrop {
 .jin-tag-input__chip {
   padding: var(--space-half) var(--space-1);
   border: 0;
-  border-radius: var(--radius-capsule);
+  border-radius: var(--radius-md);
   background: var(--seal-tint);
   color: var(--seal);
   font: inherit;
@@ -866,14 +866,14 @@ dialog::backdrop {
   min-height: var(--control-height-prominent);
   padding: 0 var(--space-2);
   border: 0.5px solid transparent;
-  border-radius: var(--radius-capsule);
+  border-radius: var(--radius-md);
   box-shadow: var(--control-shadow);
   font-size: var(--text-footnote-size);
   line-height: var(--text-footnote-line);
-  font-weight: 500;
+  font-weight: 550;
   font-family: var(--font-text);
   cursor: pointer;
-  transition: background-color var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard);
+  transition: background-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard);
 }
 
 .btn,
@@ -1040,3 +1040,13 @@ dialog::backdrop {
 .action-dialog__header, .action-dialog__footer { border-color: var(--separator); }
 .form-input, .form-select, .jin-select__trigger { border-color: var(--control-edge); background: var(--control-surface); color: var(--label); }
 .form-input:focus-visible, .form-select:focus-visible, .jin-select__trigger:focus-visible { border-color: var(--accent); outline-color: var(--accent); }
+
+/* Contextual note/task review uses the shared form and dialog primitives. */
+.linked-creation { display: grid; gap: var(--space-2); min-inline-size: 0; }
+.linked-creation .form-group { margin: 0; min-inline-size: 0; }
+.linked-creation :is(input, select, textarea) { box-sizing: border-box; inline-size: 100%; min-inline-size: 0; }
+.linked-creation__excerpt { margin: 0; padding: var(--space-2); border-inline-start: 2px solid var(--accent); color: var(--label-secondary); background: var(--fill-tertiary); white-space: pre-wrap; overflow-wrap: anywhere; max-block-size: 12rem; overflow: auto; }
+.linked-creation__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-block-start: var(--space-2); }
+.action-dialog:has(.linked-creation) { inline-size: min(36rem, calc(100vw - var(--space-3))); max-inline-size: calc(100vw - var(--space-3)); max-block-size: calc(100dvh - var(--space-3)); }
+.action-dialog:has(.linked-creation) .action-dialog__inner { max-block-size: inherit; overflow: auto; }
+.action-dialog:has(.linked-creation) .action-dialog__footer { display: none; }

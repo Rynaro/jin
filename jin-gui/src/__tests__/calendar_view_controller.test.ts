@@ -265,6 +265,27 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(draft?.title).toBe('Quiet retreat');
   });
 
+  it('dismisses a blank draft over the real month grid without selecting or opening the clicked date', async () => {
+    const companion = (controller as unknown as { companion: { setContentBox(width: number): void; isOpen(): boolean } }).companion;
+    companion.setContentBox(1100);
+    const add = document.querySelector<HTMLButtonElement>('.calendar-day-add')!;
+    add.click();
+    const title = document.querySelector<HTMLInputElement>('#event-composer-title')!;
+    expect(title).toBeTruthy();
+    title.blur();
+    const cell = document.querySelectorAll<HTMLElement>('.calendar-day-cell')[10];
+    cell.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }));
+    window.dispatchEvent(new Event('pointerup', { bubbles: true, cancelable: true }));
+    cell.click();
+    await flush();
+    expect(companion.isOpen()).toBe(false);
+    expect(document.querySelector('.event-composer')).toBeNull();
+    expect(mocks.createEvent).not.toHaveBeenCalled();
+    cell.click();
+    expect(companion.isOpen()).toBe(true);
+    expect(document.querySelector<HTMLInputElement>('#event-composer-title')?.value).toBe('');
+  });
+
   it('offers exact writable destinations and prevents a stale route from silently saving locally', async () => {
     const accounts = [{
       id: 'acc-work', alias: 'Work', state: 'connected', calendars: [{
@@ -382,7 +403,7 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(month.classList.contains('hidden')).toBe(true);
     expect(detail.classList.contains('hidden')).toBe(false);
     expect(document.querySelector('section')?.getAttribute('aria-label')).toBe('Calendário');
-    expect(document.querySelector<HTMLButtonElement>('.calendar-global-add')?.textContent).toBe('+');
+    expect(document.querySelector<HTMLButtonElement>('.calendar-global-add')?.textContent).toContain('Adicionar evento');
     expect(document.querySelector<HTMLButtonElement>('.calendar-global-add')?.getAttribute('aria-label')).toBe('Adicionar evento');
   });
 
@@ -434,7 +455,7 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(cell.querySelector('.calendar-event-more')?.textContent).toBe('+1');
   });
 
-  it('reconciles ten events to measured shared capacity without replacing focused controls', async () => {
+  it('reconciles ten measured events through shrink and expansion without replacing focused controls', async () => {
     mocks.listEvents.mockResolvedValue(Array.from({ length: 10 }, (_, index) => makeEvent({
       id: `dense-${index}`,
       title: `Event ${index}`,
@@ -452,7 +473,7 @@ describe('CalendarViewController safety and mode invariants', () => {
     let rowHeight = 112;
     vi.spyOn(cell, 'getBoundingClientRect').mockImplementation(() => ({ height: rowHeight } as DOMRect));
     vi.spyOn(date, 'getBoundingClientRect').mockReturnValue({ height: 27 } as DOMRect);
-    vi.spyOn(chips[0], 'getBoundingClientRect').mockReturnValue({ height: 20 } as DOMRect);
+    for (const chip of chips) vi.spyOn(chip, 'getBoundingClientRect').mockReturnValue({ height: 20 } as DOMRect);
     vi.spyOn(more, 'getBoundingClientRect').mockReturnValue({ height: 28 } as DOMRect);
     const measurement = controller as unknown as {
       stopMonthGridMeasurement(): void;
@@ -637,6 +658,35 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(chip.querySelector('.calendar-event-chip__title')?.textContent).toBe(title);
     expect(chip.closest('.calendar-week-row')?.children).toHaveLength(7);
     expect(chip.dataset.calendarColor).toBe('accent');
+  });
+
+  it('opens scheduling review for a day task when multiple writable calendars exist', async () => {
+    app.stop();
+    document.body.innerHTML = fixture();
+    mocks.listGoogleAccounts.mockResolvedValue([{
+      id: 'account', state: 'connected', alias: 'Work', calendars: [
+        { calendar_id: 'one', name: 'One', enabled: true, available: true, writable: true },
+        { calendar_id: 'two', name: 'Two', enabled: true, available: true, writable: true },
+      ],
+    }]);
+    mocks.listTasks.mockResolvedValue([{ id: 'task-multi', title: 'Review', due: '2026-08-20', body: '', status: 'todo' }]);
+    app = Application.start();
+    app.register('calendar', CalendarController);
+    app.register('calendar-view', CalendarViewController);
+    await flush();
+    const host = document.querySelector('[data-controller="calendar-view"]')!;
+    const fresh = app.getControllerForElementAndIdentifier(host, 'calendar-view') as CalendarViewController;
+    await fresh.loadCalendar();
+    fresh.selectDate('2026-08-20');
+    const opening = vi.fn();
+    host.addEventListener('jin:open-promote', opening);
+    const button = host.querySelector<HTMLButtonElement>('.calendar-task-btn')!;
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-label')).toBe('Schedule time');
+    button.click();
+    expect(opening).toHaveBeenCalled();
+    expect((opening.mock.calls[0][0] as CustomEvent).detail.taskId).toBe('task-multi');
+    expect(mocks.promoteTask).not.toHaveBeenCalled();
   });
 
   it('keeps due Tasks after and outside the chronological Event grid', async () => {
@@ -909,7 +959,7 @@ describe('CalendarViewController safety and mode invariants', () => {
     const calendarCss = readFileSync(resolve(process.cwd(), 'src/styles/calendar.css'), 'utf8');
     expect(calendarCss).toContain('.calendar-timegrid__layout');
     expect(calendarCss).toContain('max-inline-size: 100%');
-    expect(calendarCss).toContain('min-block-size: 2.75rem');
+    expect(calendarCss).toMatch(/@media \(pointer: coarse\) \{[\s\S]*?\.calendar-month-controls :is\(button, summary\) \{[\s\S]*?min-block-size: var\(--hit-target\);/);
     expect(calendarCss).not.toMatch(/\.calendar-timegrid__layout[^{]*\{[^}]*overflow-x:\s*scroll/);
   });
 

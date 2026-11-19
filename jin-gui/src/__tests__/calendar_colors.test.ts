@@ -248,4 +248,11 @@ describe('exact calendar color preferences', () => {
     expect(event.dataset.calendarColor).toBe('custom');
     expect(event.style.getPropertyValue('--calendar-color-value')).toBe('#AABBCC');
   });
+
+  it('normalizes runtime-bypassed calendar colors before writing the CSS sink', () => {
+    const event = document.createElement('button');
+    applyCalendarColor(event, 'rgb(1, 2, 3)' as unknown as ReturnType<typeof calendarColor>);
+    expect(event.dataset.calendarColor).toBe('accent');
+    expect(event.style.getPropertyValue('--calendar-color-value')).toBe('');
+  });
 });

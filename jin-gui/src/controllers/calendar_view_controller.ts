@@ -30,7 +30,7 @@
 
 import { Controller } from '@hotwired/stimulus';
 import {
-  listEvents, createEvent, createRoutedEvent, deleteEvent, promoteTask, syncCalendarEvent,
+  listEvents, createEvent, createRoutedEvent, deleteEvent, syncCalendarEvent,
   listGoogleAccounts, listTasks, newOperationId,
   calendarRangeProjection, getEventDetailById, editEventDelta, editRoutedEventDelta,
 } from '../invoke';
@@ -196,7 +196,6 @@ export default class CalendarViewController extends Controller {
   private timelineScrollFrame: number | null = null;
   private nowTimer: ReturnType<typeof setTimeout> | null = null;
   private connected = false;
-  private writableDestinationCount = 0;
   private visibilityMap: CalendarVisibilityMap = {};
   private filterAccounts: GoogleAccountDto[] = [];
   private filterSignature = '';
@@ -236,7 +235,6 @@ export default class CalendarViewController extends Controller {
     this.restoreLastDestination();
     this.ensureCompanion();
     this.localizeCalendarShell();
-    void this.refreshWritableDestinationCount();
     document.addEventListener('visibilitychange', this.handleVisibilityChange);
     window.addEventListener('jin:calendar-colors-changed', this.handleCalendarColorsChanged);
     void this.loadCalendar();
@@ -432,7 +430,14 @@ export default class CalendarViewController extends Controller {
 
   private localizeCalendarShell(locale = resolveEventLocale()): void {
     this.element.setAttribute('aria-label', eventMessage('calendar', locale));
-    this.createEventBtnTarget.textContent = '+';
+    const addIcon = document.createElement('span');
+    addIcon.className = 'calendar-global-add__icon';
+    addIcon.setAttribute('aria-hidden', 'true');
+    addIcon.textContent = '+';
+    const addLabel = document.createElement('span');
+    addLabel.className = 'calendar-global-add__label';
+    addLabel.textContent = eventMessage('addEvent', locale);
+    this.createEventBtnTarget.replaceChildren(addIcon, addLabel);
     this.createEventBtnTarget.setAttribute('aria-label', eventMessage('addEvent', locale));
     if (this.hasNotificationsLinkTarget) this.notificationsLinkTarget.querySelector('span')!.textContent = eventMessage('notifications', locale);
     if (this.hasManageCalendarsLinkTarget) this.manageCalendarsLinkTarget.querySelector('span')!.textContent = eventMessage('manageCalendars', locale);
@@ -556,13 +561,13 @@ export default class CalendarViewController extends Controller {
 
   private createViewSwitch(): HTMLElement {
     const group = document.createElement('div');
-    group.className = 'calendar-view-switch';
+    group.className = 'calendar-view-switch jin-segmented-control';
     group.setAttribute('role', 'group');
     group.setAttribute('aria-label', eventMessage('calendar'));
     (['month', 'week', 'day'] as const).forEach(mode => {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'calendar-view-switch__button';
+      button.className = 'calendar-view-switch__button jin-segmented-control__item';
       const labels = resolveEventLocale() === 'pt-BR'
         ? { month: 'Mês', week: 'Semana', day: 'Dia' }
         : { month: 'Month', week: 'Week', day: 'Day' };
@@ -865,11 +870,6 @@ export default class CalendarViewController extends Controller {
       promoteBtn.className = 'btn-icon calendar-task-btn';
       promoteBtn.setAttribute('aria-label', eventMessage('promoteEvent'));
       promoteBtn.setAttribute('title', eventMessage('promoteEventTitle'));
-      if (this.writableDestinationCount > 1) {
-        promoteBtn.disabled = true;
-        promoteBtn.setAttribute('aria-label', 'Choose an exact calendar in the Promote dialog');
-        promoteBtn.setAttribute('title', 'Multiple writable calendars are available; use Promote to Event and choose a destination.');
-      }
       promoteBtn.innerHTML = '<i data-lucide="calendar-plus" aria-hidden="true"></i>';
       promoteBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1010,7 +1010,6 @@ export default class CalendarViewController extends Controller {
         ? selected.toLocaleDateString(resolveEventLocale(), { month: 'long', year: 'numeric' })
         : new Date(this.currentYear, this.currentMonth - 1, 1)
           .toLocaleDateString(resolveEventLocale(), { month: 'long', year: 'numeric' });
-    identity.append(monthYearLabel);
 
     const navContainer = document.createElement('div');
     navContainer.className = 'calendar-month-nav';
@@ -1061,10 +1060,11 @@ export default class CalendarViewController extends Controller {
     const title = document.createElement('span');
     title.className = 'calendar-workspace-title';
     title.textContent = eventMessage('calendar');
-    leading.append(title);
-    if (this.addButton) leading.appendChild(this.addButton);
+    identity.append(title, monthYearLabel);
+    leading.append(identity);
     controls.append(dragRegion, leading, this.createViewSwitch(), navContainer);
-    header.append(identity, controls);
+    if (this.addButton) controls.appendChild(this.addButton);
+    header.append(controls);
     return header;
   }
 
@@ -1123,7 +1123,10 @@ export default class CalendarViewController extends Controller {
         const localized = new Date(`${day.date}T12:00:00`).toLocaleDateString(locale, {
           month: 'short', day: 'numeric',
         });
-        addOnDate.textContent = '+';
+        const addIcon = document.createElement('i');
+        addIcon.dataset.lucide = 'plus';
+        addIcon.setAttribute('aria-hidden', 'true');
+        addOnDate.appendChild(addIcon);
         addOnDate.setAttribute('aria-label', eventMessageFormat('addOnDate', { date: localized }, locale));
         addOnDate.addEventListener('click', click => {
           click.stopPropagation();
@@ -1259,30 +1262,29 @@ export default class CalendarViewController extends Controller {
     const update = (): void => {
       if (!grid.isConnected) return;
       const cells = [...grid.querySelectorAll<HTMLElement>('.calendar-day-cell')];
-      const maxEvents = Math.max(0, ...cells.map(cell => cell.querySelectorAll('.calendar-event-chip').length));
-      if (maxEvents === 0) return;
-      const sample = cells.find(cell => cell.querySelector('.calendar-event-chip'))!;
-      const date = sample.querySelector<HTMLElement>('.calendar-day-button')!;
-      const chip = sample.querySelector<HTMLElement>('.calendar-event-chip')!;
-      const more = sample.querySelector<HTMLElement>('.calendar-event-more')!;
-      const events = sample.querySelector<HTMLElement>('.calendar-day-events')!;
-      const cellStyle = getComputedStyle(sample);
-      const capacity = getComputedStyle(events).flexDirection === 'row'
-        ? 3
-        : monthChipCapacity({
-          row: sample.getBoundingClientRect().height,
-          date: date.getBoundingClientRect().height + (parseFloat(getComputedStyle(date).marginBottom) || 0),
-          chip: chip.getBoundingClientRect().height || parseFloat(getComputedStyle(chip).minHeight) || 20,
-          more: more.getBoundingClientRect().height || parseFloat(getComputedStyle(more).minHeight) || 28,
-          gap: parseFloat(getComputedStyle(events).rowGap) || 2,
-          padding: (parseFloat(cellStyle.paddingTop) || 0) + (parseFloat(cellStyle.paddingBottom) || 0),
-          maxEvents,
-        });
-      if (grid.dataset.chipCapacity === String(capacity)) return;
-      grid.dataset.chipCapacity = String(capacity);
       for (const cell of cells) {
         const chips = [...cell.querySelectorAll<HTMLButtonElement>('.calendar-event-chip')];
         const moreButton = cell.querySelector<HTMLButtonElement>('.calendar-event-more');
+        if (chips.length === 0 || !moreButton) continue;
+        const date = cell.querySelector<HTMLElement>('.calendar-day-button')!;
+        const events = cell.querySelector<HTMLElement>('.calendar-day-events')!;
+        const cellStyle = getComputedStyle(cell);
+        // Measure hidden entries too, including two-line timed labels. These
+        // synchronous layout reads finish before the browser can paint them.
+        chips.forEach(chip => { chip.hidden = false; });
+        moreButton.hidden = false;
+        const capacity = getComputedStyle(events).flexDirection === 'row'
+          ? 3
+          : monthChipCapacity({
+            row: cell.getBoundingClientRect().height,
+            date: date.getBoundingClientRect().height + (parseFloat(getComputedStyle(date).marginBottom) || 0),
+            chip: chips.map(chip => chip.getBoundingClientRect().height),
+            more: moreButton.getBoundingClientRect().height,
+            gap: parseFloat(getComputedStyle(events).rowGap) || 0,
+            padding: (parseFloat(cellStyle.paddingTop) || 0) + (parseFloat(cellStyle.paddingBottom) || 0),
+            maxEvents: chips.length,
+          });
+        cell.dataset.chipCapacity = String(capacity);
         const hiddenCount = Math.max(0, chips.length - capacity);
         if (hiddenCount === 0 && moreButton === document.activeElement) {
           cell.querySelector<HTMLButtonElement>('.calendar-day-button')?.focus({ preventScroll: true });
@@ -1389,25 +1391,11 @@ export default class CalendarViewController extends Controller {
   }
 
   async promoteTaskToEvent(taskId: string, dateStr?: string): Promise<void> {
-    try {
-      if (this.writableDestinationCount > 1) {
-        throw new Error('ambiguous_destination: Choose an exact calendar in the Promote to Event dialog.');
-      }
-      const selected = dateStr || this.selectedDate || this.toISODate(new Date());
-      const when = selected.includes('T') ? selected : `${selected}T09:00:00`;
-      await promoteTask(taskId, { when }, newOperationId('promote'));
-      this.notifyMutation();
-      await this.loadCalendar();
-      if (this.selectedDate) {
-        this.renderDayView(this.selectedDate);
-      }
-    } catch (err: unknown) {
-      if (isJinErrorDto(err)) {
-        this.dispatch('error', { detail: err, prefix: 'app', bubbles: true });
-      } else {
-        this.dispatch('error', { detail: { message: err instanceof Error ? err.message : eventMessage('failedPromoteTask') }, prefix: 'app', bubbles: true });
-      }
-    }
+    const selected = dateStr || this.selectedDate || this.toISODate(new Date());
+    const when = selected.includes('T') ? selected : `${selected}T09:00:00`;
+    this.dispatch('open-promote', {
+      detail: { taskId, when, tzid: this.rangeProjection?.display_tz }, prefix: 'jin', bubbles: true,
+    });
   }
 
   private openEventDetail(id: string, anchor: HTMLElement | null = null): void {
@@ -1835,19 +1823,6 @@ export default class CalendarViewController extends Controller {
     }
   }
 
-
-  private async refreshWritableDestinationCount(): Promise<void> {
-    try {
-      const accounts = await listGoogleAccounts();
-      this.writableDestinationCount = accounts.reduce((count, account) => (
-        count + account.calendars.filter(calendar => (
-          account.state === 'connected' && calendar.enabled && calendar.available && calendar.writable
-        )).length
-      ), 0);
-    } catch {
-      this.writableDestinationCount = 0;
-    }
-  }
 
   private rememberDestination(destination: ComposerDestination): void {
     this.lastWritableDestination = destination;

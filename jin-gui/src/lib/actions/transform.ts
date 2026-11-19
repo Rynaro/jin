@@ -36,6 +36,7 @@ export interface PromoteFormState {
   when: string;
   /** IANA tz name, e.g. "America/New_York" or empty for floating */
   tzid: string;
+  durationMinutes?: string;
 }
 
 /**
@@ -45,6 +46,10 @@ export interface PromoteFormState {
 export function validatePromoteForm(state: PromoteFormState): ValidationResult {
   if (!state.when.trim()) {
     return { valid: false, errors: { when: 'Date/time is required.' } };
+  }
+  if (state.durationMinutes !== undefined &&
+      (!/^\d+$/.test(state.durationMinutes) || Number(state.durationMinutes) < 1 || Number(state.durationMinutes) > 1440)) {
+    return { valid: false, errors: { duration: 'Choose a duration of 1–1440 minutes.' } };
   }
   return { valid: true, errors: {} };
 }
@@ -58,12 +63,13 @@ export function validatePromoteForm(state: PromoteFormState): ValidationResult {
 export function buildPromotePayload(
   taskId: string,
   state: PromoteFormState
-): { task_id: string; slot: { when: string; tzid?: string } } {
+): { task_id: string; slot: { when: string; tzid?: string; duration_minutes?: number } } {
   return {
     task_id: taskId,
     slot: {
       when: state.when.trim(),
       tzid: state.tzid.trim() || undefined,
+      ...(state.durationMinutes === undefined ? {} : { duration_minutes: Number(state.durationMinutes) }),
     },
   };
 }

@@ -121,6 +121,28 @@ export function createNote(input: {
   return invoke<NoteDto>('create_note', { input });
 }
 
+/** One recoverable operation creates the task and its source-note relationship. */
+export function createTaskFromNote(input: {
+  operation_id: string;
+  note_id: string;
+  expected_revision: number;
+  title: string;
+  excerpt: string;
+  list?: string;
+}): Promise<{ task: TaskDto; note: NoteDto }> {
+  return invoke('create_task_from_note', { input });
+}
+
+/** Create a local prep note attached to this persisted event identity. */
+export function createEventPrepNote(input: {
+  operation_id: string;
+  event_id: string;
+  title: string;
+  body: string;
+}): Promise<NoteDto> {
+  return invoke('create_event_prep_note', { input });
+}
+
 /** Wave 2A: Move a note to a different folder. Returns the note with updated folder_path. */
 export function moveNote(id: string, folder: string): Promise<NoteDto> {
   return invoke<NoteDto>('move_note', { id, folder });
@@ -739,15 +761,16 @@ export function deleteRoutedEvent(input: {
 
 export function promoteTask(
   taskId: string,
-  slot: { when: string; tzid?: string },
+  slot: { when: string; tzid?: string; duration_minutes?: number },
   operationId: string,
   destination?: { accountId: string; calendarId: string } | 'local',
 ): Promise<EventDto> {
   const request: Record<string, unknown> = {
     task_id: taskId,
-    slot,
+    slot: { when: slot.when, tzid: slot.tzid },
     operation_id: operationId,
   };
+  if (slot.duration_minutes !== undefined) request.duration_minutes = slot.duration_minutes;
   if (destination === 'local') request.local_only = true;
   if (destination && destination !== 'local') {
     request.account_id = destination.accountId;

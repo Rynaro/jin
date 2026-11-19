@@ -433,6 +433,7 @@ export default class TodayController extends Controller {
     if (task.status === 'done' || this.pendingInlineTaskIds.has(task.id)) return;
     this.pendingInlineTaskIds.add(task.id);
     controls.row.dataset.state = 'pending';
+        controls.feedback.dataset.state = 'pending';
     controls.button.disabled = true;
     controls.button.setAttribute('aria-busy', 'true');
     controls.feedback.textContent = 'Marking complete…';
@@ -470,6 +471,7 @@ export default class TodayController extends Controller {
     } catch {
       if (controls.row.isConnected) {
         controls.row.dataset.state = 'failed';
+        controls.feedback.dataset.state = 'error';
         controls.button.disabled = false;
         controls.button.removeAttribute('aria-busy');
         controls.feedback.textContent = 'Could not mark complete. Try again.';
@@ -490,6 +492,7 @@ export default class TodayController extends Controller {
         const feedback = row?.querySelector<HTMLElement>('.today-task-row__feedback');
         if (!row || !button || !feedback) continue;
         row.dataset.state = 'pending';
+        feedback.dataset.state = 'pending';
         button.disabled = true;
         button.setAttribute('aria-busy', 'true');
         feedback.textContent = 'Marking complete…';
