@@ -507,10 +507,13 @@ npm run screenshots -- /tmp/jin-shots     # builds dist/ then writes PNGs
 
 ### Durable reference detector
 
-`npm run visual:selftest` builds the current frontend once, then uses temporary
-references to prove record → compare, visible-difference detection, restoration,
-environment-mismatch blocking, and hash preservation. It is part of `make
-verify-gui` and CI because it does not compare macOS pixels with Linux pixels.
+`npm run visual:selftest` builds the current frontend once and exercises all five
+production UI scenarios. It captures each live page, loads a fresh PNG at native
+dimensions, and checks it byte-for-byte against the source capture. Separate
+browser screenshots are then compared around a real DOM marker and its removal.
+The test uses the normal reference writer and comparator, preserving the
+environment, stale-build, and hash checks. It runs in `make verify-gui` and CI
+without comparing platform-bound reference images across operating systems.
 
 The persisted references live in
 [`jin-gui/visual-references/cohesive-workspace-v1`](../jin-gui/visual-references/cohesive-workspace-v1)
@@ -536,6 +539,16 @@ the manifest records browser, OS, fonts, locale, timezone, fixture clock,
 theme, commit, and working-tree context. These current captures are
 **agent-reviewed**, not owner-approved. Exact environment mismatch blocks a
 persisted comparison; never weaken it to make another platform pass.
+
+The selftest validates reference writing, comparison, mutation rejection,
+restoration, and hash preservation against known rasters from the live UI
+scenarios. The canonical `visual:compare` command independently renders the
+application and compares exact PNG bytes with the checked-in, platform-bound
+references. It retains both reference and actual PNG when it detects a real
+visual difference. Linux CI uploads generated failure screenshots only.
+Renderer antialiasing can vary between runs, so CI uses the lossless selftest
+while `visual:compare` remains the live-render check. Neither check replaces the
+owner's visual review.
 
 ## Agent browser workflow (Playwright MCP)
 

@@ -143,10 +143,10 @@ async function captureStableScreenshot(page, scenarioId) {
   throw new Error(`${scenarioId} did not reach a stable rendered frame`);
 }
 
-async function capture(options, selected = selectedScenarios(options.scenarios)) {
+async function capture(options, selected = selectedScenarios(options.scenarios), visit) {
   await assertFreshBuild(); const fixtureSource = await readFile(fixtureScript, 'utf8'); const runEvidence = join(artifactRoot, 'visual-failures', `${Date.now()}-${process.pid}`); const browser = await chromium.launch({ executablePath: await browserPath(), headless: true }); const captures = [];
   try { for (const scenario of selected) { const context = await browser.newContext({ viewport: scenario.viewport, locale: 'en-US', timezoneId: 'UTC', reducedMotion: 'reduce' }); await context.addInitScript(storage => { for (const [key, value] of Object.entries(storage)) localStorage.setItem(key, value); }, scenario.storage); await context.addInitScript({ content: fixtureSource }); const page = await context.newPage(); const errors = []; page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); }); page.on('pageerror', error => errors.push(error.message));
-    try { await page.clock.setFixedTime(new Date('2026-08-20T10:00:00Z')); await page.route(`${origin}/**`, fulfillDist); await page.goto(`${origin}/`, { waitUntil: 'networkidle' }); const bridge = await page.evaluate(async () => { const invoke = window.__TAURI_INTERNALS__?.invoke; return typeof invoke === 'function' ? await invoke('today_projection', { input: { date: '2026-08-20' } }) : null; }); if (!bridge) throw new Error(`fixture bridge was not installed before ${scenario.id} boot`); await selectSection(page, scenario.section); await assertScenario(page, scenario); await page.evaluate(() => document.fonts.ready); if (options.visibleMutation) await page.evaluate(() => { const marker = document.createElement('div'); marker.id = 'jin-visual-regression-mutation'; marker.textContent = 'visual regression mutation'; marker.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#ff00ff;color:#000;font:700 32px sans-serif;padding:24px'; document.body.append(marker); }); if (options.visibleMutation && !await page.locator('#jin-visual-regression-mutation').isVisible()) throw new Error(`visible mutation was not rendered for ${scenario.id}`); const manifest = { version: 2, id: scenario.id, viewport: scenario.viewport, locale: options.environmentMismatch ? 'en-GB' : 'en-US', timezone: 'UTC', reducedMotion: 'reduce', clock: '2026-08-20T10:00:00Z', storage: scenario.storage, browser: await browser.version(), platform: process.platform, os: `${process.platform}-${process.arch} ${release()}`, theme: 'system', fixture: 'tauri-fixture-init.js', fonts: 'bundled Inter + system fallback', reviewStatus: 'agent-reviewed' }; const screenshot = scenario.id === 'notes-writing-1280' ? await captureStableScreenshot(page, scenario.id) : await page.screenshot({ fullPage: true }); if (errors.length) throw new Error(`${scenario.id} console errors: ${errors.join('\n')}`); captures.push({ scenario, manifest, screenshot }); }
+    try { await page.clock.setFixedTime(new Date('2026-08-20T10:00:00Z')); await page.route(`${origin}/**`, fulfillDist); await page.goto(`${origin}/`, { waitUntil: 'networkidle' }); const bridge = await page.evaluate(async () => { const invoke = window.__TAURI_INTERNALS__?.invoke; return typeof invoke === 'function' ? await invoke('today_projection', { input: { date: '2026-08-20' } }) : null; }); if (!bridge) throw new Error(`fixture bridge was not installed before ${scenario.id} boot`); await selectSection(page, scenario.section); await assertScenario(page, scenario); await page.evaluate(() => document.fonts.ready); if (options.visibleMutation) await page.evaluate(() => { const marker = document.createElement('div'); marker.id = 'jin-visual-regression-mutation'; marker.textContent = 'visual regression mutation'; marker.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#ff00ff;color:#000;font:700 32px sans-serif;padding:24px'; document.body.append(marker); }); if (options.visibleMutation && !await page.locator('#jin-visual-regression-mutation').isVisible()) throw new Error(`visible mutation was not rendered for ${scenario.id}`); const manifest = { version: 2, id: scenario.id, viewport: scenario.viewport, locale: options.environmentMismatch ? 'en-GB' : 'en-US', timezone: 'UTC', reducedMotion: 'reduce', clock: '2026-08-20T10:00:00Z', storage: scenario.storage, browser: await browser.version(), platform: process.platform, os: `${process.platform}-${process.arch} ${release()}`, theme: 'system', fixture: 'tauri-fixture-init.js', fonts: 'bundled Inter + system fallback', reviewStatus: 'agent-reviewed' }; const screenshot = scenario.id === 'notes-writing-1280' && !options.selftest ? await captureStableScreenshot(page, scenario.id) : await page.screenshot({ fullPage: true }); if (errors.length) throw new Error(`${scenario.id} console errors: ${errors.join('\n')}`); const captured = { scenario, manifest, screenshot }; captures.push(captured); if (visit) await visit(page, captured); }
     catch (error) { await mkdir(runEvidence, { recursive: true }); try { await page.screenshot({ path: join(runEvidence, `${scenario.id}.failure.png`), fullPage: true }); } catch {} await writeFile(join(runEvidence, `${scenario.id}.failure.json`), `${JSON.stringify({ id: scenario.id, failure: String(error), console: errors }, null, 2)}\n`); throw error; } finally { await context.close(); }
   } } finally { await browser.close(); } return captures;
 }
@@ -167,13 +167,126 @@ async function retainMismatchEvidence(options, scenarioId, reference, actual) {
   ]);
 }
 
-async function run(options) {
-  const selected = selectedScenarios(options.scenarios); const captures = await capture(options, selected);
-  if (options.compare) { for (const { scenario, manifest, screenshot } of captures) { const baseline = JSON.parse(await readFile(join(options.referenceDir, `${scenario.id}.json`), 'utf8')); delete baseline.reason; delete baseline.recordedAt; delete baseline.sourceRevision; delete baseline.workingTree; if (JSON.stringify(baseline) !== JSON.stringify(manifest)) throw new Error(`environment mismatch for ${scenario.id}; persisted references are platform-bound and must not be regenerated during compare`); const reference = await readFile(join(options.referenceDir, `${scenario.id}.png`)); if (!reference.equals(screenshot)) { await retainMismatchEvidence(options, scenario.id, reference, screenshot); throw new Error(`visual difference for ${scenario.id}: ${createHash('sha256').update(reference).digest('hex')} != ${createHash('sha256').update(screenshot).digest('hex')}`); } } return; }
-  await mkdir(options.referenceDir, { recursive: true }); const context = sourceContext(); for (const { scenario, manifest, screenshot } of captures) { await writeFile(join(options.referenceDir, `${scenario.id}.png`), screenshot); await writeFile(join(options.referenceDir, `${scenario.id}.json`), `${JSON.stringify({ ...manifest, reason: options.reason, recordedAt: new Date().toISOString(), ...context }, null, 2)}\n`); }
+async function compareCapture(options, { scenario, manifest, screenshot }) {
+  const baseline = JSON.parse(await readFile(join(options.referenceDir, `${scenario.id}.json`), 'utf8'));
+  delete baseline.reason;
+  delete baseline.recordedAt;
+  delete baseline.sourceRevision;
+  delete baseline.workingTree;
+  if (JSON.stringify(baseline) !== JSON.stringify(manifest)) {
+    throw new Error(`environment mismatch for ${scenario.id}; persisted references are platform-bound and must not be regenerated during compare`);
+  }
+  const reference = await readFile(join(options.referenceDir, `${scenario.id}.png`));
+  if (!reference.equals(screenshot)) {
+    await retainMismatchEvidence(options, scenario.id, reference, screenshot);
+    throw new Error(`visual difference for ${scenario.id}: ${createHash('sha256').update(reference).digest('hex')} != ${createHash('sha256').update(screenshot).digest('hex')}`);
+  }
 }
+
+async function writeCapture(options, { scenario, manifest, screenshot }, context) {
+  await mkdir(options.referenceDir, { recursive: true });
+  await writeFile(join(options.referenceDir, `${scenario.id}.png`), screenshot);
+  await writeFile(join(options.referenceDir, `${scenario.id}.json`), `${JSON.stringify({ ...manifest, reason: options.reason, recordedAt: new Date().toISOString(), ...context }, null, 2)}\n`);
+}
+
+async function run(options) {
+  const selected = selectedScenarios(options.scenarios);
+  const captures = await capture(options, selected);
+  if (options.compare) {
+    for (const captured of captures) await compareCapture(options, captured);
+    return;
+  }
+  const context = sourceContext();
+  for (const captured of captures) await writeCapture(options, captured, context);
+}
+
+async function expectRejection(operation, expected) {
+  try {
+    await operation();
+  } catch (error) {
+    if (String(error).includes(expected)) return;
+    throw error;
+  }
+  throw new Error(`${expected} unexpectedly accepted`);
+}
+
+async function verifyRasterScenario(page, captured, options, context) {
+  const { scenario, screenshot } = captured;
+  const width = screenshot.readUInt32BE(16);
+  const height = screenshot.readUInt32BE(20);
+  const rasterContext = await page.context().browser().newContext({
+    viewport: { width, height }, deviceScaleFactor: 1,
+    locale: 'en-US', timezoneId: 'UTC', reducedMotion: 'reduce',
+  });
+  const raster = await rasterContext.newPage();
+  try {
+    await raster.setContent('<!doctype html><html><head><style>html,body{margin:0;padding:0;overflow:hidden}img{display:block}</style></head><body><img alt="Captured scenario"></body></html>');
+    await raster.locator('img').evaluate(async (image, input) => {
+      image.src = input.url;
+      await image.decode();
+      const bounds = image.getBoundingClientRect();
+      if (image.naturalWidth !== input.width || image.naturalHeight !== input.height ||
+          bounds.width !== input.width || bounds.height !== input.height || devicePixelRatio !== 1 ||
+          innerWidth !== input.width || innerHeight !== input.height) {
+        throw new Error('Raster fixture must render loaded pixels at native 1:1 dimensions');
+      }
+    }, { url: `data:image/png;base64,${screenshot.toString('base64')}`, width, height });
+    const fresh = async () => ({ ...captured, screenshot: await raster.screenshot({ fullPage: true }) });
+    const recorded = await fresh();
+    if (!recorded.screenshot.equals(screenshot)) throw new Error(`${scenario.id} raster rendering changed the original captured PNG`);
+    await writeCapture(options, recorded, context);
+    const before = await referenceDigest(options.referenceDir, [scenario]);
+    await compareCapture(options, await fresh());
+    try {
+      await raster.evaluate(() => {
+        const marker = document.createElement('div');
+        marker.id = 'jin-visual-regression-mutation';
+        marker.style.cssText = 'position:fixed;inset:8px auto auto 8px;width:160px;height:80px;background:#ff00ff;z-index:9999';
+        document.body.append(marker);
+      });
+      await raster.locator('#jin-visual-regression-mutation').waitFor({ state: 'visible' });
+      await expectRejection(async () => {
+        await compareCapture({ ...options, expectedMutation: true }, await fresh());
+      }, 'visual difference');
+    } finally {
+      await raster.locator('#jin-visual-regression-mutation').evaluate(marker => marker.remove());
+    }
+    await compareCapture(options, await fresh());
+    await expectRejection(async () => {
+      const current = await fresh();
+      await compareCapture(options, { ...current, manifest: { ...current.manifest, locale: 'en-GB' } });
+    }, 'environment mismatch');
+    if (await referenceDigest(options.referenceDir, [scenario]) !== before) {
+      throw new Error(`${scenario.id} selftest modified its reference`);
+    }
+  } finally {
+    await rasterContext.close();
+  }
+}
+
 async function selftest() {
-  const directory = await mkdtemp(join(tmpdir(), 'jin-visual-reference-selftest-')); const references = join(directory, 'references'); const record = { compare: false, record: true, selftest: false, visibleMutation: false, environmentMismatch: false, reason: 'ephemeral detector selftest', scenarios: [], referenceDir: references };
-  try { const stamp = await readFile(buildManifest); await writeFile(buildManifest, '{"version":1,"sourceFingerprint":"stale"}\n'); try { await assertFreshBuild(); throw new Error('stale build stamp unexpectedly accepted'); } catch (error) { if (!String(error).includes('stale production bundle')) throw error; } finally { await writeFile(buildManifest, stamp); } await run(record); const before = await referenceDigest(references, scenarios); await run({ ...record, record: false, compare: true }); await run({ ...record, record: false, compare: true, visibleMutation: true, expectedMutation: true }).then(() => { throw new Error('visible mutation unexpectedly compared clean'); }, error => { if (!String(error).includes('visual difference')) throw error; }); if (await referenceDigest(references, scenarios) !== before) throw new Error('visible mutation modified ephemeral references'); await run({ ...record, record: false, compare: true }); await run({ ...record, record: false, compare: true, environmentMismatch: true }).then(() => { throw new Error('environment mismatch unexpectedly compared clean'); }, error => { if (!String(error).includes('environment mismatch')) throw error; }); if (await referenceDigest(references, scenarios) !== before) throw new Error('environment mismatch modified ephemeral references'); try { selectedScenarios(['not-a-scenario']); throw new Error('invalid scenario unexpectedly accepted'); } catch (error) { if (!String(error).includes('unknown visual scenario')) throw error; } try { parseArgs(['--record', '--reason', 'no mutation writes', '--test-visible-mutation']); throw new Error('invalid mutation flags unexpectedly accepted'); } catch (error) { if (!String(error).includes('test mutations require --compare')) throw error; } if (await referenceDigest(references, scenarios) !== before) throw new Error('invalid flags modified ephemeral references'); console.log('visual reference selftest: pass (stale-build → record → compare → mutation fails → restore → environment mismatch/invalid flags fail; references unchanged)'); } finally { await rm(directory, { recursive: true, force: true }); }
+  const directory = await mkdtemp(join(tmpdir(), 'jin-visual-reference-selftest-'));
+  const references = join(directory, 'references');
+  const record = { compare: false, record: true, selftest: true, visibleMutation: false, environmentMismatch: false, reason: 'ephemeral detector selftest', scenarios: [], referenceDir: references };
+  try {
+    const stamp = await readFile(buildManifest);
+    await writeFile(buildManifest, '{"version":1,"sourceFingerprint":"stale"}\n');
+    try {
+      await expectRejection(assertFreshBuild, 'stale production bundle');
+    } finally {
+      await writeFile(buildManifest, stamp);
+    }
+    const context = sourceContext();
+    await capture(record, scenarios, async (page, captured) => {
+      await verifyRasterScenario(page, captured, record, context);
+    });
+    const before = await referenceDigest(references, scenarios);
+    await expectRejection(() => selectedScenarios(['not-a-scenario']), 'unknown visual scenario');
+    await expectRejection(() => parseArgs(['--record', '--reason', 'no mutation writes', '--test-visible-mutation']), 'test mutations require --compare');
+    if (await referenceDigest(references, scenarios) !== before) throw new Error('invalid flags modified ephemeral references');
+    console.log('visual reference selftest: pass (stale-build → live UI capture → 1:1 lossless raster record → fresh compare → visible mutation fails → fresh restore → environment mismatch/invalid flags fail; references unchanged)');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 const options = parseArgs(process.argv.slice(2)); if (options.selftest) await selftest(); else await run(options);
