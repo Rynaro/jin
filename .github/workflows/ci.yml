@@ -189,7 +189,18 @@ jobs:
 
       # This checks the detector with temporary references on the runner.
       - name: Visual reference detector selftest
+        id: visual-detector
         run: python3 scripts/dev_storage.py run --cwd jin-gui --report .artifacts/storage/frontend-visual-selftest.json -- npm run visual:selftest
+
+      - name: Upload visual detector failure screenshots
+        if: failure() && steps.visual-detector.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-detector-failure-screenshots
+          path: .artifacts/playwright-mcp/ui-ux-overhaul/continuation/visual-failures/**/*.png
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
 
       # VG-GUI-8: headless-honesty label — CI proves logic only, never visuals.
       # This step always runs last so it is visible in the job summary.
