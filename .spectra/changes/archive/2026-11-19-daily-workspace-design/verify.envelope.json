@@ -1,0 +1,17 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "INFORM",
+  "objective": "verify_pass",
+  "context_delta": {
+    "fresh_context": false,
+    "report": "verification.md",
+    "result": "pass",
+    "transcript_access": "inherited"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "esl_version": "1.1",
+  "change_id": "cohesive-jin-workspace",
+  "status": "archived",
+  "tier": "full",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    "All six primary routes remain reachable through persistent navigation with current-route semantics.",
+    "Compact drawer supports keyboard dismissal and restores focus.",
+    "Shared controls and headers use one adaptive semantic visual system.",
+    "Today renders real focus, timeline and relationship projection data.",
+    "Task, note, calendar and capture workflows pass relevant existing tests and browser checks.",
+    "Desktop and compact layouts remain readable without unintended page overflow.",
+    "Build, lint, token discipline and diff whitespace checks pass; visual evidence records tested states."
+  ],
+  "spec_ref": "spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-11-19-cohesive-jin-workspace",
+  "has_code": true
+}

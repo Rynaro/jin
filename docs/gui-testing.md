@@ -82,7 +82,7 @@ global env mutation.
 
 **Location:** `jin-gui/src/__tests__/*.test.ts`
 **Run:** `npm test` (in `jin-gui/`)
-**Count:** 603 tests across 12 files
+**Count:** See the current Vitest report; the suite changes as coverage grows.
 
 All tests run in Node/jsdom — no Tauri runtime, no real display. They cover
 pure logic and DOM-structure assertions. Visual rendering is never exercised.
@@ -325,9 +325,32 @@ owner's §7.4 sign-off; no story claims visuals from a headless build.
 
 ---
 
-## 5. Owner visual verification checklist (GM milestone sign-off)
+## 5. Owner visual verification checklist
 
-This checklist is extracted from the spec `gui-mvp.md §7.4` and represents
+Use the current visual-language guide as the visual authority:
+[`docs/visual-language/README.md`](visual-language/README.md). Browser-fixture
+captures are evidence for deterministic DOM states; native Tauri checks remain
+the owner’s platform review. Record the commit, platform, viewport, appearance,
+text size, and whether the result is a candidate, agent-reviewed, or
+owner-approved capture.
+
+- [ ] Capture an actual control path: open the route, make the relevant
+  selection or mutation, inspect the resulting state, and return using the
+  visible control. Keep identity, focus, and error/recovery copy truthful.
+- [ ] Check the affected route at its intended compact and desktop widths, plus
+  the relevant large-text or forced-colors state. Confirm no document-level
+  horizontal overflow and that keyboard focus remains visible.
+- [ ] Review the neutral native chrome, semantic selection and status cues,
+  readable content density, and reduced-transparency/contrast/motion states.
+- [ ] On each supported native platform, verify platform-specific material,
+  titlebar, input, and notification behavior before recording owner approval.
+
+The historical GM checklist below records the former milestone vocabulary. It
+is not a current visual prescription and does not replace the canonical guide.
+
+## Appendix A. Historical GM milestone checklist
+
+This checklist is extracted from the spec `gui-mvp.md §7.4` and represented
 the minimum owner sign-off required to mark a milestone "visually done."
 No story may claim visual correctness from a headless build alone.
 
@@ -336,7 +359,7 @@ item. Record the build hash / commit when signing off.
 
 ### GM2 — Look & shell (GUI-S1 → GUI-S2) visual sign-off
 
-- [ ] Glass (sidebar, toolbar, cards) renders with legible vibrancy — blur is visible, text readable through the material
+- [ ] Historical glass-material review (superseded by the current neutral/native-chrome guide)
 - [ ] Light mode and dark mode switch correctly (manual toggle in Settings + system preference)
 - [ ] Dark mode shows two distinct background tiers (deep black base vs elevated surfaces)
 - [ ] Reduced-transparency toggle (`Settings → Accessibility → Reduced transparency`) produces fully opaque, legible surfaces
@@ -387,9 +410,12 @@ This single command (from the repo root) runs in order:
 3. `cargo test -p jin-gui` — bridge integration tests (16 tests: VG-GUI-1 through VG-GUI-4)
 4. `npm ci --silent` — install/verify frontend dependencies
 5. `npx tsc --noEmit` — TypeScript type-check gate
-6. `npm test` — vitest frontend logic units (603 tests: VG-GUI-2 through VG-GUI-7)
+6. `npm test` — vitest frontend logic units (VG-GUI-2 through VG-GUI-7)
 7. `npm run lint:css` — stylelint CSS token discipline (VG-GUI-5)
-8. `npx vite build` — production build gate (catches bundler/tree-shaking issues)
+8. `npm run build` — TypeScript check, Vite production build, and source fingerprint
+9. `npm run test:production-due` — connected task, note, and calendar workflow
+10. `npm run test:notes-writing-surface` — Notes editor, autosave, and compact layout smoke
+11. `npm run visual:selftest` — proves screenshot and environment mismatches fail
 
 All steps run headless. The last printed line is the VG-GUI-8 label:
 
@@ -425,7 +451,10 @@ individual actions (not via `make verify-gui` because the CI uses
 | `TypeScript type check` | `npx tsc --noEmit` |
 | `Vitest frontend tests` | `npm test` |
 | `Stylelint CSS token discipline (VG-GUI-5)` | `npm run lint:css` |
-| `Vite production build` | `npx vite build` |
+| `Vite production build` | `npm run build` |
+| `Production due workflow smoke` | `npm run test:production-due` |
+| `Notes writing surface smoke` | `npm run test:notes-writing-surface` |
+| `Visual reference detector selftest` | `npm run visual:selftest` |
 | `[VG-GUI-8] LOGIC VERIFIED — visuals NOT verified` | Makefile echo + this doc |
 
 The CI job and the Makefile target are kept in sync — any new gate added to
@@ -475,6 +504,38 @@ npm run screenshots -- /tmp/jin-shots     # builds dist/ then writes PNGs
   host libs are mounted). macOS needs no such prefix.
 - This is **local visual QA**, not CI. CI stays headless-honest (§0): a green
   build still never means the UI looks correct — owner sign-off remains required.
+
+### Durable reference detector
+
+`npm run visual:selftest` builds the current frontend once, then uses temporary
+references to prove record → compare, visible-difference detection, restoration,
+environment-mismatch blocking, and hash preservation. It is part of `make
+verify-gui` and CI because it does not compare macOS pixels with Linux pixels.
+
+The persisted references live in
+[`jin-gui/visual-references/cohesive-workspace-v1`](../jin-gui/visual-references/cohesive-workspace-v1)
+and are checked by an explicit local command.
+
+The scenarios cover dense Today at 390px, dense Calendar at 1440px,
+notification recovery at 1280px, the populated Notes library beside its active
+document (`notes-writing-1280`), and a populated task plan
+(`tasks-planning-1280`). The Notes capture edits a fixture document through the
+normal title and writing controls, waits for autosave, and verifies the active
+library row remains visible beside the editor.
+
+```sh
+cd jin-gui
+npm run visual:compare
+npm run visual:record -- --scenario today-dense-390 --reason "Explain the reviewed change"
+```
+
+Both commands build and fingerprint the current production bundle. The capture
+tool refuses a stale or missing build stamp. `--record` requires a reason and
+updates only selected known scenarios after every selected capture is ready;
+the manifest records browser, OS, fonts, locale, timezone, fixture clock,
+theme, commit, and working-tree context. These current captures are
+**agent-reviewed**, not owner-approved. Exact environment mismatch blocks a
+persisted comparison; never weaken it to make another platform pass.
 
 ## Agent browser workflow (Playwright MCP)
 

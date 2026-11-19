@@ -1,0 +1,17 @@
+change_id: hidden-sidebar-layout
+title: Hidden sidebar layout
+maker: vivi
+checker: vigil
+acceptance:
+  - id: HS-1
+    requirement: "When the main sidebar is hidden, the application shall the library title and controls retain useful width while one shared titlebar row reserves native-control clearance."
+  - id: HS-2
+    requirement: "When the main sidebar or library is hidden and restored, the application shall the editor header uses normal pane spacing beneath the shared titlebar and its commands remain reachable."
+  - id: HS-3
+    requirement: "When the user hides the main sidebar on each page, the application shall the page uses the available width with readable headings and controls and a reachable navigation reveal button."
+  - id: HS-4
+    requirement: "When navigation is hidden or shown, the application shall native window buttons and drag regions remain usable without intercepting route controls."
+  - id: HS-5
+    requirement: "When navigation is opened, dismissed or used to select a route, the application shall the drawer and page controls stay reachable with visible focus and without document-level horizontal overflow."
+  - id: HS-6
+    requirement: "When the user repeatedly toggles main navigation and the note library, the application shall the same note and editor state remain available and the continuous workspace surface and expanded layout remain coherent."

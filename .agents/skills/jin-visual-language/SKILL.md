@@ -22,12 +22,12 @@ depends on a state, action, or dataset that does not exist, first locate the
 real renderer/controller contract or define that contract deliberately before
 styling; never invent a retry, deadline, loading, or success state in CSS.
 
-Use the smallest change that expresses Jin's paper, ink, indigo, and restrained
-vermilion language. Keep continuous lists, calendars, settings, and documents
-out of generic rounded gray cards. Reserve display type for prominent
-editorial/brand titles; keep controls, metadata, and prose in the text face.
-Keep seal/brand, capture, and semantic danger roles distinct; reuse existing
-seal-based explicit-action primitives where the surface already has them.
+Use the canonical calm-native direction: neutral adaptive working surfaces,
+system type, blue actions, and restrained semantic color. Earlier paper/ink,
+display-type, seal, or glass language is historical context only; do not extend
+it into a feature. Keep continuous lists, calendars, settings, and documents
+out of generic rounded gray cards. Keep Capture, primary actions, current date,
+brand, and danger roles distinct using the semantic tokens in `tokens.css`.
 
 For Today, treat `TodayProjectionDto` as the presentation contract. Keep the
 legacy `AgendaDto`/`today_agenda` path compatible, let core's display timezone

@@ -1,0 +1,24 @@
+change_id: cohesive-jin-workspace
+title: Cohesive Jin workspace
+maker: vivi
+checker: vigil
+scope:
+  - shared application shell and persistent navigation
+  - warm adaptive semantic design system and shared controls
+  - coherent route headers and Today composition
+  - compact navigation accessibility and proven unused shell cleanup
+constraints:
+  - preserve existing controller and bridge contracts
+  - preserve real task note calendar capture and preference behavior
+  - preserve unrelated working tree changes
+acceptance:
+  - id: navigation
+    verify_method: browser route and compact drawer interaction checks
+  - id: visual_consistency
+    verify_method: light and dark desktop and compact screenshots
+  - id: behavior
+    verify_method: existing relevant behavior tests and browser workflow checks
+  - id: quality
+    verify_method: build lint token checks and diff whitespace check
+  - id: layout
+    verify_method: browser overflow focus and responsive checks

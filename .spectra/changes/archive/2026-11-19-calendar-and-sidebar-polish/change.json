@@ -1,0 +1,56 @@
+{
+  "esl_version": "1.1",
+  "change_id": "calendar-and-sidebar-polish",
+  "status": "archived",
+  "tier": "full",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    {
+      "id": "CP-1",
+      "given": "Calendar add and close controls are rendered",
+      "when": "Their icon geometry and keyboard focus are inspected",
+      "then": "Registered SVG icons are centered in shared hit areas with visible focus and accessible names",
+      "verify_method": "Rendered geometry and screenshots; keyboard inspection"
+    },
+    {
+      "id": "CP-2",
+      "given": "A pristine new event composer",
+      "when": "Title blurs or another composer field receives interaction",
+      "then": "No required-title error appears before intentional submission",
+      "verify_method": "Focused composer regression and browser interaction"
+    },
+    {
+      "id": "CP-3",
+      "given": "A pristine empty event composer",
+      "when": "Opening pointer completes, then cancel, Escape, or click-outside is exercised",
+      "then": "Opening leaves it open and each normal dismissal closes it without title errors",
+      "verify_method": "Focused composer regression and browser interaction"
+    },
+    {
+      "id": "CP-4",
+      "given": "Invalid, meaningful, saving, or failed event drafts",
+      "when": "Intentional save or dismissal is attempted",
+      "then": "Validation prevents invalid persistence; meaningful and saving drafts retain guards; actual failures remain visible",
+      "verify_method": "Focused composer regression for validation, guard, and persistence paths"
+    },
+    {
+      "id": "CP-5",
+      "given": "Sidebar in light and dark appearance",
+      "when": "Navigation and task context are displayed",
+      "then": "Rail surface is continuous without harsh context, utility or footer bands and selected state stays legible",
+      "verify_method": "Desktop light and dark screenshots with narrow-layout spot checks"
+    },
+    {
+      "id": "CP-6",
+      "given": "Settings and Notifications in the Jin header utility group",
+      "when": "Pointer or keyboard activates them at normal, narrow or increased-text layouts",
+      "then": "Existing guarded routes, translated accessible names, unread state and reachable controls remain functional",
+      "verify_method": "Browser route and keyboard checks; unread-state inspection; responsive screenshots"
+    }
+  ],
+  "spec_ref": ".spectra/changes/calendar-and-sidebar-polish/spec.yaml",
+  "drift_checked": true,
+  "archive_path": "archive/2026-11-19-calendar-and-sidebar-polish",
+  "has_code": true
+}

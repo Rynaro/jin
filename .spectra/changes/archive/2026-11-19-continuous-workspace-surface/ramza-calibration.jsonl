@@ -1,0 +1,4 @@
+{"rubric":"explore","total":92.5,"dims":{"alignment":10,"correctness":9,"maintainability":9,"performance":10,"simplicity":9,"risk":9,"innovation":6},"verdict":"elite","at":"2026-11-19T20:50:27Z","label":"shared-opaque-canvas"}
+{"rubric":"explore","total":78,"dims":{"alignment":6,"correctness":8,"maintainability":9,"performance":10,"simplicity":9,"risk":8,"innovation":3},"verdict":"solid","at":"2026-11-19T20:50:27Z","label":"matching-tint-only"}
+{"rubric":"explore","total":66.5,"dims":{"alignment":8,"correctness":7,"maintainability":6,"performance":6,"simplicity":5,"risk":5,"innovation":9},"verdict":"weak","at":"2026-11-19T20:50:27Z","label":"whole-window-vibrancy"}
+{"rubric":"confidence","total":93.75,"dims":{"pattern_match":95,"requirement_clarity":95,"decomposition_stability":90,"constraint_compliance":95},"verdict":"AUTO_PROCEED","at":"2026-11-19T20:51:29Z"}

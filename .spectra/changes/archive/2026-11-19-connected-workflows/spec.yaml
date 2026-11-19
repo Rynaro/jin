@@ -1,0 +1,17 @@
+change_id: connected-workflows
+title: Connected planning workflows
+maker: vivi
+checker: vigil
+acceptance:
+  - id: CW-1
+    requirement: "When a workspace search is opened, the user can filter and open matching notes, tasks and events through the existing guarded routes."
+  - id: CW-2
+    requirement: "When the user selects note prose, Jin preserves the passage and can create a titled task with a persistent typed relationship to its source note."
+  - id: CW-3
+    requirement: "When a user starts a prep note from an event, Jin opens the linked local note with an editable meeting outline and can navigate back to the correct event."
+  - id: CW-4
+    requirement: "When an interrupted linked creation is retried with the same operation identity, the canonical files and index resolve to one object and its relationship."
+  - id: CW-5
+    requirement: "When a task is scheduled, the user can choose its start and block duration through the task and Calendar entry points."
+  - id: CW-6
+    requirement: "When controls are exercised on compact screens and with a keyboard, they remain reachable and preserve editor and navigation guards."

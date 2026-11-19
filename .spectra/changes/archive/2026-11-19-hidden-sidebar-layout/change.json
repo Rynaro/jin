@@ -1,0 +1,56 @@
+{
+  "esl_version": "1.1",
+  "change_id": "hidden-sidebar-layout",
+  "status": "archived",
+  "tier": "full",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    {
+      "id": "HS-1",
+      "given": "A native macOS Notes split view with a visible library",
+      "when": "The main sidebar is hidden",
+      "then": "The library title and controls retain useful width while one shared titlebar row reserves native-control clearance",
+      "verify_method": "Native split view screenshot and measured library control geometry"
+    },
+    {
+      "id": "HS-2",
+      "given": "Notes editor in split or single-pane layout",
+      "when": "The main sidebar or library is hidden and restored",
+      "then": "The editor header uses normal pane spacing beneath the shared titlebar and its commands remain reachable",
+      "verify_method": "Split and single-pane screenshots plus library toggle interaction"
+    },
+    {
+      "id": "HS-3",
+      "given": "Today, Tasks, Notes, Calendar, Settings and Notifications",
+      "when": "The user hides the main sidebar on each page",
+      "then": "The page uses the available width with readable headings and controls and a reachable navigation reveal button",
+      "verify_method": "All-route desktop review with native overlay and plain browser"
+    },
+    {
+      "id": "HS-4",
+      "given": "The native titlebar is overlaid on the content",
+      "when": "Navigation is hidden or shown",
+      "then": "Native window buttons and drag regions remain usable without intercepting route controls",
+      "verify_method": "Native titlebar and reveal interaction checks"
+    },
+    {
+      "id": "HS-5",
+      "given": "A compact window or enlarged text",
+      "when": "Navigation is opened, dismissed or used to select a route",
+      "then": "The drawer and page controls stay reachable with visible focus and without document-level horizontal overflow",
+      "verify_method": "Compact and large-text keyboard and overflow checks"
+    },
+    {
+      "id": "HS-6",
+      "given": "An open note with edits and the existing expanded sidebar",
+      "when": "The user repeatedly toggles main navigation and the note library",
+      "then": "The same note and editor state remain available and the continuous workspace surface and expanded layout remain coherent",
+      "verify_method": "Existing editor/sidebar tests and live toggle review"
+    }
+  ],
+  "spec_ref": ".spectra/changes/hidden-sidebar-layout/spec.yaml",
+  "drift_checked": true,
+  "archive_path": "archive/2026-11-19-hidden-sidebar-layout",
+  "has_code": true
+}

@@ -1,0 +1,17 @@
+change_id: continuous-workspace-surface
+title: Continuous workspace surface
+maker: vivi
+checker: vigil
+acceptance:
+  - id: CS-1
+    requirement: "When the desktop shell renders in light or dark appearance, the application shall present the sidebar and main working region on the same adaptive canvas without a contrasting shell seam."
+  - id: CS-2
+    requirement: "When the desktop workspace is visible, the application shall remove the main region's raised outer card treatment so navigation and content read as one continuous window."
+  - id: CS-3
+    requirement: "When the native macOS overlay is active or Reduce Transparency is enabled, the application shall preserve the same shared desktop canvas without a sidebar-only color tint."
+  - id: CS-4
+    requirement: "When the user navigates between Today, Tasks, Notes, Calendar, Settings, and Notifications, the application shall preserve readable controls, selected states, internal content hierarchy, and existing navigation behavior."
+  - id: CS-5
+    requirement: "When navigation opens as a compact drawer or at enlarged text sizes, the application shall keep destinations and header utilities readable and reachable with visible focus and working dismissal."
+  - id: CS-6
+    requirement: "When Increase Contrast or forced colors is active, the application shall preserve readable labels, distinguishable interactive states, and visible focus while maintaining continuous desktop chrome."

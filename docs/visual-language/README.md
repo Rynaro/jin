@@ -5,24 +5,27 @@ interaction vocabulary, responsive behavior, accessibility contract, and the
 places in code that own each decision. It describes the interface that exists
 after the visual overhaul and gives future work a stable way to extend it.
 
-The logo at [`docs/assets/jin.png`](../assets/jin.png) supplies Jin's identity:
-a brush mark, indigo and vermilion color, and a small red seal. These cues stay
-in the mark and authored content. The application chrome follows modern macOS
-Calendar: neutral adaptive surfaces, system type, compact controls, and clear
-blue actions. [`design.md`](../../design.md) is historical research; this guide
-records the implemented product.
+The logo at [`docs/assets/jin.png`](../assets/jin.png) supplies Jin's brush mark,
+indigo and vermilion color, and small red seal. The application uses a warm,
+quiet workspace with one adaptive ivory canvas, readable dark ink, and
+muted indigo actions. A restrained landscape illustration appears in Today's
+date masthead and first-run onboarding. In dark appearance, render it as a
+subdued silver silhouette. [`design.md`](../../design.md) is historical
+research; this guide records the implemented product.
 
 ![Jin logo reference](../assets/jin.png)
 
 ## The character
 
-Jin should feel like a calm native workspace. The shell, route headers, lists,
-forms, and Calendar share a near-white adaptive canvas and quiet separators.
-System type carries navigation and working content; compact capsules and
-segmented controls identify actions without decorating the workspace. Blue
-marks selection and enabled action, while Calendar uses red for the current
-date. Keep the brush-mark identity in the brand and allow a user's Notes prose
-to keep its own reading voice.
+[DECISION] Jin is a warm, calm workspace. The shell, route headers, lists,
+forms, and Calendar share one adaptive ivory canvas, dark readable ink,
+and quiet separators. Muted indigo identifies actions and selected state.
+Calendar keeps its current-day treatment and semantic danger distinct from the
+Jin seal and Capture. System type carries navigation and working content.
+Consistent, softly rounded controls and roomy rows make routes feel related.
+A small, softly blended landscape appears in Today's date masthead and
+first-run onboarding. In dark appearance, use a subdued silver silhouette.
+Notes prose keeps its own reading voice.
 
 Use this test when a change feels uncertain: does it make the owner's work
 easier to see, understand, and act on? If it adds a surface, border, motion, or
@@ -33,18 +36,20 @@ color, it should explain the hierarchy or state it represents.
 ### Type
 
 The shared type contract lives in [`tokens.css`](../../jin-gui/src/styles/tokens.css)
-and [`typography.css`](../../jin-gui/src/styles/typography.css). Use
-`--font-text` for route headings, dates, controls, labels, and metadata across
-Today, Tasks, Notes, Calendar, Notifications, Settings, and Capture. The mono
-face is for code and technical values. The display face may remain in the
-brand or authored document content, not shared app chrome. The HIG-derived
-scale has eleven rem-based steps, with 17/22 as the body baseline and
-`--dynamic-type-scale` as the root multiplier.
+and [`typography.css`](../../jin-gui/src/styles/typography.css). Use the
+system text stack, with the bundled Inter fallback, for route titles, dates,
+controls, labels, metadata, navigation, and task rows. Route titles establish a
+consistent hierarchy around 32px. Notes give authored content a separate
+reading voice: `--notes-prose-font` uses the native unbundled literary stack
+(`ui-serif`, New York, Charter, Georgia, then the platform serif fallback) for
+the document title, Markdown headings, and prose in both Edit and Read. The
+interface and Notes library remain sans serif. Code and technical values remain
+monospaced. The HIG-derived scale has eleven rem-based steps, with 17/22 as
+the body baseline and `--dynamic-type-scale` as the root multiplier.
 
-Long writing keeps a focused Notes measure and calm body rhythm
-(`--notes-prose-measure: 66ch`, `--notes-prose-size: .9375rem`,
-`--notes-prose-line: 1.5`). A title should establish the page; it should not
-compete with the user's document.
+Notes uses a focused reading measure, a 34px document title, and 18px prose
+with generous leading. A title should establish the page without competing
+with the document.
 
 ### Color
 
@@ -53,16 +58,16 @@ Components consume semantic roles. The most important distinctions are:
 
 | Role | Meaning | Examples |
 | --- | --- | --- |
-| Canvas and chrome | Neutral adaptive working fields and toolbar context | `--workspace-canvas`, `--workspace-chrome`, `--agenda-canvas`, `--calendar-toolbar` |
+| Canvas and chrome | One warm adaptive canvas shared by navigation and working content | `--workspace-canvas`, `--workspace-chrome`, `--agenda-canvas`, `--calendar-toolbar` |
 | Text and separators | Readable primary/secondary labels and light structure | `--label`, `--label-secondary`, `--separator` |
-| System accent | Selection, links, and Calendar/source identity | `--accent`, `--agenda-indigo`, `--calendar-color-value` |
-| Readable accent text | Small informative blue labels on light or dark surfaces | `--accent-text` |
+| System accent | Muted indigo selection, links, and Calendar/source identity | `--accent`, `--agenda-indigo`, `--calendar-color-value` |
+| Readable accent text | Small informative muted-indigo labels on light or dark surfaces | `--accent-text` |
 | Action fills | Accessible enabled primary/destructive buttons | `--action-primary-fill`, `--action-danger-fill`, `--color-on-accent` |
 | Calendar today and danger | Red current-date marker and semantic error/danger, with distinct context | `--calendar-today`, `--calendar-today-ink`, `--system-red` |
 | Brand | Jin seal and logo accents, not generic app actions | `--seal`, `--capture-vermilion` |
 
-System blue identifies links and selected state; the darker action-fill role
-keeps white text readable on small primary buttons. Small blue text uses
+Muted indigo identifies links and selected state; the darker action-fill role
+keeps white text readable on small primary buttons. Informative accent text uses
 `--accent-text`, rather than a color chosen for a calendar dot or stroke.
 Shared `.btn-primary` and `.btn-danger` use the accessible action-fill roles
 in [`components.css`](../../jin-gui/src/styles/components.css). Brand,
@@ -77,13 +82,17 @@ the automatic light/dark behavior and the manual `data-*` preferences intact.
 ### Space, shape, and material
 
 The spacing vocabulary is built from 4px and 8px relationships. Shared geometry
-includes one 248px desktop navigation slot, 28px compact controls, 32px prominent controls, 44px
-coarse-pointer targets, 36px plain task rows, 68px note rows, and the 760px reading
-width. These are tokens, not reasons to force fixed heights at enlarged text.
+includes a 236px desktop navigation rail within the continuous working canvas,
+a consistent route-title hierarchy, comfortable 32–36px
+controls, 40–48px navigation and task rows, 44px coarse-pointer targets, and
+the 760px reading width. Note rows grow to fit their content. These are
+minimums, not reasons to force fixed heights at enlarged text. Compact screens
+use the full available width and the existing navigation drawer.
 
-Rounding belongs to compact controls, selected navigation rows, soft segmented
-groups, popovers, and dialogs. Lists, calendars, settings sections, documents,
-and writing surfaces remain continuous fields with light separators. Toolbar
+Use a consistent, modest radius for buttons, fields, selected navigation rows,
+and segmented controls. Popovers and dialogs may be more rounded. Lists,
+calendars, settings sections, documents, and writing surfaces remain continuous
+fields with light separators. Toolbar
 chrome is opaque enough to read without depending on blur; reduced
 transparency removes residual glass. Use one shadow for actual elevation, not
 another shadow inside the same dialog.
@@ -154,14 +163,14 @@ Each recipe names the visual purpose and the behavior styling must leave alone.
 
 | Surface | Recipe and invariants | Owners |
 | --- | --- | --- |
-| Shell, brand, navigation | One 248px sidebar holds the shared header and the active route's context. The labeled section switcher exposes all six routes; Notes folders, Tasks lists, and Settings categories use that same slot without a second rail. Collapse releases the full width; under 960px or at accessibility text scale, one drawer contains the same controls and returns focus on dismissal. Capture stays in the shared header. Real macOS Tauri uses an overlay titlebar with native traffic lights and a reserved safe region; browser and other platforms have no extra top spacer. | [`sidebar.css`](../../jin-gui/src/styles/sidebar.css), [`navigation.css`](../../jin-gui/src/styles/navigation.css), [`sidebar_controller.ts`](../../jin-gui/src/controllers/sidebar_controller.ts), [`router_controller.ts`](../../jin-gui/src/controllers/router_controller.ts) |
-| Today | Use a system-type date hierarchy on the shared neutral canvas. Keep Focus as a subtle surface and reserve blue for active cues. Preserve task/note/event links, source badges, ordering, focus items, Capture, and truthful schedule/task states. | [`today.css`](../../jin-gui/src/styles/today.css), [`today_controller.ts`](../../jin-gui/src/controllers/today_controller.ts), [`render.ts`](../../jin-gui/src/lib/agenda/render.ts) |
+| Shell, brand, navigation | A 236px navigation area shares the workspace canvas and keeps Today, Tasks, Notes, and Calendar directly available. Muted route-icon wells strengthen recognition; selected state remains clear. Notifications and Settings sit beside the brand as labeled icon links in the header, with the notification count carried by the bell. One continuous sidebar surface carries primary and contextual navigation without a separately painted footer or dividing band. Capture and Find remain easy to reach. At compact widths or accessibility text scale, use the existing drawer with the contextual area and utility routes, and restore focus to its reveal control on dismissal. At high text scale or short heights, navigation areas can scroll to keep controls reachable. The desktop canvas extends across navigation and content with the same opaque adaptive color. Main content fills the window height without an outer card, gutter, or edge shadow. Native macOS uses the same canvas so vibrancy cannot tint navigation separately. Real macOS Tauri uses an overlay titlebar with native traffic lights and a reserved safe region. Hiding shared navigation exposes one shallow shell titlebar with the navigation reveal and a draggable area above every route, so nested library and editor toolbars keep their full width. Browser and other platforms have no extra native top spacer. | [`sidebar.css`](../../jin-gui/src/styles/sidebar.css), [`navigation.css`](../../jin-gui/src/styles/navigation.css), [`sidebar_controller.ts`](../../jin-gui/src/controllers/sidebar_controller.ts), [`router_controller.ts`](../../jin-gui/src/controllers/router_controller.ts) |
+| Today | Use system type on the shared warm canvas, with a large localized date masthead and a small landscape vignette blended into the date area. In dark appearance, use a subdued silver silhouette. Keep Focus compact and legible, and give the continuous agenda the primary measure. Preserve task/note/event links, source identity, ordering, focus items, Capture, and truthful schedule/task states. | [`today.css`](../../jin-gui/src/styles/today.css), [`today_controller.ts`](../../jin-gui/src/controllers/today_controller.ts), [`render.ts`](../../jin-gui/src/lib/agenda/render.ts) |
 | Capture, forms, dialogs | Give one clear action path, readable fields, and transient elevation. Preserve labels, validation, focus return, submit/cancel behavior, and real destination/provider choices. Reduced transparency must leave dialogs legible. | [`forms.css`](../../jin-gui/src/styles/forms.css), [`components.css`](../../jin-gui/src/styles/components.css), [`capture_controller.ts`](../../jin-gui/src/controllers/capture_controller.ts), [`temporal_editor_controller.ts`](../../jin-gui/src/controllers/temporal_editor_controller.ts) |
-| Tasks | A List is a binary unchecked/completed workflow with compact continuous rows; a Board is a real container with user-named columns typed Queue, In Progress, Done, or neutral open stage. Every Board has a chosen initial Queue/neutral column and a Done column; In Progress is optional. Existing unclassified work keeps its status semantics until the owner previews and applies setup. The contextual toolbar names the active scope and keeps New task, filters, and Board columns reachable when navigation is hidden; the sidebar plus creates Lists and Boards. On desktop, the compact one-column inspector sits beside the workspace; on narrow/large-text screens it is a focus-contained sheet. Completion uses a visible circle within a larger target and never opens the inspector. Whole-card Board dragging begins after a pointer threshold; ordinary title clicks still open detail, and Escape cancels without consuming the next click. Preserve exact column/status placement, cancelled/invalid-task repair access, keyboard and bulk actions, validation, draft guards, and error surfacing. Native macOS Tasks toolbar occupies the traffic-light-safe titlebar row; browser and other platforms get no extra spacer. | [`browse.css`](../../jin-gui/src/styles/browse.css), [`sidebar.css`](../../jin-gui/src/styles/sidebar.css), [`tasks_controller.ts`](../../jin-gui/src/controllers/tasks_controller.ts), [`render.ts`](../../jin-gui/src/lib/tasks/render.ts), [`a11y.css`](../../jin-gui/src/styles/a11y.css) |
-| Notes explorer/editor | Browse fills the available workspace width under a compact fixed toolbar: scope and loaded count, global search, List/Cards, and New note. The default continuous List aligns document, title/excerpt, and date/location/tags lanes; Cards present the same ordered note IDs and plain excerpts on restrained paper surfaces. Only the body scrolls. The existing formatting toolbar belongs in full-width document chrome and wraps to its own chrome row when needed; capsule groups contain round icon states. The title, CM6 edit text, Read rendering, and footer share one writing column with system type and readable body spacing. Native macOS browse and detail chrome occupy the titlebar safe row, including a traffic-light-safe navigation reveal when the sidebar is hidden. Preserve Markdown editing, selection, links, search, autosave, and truthful save state. | [`browse.css`](../../jin-gui/src/styles/browse.css), [`sidebar.css`](../../jin-gui/src/styles/sidebar.css), [`a11y.css`](../../jin-gui/src/styles/a11y.css), [`notes_controller.ts`](../../jin-gui/src/controllers/notes_controller.ts), [`editor.ts`](../../jin-gui/src/lib/notes/editor.ts), [`render.ts`](../../jin-gui/src/lib/notes/render.ts) |
-| Events | Month, Week, and Day share a full-width neutral canvas, system-type date hierarchy, unified toolbar, segmented view control, and red current-date marker. Month has six equal-height week rows and measures one common event capacity from actual row geometry; +N gives access to hidden events, while short/large-text layouts scroll within the grid. Timed rows use a neutral surface, leading calendar-color mark, and local start time; all-day rows use a subtle calendar-color band. A compact anchored inspector leaves the calendar interactive on wide screens; Today, Capture, and narrow screens use the same content in a modal. Preserve exact destination, provider, recurrence, validation, and unsaved-draft guards. | [`calendar.css`](../../jin-gui/src/styles/calendar.css), [`events.css`](../../jin-gui/src/styles/events.css), [`calendar_view_controller.ts`](../../jin-gui/src/controllers/calendar_view_controller.ts), [`companion.ts`](../../jin-gui/src/lib/ui/companion.ts) |
+| Tasks | A List is a binary unchecked/completed workflow with continuous, comfortable rows; a Board is a real container with user-named columns typed Queue, In Progress, Done, or neutral open stage. Every Board has a chosen initial Queue/neutral column and a Done column; In Progress is optional. Existing unclassified work keeps its status semantics until the owner previews and applies setup. The contextual toolbar names the active scope and groups its title, open count, New task, filters, and Board controls in a readable hierarchy. The task list uses a bounded planning column; due dates, tags, and priority stay legible beside the relevant task. On desktop, the inspector sits beside the workspace; on narrow/large-text screens it is a focus-contained sheet. Completion uses a visible circle within a larger target and never opens the inspector. Whole-card Board dragging begins after a pointer threshold; ordinary title clicks still open detail, and Escape cancels without consuming the next click. Preserve exact column/status placement, cancelled/invalid-task repair access, keyboard and bulk actions, validation, draft guards, and error surfacing. | [`browse.css`](../../jin-gui/src/styles/browse.css), [`sidebar.css`](../../jin-gui/src/styles/sidebar.css), [`tasks_controller.ts`](../../jin-gui/src/controllers/tasks_controller.ts), [`render.ts`](../../jin-gui/src/lib/tasks/render.ts), [`a11y.css`](../../jin-gui/src/styles/a11y.css) |
+| Notes explorer/editor | At the standard text scale on spacious desktop windows, a compact live library and selected document share the workspace. At accessibility text scale, Notes uses the single-pane library-to-document flow. The library keeps scope, count, search, List/Cards, and New note together, with each note's title, excerpt, date, folder, and tags grouped in a readable row. Hide/Show note library offers a focused editor while retaining a path back. The authored title, Markdown headings, and prose use the literary Notes stack in Edit and Read; the library, navigation, metadata, and controls stay sans serif, while code remains monospace. Edit and Read share the writing measure and typographic rhythm. Common formatting stays visible and secondary tools sit in a bounded More disclosure. Save status is a truthful quiet live message, never a primary action. Preserve Markdown editing, selection, links, search, autosave, undo, conflict recovery, and truthful save state. Native macOS chrome reserves a traffic-light-safe navigation region when the sidebar is hidden. | [`browse.css`](../../jin-gui/src/styles/browse.css), [`sidebar.css`](../../jin-gui/src/styles/sidebar.css), [`a11y.css`](../../jin-gui/src/styles/a11y.css), [`notes_controller.ts`](../../jin-gui/src/controllers/notes_controller.ts), [`editor.ts`](../../jin-gui/src/lib/notes/editor.ts), [`render.ts`](../../jin-gui/src/lib/notes/render.ts) |
+| Events | Month, Week, and Day share a warm canvas and a composed header for the current range, mode, date navigation, Today, and Add. The compact header wraps as needed. Month has six equal-height week rows and measures one common event capacity from actual row geometry; +N gives access to hidden events, while short/large-text layouts scroll within the grid. Timed rows give event titles their own readable line above the local start time; all-day rows use a subtle calendar-color band. A compact anchored inspector leaves the calendar interactive on wide screens; Today, Capture, and narrow screens use the same content in a modal. Preserve exact destination, provider, recurrence, validation, and unsaved-draft guards. | [`calendar.css`](../../jin-gui/src/styles/calendar.css), [`events.css`](../../jin-gui/src/styles/events.css), [`calendar_view_controller.ts`](../../jin-gui/src/controllers/calendar_view_controller.ts), [`companion.ts`](../../jin-gui/src/lib/ui/companion.ts) |
 | Notifications | Prioritize message, source, time, and action in the master/detail triage. Preserve read/unread and selected state, filters, per-item actions, live updates, and empty/error states; status is never color-only. | [`notifications.css`](../../jin-gui/src/styles/notifications.css), [`notifications_controller.ts`](../../jin-gui/src/controllers/notifications_controller.ts) |
-| Settings | Keep four navigable panes on neutral surfaces with clear groups and a soft appearance segment. Preserve pane routing, appearance toggles, account/provider semantics, persistence, and keyboard focus. | [`settings.css`](../../jin-gui/src/styles/settings.css), [`settings_controller.ts`](../../jin-gui/src/controllers/settings_controller.ts) |
+| Settings | Keep four navigable panes on warm neutral surfaces with clear groups and a soft appearance segment. Preserve pane routing, appearance toggles, account/provider semantics, persistence, and keyboard focus. | [`settings.css`](../../jin-gui/src/styles/settings.css), [`settings_controller.ts`](../../jin-gui/src/controllers/settings_controller.ts) |
 
 The same rules apply to shared empty, loading, error, and confirmation surfaces:
 they inherit the owning surface's field and type hierarchy rather than becoming
@@ -170,9 +179,10 @@ generic gray cards.
 ### Notes interaction contract
 
 Notes selection uses a neutral inset row with a separate focus ring. Collections
-are saved views: the sidebar explains that their notes remain in folders, and
-each row has one keyboard-accessible menu. The simple-rule editor shows an
-honest summary; imported advanced query trees stay read-only in that editor.
+are saved views that leave notes in their folders; the creation flow explains
+that relationship, and each row has one keyboard-accessible menu. The
+simple-rule editor shows an honest summary; imported advanced query trees stay
+read-only in that editor.
 The List distinguishes title, excerpt, date, folder, tags, and loaded count
 without turning empty metadata into a badge. Cards use those same fields and
 order; switching views does not fetch note bodies. Search results state that
@@ -191,8 +201,8 @@ visible forced-colors mark. [`render.ts`](../../jin-gui/src/lib/notes/render.ts)
 [`editor.ts`](../../jin-gui/src/lib/notes/editor.ts), and
 [`codeChrome.ts`](../../jin-gui/src/lib/notes/codeChrome.ts) own those states.
 
-Notes reading and editing share 15px/1.5 body rhythm and a compact, neutral
-link-card treatment. Pasting one complete web URL into an empty paragraph makes
+Notes reading and editing use the same literary title and prose type roles and
+a compact, neutral link-card treatment. Pasting one complete web URL into an empty paragraph makes
 the canonical `jin-card` Markdown link; pasting over selected prose makes an
 inline link in one undoable edit. Code spans, fences, and ordinary prose keep
 their source. Read and History links, plus explicit Edit link actions, show the
@@ -223,8 +233,11 @@ route is active, pauses while that route or the document is hidden, refreshes
 on return, listens for task/event mutation signals, cancels on disconnect, and
 ignores stale responses from older date requests.
 
-The header uses the localized selected-date eyebrow, the system-type `Today`
-title, compact date navigation, and the existing Capture button. Event titles
+A shared route title uses a consistent inset and 32px system-type hierarchy.
+Today keeps its small route identity and toolbar above a localized date
+masthead carrying the selected date and summary,
+and the small blended landscape illustration. In dark appearance, the image
+uses a subdued silver silhouette. Event titles
 and task controls open preview-first modals that keep Today visible and place a
 clear `Go to event` or `Go to task` action first; prep-note controls keep their
 existing detail routes. Promoted events retain event identity and use a square
@@ -234,10 +247,13 @@ id while retaining the agenda event ids/titles that establish each association.
 The rail is hidden when no relationship exists; empty schedule copy describes
 the schedule only, even when task lanes contain work.
 
-The visual composition stays a continuous neutral field: the agenda owns the
+The visual composition uses a warm continuous field: the agenda owns the
 primary measure, the Connected work rail is a readable secondary field, and a
-single indigo timeline runs without row dividers behind markers aligned to each
-event's content. Header actions wrap and the rail follows agenda/task lanes on
+single muted-indigo timeline runs without row dividers behind markers aligned
+to each event's content. Keep the Focus region compact, clearly labeled, and
+distinct through spacing and a restrained accent treatment. The masthead
+illustration supports the date hierarchy without competing with schedule
+content. Header actions wrap and the rail follows agenda/task lanes on
 compact screens; large text uses intrinsic geometry and the document remains
 free of horizontal overflow. Keep these rules with the Today owner rather than
 introducing generic cards or route-wide tokens.
@@ -278,12 +294,10 @@ Keep focus and selection independently visible:
 .jin-list-row:focus-visible { outline: 2px solid var(--agenda-indigo); outline-offset: 2px; }
 ```
 
-Let large text reflow inside the one drawer, while keeping the Close control and each route reachable:
-
-```css
-:root[data-text-scale='accessibility'] .jin-shell { --sidebar-width: 100vw; }
-:root[data-text-scale='accessibility'] .jin-section-switcher__label { white-space: normal; }
-```
+Let large text reflow inside the shared navigation drawer. Keep its Close
+control, primary destinations, contextual controls, and utility links reachable
+in visual and keyboard order. At high text scale, allow each of the three areas
+to scroll when needed.
 
 These are patterns for existing contracts, not a request to add new selectors
 or features. Prefer the current class and state hooks in the affected surface.
@@ -309,6 +323,23 @@ turn that history into a mandatory breakpoint system.
 
 ## Maintenance loop
 
+### Shared controls and feedback
+
+Use `.jin-segmented-control` and `.jin-segmented-control__item` for pressed
+view, filter, and preference choices that use `role="group"` and
+`aria-pressed`; route styles own placement only. A tablist such as Capture
+keeps its tab semantics. Use `.jin-status-message` for truthful inline
+pending, success, error, and paused feedback while the route retains its live
+region or alert contract and copy. On narrow Notes detail panes common
+formatting remains visible while secondary commands live in a bounded More
+disclosure; it wraps or scrolls vertically within the popup at large text,
+never horizontally across the writing surface.
+
+The shared navigation drawer must sit above the workspace and its backdrop.
+A route change from the drawer dismisses it and restores focus to the
+navigation reveal control. Keep route and context controls reachable and in
+visual keyboard order when the drawer areas scroll.
+
 For a proposed UI change, first identify the surface, state, and owner. Read
 this dossier and the relevant renderer/controller, then choose existing roles
 and primitives. State desktop, mobile, and accessibility intent before editing.
@@ -323,6 +354,16 @@ The implementation workflow is in
 [`.agents/skills/jin-visual-language`](../../.agents/skills/jin-visual-language/SKILL.md).
 The browser evidence workflow, including the native sign-off boundary, is in
 [`.agents/skills/jin-gui-visual-qa`](../../.agents/skills/jin-gui-visual-qa/SKILL.md).
+
+### Reference evidence
+
+The narrow screenshots under
+[`jin-gui/visual-references/cohesive-workspace-v1`](../../jin-gui/visual-references/cohesive-workspace-v1)
+exercise compact Today, dense Calendar, and notification recovery. They are
+agent-reviewed browser-fixture evidence with pinned environment metadata, not
+native Tauri approval. Run `npm --prefix jin-gui run visual:compare` only in
+the matching recorded environment; CI instead runs the temporary-reference
+detector selftest through `make verify-gui`.
 
 ## Calendar extensions
 

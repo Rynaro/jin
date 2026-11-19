@@ -1,0 +1,17 @@
+change_id: calendar-and-sidebar-polish
+title: Calendar and sidebar polish
+maker: vivi
+checker: vigil
+acceptance:
+  - id: CP-1
+    requirement: "When the calendar renders its add and close controls, the application shall center registered SVG icons in their hit areas and retain focus visibility and accessible names."
+  - id: CP-2
+    requirement: "When a pristine event title loses focus or another composer field is used, the application shall hide required-title feedback until intentional submission."
+  - id: CP-3
+    requirement: "When a pristine empty composer is cancelled, escaped, or clicked outside, the application shall dismiss it without title validation; its opening pointer action shall leave it open."
+  - id: CP-4
+    requirement: "When an invalid draft is intentionally submitted, the application shall show relevant validation and prevent persistence while preserving meaningful-draft and pending-save protection and actual failure feedback."
+  - id: CP-5
+    requirement: "When the sidebar is displayed in light or dark appearance, the application shall show one continuous rail surface with readable selected navigation and task context."
+  - id: CP-6
+    requirement: "When header Settings or Notifications are activated, the application shall use existing guarded navigation, translated accessible labels and unread counts while keeping utilities reachable at narrow widths and increased text size."
