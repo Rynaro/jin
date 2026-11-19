@@ -97,7 +97,7 @@ fn append_entry(root: &Path, entry: &JournalEntry) -> Result<()> {
     Ok(())
 }
 
-fn snapshot_before_write(root: &Path, note: &Note, content: &[u8]) -> Result<PathBuf> {
+pub(crate) fn snapshot_before_write(root: &Path, note: &Note, content: &[u8]) -> Result<PathBuf> {
     let dir = revision_dir(root, note.id());
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{}.md", note.frontmatter.revision));
@@ -257,6 +257,17 @@ pub fn preview_note_revision(root: &Path, note_id: &str, revision: u64) -> Resul
 /// optimistic conflict detection: a caller that reviewed revision N cannot
 /// accidentally overwrite a note that has advanced to N+1.
 pub fn restore_note_revision(
+    root: &Path,
+    note_id: &str,
+    revision: u64,
+    expected_revision: Option<u64>,
+) -> Result<Note> {
+    super::notes::with_note_write_lock(&root.join("notes"), || {
+        restore_note_revision_locked(root, note_id, revision, expected_revision)
+    })
+}
+
+fn restore_note_revision_locked(
     root: &Path,
     note_id: &str,
     revision: u64,

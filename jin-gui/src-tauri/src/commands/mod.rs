@@ -26,6 +26,7 @@ pub mod first_run;
 pub mod folders;
 pub mod google_accounts;
 pub mod link;
+pub mod linked_creation;
 pub mod lists;
 pub mod notes;
 pub mod notification_center;

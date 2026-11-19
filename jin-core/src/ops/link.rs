@@ -59,20 +59,30 @@ pub fn create_link(
 
     match source_kind {
         "note" => {
-            let path = fs::find_note_path(&notes_dir, source_id)?;
-            let mut note = fs::read_note(&path)?;
-            // Deduplicate: don't add the same edge twice
-            let already_exists = note
-                .frontmatter
-                .links
-                .iter()
-                .any(|l| l.edge_type == entry.edge_type && l.target == entry.target);
-            if !already_exists {
-                note.frontmatter.links.push(entry);
-                note.frontmatter.updated = now;
-                let content = frontmatter::render(&note.frontmatter, &note.body)?;
-                std::fs::write(&path, content)?;
-            }
+            super::notes::with_note_write_lock(&notes_dir, || {
+                let path = fs::find_note_path(&notes_dir, source_id)?;
+                let mut note = fs::read_note(&path)?;
+                let old_note = note.clone();
+                let old_content = std::fs::read(&path)?;
+                let already_exists = note
+                    .frontmatter
+                    .links
+                    .iter()
+                    .any(|l| l.edge_type == entry.edge_type && l.target == entry.target);
+                if !already_exists {
+                    note.frontmatter.links.push(entry);
+                    note.frontmatter.updated = now;
+                    note.frontmatter.revision = note.frontmatter.revision.saturating_add(1);
+                    super::recovery::journaled_replace(
+                        &notes_dir,
+                        &path,
+                        &old_note,
+                        &old_content,
+                        &note,
+                    )?;
+                }
+                Ok(())
+            })?;
         }
         "event" => {
             // For event→task derived-from, stored in derived_from field

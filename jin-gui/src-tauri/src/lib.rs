@@ -30,6 +30,9 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
         notifications::NotificationDelegateInstallOutcome::SkippedOffMainThread => eprintln!(
             "notification capability error: macOS notification delegate installation was not on the main thread; notification requests remain enabled, but foreground presentation is unavailable"
         ),
+        notifications::NotificationDelegateInstallOutcome::SkippedUnbundled => eprintln!(
+            "notification capability unavailable: running outside a bundled .app; run bundled Jin to test notifications"
+        ),
         _ => {}
     }
 
@@ -99,6 +102,8 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
             commands::notes::list_note_revisions,
             commands::notes::preview_note_revision,
             commands::notes::create_note,
+            commands::linked_creation::create_task_from_note,
+            commands::linked_creation::create_event_prep_note,
             commands::notes::edit_note,
             commands::notes::set_note_properties,
             commands::notes::delete_note,

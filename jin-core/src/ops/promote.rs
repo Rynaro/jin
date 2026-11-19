@@ -1,6 +1,6 @@
 //! Recoverably promote a Task into a linked Time block.
 
-use chrono::{Duration, Local, NaiveDateTime};
+use chrono::{Duration, Local, LocalResult, NaiveDateTime, TimeZone};
 use std::path::Path;
 
 use crate::google::account::EventSyncTarget;
@@ -37,6 +37,31 @@ pub fn promote_with_destination_and_operation_id(
     local_only: bool,
     operation_id: &str,
 ) -> Result<Event> {
+    promote_with_duration_and_destination_and_operation_id(
+        root,
+        task_id,
+        params,
+        60,
+        explicit_target,
+        local_only,
+        operation_id,
+    )
+}
+
+pub fn promote_with_duration_and_destination_and_operation_id(
+    root: &Path,
+    task_id: &str,
+    params: PromoteParams,
+    duration_minutes: u32,
+    explicit_target: Option<EventSyncTarget>,
+    local_only: bool,
+    operation_id: &str,
+) -> Result<Event> {
+    if !(1..=1440).contains(&duration_minutes) {
+        return Err(JinError::InvalidInput(
+            "Choose a duration of 1–1440 minutes.".into(),
+        ));
+    }
     let cfg = Config::load(root)?;
     let writable = cfg.google_registry.writable_destinations();
     let target = match explicit_target {
@@ -56,7 +81,8 @@ pub fn promote_with_destination_and_operation_id(
         }
         None => writable.into_iter().next(),
     };
-    let event = promote_with_operation_id_inner(root, task_id, params, operation_id, None)?;
+    let event =
+        promote_with_duration_inner(root, task_id, params, duration_minutes, operation_id, None)?;
     if let Some(target) = target {
         return crate::ops::event_mutation::EventMutationService::new(root)?.publish_existing(
             event.id(),
@@ -67,10 +93,47 @@ pub fn promote_with_destination_and_operation_id(
     Ok(event)
 }
 
+#[cfg(test)]
 fn promote_with_operation_id_inner(
     root: &Path,
     task_id: &str,
     params: PromoteParams,
+    operation_id: &str,
+    failpoint: Option<recoverable_operations::OperationFailpoint>,
+) -> Result<Event> {
+    promote_with_duration_inner(root, task_id, params, 60, operation_id, failpoint)
+}
+
+fn promotion_end(start: NaiveDateTime, tzid: Option<&str>, minutes: u32) -> Result<NaiveDateTime> {
+    let duration = Duration::minutes(i64::from(minutes));
+    let overflow =
+        || JinError::InvalidInput("The time block exceeds the supported date range.".into());
+    let Some(tzid) = tzid else {
+        return start.checked_add_signed(duration).ok_or_else(overflow);
+    };
+    let zone: chrono_tz::Tz = tzid.parse().map_err(|_| JinError::InvalidTimezone {
+        tzid: tzid.into(),
+        reason: "Unknown IANA timezone".into(),
+    })?;
+    let local = match zone.from_local_datetime(&start) {
+        LocalResult::Single(value) => value,
+        _ => return Err(JinError::InvalidInput("This start time is ambiguous or unavailable during a daylight-saving transition. Choose another time.".into())),
+    };
+    let end = local
+        .checked_add_signed(duration)
+        .ok_or_else(overflow)?
+        .naive_local();
+    if !matches!(zone.from_local_datetime(&end), LocalResult::Single(_)) {
+        return Err(JinError::InvalidInput("This end time is ambiguous during a daylight-saving transition. Choose another time or duration.".into()));
+    }
+    Ok(end)
+}
+
+fn promote_with_duration_inner(
+    root: &Path,
+    task_id: &str,
+    params: PromoteParams,
+    duration_minutes: u32,
     operation_id: &str,
     failpoint: Option<recoverable_operations::OperationFailpoint>,
 ) -> Result<Event> {
@@ -104,12 +167,13 @@ fn promote_with_operation_id_inner(
         let event = if let Some(existing) = existing {
             existing
         } else {
+            let end_dt = promotion_end(start_dt, tzid.as_deref(), duration_minutes)?;
             let mut event = events::build_event(
                 events::CreateEventParams {
                     title: task.title().to_string(),
                     body: String::new(),
                     start: TemporalValue::DateTime(start_dt),
-                    end: TemporalValue::DateTime(start_dt + Duration::hours(1)),
+                    end: TemporalValue::DateTime(end_dt),
                     start_value_type: ValueType::DateTime,
                     end_value_type: ValueType::DateTime,
                     is_all_day: false,
@@ -165,7 +229,14 @@ fn promote_with_operation_id_inner(
         ),
     }?;
 
-    events::get_event(&events_dir, &outcome.result_event_id)
+    let event = events::get_event(&events_dir, &outcome.result_event_id)?;
+    if event.frontmatter.derived_from.as_deref() != Some(task_id) {
+        return Err(JinError::OperationConflict {
+            operation_id: operation_id.into(),
+            reason: "already belongs to another task time block".into(),
+        });
+    }
+    Ok(event)
 }
 
 #[cfg(test)]
@@ -329,5 +400,84 @@ mod tests {
                 0
             );
         }
+    }
+    #[test]
+    fn chosen_duration_uses_elapsed_time_and_preserves_existing_block() {
+        let (vault, task) = setup_task();
+        let event = promote_with_duration_and_destination_and_operation_id(
+            vault.path(),
+            task.id(),
+            params(),
+            45,
+            None,
+            true,
+            "duration-45",
+        )
+        .unwrap();
+        let TemporalValue::DateTime(start) = &event.frontmatter.start else {
+            panic!("timed start")
+        };
+        let TemporalValue::DateTime(end) = &event.frontmatter.end else {
+            panic!("timed end")
+        };
+        assert_eq!(*end - *start, Duration::minutes(45));
+        let existing = promote_with_duration_and_destination_and_operation_id(
+            vault.path(),
+            task.id(),
+            params(),
+            120,
+            None,
+            true,
+            "existing-block",
+        )
+        .unwrap();
+        assert_eq!(existing.id(), event.id());
+        assert_eq!(
+            serde_json::to_value(existing.frontmatter.end).unwrap(),
+            serde_json::to_value(event.frontmatter.end.clone()).unwrap()
+        );
+        let replay = promote_with_duration_and_destination_and_operation_id(
+            vault.path(),
+            task.id(),
+            params(),
+            45,
+            None,
+            true,
+            "duration-45",
+        )
+        .unwrap();
+        assert_eq!(replay.id(), event.id());
+    }
+
+    #[test]
+    fn duration_validation_and_dst_reject_uncertain_times() {
+        let (vault, task) = setup_task();
+        for duration in [0, 1441] {
+            assert!(promote_with_duration_and_destination_and_operation_id(
+                vault.path(),
+                task.id(),
+                params(),
+                duration,
+                None,
+                true,
+                "invalid-length",
+            )
+            .is_err());
+        }
+        let spring =
+            NaiveDateTime::parse_from_str("2026-03-08T01:30:00", "%Y-%m-%dT%H:%M:%S").unwrap();
+        assert_eq!(
+            promotion_end(spring, Some("America/New_York"), 60)
+                .unwrap()
+                .to_string(),
+            "2026-03-08 03:30:00"
+        );
+        let gap =
+            NaiveDateTime::parse_from_str("2026-03-08T02:30:00", "%Y-%m-%dT%H:%M:%S").unwrap();
+        assert!(promotion_end(gap, Some("America/New_York"), 30).is_err());
+        let overlap =
+            NaiveDateTime::parse_from_str("2026-11-01T01:30:00", "%Y-%m-%dT%H:%M:%S").unwrap();
+        assert!(promotion_end(overlap, Some("America/New_York"), 30).is_err());
+        assert!(promotion_end(NaiveDateTime::MAX, None, 1).is_err());
     }
 }

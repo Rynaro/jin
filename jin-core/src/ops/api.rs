@@ -80,10 +80,34 @@ pub fn get_note(root: &Path, id: &str) -> Result<NoteDto> {
         .into_iter()
         .map(|candidate| (candidate.id, candidate.title))
         .collect::<Vec<_>>();
-    Ok(NoteDto::from_row(&row)
+    let mut dto = NoteDto::from_row(&row)
         .with_body(note_on_disk.body.clone())
         .with_backlinks(&backlinks)
-        .with_note_details(&note_on_disk, mention_candidates))
+        .with_note_details(&note_on_disk, mention_candidates);
+    for link in &note_on_disk.frontmatter.links {
+        let target = if let Some(note) =
+            query::get_note(&conn, &link.target).map_err(JinError::Index)?
+        {
+            (note.status != "deleted").then_some(("note", note.title))
+        } else if let Some(task) = query::get_task(&conn, &link.target).map_err(JinError::Index)? {
+            (task.status != "deleted").then_some(("task", task.title))
+        } else if let Some(event) =
+            query::get_event(&conn, &link.target).map_err(JinError::Index)?
+        {
+            (event.status != "deleted").then_some(("event", event.title))
+        } else {
+            None
+        };
+        if let Some((kind, label)) = target {
+            dto.outgoing_links.push(crate::dto::note::OutgoingLinkDto {
+                target_id: link.target.clone(),
+                target_kind: kind.into(),
+                label,
+                edge_type: link.edge_type.to_string(),
+            });
+        }
+    }
+    Ok(dto)
 }
 
 pub fn list_tasks(
@@ -156,7 +180,21 @@ pub fn get_task(root: &Path, id: &str) -> Result<TaskDto> {
         .ok_or_else(|| JinError::NotFound(format!("task/{}", id)))?;
     // D3: read body fresh from disk (never from the index — body is not stored there).
     let task_on_disk = fs::read_task(std::path::Path::new(&row.file_path))?;
-    let backlinks = query::get_backlinks(&conn, &row.id).map_err(JinError::Index)?;
+    let mut backlinks = query::get_backlinks(&conn, &row.id).map_err(JinError::Index)?;
+    for backlink in &mut backlinks {
+        let title = match backlink.source_kind.as_str() {
+            "note" => query::get_note(&conn, &backlink.source_id)
+                .map_err(JinError::Index)?
+                .map(|source| source.title),
+            "event" => query::get_event(&conn, &backlink.source_id)
+                .map_err(JinError::Index)?
+                .map(|source| source.title),
+            _ => None,
+        };
+        if let Some(title) = title {
+            backlink.backlink_label = title;
+        }
+    }
     Ok(TaskDto::from_row(&row)
         .with_backlinks(&backlinks)
         .with_body(task_on_disk.body))
