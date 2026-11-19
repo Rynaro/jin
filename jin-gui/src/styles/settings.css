@@ -258,6 +258,27 @@
   margin-block-start: var(--space-1);
 }
 
+.settings-google-connect-actions {
+  align-items: end;
+}
+
+.settings-google-connect-name {
+  display: grid;
+  gap: var(--space-half);
+}
+
+.settings-google-setup-steps {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-google-setup-note {
+  margin: var(--space-2) 0 0;
+}
+
 .notification-settings__heading {
   display: flex;
   align-items: center;

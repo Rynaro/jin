@@ -3,6 +3,7 @@
 //! These are thin adapters over jin-core. OAuth credentials never cross IPC.
 
 use std::path::Path;
+use tauri_plugin_dialog::DialogExt;
 
 use jin_core::dto::GoogleAccountDto;
 use jin_core::google::client::ReqwestClient;
@@ -52,6 +53,58 @@ pub fn connect_google_account_fn(
     let account_id = parse_account_id(account_id)?;
     google_accounts::login_account(root, &account_id).map_err(JinErrorDto::from)?;
     list_google_accounts_fn(root)
+}
+
+pub fn connect_new_google_account_fn(
+    root: &Path,
+    alias: Option<&str>,
+) -> Result<Vec<GoogleAccountDto>, JinErrorDto> {
+    google_accounts::connect_new_account(root, alias).map_err(JinErrorDto::from)?;
+    list_google_accounts_fn(root)
+}
+
+pub fn import_google_client_json_fn(root: &Path, path: &Path) -> Result<(), JinErrorDto> {
+    let content = std::fs::read_to_string(path).map_err(|_| {
+        JinErrorDto::from(jin_core::JinError::Integrity(
+            "Jin could not read the selected OAuth client JSON file.".to_string(),
+        ))
+    })?;
+    let mut config = Config::load(root).map_err(JinErrorDto::from)?;
+    if google_environment_override_present() {
+        return Err(JinErrorDto::from(jin_core::JinError::Auth(
+            "Google OAuth environment settings are active. Clear both JIN_GOOGLE_CLIENT_ID and JIN_GOOGLE_CLIENT_SECRET before importing a vault client."
+                .to_string(),
+        )));
+    }
+    if config
+        .google
+        .client_id
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+        && config
+            .google
+            .client_secret
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+    {
+        return Err(JinErrorDto::from(jin_core::JinError::Auth(
+            "A Google OAuth client is already configured for this vault.".to_string(),
+        )));
+    }
+    jin_core::google::config::GoogleCredentials::import_desktop_client_json(&mut config, &content)
+        .map_err(JinErrorDto::from)?;
+    config.save().map_err(JinErrorDto::from)
+}
+
+fn google_environment_override_present() -> bool {
+    ["JIN_GOOGLE_CLIENT_ID", "JIN_GOOGLE_CLIENT_SECRET"]
+        .into_iter()
+        .any(|key| std::env::var(key).is_ok_and(|value| !value.trim().is_empty()))
+}
+
+pub fn google_client_configured_fn(root: &Path) -> Result<bool, JinErrorDto> {
+    let config = Config::load(root).map_err(JinErrorDto::from)?;
+    Ok(jin_core::google::config::GoogleCredentials::load(&config).is_ok())
 }
 
 pub fn disconnect_google_account_fn(
@@ -174,6 +227,56 @@ pub async fn connect_google_account(
         connect_google_account_fn(&root, &account_id)
     })
     .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn connect_new_google_account(
+    state: tauri::State<'_, AppState>,
+    alias: Option<String>,
+) -> Result<Vec<GoogleAccountDto>, JinErrorDto> {
+    let root = state.root.clone();
+    super::blocking::run("Google Calendar connection", move || {
+        connect_new_google_account_fn(&root, alias.as_deref())
+    })
+    .await
+}
+
+/// Pick and import a Desktop OAuth client JSON file entirely in the native
+/// process. Cancelling is a no-op and never exposes a filesystem path to JS.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn import_google_client_json(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<bool, JinErrorDto> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .add_filter("Google OAuth client", &["json"])
+        .pick_file(move |path| {
+            let _ = sender.send(path);
+        });
+    let Some(path) = receiver.await.map_err(|_| {
+        JinErrorDto::from(jin_core::JinError::Integrity(
+            "The OAuth client picker closed unexpectedly. Try again.".to_string(),
+        ))
+    })?
+    else {
+        return Ok(false);
+    };
+    let path = path.as_path().ok_or_else(|| {
+        JinErrorDto::from(jin_core::JinError::Integrity(
+            "The selected OAuth client is not available as a local file.".to_string(),
+        ))
+    })?;
+    import_google_client_json_fn(&state.root, path)?;
+    Ok(true)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn google_client_configured(
+    state: tauri::State<'_, AppState>,
+) -> Result<bool, JinErrorDto> {
+    google_client_configured_fn(&state.root)
 }
 
 #[tauri::command(rename_all = "snake_case")]

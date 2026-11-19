@@ -32,9 +32,11 @@ desktop app and command-line interface use the same Rust core.
   and schedule one as an event when it needs time on the calendar.
 - **A desktop app and a CLI.** Work visually or script common actions against
   the same local workspace.
-- **Calendar when you want it.** Connect Google Calendar with your own OAuth
-  client, or keep your calendar data local. Desktop reminders run on your
-  device while Jin is open.
+- **Calendar when you want it.** Connect Google Calendar from **Settings →
+  Calendars & Sync → Connect Google Calendar** with your own OAuth client, or
+  keep your calendar data local. Desktop reminders run on your device while Jin
+  is open. The [Google Calendar setup guide](docs/google-smoke-test.md) explains
+  the one-time credential setup.
 
 ## Download
 

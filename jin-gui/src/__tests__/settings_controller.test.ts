@@ -325,6 +325,83 @@ describe('settings pane navigation', () => {
   });
 });
 
+describe('Google Calendar connection recovery', () => {
+  function makeGoogleConnectionController() {
+    const controller = Object.create(SettingsController.prototype) as SettingsController & Record<string, unknown>;
+    const button = document.createElement('button');
+    const alias = document.createElement('input');
+    const setup = document.createElement('details');
+    const status = document.createElement('p');
+    const error = document.createElement('p');
+    const rendered: GoogleAccountDto[][] = [];
+    Object.assign(controller, {
+      googleConnectionBusy: false,
+      pendingGoogleReconnectId: null,
+      hasConnectGoogleCalendarBtnTarget: true,
+      connectGoogleCalendarBtnTarget: button,
+      hasGoogleAccountAliasInputTarget: true,
+      googleAccountAliasInputTarget: alias,
+      hasGoogleSetupDetailsTarget: true,
+      googleSetupDetailsTarget: setup,
+      hasGoogleAccountsStatusTarget: true,
+      googleAccountsStatusTarget: status,
+      hasGoogleAccountsErrorTarget: true,
+      googleAccountsErrorTarget: error,
+      renderGoogleAccounts: (accounts: GoogleAccountDto[]) => rendered.push(accounts),
+      loadGoogleAccounts: vi.fn().mockResolvedValue(undefined),
+    });
+    return { controller, button, alias, setup, status, error, rendered };
+  }
+
+  it('opens setup before creating a new account when credentials are unavailable', async () => {
+    const { controller, setup, status } = makeGoogleConnectionController();
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'google_client_configured') return Promise.resolve(false);
+      throw new Error(`unexpected ${command}`);
+    });
+
+    await (controller as any).connectNewGoogleAccount();
+
+    expect(setup.open).toBe(true);
+    expect(status.textContent).toContain('import the Desktop OAuth client JSON');
+    expect(mockInvoke).not.toHaveBeenCalledWith('connect_new_google_account', expect.anything());
+  });
+
+  it('imports then reconnects the same immutable account id', async () => {
+    const { controller, rendered } = makeGoogleConnectionController();
+    const account: GoogleAccountDto = { id: 'acct-work', alias: 'Work', principal: 'work@example.com', state: 'connected', auth_generation: 3, calendars: [] };
+    mockInvoke.mockImplementation((command: string, input: Record<string, unknown>) => {
+      if (command === 'import_google_client_json') return Promise.resolve(true);
+      if (command === 'google_client_configured') return Promise.resolve(true);
+      if (command === 'connect_google_account') {
+        expect(input).toEqual({ account_id: 'acct-work' });
+        return Promise.resolve([account]);
+      }
+      throw new Error(`unexpected ${command}`);
+    });
+    (controller as any).pendingGoogleReconnectId = 'acct-work';
+
+    await (controller as any).importGoogleClientJson();
+
+    expect(rendered).toEqual([[account]]);
+    expect(mockInvoke).not.toHaveBeenCalledWith('connect_new_google_account', expect.anything());
+  });
+
+  it('leaves a cancelled import retryable without creating an account', async () => {
+    const { controller, status } = makeGoogleConnectionController();
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'import_google_client_json') return Promise.resolve(false);
+      throw new Error(`unexpected ${command}`);
+    });
+
+    await (controller as any).importGoogleClientJson();
+
+    expect(status.textContent).toContain('cancelled');
+    expect(mockInvoke).not.toHaveBeenCalledWith('connect_new_google_account', expect.anything());
+    expect(mockInvoke).not.toHaveBeenCalledWith('connect_google_account', expect.anything());
+  });
+});
+
 // ── Fixture factories ─────────────────────────────────────────────────────────
 
 function makeAuthStatusDto(

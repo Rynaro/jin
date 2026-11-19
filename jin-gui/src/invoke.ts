@@ -828,6 +828,19 @@ export function addGoogleAccount(alias: string): Promise<GoogleAccountDto> {
   return invoke<GoogleAccountDto>('add_google_account', { alias });
 }
 
+export function connectNewGoogleAccount(alias?: string): Promise<GoogleAccountDto[]> {
+  return invoke<GoogleAccountDto[]>('connect_new_google_account', { alias });
+}
+
+/** Opens the native picker. The selected path and OAuth secret stay in Rust. */
+export function importGoogleClientJson(): Promise<boolean> {
+  return invoke<boolean>('import_google_client_json', {});
+}
+
+export function googleClientConfigured(): Promise<boolean> {
+  return invoke<boolean>('google_client_configured', {});
+}
+
 export function connectGoogleAccount(accountId: string): Promise<GoogleAccountDto[]> {
   return invoke<GoogleAccountDto[]>('connect_google_account', { account_id: accountId });
 }

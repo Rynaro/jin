@@ -149,7 +149,8 @@ impl Config {
                 .first()
                 .map(|account| account.id.to_string()));
         }
-        if self.calendar_id.is_none() && self.google.client_id.is_none() {
+        let legacy_token_exists = self.sync_dir().join("tokens.enc").exists();
+        if self.calendar_id.is_none() && self.google.client_id.is_none() && !legacy_token_exists {
             return Ok(None);
         }
         let mut suffix = 1;

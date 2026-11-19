@@ -18,18 +18,13 @@ Do the first run against a **dedicated test Google Calendar**, not your primary/
 - A working `jin` binary: `cargo build --release` (or run via `cargo run -p jin --`).
 - A Google account.
 
-## Step 1 — Choose the OAuth credential mode
+## Step 1 — Create an OAuth client (one time per vault owner)
 
-An official distributor build may provide a production Desktop OAuth client so
-the user can connect without creating a Google Cloud project. Before describing
-that path as public or verified, the distributor must have completed Google's
-verification for every sensitive Calendar scope requested by that client.
-Publishing status **In production is a prerequisite, not verification itself**.
-
-This repository and ordinary source builds do not contain real credentials.
-For those builds, use the advanced BYO path below.
-
-## Step 1A — Advanced BYO client (Google Cloud Console)
+Jin does not ship a shared Google client ID or secret. Create a Desktop OAuth
+client in your own Google Cloud project, or use credentials provided by your
+organization. Google treats installed desktop apps as public clients and
+recommends PKCE for the authorization-code flow. See Google's
+[OAuth 2.0 guide for desktop apps](https://developers.google.com/identity/protocols/oauth2/native-app).
 
 1. https://console.cloud.google.com → create a project (e.g. "jin").
 2. **APIs & Services → Library →** enable **Google Calendar API**.
@@ -41,10 +36,26 @@ For those builds, use the advanced BYO path below.
      mandatory verification; an unverified warning and user cap can still apply.
    - A user-facing public app is different: sensitive Calendar scopes require
      verification. Moving it to **In production** does not waive that review.
-4. **Credentials → Create credentials → OAuth client ID → Application type: "Desktop app".** Copy the **client ID** and **client secret**.
+4. **Credentials → Create credentials → OAuth client ID → Application type:
+   Desktop app.** Download the JSON file. Keep it private even though a desktop
+   client secret is not treated as confidential by Google's installed-app flow.
 
-## Step 2 — Configure an unbundled/BYO Jin build
-Provide the client credentials (env or the `[google]` section of `config.toml` in your jin root):
+## Step 2 — Connect in Jin
+
+Open **Settings → Calendars & Sync → Connect Google Calendar**. If the vault
+already has credentials, Jin opens the system browser for Google authorization.
+After consent, Jin discovers the calendars visible to that account. A calendar
+discovery outage leaves the account connected and offers **Refresh calendars**.
+
+If Jin reports that Google setup is required, choose **Import Google OAuth
+client JSON** and select the Desktop-app JSON downloaded from Google Cloud. Jin
+validates and stores the credentials in this vault's `.jin/config.toml`, then
+continues to the browser authorization flow. The JSON contents and secret do
+not enter the GUI state, account DTOs, logs, exports, or audit records.
+
+You can also configure credentials manually for a CLI or advanced workflow. Use
+environment variables for a temporary or machine-level override, or the
+`[google]` section of `config.toml` in your Jin root:
 ```
 export JIN_GOOGLE_CLIENT_ID="…apps.googleusercontent.com"
 export JIN_GOOGLE_CLIENT_SECRET="…"
@@ -52,17 +63,11 @@ export JIN_GOOGLE_CLIENT_SECRET="…"
 export JIN_TOKEN_PASSPHRASE="<a strong passphrase>"
 ```
 
-Runtime environment variables and per-vault config are advanced overrides; they
-take precedence over any distributor default when a release supports one.
+Environment variables take precedence over the per-vault config. The GUI uses a
+system browser for Google authorization. Canceling authorization leaves one
+retryable account entry, and **Retry** reuses it instead of creating a duplicate.
 
-## Step 3 — Authenticate and discover calendars
-
-In the GUI, open **Settings → Calendar Accounts**, add an alias, and choose
-**Connect**. Successful authentication immediately refreshes CalendarList, so
-visible calendars and access roles should appear without a second action. If
-authentication succeeds but discovery is temporarily unavailable, Jin keeps the
-account connected and reports a retriable partial-success error; choose
-**Refresh calendars** later.
+## Step 3 — Authenticate and discover calendars from the CLI
 
 The equivalent CLI/operator flow is:
 

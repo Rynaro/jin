@@ -1,0 +1,18 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "INFORM",
+  "objective": "verify_pass: AC-GCONNECT-001 through AC-GCONNECT-008 pass independent offline review.",
+  "context_delta": {
+    "browser_evidence": "Desktop and compact fixtures covered first-run setup, cancelled and invalid imports, successful continuation, focus and overflow.",
+    "fresh_context": false,
+    "independent_checks": "Settings/acceptance, core account lifecycle and credential loading, native import, PKCE and loopback callback tests, build and diff checks.",
+    "manual_boundary": "Live Google consent, the native file picker and native Tauri appearance were not exercised.",
+    "transcript_access": "inherited"
+  }
+}
