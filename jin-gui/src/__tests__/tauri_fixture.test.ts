@@ -461,7 +461,7 @@ describe('deterministic Tauri visual-QA fixture', () => {
       link.source_id === 'n4' && link.edge_type === 'references');
 
     expect(first).toEqual({ edge_type: 'references', source_id: 'n4', target_id: 'e1' });
-    expect(matches).toEqual([{ source_id: 'n4', source_kind: 'note', edge_type: 'references', label: 'Small rituals' }]);
+    expect(matches).toEqual([{ source_id: 'n4', source_kind: 'note', edge_type: 'references', label: 'referenced-by', source_title: 'Small rituals' }]);
     const google = await bridge.invoke('get_event_detail', { id: 'e7' }) as Record<string, any>;
     expect(google.event.backlinks).toEqual([]);
     await expect(bridge.invoke('link', { source_id: 'e1', target_id: 'n4', edge_type: 'references' }))
