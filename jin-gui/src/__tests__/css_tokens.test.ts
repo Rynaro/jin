@@ -34,6 +34,8 @@ const STYLES_DIR = fileURLToPath(new URL('../styles', import.meta.url));
 //
 const BARE_VAR_ALLOWLIST = new Set<string>([
   // (A) Runtime / JS-set ─────────────────────────────────────────────────────
+  '--sidebar-body-top',    // SidebarController measures the primary navigation above route context.
+  '--sidebar-body-bottom', // SidebarController reserves the utilities below route context.
   '--tree-depth',        // folder-tree depth indent, set by JS on tree widgets
 
   // (B) Pre-existing, tracked separately ────────────────────────────────────

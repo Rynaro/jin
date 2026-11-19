@@ -1,0 +1,42 @@
+{
+  "esl_version": "1.1",
+  "change_id": "stable-notes-visual-capture",
+  "status": "archived",
+  "tier": "full",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    {
+      "id": "SNVC-1",
+      "given": "The five production UI scenarios",
+      "when": "The detector selftest seeds and captures them",
+      "then": "Each fresh application PNG is loaded at native dimensions and byte-matches its source capture before detector assertions proceed",
+      "verify_method": "Run the detector selftest against the browser fixture and compare the fresh raster with each source PNG byte-for-byte"
+    },
+    {
+      "id": "SNVC-2",
+      "given": "A validated live raster and the normal reference writer and comparator",
+      "when": "A fresh capture is compared, a DOM marker is added, then removed",
+      "then": "The unchanged frame compares equal, the marked frame is rejected, and a new restored frame compares equal while immutable reference hashes remain unchanged",
+      "verify_method": "Run the detector selftest and verify fresh-frame comparison, marker rejection, restoration, and unchanged reference hashes"
+    },
+    {
+      "id": "SNVC-3",
+      "given": "Stale build stamps, environment mismatches, unknown scenarios, or invalid mutation flags",
+      "when": "The detector selftest validates its inputs",
+      "then": "It rejects each invalid case and retains the existing environment and reference-integrity guards",
+      "verify_method": "Run invalid-input selftest cases for build, environment, scenario, and mutation validation"
+    },
+    {
+      "id": "SNVC-4",
+      "given": "Unchanged application code and platform-bound references",
+      "when": "Canonical visual comparison runs",
+      "then": "It independently renders the live app and compares exact PNG bytes, preserving both baseline and actual PNGs on mismatch; Linux CI uploads only generated failure screenshots",
+      "verify_method": "Run canonical visual comparison and inspect paired mismatch artifacts and Linux CI upload scope"
+    }
+  ],
+  "spec_ref": "spec.yaml",
+  "drift_checked": true,
+  "archive_path": "archive/2026-11-19-stable-notes-visual-capture",
+  "has_code": true
+}

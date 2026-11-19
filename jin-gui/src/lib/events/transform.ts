@@ -85,12 +85,10 @@ export function formatEventTime(
       hour: '2-digit',
       minute: '2-digit',
     };
-    if (tzid) opts.timeZone = tzid;
-
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    const startStr = startDate.toLocaleTimeString(locale, opts);
-    const endStr = endDate.toLocaleTimeString(locale, opts);
+    const startValue = eventDisplayValue(start, tzid);
+    const endValue = eventDisplayValue(end, tzid);
+    const startStr = startValue.date.toLocaleTimeString(locale, { ...opts, timeZone: startValue.timeZone });
+    const endStr = endValue.date.toLocaleTimeString(locale, { ...opts, timeZone: endValue.timeZone });
     return `${startStr} – ${endStr}`;
   } catch {
     // Fallback: extract from ISO string if locale/tz conversion fails
@@ -117,30 +115,37 @@ export function formatEventDate(
     year: 'numeric',
   };
 
-  if (isAllDay) {
-    // All-day events: use UTC to avoid off-by-one date from TZ conversion
-    opts.timeZone = 'UTC';
-  } else if (tzid) {
-    try {
-      opts.timeZone = tzid;
-    } catch {
-      // Invalid tzid: omit timeZone (use system tz)
-    }
-  }
+  const value = eventDisplayValue(start, isAllDay ? 'UTC' : tzid);
+  opts.timeZone = isAllDay ? 'UTC' : value.timeZone;
 
   try {
-    return new Date(start).toLocaleDateString(locale, opts);
+    return value.date.toLocaleDateString(locale, opts);
   } catch {
-    return new Date(start).toLocaleDateString(locale, {
+    return value.date.toLocaleDateString(locale, {
       weekday: 'long',
       month: 'long',
       day: 'numeric',
       year: 'numeric',
+      timeZone: isWallDateTime(start) ? 'UTC' : undefined,
     });
   }
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
+
+function isWallDateTime(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value);
+}
+
+/** Canonical offsetless values are wall time in their own declared zone.
+ * UTC here is a formatting carrier, so the host zone cannot shift the value.
+ * Offset-bearing values remain real instants and convert into the requested zone.
+ */
+function eventDisplayValue(value: string, timeZone?: string | null): { date: Date; timeZone?: string } {
+  return isWallDateTime(value)
+    ? { date: new Date(`${value}Z`), timeZone: 'UTC' }
+    : { date: new Date(value), timeZone: timeZone || undefined };
+}
 
 /** extractTime — extracts "HH:MM" from an ISO datetime string. */
 function extractTime(iso: string): string {

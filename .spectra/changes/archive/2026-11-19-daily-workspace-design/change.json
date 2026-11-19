@@ -1,0 +1,77 @@
+{
+  "esl_version": "1.1",
+  "change_id": "daily-workspace-design",
+  "status": "archived",
+  "tier": "full",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    {
+      "id": "DW-1",
+      "given": "The redesigned Jin workspace is running with deterministic content.",
+      "when": "the user navigates among Today, Notes, Tasks, Calendar, Settings, and Notifications",
+      "then": "present the shared type hierarchy, adaptive surfaces, control geometry, and selected navigation state",
+      "verify_method": "Inspect actual browser/native route evidence and run the corresponding controller or production smoke regression."
+    },
+    {
+      "id": "DW-2",
+      "given": "The redesigned Jin workspace is running with deterministic content.",
+      "when": "the user selects a note in the spacious desktop library",
+      "then": "show the requested live document beside that library through the existing save and conflict guards",
+      "verify_method": "Inspect actual browser/native route evidence and run the corresponding controller or production smoke regression."
+    },
+    {
+      "id": "DW-3",
+      "given": "The redesigned Jin workspace is running with deterministic content.",
+      "when": "the user opens a note through Find or a linked object while library filtering is active",
+      "then": "show that requested note and retain a usable path back to the library",
+      "verify_method": "Inspect actual browser/native route evidence and run the corresponding controller or production smoke regression."
+    },
+    {
+      "id": "DW-4",
+      "given": "The redesigned Jin workspace is running with deterministic content.",
+      "when": "the user edits, reads, switches, or creates a task from a selected passage",
+      "then": "preserve persistence, conflict recovery, editor selection and undo behavior according to the existing operation contracts",
+      "verify_method": "Inspect actual browser/native route evidence and run the corresponding controller or production smoke regression."
+    },
+    {
+      "id": "DW-5",
+      "given": "The redesigned Jin workspace is running with deterministic content.",
+      "when": "the user adds or completes a task, changes list or board view, or opens scheduling",
+      "then": "preserve those operations within the redesigned task workspace",
+      "verify_method": "Inspect actual browser/native route evidence and run the corresponding controller or production smoke regression."
+    },
+    {
+      "id": "DW-6",
+      "given": "The redesigned Jin workspace is running with deterministic content.",
+      "when": "the user navigates month, week, or day, opens an event, or schedules a task",
+      "then": "show the correct dates, event identity, times, and reviewed duration within the redesigned calendar",
+      "verify_method": "Inspect actual browser/native route evidence and run the corresponding controller or production smoke regression."
+    },
+    {
+      "id": "DW-7",
+      "given": "The redesigned Jin workspace is running with deterministic content.",
+      "when": "the viewport narrows or text size increases",
+      "then": "reflow its content and expose reachable navigation and actions without page-level horizontal overflow or clipped essential controls",
+      "verify_method": "Inspect actual browser/native route evidence and run the corresponding controller or production smoke regression."
+    },
+    {
+      "id": "DW-8",
+      "given": "The redesigned Jin workspace is running with deterministic content.",
+      "when": "the user uses dark appearance, keyboard navigation, reduced motion, or higher contrast",
+      "then": "retain readable content, visible focus, and truthful interaction feedback",
+      "verify_method": "Inspect actual browser/native route evidence and run the corresponding controller or production smoke regression."
+    },
+    {
+      "id": "DW-9",
+      "given": "The redesigned Jin workspace is running with deterministic content.",
+      "when": "the complete meeting-note-to-task-to-calendar flow is exercised",
+      "then": "save the linked work and return the user to the correct source objects through the redesigned UI",
+      "verify_method": "Inspect actual browser/native route evidence and run the corresponding controller or production smoke regression."
+    }
+  ],
+  "spec_ref": "spec.yaml",
+  "drift_checked": true,
+  "archive_path": "archive/2026-11-19-daily-workspace-design",
+  "has_code": true
+}

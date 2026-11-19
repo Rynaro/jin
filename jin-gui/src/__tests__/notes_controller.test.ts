@@ -40,6 +40,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { saveNotesExplorerView } from '../lib/notes/explorerPrefs';
 import type { NoteDto, BacklinkDto, FolderDto, LinkDto } from '../types/dto';
 import type { EditorHandle } from '../lib/notes/editor';
+import { undo } from '@codemirror/commands';
 import {
   filterNotesList,
   sortNotesList,
@@ -66,6 +67,9 @@ vi.mock('../invoke', () => ({
   createFolder: vi.fn(),
   editNote: vi.fn(),
   createNote: vi.fn(),
+  createTaskFromNote: vi.fn(),
+  listLists: vi.fn(),
+  newOperationId: () => "selection-test-operation",
   searchNotes: vi.fn(),
   listCollections: vi.fn(),
   createCollection: vi.fn(),
@@ -94,6 +98,8 @@ import {
   createFolder,
   editNote,
   createNote,
+  createTaskFromNote,
+  listLists,
   searchNotes,
   listCollections,
   createCollection,
@@ -126,6 +132,7 @@ function extractBodyInnerHTML(html: string): string {
 }
 
 const BODY_CONTENT = extractBodyInnerHTML(INDEX_HTML);
+const BROWSER_STORAGE = window.localStorage;
 
 // ── DragEvent polyfill for jsdom (jsdom < 20 does not define DragEvent) ───────
 // jsdom's DragEvent is missing; define a minimal stub so test code can use
@@ -711,13 +718,14 @@ describe('renderNoteDetail — backlinks (cross-object reachability gate)', () =
     expect(labelEl?.textContent).toBe(BL_LABEL);
   });
 
-  it('renders the backlink source_id in the DOM (reachable: id visible)', () => {
+  it('keeps the backlink identity in data while displaying its type', () => {
     const note = makeNote({
       backlinks: [makeBacklink({ source_id: BL_ID })],
     });
     renderNoteDetail(el, templates, note, noopNavigate);
     const idEl = el.detailContent.querySelector('.browse-link-row__id');
-    expect(idEl?.textContent).toBe(BL_ID);
+    expect(idEl?.textContent).toBe('Task');
+    expect(el.detailContent.querySelector<HTMLElement>('.browse-link-row__btn')?.dataset.linkId).toBe(BL_ID);
   });
 
   it('backlink button has data-link-id set (machine-readable id)', () => {
@@ -774,6 +782,25 @@ describe('renderNoteDetail — outgoing links (reachability gate)', () => {
     renderNoteDetail(el, templates, note, noopNavigate);
     const idEl = el.detailContent.querySelector('.browse-link-row__id');
     expect(idEl?.textContent).toBe('note-linked-456');
+  });
+
+  it.each([['note', 'notes'], ['task', 'tasks'], ['event', 'events']])('opens a resolved %s relationship using its actual route', (kind, route) => {
+    const navigate = vi.fn();
+    const note = makeNote({ links: [{ target: 'target-id', edge_type: 'references' }], outgoing_links: [{ target_id: 'target-id', target_kind: kind, label: 'Referenced work', edge_type: 'references' }] });
+    const handle = renderNoteDetail(el, templates, note, navigate);
+    const button = el.detailContent.querySelector<HTMLButtonElement>('.browse-link-row__btn')!;
+    expect(button.getAttribute('aria-label')).toBe(`Open ${kind}: Referenced work`);
+    button.click();
+    expect(navigate).toHaveBeenCalledWith(route, 'target-id');
+    handle.destroy();
+  });
+
+  it('keeps unresolved legacy targets non-navigable instead of guessing a note route', () => {
+    const navigate = vi.fn();
+    const handle = renderNoteDetail(el, templates, makeNote({ links: [{ target: 'missing', edge_type: 'references' }] }), navigate);
+    const button = el.detailContent.querySelector<HTMLButtonElement>('.browse-link-row__btn')!;
+    expect(button.disabled).toBe(true);
+    button.click(); expect(navigate).not.toHaveBeenCalled(); handle.destroy();
   });
 
   it('re-renders cleanly on second call (no duplicate sections)', () => {
@@ -2456,10 +2483,10 @@ describe('G-TREE-SELECT — folder select (Enter key) → listNotes + aria-selec
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared sidebar owns visibility; Notes only requests a shell toggle.
+// Shared sidebar owns visibility while Notes retains its contextual folder rail.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('Notes delegates sidebar toggles in list and detail modes', () => {
+describe('Notes uses the shared sidebar in list and detail modes', () => {
   let cpApp: Application;
 
   beforeEach(async () => {
@@ -2481,53 +2508,24 @@ describe('Notes delegates sidebar toggles in list and detail modes', () => {
     vi.resetAllMocks();
   });
 
-  it('collapse control requests the shared sidebar toggle', () => {
-    const request = vi.fn();
-    window.addEventListener('jin:sidebar-toggle', request, { once: true });
-    const collapseBtn = document.querySelector<HTMLElement>('.notes-folder-rail__collapse-btn')!;
-    expect(collapseBtn, 'collapse button must exist in the DOM').toBeTruthy();
-    collapseBtn.click();
-    expect(request).toHaveBeenCalledOnce();
-    const section = document.querySelector('.notes-paned') as HTMLElement;
+  it('keeps the folder rail under Notes ownership without duplicate navigation controls', () => {
+    const section = document.querySelector('[data-section-name="notes"]')!;
+    expect(section.querySelector('[data-sidebar-context="notes"]')).toBeTruthy();
+    expect(section.querySelector('.notes-folder-rail__collapse-btn, .notes-rail-reveal')).toBeNull();
     expect(section.classList.contains('rail-collapsed')).toBe(false);
   });
 
-  it('legacy reveal control also delegates to the shared sidebar', () => {
-    const request = vi.fn();
-    window.addEventListener('jin:sidebar-toggle', request, { once: true });
-    const section = document.querySelector('.notes-paned') as HTMLElement;
-    const revealBtn = document.querySelector<HTMLElement>('.notes-rail-reveal')!;
-    expect(revealBtn, 'reveal button must exist').toBeTruthy();
-    revealBtn.click();
-    expect(request).toHaveBeenCalledOnce();
-    expect(section.classList.contains('rail-collapsed')).toBe(false);
-  });
-
-  it('leaves focus ownership to the shared sidebar coordinator', () => {
-    const collapseBtn = document.querySelector<HTMLElement>('.notes-folder-rail__collapse-btn')!;
-    collapseBtn.click();
-    expect(document.querySelector('.notes-paned')?.classList.contains('rail-collapsed')).toBe(false);
-  });
-
-  it('togglePane works when detail-open is also set (open note state)', async () => {
-    vi.mocked(getNoteById).mockResolvedValue(makeNote({ id: 'n-collapse-1' }));
-
-    // Open a note so detail-open is active
-    const notesSection = document.querySelector('[data-section-name="notes"]') as HTMLElement;
+  it('retains the folder context when a note opens in detail mode', async () => {
+    vi.mocked(getNoteById).mockResolvedValue(makeNote({ id: 'n-detail-1' }));
+    const notesSection = document.querySelector('[data-section-name="notes"]')!;
     notesSection.dispatchEvent(
-      new CustomEvent('jin:open-detail', { detail: { id: 'n-collapse-1' }, bubbles: false })
+      new CustomEvent('jin:open-detail', { detail: { id: 'n-detail-1' }, bubbles: false })
     );
     await new Promise<void>((res) => setTimeout(res, 80));
     expect(notesSection.classList.contains('detail-open')).toBe(true);
-
-    // Request the shared collapse while in detail mode.
-    const request = vi.fn();
-    window.addEventListener('jin:sidebar-toggle', request, { once: true });
-    const collapseBtn = document.querySelector<HTMLElement>('.notes-folder-rail__collapse-btn')!;
-    collapseBtn.click();
-    expect(request).toHaveBeenCalledOnce();
+    expect(notesSection.querySelector('[data-sidebar-context="notes"]')).toBeTruthy();
+    expect(notesSection.querySelector('.notes-folder-rail__collapse-btn, .notes-rail-reveal')).toBeNull();
     expect(notesSection.classList.contains('rail-collapsed')).toBe(false);
-    expect(notesSection.classList.contains('detail-open')).toBe(true);
   });
 });
 
@@ -2571,7 +2569,7 @@ describe('G-TREE-PERSIST — expansion survives controller remount', () => {
     // Restore real localStorage if available.
     try {
       Object.defineProperty(globalThis, 'localStorage', {
-        value: undefined, writable: true, configurable: true,
+        value: BROWSER_STORAGE, writable: true, configurable: true,
       });
     } catch { /* ignore */ }
   });
@@ -2613,8 +2611,6 @@ describe('G-TREE-PERSIST — expansion survives controller remount', () => {
 
   it('old paneCollapsed state does not change Notes geometry on remount', async () => {
     store['jin_notes_folder_tree'] = '{"paneCollapsed":true,"expanded":[]}';
-    const collapseBtn = document.querySelector<HTMLElement>('.notes-folder-rail__collapse-btn')!;
-    collapseBtn.click();
     const stored = JSON.parse(store['jin_notes_folder_tree'] ?? '{}');
     expect(stored.paneCollapsed).toBe(true);
 
@@ -4265,5 +4261,320 @@ describe('VG-A11Y-KEBAB — kebab button accessibility invariants', () => {
       (args[0] as Record<string, unknown>)?.folder === 'Work'
     );
     expect(folderSelectCalled, 'Kebab click must NOT trigger selectFolder').toBe(false);
+  });
+});
+
+
+describe('selected note prose to a durable linked task', () => {
+  let app: Application;
+  let appErrors: unknown[];
+  const collectError = (event: Event) => appErrors.push((event as CustomEvent).detail);
+  const body = 'Planning\nSend revised brief';
+  const saved = () => makeNote({ id: 'selection-note', revision: 1, body_markdown: body });
+  const stale = { code: 4, kind: 'sync_conflict', message: 'This note changed elsewhere', retriable: false, details: { type: 'stale_note', note_id: 'selection-note', expected_revision: 1, current_revision: 9 } };
+  beforeEach(async () => {
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: BROWSER_STORAGE });
+    BROWSER_STORAGE.clear();
+    appErrors = [];
+    document.addEventListener('app:error', collectError);
+    document.body.innerHTML = BODY_CONTENT;
+    HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+    HTMLDialogElement.prototype.close = function () { this.open = false; };
+    vi.mocked(listFolders).mockResolvedValue([]);
+    vi.mocked(listNotes).mockResolvedValue([]);
+    vi.mocked(listLists).mockResolvedValue([]);
+    vi.mocked(getNoteById).mockResolvedValue(saved());
+    app = Application.start(document.documentElement, defaultSchema);
+    app.register('notes', NotesController);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    document.querySelector('[data-section-name="notes"]')!.dispatchEvent(new CustomEvent('jin:open-detail', { detail: { id: 'selection-note' } }));
+    await vi.waitFor(() => expect(document.querySelector('.note-detail__body .cm-editor')).not.toBeNull());
+  });
+  afterEach(() => { app.stop(); document.removeEventListener('app:error', collectError); document.body.replaceChildren(); vi.resetAllMocks(); });
+  function editor(): EditorHandle {
+    return (document.querySelector('.note-detail__body') as HTMLElement & { _cmHandle: EditorHandle })._cmHandle;
+  }
+  function chooseText(): void {
+    const view = editor().getView();
+    view.dispatch({ selection: { anchor: 9, head: view.state.doc.length } });
+    document.querySelector<HTMLButtonElement>('[aria-label="Create task from selection"]')!.click();
+  }
+
+  it('flushes the current prose before creating and uses the returned note revision', async () => {
+    vi.mocked(editNote).mockResolvedValue(makeNote({ ...saved(), revision: 2, body_markdown: body + ' today' }));
+    vi.mocked(createTaskFromNote).mockResolvedValue({ task: { id: 'task-linked', title: 'Send revised brief today' }, note: makeNote({ ...saved(), revision: 3, body_markdown: body + ' today' }) } as Awaited<ReturnType<typeof createTaskFromNote>>);
+    const view = editor().getView();
+    view.dispatch({ changes: { from: view.state.doc.length, insert: ' today' } });
+    chooseText();
+    await vi.waitFor(() => { expect(appErrors).toEqual([]); expect(document.querySelector('.linked-creation')).not.toBeNull(); });
+    expect(editNote).toHaveBeenCalledWith('selection-note', expect.objectContaining({ body: body + ' today', expected_revision: 1 }));
+    const navigate = vi.fn();
+    document.addEventListener('jin:navigate', navigate, { once: true });
+    const openTask = Array.from(document.querySelectorAll<HTMLButtonElement>('.linked-creation button')).find(button => button.textContent === 'Create and open task')!;
+    document.querySelector('form.linked-creation')!.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true, submitter: openTask }));
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect(createTaskFromNote).toHaveBeenCalledWith({ operation_id: 'selection-test-operation', note_id: 'selection-note', expected_revision: 2, title: 'Send revised brief today', excerpt: 'Send revised brief today', list: 'inbox' });
+    expect(navigate.mock.calls[0][0].detail).toEqual({ kind: 'tasks', id: 'task-linked' });
+    expect(editor().getDoc()).toBe(body + ' today');
+  });
+
+  it('keeps writing in the same editor and uses the new source revision for the next autosave', async () => {
+    const handle = editor();
+    const view = handle.getView();
+    const navigate = vi.fn();
+    document.addEventListener('jin:navigate', navigate);
+    vi.mocked(createTaskFromNote).mockResolvedValue({ task: { id: 'task-stay', title: 'Send revised brief' }, note: makeNote({ ...saved(), revision: 2, links: [{ target: 'task-stay', edge_type: 'references' }], outgoing_links: [{ target_id: 'task-stay', target_kind: 'task', label: 'Send revised brief', edge_type: 'references' }] }) } as Awaited<ReturnType<typeof createTaskFromNote>>);
+    chooseText();
+    await vi.waitFor(() => { expect(appErrors).toEqual([]); expect(document.querySelector('.linked-creation')).not.toBeNull(); });
+    document.querySelector('form.linked-creation')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(document.querySelector('.note-task-confirmation')?.textContent).toContain('Send revised brief'));
+    expect(navigate).not.toHaveBeenCalled();
+    expect(editor()).toBe(handle);
+    expect(handle.getView()).toBe(view);
+    expect(handle.getDoc()).toBe(body);
+    expect(view.state.selection.main.from).toBe(9);
+    expect(view.hasFocus).toBe(true);
+    expect(document.querySelector('.note-detail__outgoing')?.textContent).toContain('Send revised brief');
+    vi.mocked(editNote).mockResolvedValue(makeNote({ ...saved(), revision: 3, body_markdown: body + ' updated' }));
+    view.dispatch({ changes: { from: body.length, insert: ' updated' } });
+    await handle.flush();
+    expect(editNote).toHaveBeenLastCalledWith('selection-note', expect.objectContaining({ expected_revision: 2, body: body + ' updated' }));
+    document.removeEventListener('jin:navigate', navigate);
+  });
+
+  it('keeps the Notes task review consistently English on a Portuguese calendar preference', async () => {
+    BROWSER_STORAGE.setItem('jin:event-locale', 'pt-BR');
+    chooseText();
+    await vi.waitFor(() => expect(document.querySelector('.linked-creation')).not.toBeNull());
+    const labels = Array.from(document.querySelectorAll('.linked-creation label')).map(label => label.textContent);
+    expect(labels).toEqual(['Title', 'List']);
+    expect(document.querySelector('.linked-creation')?.textContent).toContain('Selected text');
+    expect(document.querySelector('.linked-creation__excerpt')?.getAttribute('aria-label')).toBe('Selected text');
+    expect(document.querySelector('dialog[aria-label="Create task from selection"] .modal-close-btn')?.getAttribute('aria-label')).toBe('Close');
+    const cancel = Array.from(document.querySelectorAll<HTMLButtonElement>('.linked-creation button')).find(button => button.textContent === 'Cancel');
+    expect(cancel).toBeDefined();
+    cancel!.click();
+  });
+
+  it('preserves local prose when replay returns a source body changed by another writer', async () => {
+    const handle = editor();
+    vi.mocked(createTaskFromNote).mockResolvedValue({ task: { id: 'task-replayed', title: 'Send revised brief' }, note: makeNote({ ...saved(), revision: 8, body_markdown: 'Revised in another editor' }) } as Awaited<ReturnType<typeof createTaskFromNote>>);
+    chooseText();
+    await vi.waitFor(() => expect(document.querySelector('.linked-creation')).not.toBeNull());
+    document.querySelector('.linked-creation')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(document.querySelector('.note-task-confirmation')?.textContent).toContain('Send revised brief'));
+    expect(document.querySelector('.notes-conflict')?.classList.contains('hidden')).toBe(false);
+    expect(editor()).toBe(handle);
+    expect(handle.getDoc()).toBe(body);
+    handle.getView().dispatch({ changes: { from: body.length, insert: ' local draft' } });
+    await handle.flush();
+    expect(editNote).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(document.querySelector('.notes-conflict'));
+  });
+
+  it('keeps a late metadata conflict mounted when a detail switch was awaiting it', async () => {
+    const handle = editor();
+    let rejectTitle!: (reason: unknown) => void;
+    vi.mocked(editNote).mockImplementation(() => new Promise((_resolve, reject) => { rejectTitle = reject; }));
+    const title = document.querySelector<HTMLTextAreaElement>('.browse-detail__title')!;
+    title.value = 'Local rename';
+    title.dispatchEvent(new Event('blur'));
+    await vi.waitFor(() => expect(editNote).toHaveBeenCalled());
+    document.querySelector('[data-section-name="notes"]')!.dispatchEvent(new CustomEvent('jin:open-detail', { detail: { id: 'another-note' } }));
+    await Promise.resolve();
+    rejectTitle(stale);
+    await vi.waitFor(() => expect(document.querySelector('.notes-conflict')?.classList.contains('hidden')).toBe(false));
+    await Promise.resolve();
+    expect(editor()).toBe(handle);
+    expect(getNoteById).toHaveBeenCalledTimes(1);
+    expect(handle.getDoc()).toBe(body);
+  });
+
+  it('preserves the editor and selection when flushing discovers a stale save', async () => {
+    const handle = editor();
+    vi.mocked(editNote).mockRejectedValue(stale);
+    handle.getView().dispatch({ changes: { from: body.length, insert: ' locally' } });
+    chooseText();
+    await vi.waitFor(() => expect(document.querySelector('.notes-conflict')?.classList.contains('hidden')).toBe(false));
+    expect(document.querySelector('.linked-creation')).toBeNull();
+    expect(createTaskFromNote).not.toHaveBeenCalled();
+    expect(editor()).toBe(handle);
+    expect(handle.getDoc()).toBe(body + ' locally');
+  });
+
+  it('returns a stale create to existing note conflict recovery with the selected prose intact', async () => {
+    vi.mocked(createTaskFromNote).mockRejectedValue(stale);
+    chooseText();
+    await vi.waitFor(() => { expect(appErrors).toEqual([]); expect(document.querySelector('.linked-creation')).not.toBeNull(); });
+    document.querySelector('form.linked-creation')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(document.querySelector('.linked-creation [role="status"]')?.textContent).toContain('Reload latest'));
+    expect(document.querySelector<HTMLButtonElement>('.linked-creation .btn-primary')?.disabled).toBe(true);
+    document.querySelector<HTMLButtonElement>('.linked-creation .btn-secondary')!.click();
+    expect(document.querySelector('.linked-creation')).toBeNull();
+    expect(document.activeElement).toBe(document.querySelector('.notes-conflict'));
+    expect(editor().getDoc()).toBe(body);
+    expect(createTaskFromNote).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Notes library beside the live document', () => {
+  let app: Application;
+  let wide: boolean;
+  let mediaEvents: EventTarget;
+  let previousMatchMedia: PropertyDescriptor | undefined;
+  let previousRects: PropertyDescriptor | undefined;
+  let previousBounds: PropertyDescriptor | undefined;
+  let previousTextScale: string | undefined;
+  const first = () => makeNote({ id: 'library-first', title: 'First document', revision: 1, body_markdown: 'First passage' });
+  const second = () => makeNote({ id: 'library-second', title: 'Second document', revision: 1, body_markdown: 'Second passage' });
+  const section = () => document.querySelector<HTMLElement>('[data-section-name="notes"]')!;
+  const row = (id: string) => section().querySelector<HTMLButtonElement>(`[data-note-id="${id}"]`)!;
+  const handle = () => (document.querySelector('.note-detail__body') as HTMLElement & { _cmHandle: EditorHandle })._cmHandle;
+
+  beforeEach(async () => {
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: BROWSER_STORAGE });
+    BROWSER_STORAGE.clear();
+    previousTextScale = document.documentElement.dataset.textScale;
+    document.documentElement.dataset.textScale = 'standard';
+    previousRects = Object.getOwnPropertyDescriptor(Range.prototype, 'getClientRects');
+    previousBounds = Object.getOwnPropertyDescriptor(Range.prototype, 'getBoundingClientRect');
+    // jsdom has no layout geometry, but a focused CodeMirror view measures it.
+    Object.defineProperty(Range.prototype, 'getClientRects', { configurable: true, value: () => [] });
+    Object.defineProperty(Range.prototype, 'getBoundingClientRect', { configurable: true, value: () => new DOMRect() });
+    wide = true;
+    mediaEvents = new EventTarget();
+    previousMatchMedia = Object.getOwnPropertyDescriptor(window, 'matchMedia');
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({
+      get matches() { return wide; },
+      addEventListener: mediaEvents.addEventListener.bind(mediaEvents),
+      removeEventListener: mediaEvents.removeEventListener.bind(mediaEvents),
+    }) });
+    document.body.innerHTML = BODY_CONTENT;
+    vi.mocked(listFolders).mockResolvedValue([]);
+    vi.mocked(listCollections).mockResolvedValue([]);
+    vi.mocked(listNotes).mockResolvedValue([first(), second()]);
+    vi.mocked(getNoteById).mockImplementation(async id => id === 'library-first' ? first() : second());
+    app = Application.start(document.documentElement, defaultSchema);
+    app.register('notes', NotesController);
+    await vi.waitFor(() => expect(row('library-first')).not.toBeNull());
+    row('library-first').click();
+    await vi.waitFor(() => expect(document.querySelector('.note-detail__body .cm-editor')).not.toBeNull());
+  });
+
+  afterEach(() => {
+    handle()?.destroy();
+    app.stop();
+    if (previousTextScale === undefined) delete document.documentElement.dataset.textScale;
+    else document.documentElement.dataset.textScale = previousTextScale;
+    document.body.replaceChildren();
+    if (previousMatchMedia) Object.defineProperty(window, 'matchMedia', previousMatchMedia);
+    else Reflect.deleteProperty(window, 'matchMedia');
+    if (previousRects) Object.defineProperty(Range.prototype, 'getClientRects', previousRects);
+    else Reflect.deleteProperty(Range.prototype, 'getClientRects');
+    if (previousBounds) Object.defineProperty(Range.prototype, 'getBoundingClientRect', previousBounds);
+    else Reflect.deleteProperty(Range.prototype, 'getBoundingClientRect');
+    vi.resetAllMocks();
+  });
+
+  it('keeps library selection truthful and resizes without replacing the live editor', () => {
+    const original = handle();
+    original.getView().dispatch({ selection: { anchor: 2 } });
+    expect(section().classList.contains('notes-split')).toBe(true);
+    expect(section().querySelector('[data-notes-target="listPanel"]')?.classList.contains('hidden')).toBe(false);
+    expect(row('library-first').getAttribute('aria-current')).toBe('page');
+    wide = false;
+    mediaEvents.dispatchEvent(new Event('change'));
+    expect(section().classList.contains('notes-split')).toBe(false);
+    expect(section().querySelector('[data-notes-target="listPanel"]')?.classList.contains('hidden')).toBe(true);
+    expect(handle()).toBe(original);
+    previousRects = Object.getOwnPropertyDescriptor(Range.prototype, 'getClientRects');
+    previousBounds = Object.getOwnPropertyDescriptor(Range.prototype, 'getBoundingClientRect');
+    // jsdom has no layout geometry, but a focused CodeMirror view measures it.
+    Object.defineProperty(Range.prototype, 'getClientRects', { configurable: true, value: () => [] });
+    Object.defineProperty(Range.prototype, 'getBoundingClientRect', { configurable: true, value: () => new DOMRect() });
+    wide = true;
+    mediaEvents.dispatchEvent(new Event('change'));
+    expect(section().querySelector('[data-notes-target="listPanel"]')?.classList.contains('hidden')).toBe(false);
+    expect(handle()).toBe(original);
+    expect(handle().getView().state.selection.main.anchor).toBe(2);
+  });
+
+  it('uses one pane for enlarged text and restores the same document when type returns', async () => {
+    const original = handle();
+    const view = original.getView();
+    view.dispatch({ selection: { anchor: 2, head: 6 } });
+    document.documentElement.dataset.textScale = 'accessibility';
+    await vi.waitFor(() => expect(section().classList.contains('notes-split')).toBe(false));
+    const toggle = section().querySelector<HTMLButtonElement>('[data-notes-library-toggle]')!;
+    expect(toggle.hidden).toBe(true);
+    expect(section().querySelector('[data-notes-target="listPanel"]')?.classList.contains('hidden')).toBe(true);
+    expect(handle()).toBe(original);
+    document.documentElement.dataset.textScale = 'standard';
+    await vi.waitFor(() => expect(section().classList.contains('notes-split')).toBe(true));
+    expect(toggle.hidden).toBe(false);
+    expect(handle()).toBe(original);
+    expect(view.state.selection.main.from).toBe(2);
+    expect(view.state.selection.main.to).toBe(6);
+  });
+
+  it('refreshes a native null-excerpt response using canonical Unicode whitespace and scalar limits', async () => {
+    const original = handle();
+    const view = original.getView();
+    const body = '  Revised\u0085\u2003' + '🌱'.repeat(205) + '\nplan';
+    vi.mocked(editNote).mockResolvedValue(makeNote({ ...first(), revision: 2, body_markdown: body, excerpt: null }));
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: body } });
+    await original.flush();
+    expect(row('library-first').querySelector('.note-row__snippet')?.textContent).toBe('Revised ' + '🌱'.repeat(192));
+    expect(handle()).toBe(original);
+    expect(original.getDoc()).toBe(body);
+    expect(row('library-first').getAttribute('aria-current')).toBe('page');
+  });
+
+  it('focuses the selected document without refetching or losing its selection', () => {
+    const original = handle();
+    original.getView().dispatch({ selection: { anchor: 2, head: 6 } });
+    vi.mocked(getNoteById).mockClear();
+    row('library-first').click();
+    expect(getNoteById).not.toHaveBeenCalled();
+    expect(handle()).toBe(original);
+    expect(handle().getView().state.selection.main.from).toBe(2);
+    expect(handle().getView().state.selection.main.to).toBe(6);
+    expect(handle().getView().hasFocus).toBe(true);
+  });
+
+  it('hides and restores the library without replacing the editor or its undo history', () => {
+    const original = handle();
+    const view = original.getView();
+    view.dispatch({ changes: { from: view.state.doc.length, insert: ' drafted' } });
+    view.dispatch({ selection: { anchor: 2, head: 6 } });
+    const toggle = section().querySelector<HTMLButtonElement>('[data-notes-library-toggle]')!;
+    expect(toggle.getAttribute('aria-label')).toBe('Hide note library');
+    toggle.click();
+    expect(toggle.getAttribute('aria-label')).toBe('Show note library');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(section().classList.contains('notes-split')).toBe(false);
+    expect(handle()).toBe(original);
+    expect(view.hasFocus).toBe(true);
+    expect(view.state.selection.main.from).toBe(2);
+    toggle.click();
+    expect(toggle.getAttribute('aria-label')).toBe('Hide note library');
+    expect(section().classList.contains('notes-split')).toBe(true);
+    expect(handle()).toBe(original);
+    expect(view.state.selection.main.to).toBe(6);
+    expect(undo(view)).toBe(true);
+    expect(original.getDoc()).toBe('First passage');
+  });
+
+  it('saves outgoing prose before switching to a different library document', async () => {
+    const original = handle();
+    vi.mocked(editNote).mockResolvedValue(makeNote({ ...first(), revision: 2, body_markdown: 'First passage continued', excerpt: 'First passage continued' }));
+    original.getView().dispatch({ changes: { from: original.getDoc().length, insert: ' continued' } });
+    row('library-second').click();
+    await vi.waitFor(() => expect(handle().getDoc()).toBe('Second passage'));
+    expect(editNote).toHaveBeenCalledWith('library-first', expect.objectContaining({ body: 'First passage continued', expected_revision: 1 }));
+    expect(row('library-first').querySelector('.note-row__snippet')?.textContent).toBe('First passage continued');
+    expect(row('library-second').getAttribute('aria-current')).toBe('page');
+    expect(row('library-first').hasAttribute('aria-current')).toBe(false);
+    expect(section().querySelector('[data-notes-target="listPanel"]')?.classList.contains('hidden')).toBe(false);
   });
 });

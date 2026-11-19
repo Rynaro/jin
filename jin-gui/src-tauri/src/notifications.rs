@@ -210,6 +210,10 @@ fn submit_macos_notification(title: &str, body: &str) -> Result<(), String> {
 
     static REQUEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
+    if !macos_notification_center_available() {
+        return Err(macos_unbundled_notification_status().reason);
+    }
+
     let content = UNMutableNotificationContent::new();
     content.setTitle(&NSString::from_str(title));
     content.setBody(&NSString::from_str(body));
@@ -338,6 +342,7 @@ pub enum NotificationDelegateInstallOutcome {
     AlreadyInstalled,
     PreservedExisting,
     SkippedOffMainThread,
+    SkippedUnbundled,
     NotApplicable,
 }
 
@@ -382,6 +387,9 @@ pub fn install_notification_center_delegate() -> NotificationDelegateInstallOutc
 
     if objc2::MainThreadMarker::new().is_none() {
         return NotificationDelegateInstallOutcome::SkippedOffMainThread;
+    }
+    if !macos_notification_center_available() {
+        return NotificationDelegateInstallOutcome::SkippedUnbundled;
     }
     let center = UNUserNotificationCenter::currentNotificationCenter();
     match notification_delegate_slot_decision(
@@ -509,7 +517,53 @@ fn permission_name(permission: NotificationPermission) -> &'static str {
 }
 
 #[cfg(target_os = "macos")]
+fn is_bundled_macos_executable(path: &std::path::Path) -> bool {
+    let Some(executable) = path.file_name() else {
+        return false;
+    };
+    if executable.is_empty() {
+        return false;
+    }
+    let Some(macos) = path.parent() else {
+        return false;
+    };
+    let Some(contents) = macos.parent() else {
+        return false;
+    };
+    let Some(bundle) = contents.parent() else {
+        return false;
+    };
+    macos.file_name().is_some_and(|name| name == "MacOS")
+        && contents.file_name().is_some_and(|name| name == "Contents")
+        && bundle
+            .extension()
+            .is_some_and(|extension| extension == "app")
+}
+
+#[cfg(target_os = "macos")]
+fn macos_notification_center_available() -> bool {
+    std::env::current_exe()
+        .map(|path| is_bundled_macos_executable(&path))
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_unbundled_notification_status() -> NotificationStatusDto {
+    NotificationStatusDto {
+        platform: "macos".into(),
+        permission: NotificationPermission::Unavailable,
+        reason: "Notifications are unavailable while Jin is running outside a bundled .app. Run bundled Jin to test notifications.".into(),
+        can_request: false,
+        can_open_settings: false,
+        settings_scope: "unavailable".into(),
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn platform_status() -> Result<NotificationStatusDto, String> {
+    if !macos_notification_center_available() {
+        return Ok(macos_unbundled_notification_status());
+    }
     use block2::RcBlock;
     use objc2_user_notifications::UNUserNotificationCenter;
     use std::{sync::mpsc, time::Duration};
@@ -566,6 +620,9 @@ fn mac_status(status: objc2_user_notifications::UNAuthorizationStatus) -> Notifi
 
 #[cfg(target_os = "macos")]
 fn request_platform_permission() -> Result<NotificationStatusDto, String> {
+    if !macos_notification_center_available() {
+        return Ok(macos_unbundled_notification_status());
+    }
     use block2::RcBlock;
     use objc2::runtime::Bool;
     use objc2_foundation::NSError;
@@ -1033,6 +1090,39 @@ mod tests {
                 NotificationPermission::Granted
             );
         }
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn macos_notification_center_requires_an_exact_app_bundle_executable_path() {
+        use std::path::Path;
+
+        assert!(is_bundled_macos_executable(Path::new(
+            "/Applications/Jin.app/Contents/MacOS/Jin"
+        )));
+        assert!(!is_bundled_macos_executable(Path::new(
+            "/tmp/Jin.app/Contents/MacOS"
+        )));
+        assert!(!is_bundled_macos_executable(Path::new(
+            "/tmp/Jin/Contents/MacOS/Jin"
+        )));
+        assert!(!is_bundled_macos_executable(Path::new(
+            "/tmp/Jin.app/Contents/Helpers/Jin"
+        )));
+        assert!(!is_bundled_macos_executable(Path::new(
+            "target/debug/jin-gui"
+        )));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn macos_unbundled_notification_status_disables_all_native_actions() {
+        let status = macos_unbundled_notification_status();
+        assert_eq!(status.permission, NotificationPermission::Unavailable);
+        assert!(!status.can_request);
+        assert!(!status.can_open_settings);
+        assert_eq!(status.settings_scope, "unavailable");
+        assert!(status.reason.contains("outside a bundled .app"));
     }
 
     #[test]

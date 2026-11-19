@@ -1,0 +1,140 @@
+{
+  "schema": "ramza/plan-state.v1",
+  "plan": "hidden-sidebar-layout",
+  "created_at": "2026-11-19T21:05:26Z",
+  "tier": "lite",
+  "phase": "DONE",
+  "phases_done": [
+    "RS",
+    "S",
+    "P",
+    "E",
+    "C",
+    "T",
+    "A",
+    "DONE"
+  ],
+  "rightsize": {
+    "score": 2,
+    "computed_tier": "lite",
+    "inputs": {
+      "files_est": 5,
+      "new_dep": false,
+      "public_api": false,
+      "migration": false,
+      "security": false,
+      "novel": false,
+      "stakes": "med"
+    }
+  },
+  "refine_cycles": 0,
+  "skips": [],
+  "gates": [
+    {
+      "rubric": "complexity",
+      "total": 6,
+      "dims": {
+        "scope": 2,
+        "ambiguity": 1,
+        "dependencies": 1,
+        "risk": 2
+      },
+      "verdict": "standard",
+      "at": "2026-11-19T21:05:33Z"
+    },
+    {
+      "rubric": "explore",
+      "total": 92.5,
+      "dims": {
+        "alignment": 10,
+        "correctness": 9,
+        "maintainability": 9,
+        "performance": 10,
+        "simplicity": 9,
+        "risk": 9,
+        "innovation": 6
+      },
+      "verdict": "elite",
+      "at": "2026-11-19T21:05:40Z",
+      "label": "edge-owned-clearance"
+    },
+    {
+      "rubric": "explore",
+      "total": 75,
+      "dims": {
+        "alignment": 7,
+        "correctness": 7,
+        "maintainability": 8,
+        "performance": 10,
+        "simplicity": 9,
+        "risk": 6,
+        "innovation": 3
+      },
+      "verdict": "solid",
+      "at": "2026-11-19T21:05:40Z",
+      "label": "local-notes-padding-reset"
+    },
+    {
+      "rubric": "explore",
+      "total": 80.5,
+      "dims": {
+        "alignment": 8,
+        "correctness": 9,
+        "maintainability": 7,
+        "performance": 10,
+        "simplicity": 7,
+        "risk": 7,
+        "innovation": 6
+      },
+      "verdict": "solid",
+      "at": "2026-11-19T21:05:40Z",
+      "label": "global-extra-titlebar-row"
+    },
+    {
+      "rubric": "explore",
+      "total": 94.5,
+      "dims": {
+        "alignment": 10,
+        "correctness": 10,
+        "maintainability": 10,
+        "performance": 10,
+        "simplicity": 9,
+        "risk": 8,
+        "innovation": 5
+      },
+      "verdict": "elite",
+      "at": "2026-11-19T21:06:34Z",
+      "label": "hidden-only-shared-titlebar-after-parent-selection"
+    },
+    {
+      "rubric": "confidence",
+      "total": 93.75,
+      "dims": {
+        "pattern_match": 95,
+        "requirement_clarity": 95,
+        "decomposition_stability": 90,
+        "constraint_compliance": 95
+      },
+      "verdict": "AUTO_PROCEED",
+      "at": "2026-11-19T21:06:48Z"
+    }
+  ],
+  "amendments": [],
+  "declared_scope": [
+    "jin-gui/src/styles/*",
+    "jin-gui/src/controllers/*",
+    "jin-gui/src/__tests__/*",
+    "jin-gui/tools/*",
+    "jin-gui/index.html",
+    "docs/visual-language/*",
+    "jin-gui/visual-references/*",
+    ".spectra/changes/hidden-sidebar-layout/*"
+  ],
+  "criteria_sha256": "d869e6da71502d6aa9a98475c1725b074b92fb8d906a4b39e19503cad6f9436d",
+  "critic": {
+    "author": null,
+    "checker": null
+  },
+  "scope_declared_at": "2026-11-19T21:06:49Z",
+  "criteria_frozen_at": "2026-11-19T21:06:49Z"
+}

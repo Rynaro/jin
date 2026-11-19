@@ -1,0 +1,13 @@
+change_id: stable-notes-visual-capture
+title: Stable notes visual capture
+maker: vivi
+checker: vigil
+acceptance:
+  - id: SNVC-1
+    requirement: "When the five production UI scenarios are seeded for the detector selftest, the application shall capture each as a fresh PNG that loads at its intrinsic dimensions and byte-matches the source raster before detector assertions proceed."
+  - id: SNVC-2
+    requirement: "When fresh frames pass through the normal reference writer and comparator, adding an actual DOM marker shall reject the marked frame and removing it shall restore equality on a new capture while preserving all immutable reference hashes."
+  - id: SNVC-3
+    requirement: "When stale build stamps, environment mismatches, unknown scenarios, or invalid mutation flags are supplied, the detector selftest shall reject them and retain existing environment and reference-integrity guards."
+  - id: SNVC-4
+    requirement: "When canonical visual comparison runs, it shall independently render the live application and compare exact PNG bytes with platform-bound references while retaining paired baseline and actual PNG diagnostics on mismatch. Linux CI shall upload generated failure screenshots only."

@@ -30,6 +30,8 @@ import {
 } from '../calendar/colors';
 import type { SupportedRecurrenceScope } from '../events/recurrence_scope';
 import { JinModal } from './modal';
+import { initIcons } from '../icons';
+import { openEventPrepNote } from './linked_creation';
 import {
   installNavigationGuard,
   type NavigationIntent,
@@ -150,15 +152,23 @@ export class EventCompanion {
   private readonly presentation: 'auto' | 'modal';
   private readonly onViewportChange = (): void => this.positionFloating();
   private floatingObserver: MutationObserver | null = null;
+  private readonly onOutsidePointerDown = (event: PointerEvent): void => {
+    if (!this.floating?.isConnected || this.floating.contains(event.target as Node)) return;
+    if (!this.workspace.contains(event.target as Node)) return;
+    // Calendar selection begins on pointerdown. Keep that gesture from
+    // replacing the current draft before its click can dismiss the inspector.
+    event.preventDefault();
+    event.stopPropagation();
+  };
   private readonly onOutsideClick = (event: MouseEvent): void => {
     if (!this.floating?.isConnected || this.floating.contains(event.target as Node)) return;
     // Route changes outside Calendar are mediated by the navigation guard,
     // which can resume the original intent after a discard decision.
     if (!this.workspace.contains(event.target as Node)) return;
-    if (this.isDraftDirty() || this.operationState === 'persisting') {
-      event.preventDefault();
-      event.stopPropagation();
-    }
+    // One gesture dismisses the inspector. Letting this same click reach a
+    // calendar cell would immediately open another draft beneath it.
+    event.preventDefault();
+    event.stopPropagation();
     void this.requestDismiss();
   };
   private recurrenceScopes: readonly SupportedRecurrenceScope[];
@@ -171,6 +181,8 @@ export class EventCompanion {
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape' || !this.open) return;
+    const topDialog = Array.from(document.querySelectorAll('dialog[open]')).at(-1);
+    if (topDialog && topDialog !== this.dialogEl()) return;
     if (this.operationState === 'persisting') {
       event.preventDefault();
       this.announce(eventMessage('saving', this.locale));
@@ -221,7 +233,10 @@ export class EventCompanion {
     this.closeBtn.type = 'button';
     this.closeBtn.className = 'modal-close-btn tap-target event-companion__close';
     this.closeBtn.setAttribute('aria-label', eventMessage('close', this.locale));
-    this.closeBtn.textContent = '×';
+    const closeIcon = document.createElement('i');
+    closeIcon.dataset.lucide = 'x';
+    closeIcon.setAttribute('aria-hidden', 'true');
+    this.closeBtn.appendChild(closeIcon);
     this.closeBtn.addEventListener('click', () => {
       void this.requestDismiss();
     });
@@ -479,6 +494,7 @@ export class EventCompanion {
     window.addEventListener('resize', this.onViewportChange);
     window.addEventListener('scroll', this.onViewportChange, true);
     document.addEventListener('click', this.onOutsideClick, true);
+    document.addEventListener('pointerdown', this.onOutsidePointerDown, true);
     this.floatingObserver = new MutationObserver(this.onViewportChange);
     this.floatingObserver.observe(this.panel, { childList: true, subtree: true, attributes: true });
     this.positionFloating();
@@ -554,6 +570,7 @@ export class EventCompanion {
       window.removeEventListener('resize', this.onViewportChange);
       window.removeEventListener('scroll', this.onViewportChange, true);
       document.removeEventListener('click', this.onOutsideClick, true);
+      document.removeEventListener('pointerdown', this.onOutsidePointerDown, true);
       this.floatingObserver?.disconnect();
       this.floatingObserver = null;
     }
@@ -570,6 +587,11 @@ export class EventCompanion {
       this.modal = null;
     }
     this.hostKind = null;
+  }
+
+  private openLinkedItem(kind: 'notes' | 'tasks' | 'events', id: string): void {
+    this.close(true);
+    this.workspace.dispatchEvent(new CustomEvent('jin:navigate', { bubbles: true, detail: { kind, id } }));
   }
 
   private renderBody(): void {
@@ -597,6 +619,11 @@ export class EventCompanion {
               temporalDisabledReason: this.temporalDisabledReason,
             });
           },
+          onCreatePrepNote: () => {
+            if (!this.detail) return;
+            openEventPrepNote(this.detail, note => this.openLinkedItem('notes', note.id), this.locale);
+          },
+          onNavigate: (kind, id) => this.openLinkedItem(kind, id),
           onOpenFullDetails: (eventId) => {
             this.onOpenFullDetails?.(eventId);
           },
@@ -687,6 +714,7 @@ export class EventCompanion {
       this.footerSlot.insertBefore(this.composer.footer, this.statusRegion);
     }
 
+    initIcons(this.panel);
     this.applyPersistingChrome();
     this.positionFloating();
     this.announce(this.statusOverride ?? operationStatusCopy(this.operationState, this.detail, this.locale));

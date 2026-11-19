@@ -7,11 +7,16 @@
   "scripts": {
     "dev": "vite",
     "dev:agent": "vite --host 127.0.0.1 --port 1420 --strictPort",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node tools/gui-build-fingerprint.mjs",
     "icons:generate": "bash tools/generate-app-icons.sh",
     "preview": "vite preview",
     "test": "vitest run",
     "test:production-due": "node tools/production-due-smoke.mjs",
+    "test:notes-writing-surface": "node tools/gui-build-fingerprint.mjs --verify && node tools/notes-writing-surface-smoke.mjs",
+    "visual:candidates": "npm run visual:compare",
+    "visual:compare": "node tools/visual-command.mjs --compare",
+    "visual:record": "node tools/visual-command.mjs --record",
+    "visual:selftest": "node tools/visual-command.mjs --selftest",
     "tauri": "tauri",
     "lint:css": "stylelint 'src/styles/**/*.css'",
     "screenshots": "vite build && node tools/screenshot.mjs"

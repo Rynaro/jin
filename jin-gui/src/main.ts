@@ -46,6 +46,7 @@ import CalendarController from './controllers/calendar_controller';
 import TemporalEditorController from './controllers/temporal_editor_controller';
 import NotificationsController from './controllers/notifications_controller';
 import FirstRunController from './controllers/first_run_controller';
+import FindController from './controllers/find_controller';
 import { getLaunchState } from './invoke';
 import { applyLaunchMode } from './lib/launch_bootstrap';
 import { isTauri } from '@tauri-apps/api/core';
@@ -85,6 +86,7 @@ function startReadyApp(): void {
   stimulusApp.register('calendar', CalendarController);
   stimulusApp.register('temporal-editor', TemporalEditorController);
   stimulusApp.register('notifications', NotificationsController);
+  stimulusApp.register('find', FindController);
   initIcons();
 }
 

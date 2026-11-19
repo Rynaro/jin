@@ -1,0 +1,79 @@
+{
+  "schema": "ramza/plan-state.v1",
+  "plan": "calendar-and-sidebar-polish",
+  "created_at": "2026-11-19T19:48:08Z",
+  "tier": "lite",
+  "phase": "DONE",
+  "phases_done": [
+    "RS",
+    "S",
+    "P",
+    "E",
+    "C",
+    "T",
+    "A",
+    "DONE"
+  ],
+  "rightsize": {
+    "score": 2,
+    "computed_tier": "lite",
+    "inputs": {
+      "files_est": 8,
+      "new_dep": false,
+      "public_api": false,
+      "migration": false,
+      "security": false,
+      "novel": false,
+      "stakes": "med"
+    }
+  },
+  "refine_cycles": 0,
+  "skips": [],
+  "gates": [
+    {
+      "rubric": "explore",
+      "total": 90.5,
+      "dims": {
+        "alignment": 10,
+        "correctness": 9,
+        "maintainability": 9,
+        "performance": 9,
+        "simplicity": 9,
+        "risk": 8,
+        "innovation": 7
+      },
+      "verdict": "elite",
+      "at": "2026-11-19T19:50:33Z",
+      "label": "shared-controls-header-utilities"
+    },
+    {
+      "rubric": "confidence",
+      "total": 93.75,
+      "dims": {
+        "pattern_match": 95,
+        "requirement_clarity": 95,
+        "decomposition_stability": 90,
+        "constraint_compliance": 95
+      },
+      "verdict": "AUTO_PROCEED",
+      "at": "2026-11-19T19:50:33Z"
+    }
+  ],
+  "amendments": [],
+  "declared_scope": [
+    "jin-gui/index.html",
+    "jin-gui/src/lib/events/*",
+    "jin-gui/src/lib/ui/*",
+    "jin-gui/src/lib/shell/*",
+    "jin-gui/src/styles/*",
+    "jin-gui/src/__tests__/*",
+    ".spectra/*"
+  ],
+  "criteria_sha256": "873551b9ce3f91645a0f610a30e584a00e1bb75660db764219d5fda0006f3654",
+  "critic": {
+    "author": null,
+    "checker": null
+  },
+  "criteria_frozen_at": "2026-11-19T19:50:33Z",
+  "scope_declared_at": "2026-11-19T19:50:33Z"
+}

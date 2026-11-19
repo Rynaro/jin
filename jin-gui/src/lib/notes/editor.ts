@@ -94,6 +94,7 @@ export interface MountEditorOptions {
   readOnly?: boolean;
   /** Opens the app-owned attachment picker. The caller owns the async bridge. */
   onAddAttachment?: () => void;
+  onCreateTask?: (excerpt: string) => void;
 }
 
 export interface CompactEditorHandle {
@@ -124,9 +125,9 @@ export { LanguageDescription };
 
 export const jinHighlightStyle = HighlightStyle.define([
   // Heading content — larger + bold, scaling from h1 → h6
-  { tag: tags.heading1, fontFamily: 'var(--font-text)', fontSize: 'var(--prose-h1-size)', fontWeight: '700', color: 'var(--notes-writing-ink)' },
-  { tag: tags.heading2, fontFamily: 'var(--font-text)', fontSize: 'var(--prose-h2-size)', fontWeight: '700', color: 'var(--notes-writing-ink)' },
-  { tag: tags.heading3, fontFamily: 'var(--font-text)', fontSize: 'var(--prose-h3-size)', fontWeight: '700', color: 'var(--notes-writing-ink)' },
+  { tag: tags.heading1, fontFamily: 'var(--notes-prose-font)', fontSize: 'var(--prose-h1-size)', fontWeight: '600', color: 'var(--notes-writing-ink)' },
+  { tag: tags.heading2, fontFamily: 'var(--notes-prose-font)', fontSize: 'var(--prose-h2-size)', fontWeight: '600', color: 'var(--notes-writing-ink)' },
+  { tag: tags.heading3, fontFamily: 'var(--notes-prose-font)', fontSize: 'var(--prose-h3-size)', fontWeight: '600', color: 'var(--notes-writing-ink)' },
   { tag: tags.heading4, fontSize: '1.2em', fontWeight: '600', color: 'var(--label)' },
   { tag: tags.heading5, fontSize: '1.1em', fontWeight: '600', color: 'var(--label)' },
   { tag: tags.heading6, fontSize: '1.0em', fontWeight: '600', color: 'var(--label)' },
@@ -212,7 +213,7 @@ const jinEditorTheme = EditorView.theme({
   '&': {
     // No fixed height — editor grows with content inside the scroll region
     background: 'var(--notes-writing-paper)',
-    fontFamily: 'var(--font-text)',
+    fontFamily: 'var(--notes-prose-font)',
     fontSize: 'var(--notes-prose-size)',
   },
   '.cm-scroller': {
@@ -221,7 +222,7 @@ const jinEditorTheme = EditorView.theme({
   },
   '.cm-content': {
     caretColor: 'var(--agenda-indigo)',
-    fontFamily: 'var(--font-text)',
+    fontFamily: 'var(--notes-prose-font)',
     fontSize: 'var(--notes-prose-size)',
     lineHeight: 'var(--notes-prose-line)',
     maxWidth: '100%',
@@ -660,19 +661,26 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
 
   // ── Local DOM helpers ─────────────────────────────────────────────────────
   /** Create a ghost icon button for the formatting toolbar. */
-  const mkBtn = (iconName: string, label: string): HTMLButtonElement => {
+  const mkBtn = (iconName: string, label: string, visibleLabel?: string): HTMLButtonElement => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'cm-toolbar__btn';
     btn.setAttribute('aria-label', label);
-    // Native hover tooltip. The formatting toolbar is horizontally scrollable
-    // (overflow-x:auto forces overflow-y:auto), which would clip a CSS balloon
-    // tooltip — the native title escapes the overflow box and never clips.
+    // The compact toolbar keeps a native title as a supplementary label. Its
+    // secondary commands live in the More disclosure rather than an
+    // overflowing horizontal strip, so no command relies on clipped chrome.
     btn.title = label;
     const i = document.createElement('i');
     i.setAttribute('data-lucide', iconName);
     i.setAttribute('aria-hidden', 'true');
     btn.appendChild(i);
+    if (visibleLabel) {
+      btn.classList.add('cm-toolbar__btn--labelled');
+      const text = document.createElement('span');
+      text.className = 'cm-toolbar__btn-label';
+      text.textContent = visibleLabel;
+      btn.appendChild(text);
+    }
     return btn;
   };
 
@@ -712,20 +720,15 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   // Block group
   const quoteBtn   = mkBtn('quote', 'Blockquote');
   const linkFmtBtn = mkBtn('link',  'Insert link');
-  const openSelectedLinkBtn = mkBtn('link', 'Open selected link');
+  const openSelectedLinkBtn = mkBtn('link', 'Open selected link', 'Open link');
   openSelectedLinkBtn.disabled = true;
-  const attachmentBtn = mkBtn('paperclip', 'Add image or attachment');
+  const attachmentBtn = mkBtn('paperclip', 'Add image or attachment', 'Attach');
   attachmentBtn.dataset.tooltip = 'Add Attachment';
 
-  // Spacer keeps the real mode controls visually distinct on wide screens.
-  const toolbarSpacer = document.createElement('div');
-  toolbarSpacer.className = 'cm-toolbar__spacer';
-  toolbarSpacer.setAttribute('aria-hidden', 'true');
-
   // Mode toggles (right cluster — focus + typewriter; before Read toggle — D-TOGGLE)
-  const focusBtn = mkBtn('focus', 'Focus mode');
+  const focusBtn = mkBtn('focus', 'Focus mode', 'Focus');
   focusBtn.setAttribute('aria-pressed', 'false');
-  const typewriterBtn = mkBtn('align-center-vertical', 'Typewriter scrolling');
+  const typewriterBtn = mkBtn('align-center-vertical', 'Typewriter scrolling', 'Typewriter');
   typewriterBtn.setAttribute('aria-pressed', 'false');
 
   // Reading-view toggle (right-aligned; class preserved for test compat)
@@ -736,13 +739,48 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   toggleBtn.setAttribute('aria-label', 'Switch to reading mode');
   toggleBtn.title = 'Switch to reading mode';
 
-  toolbar.appendChild(mkGroup('Structure', [h1Btn, h2Btn, h3Btn, tableBtn]));
-  toolbar.appendChild(mkGroup('Inline formatting', [boldBtn, italicBtn, strikeBtn, codeBtn]));
-  toolbar.appendChild(mkGroup('Lists', [bulletBtn, numberedBtn, checklistBtn]));
-  toolbar.appendChild(mkGroup('Blocks', [quoteBtn, linkFmtBtn, openSelectedLinkBtn]));
-  toolbar.appendChild(mkGroup('Media', [attachmentBtn]));
-  toolbar.appendChild(toolbarSpacer);
-  toolbar.appendChild(mkGroup('Writing modes', [focusBtn, typewriterBtn, toggleBtn]));
+  const primary = document.createElement('div');
+  primary.className = 'cm-toolbar__primary';
+  primary.setAttribute('role', 'group');
+  primary.setAttribute('aria-label', 'Common formatting');
+  primary.append(boldBtn, italicBtn, bulletBtn, checklistBtn, linkFmtBtn);
+
+  const more = document.createElement('details');
+  more.className = 'cm-toolbar__more';
+  const moreSummary = document.createElement('summary');
+  moreSummary.className = 'cm-toolbar__more-trigger';
+  moreSummary.textContent = 'More';
+  moreSummary.setAttribute('aria-label', 'More formatting options');
+  moreSummary.title = 'More formatting options';
+  const morePanel = document.createElement('div');
+  morePanel.className = 'cm-toolbar__more-panel';
+  morePanel.append(
+    mkGroup('Structure', [h1Btn, h2Btn, h3Btn, tableBtn]),
+    mkGroup('Inline formatting', [strikeBtn, codeBtn]),
+    mkGroup('Lists', [numberedBtn]),
+    mkGroup('Blocks', [quoteBtn, openSelectedLinkBtn]),
+    mkGroup('Media', [attachmentBtn]),
+    mkGroup('Writing modes', [focusBtn, typewriterBtn]),
+  );
+  more.append(moreSummary, morePanel);
+  more.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !more.open) return;
+    event.preventDefault();
+    more.open = false;
+    moreSummary.focus();
+  });
+
+  const taskBtn = mkBtn('list-todo', 'Create task from selection', 'Create task');
+  taskBtn.disabled = true;
+  taskBtn.title = 'Select note text to create a linked task';
+  taskBtn.addEventListener('click', () => {
+    const selected = view.state.selection.main;
+    const excerpt = view.state.sliceDoc(selected.from, selected.to);
+    if (excerpt.trim()) opts.onCreateTask?.(excerpt);
+  });
+  toolbar.append(primary, more);
+  if (opts.onCreateTask) toolbar.append(taskBtn);
+  toolbar.append(toggleBtn);
 
   // ── Scroll region (flex:1; overflow-y:auto) — callers prepend/append into this ─
   const scrollRegion = document.createElement('div');
@@ -777,7 +815,7 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
 
   // Save status — class .cm-toolbar__status PRESERVED for test compat
   const statusEl = document.createElement('span');
-  statusEl.className = 'cm-toolbar__status';
+  statusEl.className = 'cm-toolbar__status jin-status-message';
   statusEl.setAttribute('aria-live', 'polite');
   statusEl.setAttribute('aria-atomic', 'true');
 
@@ -794,6 +832,7 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   // ── Internal save wrapper (manages status indicator text) ─────────────────
   const setSaveStatus = (state: 'saving' | 'saved' | 'failed' | 'paused', text: string): void => {
     statusEl.dataset.saveState = state;
+    statusEl.dataset.state = state;
     statusEl.textContent = text;
   };
 
@@ -928,6 +967,8 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
         // Doc-change listener → schedule debounced save + update footer stats
         EditorView.updateListener.of((update: ViewUpdate) => {
           if (update.docChanged || update.selectionSet) {
+            const selected = update.state.selection.main;
+            taskBtn.disabled = readOnly || !update.state.sliceDoc(selected.from, selected.to).trim();
             openSelectedLinkBtn.disabled = !normalizeExternalUrl(linkAtPosition(update.state, update.state.selection.main.head) ?? '');
           }
           if (update.docChanged || update.selectionSet || update.viewportChanged) scheduleLiveImageHydration();
@@ -1165,30 +1206,66 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   };
 
   // ── Wire toolbar button click handlers (view is now available) ────────────
-  h1Btn.addEventListener('click', () => { setHeading(1)(view); });
-  h2Btn.addEventListener('click', () => { setHeading(2)(view); });
-  h3Btn.addEventListener('click', () => { setHeading(3)(view); });
-  tableBtn.addEventListener('click', () => { insertTable(view); });
+  const closeMore = (): void => { more.open = false; };
+  const keepMoreInViewport = (): void => {
+    if (!more.open) return;
+    // The disclosure is anchored to a compact toolbar. Translate only as much
+    // as needed to keep its real panel inside the viewport; this preserves the
+    // trigger relationship without turning the toolbar back into a scroller.
+    morePanel.style.transform = '';
+    const triggerRect = moreSummary.getBoundingClientRect();
+    // Keep the trigger visible and give the disclosure the actual space below
+    // it. Its own vertical scroll retains every secondary command at AX sizes.
+    morePanel.style.maxBlockSize = `${Math.max(96, window.innerHeight - triggerRect.bottom - 16)}px`;
+    requestAnimationFrame(() => {
+      if (!more.open || destroyed) return;
+      const rect = morePanel.getBoundingClientRect();
+      const inset = 8;
+      const shiftX = rect.left < inset
+        ? inset - rect.left
+        : rect.right > window.innerWidth - inset
+          ? window.innerWidth - inset - rect.right
+          : 0;
+      const shiftY = rect.top < inset
+        ? inset - rect.top
+        : rect.bottom > window.innerHeight - inset
+          ? window.innerHeight - inset - rect.bottom
+          : 0;
+      morePanel.style.transform = shiftX === 0 && shiftY === 0 ? '' : `translate(${shiftX}px, ${shiftY}px)`;
+    });
+  };
+  const dismissMore = (event: PointerEvent): void => {
+    if (more.open && event.target instanceof Node && !more.contains(event.target)) closeMore();
+  };
+  more.addEventListener('toggle', keepMoreInViewport);
+  document.addEventListener('pointerdown', dismissMore);
+  window.addEventListener('resize', keepMoreInViewport);
+  h1Btn.addEventListener('click', () => { setHeading(1)(view); closeMore(); });
+  h2Btn.addEventListener('click', () => { setHeading(2)(view); closeMore(); });
+  h3Btn.addEventListener('click', () => { setHeading(3)(view); closeMore(); });
+  tableBtn.addEventListener('click', () => { insertTable(view); closeMore(); });
   boldBtn.addEventListener('click',   () => { toggleInlineWrap('**')(view); });
   italicBtn.addEventListener('click', () => { toggleInlineWrap('*')(view); });
-  strikeBtn.addEventListener('click', () => { toggleInlineWrap('~~')(view); });
-  codeBtn.addEventListener('click',   () => { toggleInlineWrap('`')(view); });
+  strikeBtn.addEventListener('click', () => { toggleInlineWrap('~~')(view); closeMore(); });
+  codeBtn.addEventListener('click',   () => { toggleInlineWrap('`')(view); closeMore(); });
   bulletBtn.addEventListener('click',    () => { toggleLinePrefix(view, '- '); });
-  numberedBtn.addEventListener('click',  () => { toggleLinePrefix(view, '1. '); });
+  numberedBtn.addEventListener('click',  () => { toggleLinePrefix(view, '1. '); closeMore(); });
   checklistBtn.addEventListener('click', () => { toggleLinePrefix(view, '- [ ] '); });
-  quoteBtn.addEventListener('click',   () => { toggleLinePrefix(view, '> '); });
+  quoteBtn.addEventListener('click',   () => { toggleLinePrefix(view, '> '); closeMore(); });
   linkFmtBtn.addEventListener('click', openLinkComposer);
   openSelectedLinkBtn.addEventListener('click', () => {
     const href = linkAtPosition(view.state, view.state.selection.main.head);
     if (href) confirmExternalLink(href, openSelectedLinkBtn);
+    closeMore();
   });
-  attachmentBtn.addEventListener('click', () => { onAddAttachment?.(); });
+  attachmentBtn.addEventListener('click', () => { onAddAttachment?.(); closeMore(); });
 
   // Focus mode toggle (COZY-1) — reconfigure compartment; no remount, caret-safe
   focusBtn.addEventListener('click', () => {
     focusOn = !focusOn;
     view.dispatch({ effects: focusCompartment.reconfigure(focusOn ? jinFocusMode() : []) });
     focusBtn.setAttribute('aria-pressed', String(focusOn));
+    closeMore();
     view.focus();
   });
 
@@ -1203,6 +1280,7 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
       ),
     });
     typewriterBtn.setAttribute('aria-pressed', String(typewriterOn));
+    closeMore();
     view.focus();
   });
 
@@ -1326,6 +1404,8 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
       readingHydrationGeneration += 1;
       revokeReadingMedia?.();
       revokeReadingMedia = null;
+      document.removeEventListener('pointerdown', dismissMore);
+      window.removeEventListener('resize', keepMoreInViewport);
       linkDialog.remove();
     },
 

@@ -23,7 +23,7 @@
           <li data-first-run-target="railItem" data-first-run-rail="settings">Appearance</li>
           <li data-first-run-target="railItem" data-first-run-rail="review">Review</li>
         </ol>
-        <div class="first-run__artwork" aria-hidden="true"><img src="/jin-logo.png" alt="" /></div>
+        <div class="first-run__artwork" aria-hidden="true"><img src="/jin-landscape.webp" alt="" /></div>
       </div>
       <div class="first-run__content">
         <p class="first-run__eyebrow" data-first-run-target="eyebrow">First-time setup</p>
@@ -112,7 +112,7 @@
     <div
       class="jin-shell"
       hidden
-      data-controller="router capture actions sidebar"
+      data-controller="router capture actions sidebar find"
       data-active-section="today"
       data-action="today:navigate->router#handleTodayNavigate jin:navigate->router#handleNavigate jin:open-promote->actions#openPromote jin:open-attach->actions#openAttach jin:open-link->actions#openLink jin:route-committed@window->sidebar#routeCommitted jin:sidebar-toggle@window->sidebar#toggle jin:sidebar-selection@window->sidebar#selectionCommitted"
     >
@@ -133,6 +133,35 @@
             <span class="jin-app-name__label">Jin</span>
             <span class="jin-app-name__seal" aria-hidden="true"></span>
           </span>
+          <nav class="jin-sidebar-utilities" aria-label="Application utilities">
+            <ul class="jin-navigation-list" role="list">
+              <li role="none">
+                <a
+                  href="#notifications"
+                  class="jin-nav-item jin-sidebar-utility tap-target"
+                  aria-label="Notifications, 0 unread"
+                  data-tooltip="Notifications" title="Notifications"
+                  data-section="notifications"
+                  data-notifications-nav
+                  data-router-target="navItem"
+                  data-action="click->router#navigateTo"
+                >
+                  <i data-lucide="bell" class="jin-navigation-row__icon" aria-hidden="true"></i>
+                  <span class="sr-only">Notifications</span>
+                  <span class="jin-nav-badge" data-notifications-badge hidden aria-hidden="true">0</span>
+                  <span class="sr-only" data-notifications-badge-label>0 unread notifications</span>
+                </a>
+              </li>
+              <li role="none">
+                <a href="#settings" class="jin-settings-btn jin-sidebar-utility tap-target"
+                  aria-label="Settings" data-tooltip="Settings" title="Settings" data-section="settings"
+                  data-router-target="navItem" data-action="click->router#navigateTo">
+                  <i data-lucide="settings" class="jin-navigation-row__icon" aria-hidden="true"></i>
+                  <span class="sr-only">Settings</span>
+                </a>
+              </li>
+            </ul>
+          </nav>
           <button
             type="button"
             class="jin-sidebar-toggle tap-target"
@@ -158,36 +187,15 @@
             <i data-lucide="plus" aria-hidden="true"></i>
             <span>Capture</span>
           </button>
+          <button type="button" class="jin-find-trigger tap-target" data-action="click->find#open"
+            aria-label="Find in Jin" aria-keyshortcuts="Control+Shift+F Meta+Shift+F">
+            <i data-lucide="search" aria-hidden="true"></i>
+            <span>Find</span><kbd data-find-shortcut>⌘/Ctrl ⇧ F</kbd>
+          </button>
         </div>
-
-        <button type="button" class="jin-section-switcher tap-target"
-          data-sidebar-target="switcher" data-action="click->sidebar#toggleSwitcher"
-          aria-expanded="false" aria-controls="jin-nav-routes" aria-label="Today, choose section">
-          <span class="jin-section-switcher__label" data-sidebar-target="sectionLabel">Today</span>
-          <span class="jin-section-switcher__unread" aria-hidden="true"></span>
-          <i data-lucide="chevron-down" aria-hidden="true"></i>
-        </button>
 
         <nav id="jin-nav-routes" class="jin-nav" aria-label="Application sections" data-sidebar-target="routes">
           <ul class="jin-nav-list jin-navigation-list" role="list">
-            <li role="none">
-              <a
-                href="#notifications"
-                class="jin-nav-item jin-navigation-row tap-target"
-                aria-label="Notifications, 0 unread"
-                data-tooltip="Notifications"
-                data-section="notifications"
-                data-notifications-nav
-                data-router-target="navItem"
-                data-action="click->router#navigateTo"
-              >
-                <i data-lucide="bell" class="jin-navigation-row__icon" aria-hidden="true"></i>
-                <span class="jin-navigation-row__label">Notifications</span>
-                <span class="jin-nav-badge jin-navigation-row__meta" data-notifications-badge hidden aria-hidden="true">0</span>
-                <span class="sr-only" data-notifications-badge-label>0 unread notifications</span>
-              </a>
-            </li>
-
             <li role="none">
               <a
                 href="#today"
@@ -203,22 +211,6 @@
                 <span class="jin-navigation-row__label">Today</span>
               </a>
             </li>
-
-            <li role="none">
-              <a
-                href="#notes"
-                class="jin-nav-item jin-navigation-row tap-target"
-                aria-label="Notes"
-                data-tooltip="Notes"
-                data-section="notes"
-                data-router-target="navItem"
-                data-action="click->router#navigateTo"
-              >
-                <i data-lucide="file-text" class="jin-navigation-row__icon" aria-hidden="true"></i>
-                <span class="jin-navigation-row__label">Notes</span>
-              </a>
-            </li>
-
             <li role="none">
               <a
                 href="#tasks"
@@ -233,31 +225,34 @@
                 <span class="jin-navigation-row__label">Tasks</span>
               </a>
             </li>
-
+            <li role="none">
+              <a
+                href="#notes"
+                class="jin-nav-item jin-navigation-row tap-target"
+                aria-label="Notes"
+                data-tooltip="Notes"
+                data-section="notes"
+                data-router-target="navItem"
+                data-action="click->router#navigateTo"
+              >
+                <i data-lucide="file-text" class="jin-navigation-row__icon" aria-hidden="true"></i>
+                <span class="jin-navigation-row__label">Notes</span>
+              </a>
+            </li>
             <li role="none">
               <a
                 href="#events"
                 class="jin-nav-item jin-navigation-row tap-target"
-                aria-label="Events"
-                data-tooltip="Events"
+                aria-label="Calendar"
+                data-tooltip="Calendar"
                 data-section="events"
                 data-router-target="navItem"
                 data-action="click->router#navigateTo"
               >
                 <i data-lucide="calendar-days" class="jin-navigation-row__icon" aria-hidden="true"></i>
-                <span class="jin-navigation-row__label">Events</span>
+                <span class="jin-navigation-row__label">Calendar</span>
               </a>
             </li>
-
-            <li role="none">
-              <a href="#settings" class="jin-settings-btn jin-navigation-row tap-target"
-                aria-label="Settings" data-tooltip="Settings" data-section="settings"
-                data-router-target="navItem" data-action="click->router#navigateTo">
-                <i data-lucide="settings" class="jin-navigation-row__icon" aria-hidden="true"></i>
-                <span class="jin-navigation-row__label">Settings</span>
-              </a>
-            </li>
-
           </ul>
         </nav>
       </aside>
@@ -280,6 +275,7 @@
             <i data-lucide="panel-left-open" aria-hidden="true"></i>
             <span>Show navigation</span>
           </button>
+          <div class="jin-content-navigation__drag" data-tauri-drag-region aria-hidden="true"></div>
         </div>
         <!-- Error banner (ErrorController renders into this) -->
         <div
@@ -371,6 +367,7 @@
 
           <div class="today-page-inner">
             <header class="today-masthead">
+              <div class="today-masthead__copy">
               <p data-today-target="dateEyebrow" class="visually-hidden">Your selected day</p>
               <output
                 data-today-target="dateLabel"
@@ -380,6 +377,8 @@
                 aria-label="Selected date"
               >Today</output>
               <p data-today-target="summary" class="today-masthead__summary">Your day at a glance.</p>
+              </div>
+              <img class="today-masthead__landscape" src="/jin-landscape.webp" alt="" aria-hidden="true" width="600" height="200" />
             </header>
 
           <!-- ── Loading state ─────────────────────────────────────────────── -->
@@ -525,7 +524,6 @@
                   <i data-lucide="plus" aria-hidden="true"></i>
                 </button>
               </div>
-              <p class="notes-collections__hint">Saved views that update as your notes change. Notes stay in their folders.</p>
               <ul
                 class="notes-collections__list jin-navigation-list jin-navigation-list--inset"
                 data-notes-target="collectionList"
@@ -537,11 +535,11 @@
               <span class="notes-folder-rail__title text-caption1">Folders</span>
               <button
                 type="button"
-                class="notes-folder-rail__collapse-btn jin-control jin-control--icon tap-target"
-                data-action="click->notes#togglePane"
-                aria-label="Collapse sidebar"
+                class="notes-folder-rail__new-btn jin-control tap-target"
+                data-action="click->notes#newFolder"
+                aria-label="New folder"
               >
-                <i data-lucide="panel-left-close" aria-hidden="true"></i>
+                <i data-lucide="folder-plus" aria-hidden="true"></i>
               </button>
             </div>
             <!-- Tree container stays under NotesController for WAI-ARIA keys. -->
@@ -552,28 +550,11 @@
               aria-label="Folders"
               data-action="keydown->notes#onTreeKeydown"
             ></ul>
-            <button
-              type="button"
-              class="notes-folder-rail__new-btn jin-control tap-target"
-              data-action="click->notes#newFolder"
-              aria-label="New folder"
-            >
-              <i data-lucide="folder-plus" aria-hidden="true"></i>
-              <span>New Folder</span>
-            </button>
+
           </div>
 
           <!-- ── List panel ─────────────────────────────────────────────────── -->
-          <div class="notes-list-pane jin-workspace-pane" data-notes-target="listPanel" data-sidebar-workspace>
-            <!-- Reveal control: shown only when .rail-collapsed is active -->
-            <button
-              type="button"
-              class="notes-rail-reveal jin-control jin-control--icon tap-target"
-              data-action="click->notes#togglePane"
-              aria-label="Show sidebar"
-            >
-              <i data-lucide="panel-left-open" aria-hidden="true"></i>
-            </button>
+          <div id="notes-library" class="notes-list-pane jin-workspace-pane" data-notes-target="listPanel" data-sidebar-workspace>
             <div class="notes-list-pane__header jin-workspace-header">
               <div class="notes-explorer__toolbar">
                 <div class="notes-explorer__identity">
@@ -596,9 +577,9 @@
                     data-action="input->notes#onSearchInput keydown->notes#onSearchKeydown"
                   />
                   </label>
-                  <div class="notes-explorer__view-switch" role="group" aria-label="Notes view">
-                    <button type="button" class="notes-explorer__view-button" data-notes-target="listViewButton" data-action="click->notes#showListView" aria-label="List view" aria-pressed="true"><i data-lucide="list" aria-hidden="true"></i><span>List</span></button>
-                    <button type="button" class="notes-explorer__view-button" data-notes-target="cardsViewButton" data-action="click->notes#showCardsView" aria-label="Cards view" aria-pressed="false"><i data-lucide="layout-grid" aria-hidden="true"></i><span>Cards</span></button>
+                  <div class="notes-explorer__view-switch jin-segmented-control" role="group" aria-label="Notes view">
+                    <button type="button" class="notes-explorer__view-button jin-segmented-control__item" data-notes-target="listViewButton" data-action="click->notes#showListView" aria-label="List view" aria-pressed="true"><i data-lucide="list" aria-hidden="true"></i><span>List</span></button>
+                    <button type="button" class="notes-explorer__view-button jin-segmented-control__item" data-notes-target="cardsViewButton" data-action="click->notes#showCardsView" aria-label="Cards view" aria-pressed="false"><i data-lucide="layout-grid" aria-hidden="true"></i><span>Cards</span></button>
                   </div>
                 <button
                   type="button"
@@ -656,16 +637,7 @@
             -->
             <div class="notes-detail-pane__header jin-toolbar-strip jin-chrome">
               <span class="notes-detail-pane__drag" data-tauri-drag-region aria-hidden="true"></span>
-              <!-- Reveal control: shown only when .rail-collapsed is active -->
-              <button
-                type="button"
-                class="notes-rail-reveal jin-control jin-control--icon tap-target"
-                data-action="click->notes#togglePane"
-                aria-label="Show sidebar"
-              >
-                <i data-lucide="panel-left-open" aria-hidden="true"></i>
-              </button>
-              <button
+                <button
                 type="button"
                 class="browse-back-btn jin-control tap-target"
                 data-action="click->notes#showList"
@@ -679,6 +651,7 @@
                 data-notes-target="detailBreadcrumb"
                 aria-hidden="true"
               ></span>
+              <button type="button" class="notes-library-toggle jin-control tap-target" data-notes-library-toggle data-action="click->notes#toggleLibrary" aria-label="Hide note library" aria-controls="notes-library" aria-expanded="true" title="Hide note library"><i data-lucide="panel-left-close" aria-hidden="true"></i></button>
               <div class="notes-detail-pane__formatting" aria-label="Note formatting"></div>
               <!-- item 1: icon-only action cluster — populated by renderNoteDetail -->
               <div
@@ -934,6 +907,7 @@
               </button>
             </div>
             <form class="action-dialog__form" novalidate data-action="submit->notes#submitCollection">
+              <p class="notes-scope-description">Saved views that update as your notes change. Notes stay in their folders.</p>
               <div class="form-group">
                 <label class="form-label" for="collection-name">Name <span aria-hidden="true">*</span></label>
                 <input id="collection-name" type="text" class="form-input" data-notes-target="collectionNameInput" aria-required="true" />
@@ -1197,23 +1171,6 @@
             aria-label="Task lists"
             data-action="jin:tasks-changed@window->lists#handleTasksChanged jin:scope-set@window->lists#handleScopeSet jin:open-task-container@window->lists#openCreate"
           >
-            <div class="tasks-lists-rail__mobile-header">
-              <span>Task lists</span>
-              <button type="button" class="tasks-lists-rail__close jin-control jin-control--secondary" data-tasks-target="railCloseBtn" data-action="click->tasks#toggleRail" aria-label="Close task lists">
-                Close
-              </button>
-            </div>
-            <!-- ── Smart Views group (S5) — above the Lists group (AC-S5-01) ── -->
-            <div class="tasks-lists-rail__header jin-section-header">
-              <span class="tasks-lists-rail__title text-caption1">Smart Views</span>
-            </div>
-            <ul
-              class="tasks-lists-rail__smart-list jin-navigation-list jin-navigation-list--inset"
-              data-lists-target="smartViewsList"
-              role="list"
-              aria-label="Smart views"
-            ></ul>
-
             <div class="tasks-lists-rail__header jin-section-header">
               <span class="tasks-lists-rail__title text-caption1">My work</span>
               <button
@@ -1231,6 +1188,14 @@
               data-lists-target="sidebarList"
               role="list"
               aria-label="Lists and boards"
+            ></ul>
+
+
+            <ul
+              class="tasks-lists-rail__smart-list jin-navigation-list jin-navigation-list--inset"
+              data-lists-target="smartViewsList"
+              role="list"
+              aria-label="Smart views"
             ></ul>
 
             <!-- ── Create list dialog ───────────────────────────────────── -->
@@ -1417,14 +1382,6 @@
               <header class="tasks-workspace-header jin-workspace-header__identity">
                 <h1 class="tasks-workspace-title" data-tasks-target="workspaceTitle">Inbox</h1>
                 <span class="tasks-workspace-count" data-tasks-target="workspaceCount" aria-live="polite"></span>
-                <button
-                  type="button"
-                  class="tasks-rail-toggle jin-control jin-control--secondary"
-                  data-tasks-target="railToggleBtn"
-                  data-action="click->tasks#toggleRail"
-                  aria-controls="tasks-lists-rail"
-                  aria-expanded="false"
-                >Task lists</button>
               </header>
               <!-- Filter bar — selects are passed through to invoke list_tasks -->
               <div class="tasks-filter-bar jin-workspace-header__controls" role="group" aria-label="Filter tasks">
@@ -1710,7 +1667,6 @@
           <aside class="calendar-context-rail jin-context-rail jin-navigation-rail" data-sidebar-context="events" aria-label="Calendar navigation">
             <div data-calendar-view-target="filterHost"></div>
             <nav class="calendar-context-actions jin-navigation-list" aria-label="Calendar actions">
-              <button type="button" class="jin-navigation-row tap-target" data-calendar-view-target="notificationsLink" data-action="click->calendar-view#openNotifications"><i data-lucide="bell" class="jin-navigation-row__icon" aria-hidden="true"></i><span class="jin-navigation-row__label">Notifications</span></button>
               <button type="button" class="jin-navigation-row tap-target" data-calendar-view-target="manageCalendarsLink" data-action="click->calendar-view#openCalendarSettings"><i data-lucide="settings" class="jin-navigation-row__icon" aria-hidden="true"></i><span class="jin-navigation-row__label">Calendars &amp; Sync</span></button>
             </nav>
           </aside>
@@ -1739,14 +1695,7 @@
             </div>
           </div>
 
-          <!-- EventsController keeps the canonical event detail experience reachable
-               from every calendar card. Its old browse list is intentionally hidden:
-               the calendar is now the events browse surface. -->
-          <div data-events-target="listPanel" class="hidden" aria-hidden="true">
-            <div data-events-target="loadingState"></div>
-            <div data-events-target="emptyState"></div>
-            <ul data-events-target="list"></ul>
-          </div>
+          <!-- Calendar cards and linked objects share the event detail pane. -->
           <div data-events-target="detailPanel" class="events-detail-pane hidden" data-sidebar-workspace>
             <button type="button" class="calendar-back-btn tap-target" data-action="click->events#showList">
               <i data-lucide="arrow-left" aria-hidden="true"></i><span>Calendar</span>
@@ -1773,13 +1722,13 @@
               <p class="notifications-header__eyebrow">Jin’s notification center</p>
               <h1 class="notifications-header__title">Notifications</h1>
             </div>
-            <div class="notifications-filters" role="group" aria-label="Filter notifications">
-              <button type="button" class="notifications-filter notifications-filter--active tap-target" aria-pressed="true" data-notifications-target="filter" data-notification-filter="all" data-action="click->notifications#selectFilter">All</button>
-              <button type="button" class="notifications-filter tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="unread" data-action="click->notifications#selectFilter">Unread</button>
-              <button type="button" class="notifications-filter tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="invitations" data-action="click->notifications#selectFilter">Invitations</button>
-              <button type="button" class="notifications-filter tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="reminders" data-action="click->notifications#selectFilter">Reminders</button>
-              <button type="button" class="notifications-filter tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="deferred" data-action="click->notifications#selectFilter">Deferred</button>
-              <button type="button" class="notifications-filter tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="history" data-action="click->notifications#selectFilter">History</button>
+            <div class="notifications-filters jin-segmented-control" role="group" aria-label="Filter notifications">
+              <button type="button" class="notifications-filter notifications-filter--active jin-segmented-control__item tap-target" aria-pressed="true" data-notifications-target="filter" data-notification-filter="all" data-action="click->notifications#selectFilter">All</button>
+              <button type="button" class="notifications-filter jin-segmented-control__item tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="unread" data-action="click->notifications#selectFilter">Unread</button>
+              <button type="button" class="notifications-filter jin-segmented-control__item tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="invitations" data-action="click->notifications#selectFilter">Invitations</button>
+              <button type="button" class="notifications-filter jin-segmented-control__item tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="reminders" data-action="click->notifications#selectFilter">Reminders</button>
+              <button type="button" class="notifications-filter jin-segmented-control__item tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="deferred" data-action="click->notifications#selectFilter">Deferred</button>
+              <button type="button" class="notifications-filter jin-segmented-control__item tap-target" aria-pressed="false" data-notifications-target="filter" data-notification-filter="history" data-action="click->notifications#selectFilter">History</button>
             </div>
           </header>
 
@@ -2109,8 +2058,8 @@
                 <button type="button" class="btn-secondary tap-target" data-settings-target="notificationTestBtn" data-action="click->settings#sendTestNotification" disabled>Send Test</button>
                 <button type="button" class="btn-secondary tap-target" data-settings-target="notificationCheckBtn" data-action="click->settings#checkNotificationStatus">Check Again</button>
               </div>
-              <p class="notification-result" role="status" aria-live="polite" aria-atomic="true" data-settings-target="notificationResult"></p>
-              <p class="settings-error hidden" role="alert" aria-live="assertive" data-settings-target="notificationError"></p>
+              <p class="notification-result jin-status-message" role="status" aria-live="polite" aria-atomic="true" data-settings-target="notificationResult"></p>
+              <p class="settings-error jin-status-message hidden" data-state="error" role="alert" aria-live="assertive" data-settings-target="notificationError"></p>
             </section>
 
               </section>
@@ -2403,7 +2352,7 @@
                     Reduce transparency
                   </p>
                   <p class="settings-row__description">
-                    Replaces glass/blur effects with solid backgrounds.
+                    Reduces transparency effects and uses more solid surfaces.
                   </p>
                 </div>
                 <label class="jin-switch" for="reduce-transparency-toggle">
@@ -2474,9 +2423,9 @@
                   <p class="settings-row__label" id="notes-layout-label">Notes layout</p>
                   <p class="settings-row__description">Preferred layout when browsing notes.</p>
                 </div>
-                <div class="settings-choice-group" role="group" aria-labelledby="notes-layout-label">
-                  <button type="button" class="settings-choice-button tap-target" data-settings-target="notesList" data-action="click->settings#selectNotesLayout" data-notes-layout="list" aria-pressed="true"><i data-lucide="list" aria-hidden="true"></i>List</button>
-                  <button type="button" class="settings-choice-button tap-target" data-settings-target="notesCards" data-action="click->settings#selectNotesLayout" data-notes-layout="cards" aria-pressed="false"><i data-lucide="layout-grid" aria-hidden="true"></i>Cards</button>
+                <div class="settings-choice-group jin-segmented-control" role="group" aria-labelledby="notes-layout-label">
+                  <button type="button" class="settings-choice-button jin-segmented-control__item tap-target" data-settings-target="notesList" data-action="click->settings#selectNotesLayout" data-notes-layout="list" aria-pressed="true"><i data-lucide="list" aria-hidden="true"></i>List</button>
+                  <button type="button" class="settings-choice-button jin-segmented-control__item tap-target" data-settings-target="notesCards" data-action="click->settings#selectNotesLayout" data-notes-layout="cards" aria-pressed="false"><i data-lucide="layout-grid" aria-hidden="true"></i>Cards</button>
                 </div>
               </div>
             </section>
@@ -2718,36 +2667,6 @@
               <i data-lucide="trash-2" aria-hidden="true"></i>
             </button>
           </div>
-        </li>
-      </template>
-
-      <!--
-        tmpl-event-browse-row — shell for a single event browse row (GUI-S4 EventsController).
-        Cloned once per event; populated by events/render.ts buildEventBrowseRow().
-        Root element: <li class="browse-row">.
-
-        Fields populated dynamically:
-          .browse-row__inner                — data-event-id, aria-label, click handler
-          .event-browse-row__time           — "HH:MM – HH:MM" | "all-day"
-          .browse-row__title                — event title
-          .event-browse-row__source-badge   — aria-label, data-source (color cue)
-          .event-browse-row__source-icon    — data-lucide="database|cloud|circle"
-          .event-browse-row__source-label   — "Jin" | "Google" | ...
-
-        Source badge carries text label (never color-only — WCAG 1.4.1).
-      -->
-      <template id="tmpl-event-browse-row">
-        <li class="browse-row">
-          <button type="button" class="browse-row__inner tap-target" aria-label="">
-            <span class="event-browse-row__time text-subheadline" aria-label=""></span>
-            <span class="browse-row__title text-headline"></span>
-            <div class="browse-row__meta">
-              <span class="event-browse-row__source-badge jin-badge" role="img" aria-label="">
-                <i class="event-browse-row__source-icon" aria-hidden="true"></i>
-                <span class="event-browse-row__source-label"></span>
-              </span>
-            </div>
-          </button>
         </li>
       </template>
 
@@ -3009,7 +2928,7 @@
               aria-controls="capture-form-capture"
               data-capture-target="tabCapture"
               data-action="click->capture#selectCapture keydown->capture#tabKeydown"
-            ><i data-lucide="plus" aria-hidden="true"></i><span><strong>Quick</strong><small>Anything</small></span></button>
+            ><i data-lucide="plus" aria-hidden="true"></i><span><strong>Capture</strong></span></button>
             <button
               type="button"
               class="capture-modal__tab"
@@ -3020,7 +2939,7 @@
               data-capture-target="tabNote"
               tabindex="-1"
               data-action="click->capture#selectNote keydown->capture#tabKeydown"
-            ><i data-lucide="square-pen" aria-hidden="true"></i><span><strong>Note</strong><small>Think</small></span></button>
+            ><i data-lucide="square-pen" aria-hidden="true"></i><span><strong>Note</strong></span></button>
             <button
               type="button"
               class="capture-modal__tab"
@@ -3031,7 +2950,7 @@
               data-capture-target="tabTask"
               tabindex="-1"
               data-action="click->capture#selectTask keydown->capture#tabKeydown"
-            ><i data-lucide="check-circle" aria-hidden="true"></i><span><strong>Task</strong><small>Act</small></span></button>
+            ><i data-lucide="check-circle" aria-hidden="true"></i><span><strong>Task</strong></span></button>
             <button
               type="button"
               class="capture-modal__tab"
@@ -3042,7 +2961,7 @@
               data-capture-target="tabEvent"
               tabindex="-1"
               data-action="click->capture#selectEvent keydown->capture#tabKeydown"
-            ><i data-lucide="calendar-days" aria-hidden="true"></i><span><strong>Event</strong><small>Schedule</small></span></button>
+            ><i data-lucide="calendar-days" aria-hidden="true"></i><span><strong>Event</strong></span></button>
           </div>
 
           <!-- Quick capture form -->
@@ -3381,13 +3300,13 @@
       <dialog
         id="jin-promote-dialog"
         class="action-dialog"
-        aria-label="Promote task to event"
+        aria-label="Schedule time for task"
         data-actions-target="promoteDialog"
         aria-modal="true"
       >
         <div class="action-dialog__inner">
           <div class="action-dialog__header">
-            <h2 class="action-dialog__title">Promote to Event</h2>
+            <h2 class="action-dialog__title">Schedule time</h2>
             <button
               type="button"
               class="modal-close-btn tap-target"
@@ -3399,9 +3318,10 @@
           </div>
 
           <div class="action-dialog__form">
-            <div class="form-group">
+            <div data-actions-target="promoteExisting" aria-live="polite"></div>
+            <div class="form-group" data-promotion-fields>
               <label class="form-label" for="promote-when">
-                When <span aria-hidden="true">*</span>
+                Start <span aria-hidden="true">*</span>
               </label>
               <input
                 id="promote-when"
@@ -3412,18 +3332,28 @@
               />
             </div>
 
-            <div class="form-group">
+            <div class="form-group" data-promotion-fields>
+              <label class="form-label" for="promote-duration">Duration (minutes)</label>
+              <input id="promote-duration" type="number" class="form-input" min="1" max="1440" step="1"
+                value="60" list="promote-duration-options" data-actions-target="promoteDuration" />
+              <datalist id="promote-duration-options">
+                <option value="15"></option><option value="30"></option><option value="45"></option>
+                <option value="60"></option><option value="90"></option><option value="120"></option>
+              </datalist>
+            </div>
+
+            <div class="form-group" data-promotion-fields>
               <label class="form-label" for="promote-tzid">Timezone (IANA, optional)</label>
               <input
                 id="promote-tzid"
                 type="text"
                 class="form-input"
-                placeholder="e.g. America/New_York"
+                placeholder="Leave empty for local wall-clock time"
                 data-actions-target="promoteTzid"
               />
             </div>
 
-            <div class="form-group">
+            <div class="form-group" data-promotion-fields>
               <label class="form-label" for="promote-destination">Calendar</label>
               <select
                 id="promote-destination"
@@ -3432,7 +3362,7 @@
                 aria-describedby="promote-destination-help"
               ></select>
               <p id="promote-destination-help" class="text-footnote color-secondary">
-                Provider-backed promotion needs an exact account and calendar; Jin never guesses across accounts.
+                Choose Jin only or a connected writable calendar.
               </p>
             </div>
 
@@ -3453,10 +3383,10 @@
               <button
                 type="button"
                 class="btn-primary"
-                aria-label="Promote to event"
+                aria-label="Schedule time"
                 data-actions-target="promoteSubmit"
                 data-action="click->actions#submitPromote"
-              >Promote</button>
+              >Schedule time</button>
             </div>
           </div>
         </div>

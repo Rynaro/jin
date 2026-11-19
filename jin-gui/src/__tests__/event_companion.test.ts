@@ -11,7 +11,14 @@ import { renderRecurrenceScope } from '../lib/events/recurrence_scope';
 import { eventMessage } from '../lib/events/locale';
 import { EventCompanion } from '../lib/ui/companion';
 import { installNavigationGuard } from '../lib/ui/navigation_guard';
+import { createEventPrepNote } from '../invoke';
+import type { NoteDto } from '../types/dto';
 import type { EventDetailDto, EventDto } from '../types/dto';
+
+vi.mock('../invoke', async importOriginal => ({
+  ...await importOriginal<typeof import('../invoke')>(),
+  createEventPrepNote: vi.fn(),
+}));
 
 vi.mock('../lib/icons', () => ({ initIcons: vi.fn() }));
 
@@ -147,6 +154,26 @@ describe('EventCompanion', () => {
     return new EventCompanion({ workspace, field, locale: 'en', ...opts });
   }
 
+  it('creates meeting notes from the real preview action, closes the preview, and opens the new note', async () => {
+    vi.mocked(createEventPrepNote).mockResolvedValue({ id: 'prep-note' } as NoteDto);
+    const navigate = vi.fn();
+    workspace.addEventListener('jin:navigate', navigate);
+    const companion = createCompanion();
+    companion.setContentBox(1280);
+    companion.openPreview(detailFixture());
+    const create = workspace.querySelector<HTMLButtonElement>('.event-preview__new-prep')!;
+    expect(create.textContent).toBe('New meeting note');
+    create.click();
+    const title = document.querySelector<HTMLInputElement>('.linked-creation input')!;
+    title.value = 'Roadmap prep';
+    document.querySelector('.linked-creation')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect(createEventPrepNote).toHaveBeenCalledWith(expect.objectContaining({ event_id: detailFixture().event.id, title: 'Roadmap prep' }));
+    expect(navigate.mock.calls[0][0].detail).toEqual({ kind: 'notes', id: 'prep-note' });
+    expect(companion.isOpen()).toBe(false);
+    expect(document.querySelector('.linked-creation')).toBeNull();
+  });
+
   it('wide desktop opens a nonmodal inspector without shrinking the calendar field', () => {
     const companion = createCompanion();
     companion.setContentBox(1280);
@@ -260,6 +287,26 @@ describe('EventCompanion', () => {
     await settle();
     expect(companion.isOpen()).toBe(true);
     expect(workspace.querySelector('.event-companion__discard')?.classList.contains('hidden')).toBe(false);
+  });
+
+  it('uses the first outside calendar gesture to dismiss a blank draft without activating the underlying date', async () => {
+    const date = document.createElement('button');
+    date.className = 'calendar-day-button';
+    workspace.appendChild(date);
+    const openAnotherDate = vi.fn();
+    date.addEventListener('click', openAnotherDate);
+    const companion = createCompanion();
+    companion.setContentBox(1100);
+    companion.openCreate(draftFromSlot({ date: '2026-09-23' }), { name: 'Jin' });
+    const title = workspace.querySelector<HTMLInputElement>('#event-composer-title')!;
+    title.blur();
+    expect(workspace.querySelector('.event-composer__errors')?.textContent).toBe('');
+    date.click();
+    await settle();
+    expect(companion.isOpen()).toBe(false);
+    expect(openAnotherDate).not.toHaveBeenCalled();
+    date.click();
+    expect(openAnotherDate).toHaveBeenCalledTimes(1);
   });
 
   it('activate event opens preview and does not change field scrollTop or location.hash', () => {

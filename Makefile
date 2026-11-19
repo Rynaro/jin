@@ -98,10 +98,14 @@ verify-gui-commands:
 		echo "  vitest frontend logic units: ok" && \
 		npm run lint:css && \
 		echo "  stylelint VG-GUI-5 token discipline: ok" && \
-		npx vite build && \
+		npm run build && \
 		echo "  vite build: ok" && \
 		npm run test:production-due && \
-		echo "  production due editor smoke: ok"
+		echo "  production due editor smoke: ok" && \
+		npm run test:notes-writing-surface && \
+		echo "  notes writing surface smoke: ok" && \
+		npm run visual:selftest && \
+		echo "  visual reference detector selftest: ok"
 	@echo "--- all GUI gates green ---"
 	@echo ""
 	@echo "[VG-GUI-8] LOGIC VERIFIED — visuals NOT verified."

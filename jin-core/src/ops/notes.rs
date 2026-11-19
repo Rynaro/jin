@@ -91,6 +91,23 @@ pub fn list_notes(notes_dir: &Path, include_deleted: bool) -> Result<Vec<Note>> 
 /// into the SAME folder as the old file (not the root). This prevents silent relocation
 /// of foldered notes when the title changes.
 pub fn edit_note(notes_dir: &Path, id: &str, params: EditNoteParams) -> Result<Note> {
+    with_note_write_lock(notes_dir, || edit_note_locked(notes_dir, id, params))
+}
+
+pub(crate) fn with_note_write_lock<T>(
+    notes_dir: &Path,
+    write: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    match notes_dir
+        .parent()
+        .filter(|root| root.join(".jin/config.toml").is_file())
+    {
+        Some(root) => super::recoverable_operations::with_canonical_read_lock(root, false, write),
+        None => write(),
+    }
+}
+
+fn edit_note_locked(notes_dir: &Path, id: &str, params: EditNoteParams) -> Result<Note> {
     let old_path = fs::find_note_path(notes_dir, id)?;
     let mut note = fs::read_note(&old_path)?;
     let old_note = note.clone();
@@ -164,6 +181,10 @@ pub fn edit_note(notes_dir: &Path, id: &str, params: EditNoteParams) -> Result<N
 /// **Callers MUST call `api::refresh` after this** so that `NoteRow.file_path`
 /// is updated in the index. Without refresh, `api::get_note` errors (F2).
 pub fn move_note(notes_dir: &Path, id: &str, dest_folder: &str) -> Result<Note> {
+    with_note_write_lock(notes_dir, || move_note_locked(notes_dir, id, dest_folder))
+}
+
+fn move_note_locked(notes_dir: &Path, id: &str, dest_folder: &str) -> Result<Note> {
     fs::validate_folder_path(dest_folder)?;
     let old_path = fs::find_note_path(notes_dir, id)?;
     let note = fs::read_note(&old_path)?;
@@ -328,6 +349,10 @@ pub fn delete_folder(notes_dir: &Path, path: &str) -> Result<usize> {
 
 /// Soft-delete a note (status → deleted, deleted_at set).
 pub fn delete_note(notes_dir: &Path, id: &str) -> Result<Note> {
+    with_note_write_lock(notes_dir, || delete_note_locked(notes_dir, id))
+}
+
+fn delete_note_locked(notes_dir: &Path, id: &str) -> Result<Note> {
     let path = fs::find_note_path(notes_dir, id)?;
     let mut note = fs::read_note(&path)?;
     let old_note = note.clone();

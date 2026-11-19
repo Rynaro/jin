@@ -1,50 +1,46 @@
 /* One visual sidebar slot. Context DOM stays under its route controller. */
 .jin-shell {
-  --sidebar-body-top: calc(var(--sidebar-native-top) + 132px);
+  --sidebar-body-top: calc(var(--sidebar-native-top) + 300px);
+  --sidebar-body-bottom: 0px;
 }
 
 .jin-shell > .jin-sidebar {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 10;
   flex: 0 0 var(--sidebar-width);
   inline-size: var(--sidebar-width);
   block-size: 100%;
   min-inline-size: 0;
   padding: var(--sidebar-native-top) 0 0;
-  background: var(--sidebar-glass-tint);
-  border-inline-end: 0.5px solid var(--separator);
-  box-shadow: inset -0.5px 0 0 var(--specular-highlight),
-    4px 0 14px var(--workspace-edge-shadow);
-  -webkit-backdrop-filter: blur(var(--glass-blur-regular)) saturate(var(--glass-saturate));
-          backdrop-filter: blur(var(--glass-blur-regular)) saturate(var(--glass-saturate));
+  /* Navigation and working content share one opaque canvas on every platform. */
+  background: var(--workspace-context);
+  border-inline-end: 0;
+  box-shadow: none;
   overflow: visible;
   transition: none;
 }
 
-/* The macOS window supplies the semantic Sidebar vibrancy behind this WebView.
- * Leave only a light tint over it; the workspace beside it remains opaque. */
-:root[data-native-macos-overlay='true'] body,
-:root[data-native-macos-overlay='true'] .jin-shell {
-  background: transparent;
-}
-:root[data-native-macos-overlay='true'] .jin-shell > .jin-sidebar {
-  background: var(--sidebar-native-glass-tint);
-}
-
 .jin-sidebar-header {
   flex: 0 0 auto;
-  min-block-size: 44px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-half);
+  min-block-size: 68px;
   block-size: auto;
-  padding: 0 var(--space-2);
+  padding: var(--space-1) var(--space-2);
 }
 .jin-shell > .jin-sidebar .jin-sidebar-toggle {
   position: static;
   inset: auto;
   transform: none;
-  flex: 0 0 44px;
-  inline-size: 44px;
-  block-size: 44px;
-  min-inline-size: 44px;
-  min-block-size: 44px;
-  margin-inline-start: auto;
+  flex: 0 0 32px;
+  inline-size: 32px;
+  block-size: 36px;
+  min-inline-size: 32px;
+  min-block-size: 36px;
+  margin-inline-start: 0;
   box-shadow: none;
 }
 
@@ -52,69 +48,103 @@
   flex: 0 0 auto;
   min-block-size: 44px;
   block-size: auto;
-  padding: var(--space-half) var(--space-2);
+  padding: 0 var(--space-2) var(--space-1);
 }
 
-.jin-sidebar-actions .jin-capture-btn { min-block-size: 36px; block-size: auto; min-inline-size: 0; }
-.jin-sidebar-actions .jin-capture-btn > span { min-inline-size: 0; overflow-wrap: anywhere; }
-
-.jin-section-switcher {
-  flex: 0 0 auto;
+.jin-capture-btn {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  inline-size: calc(100% - var(--space-2));
-  min-block-size: 44px;
-  block-size: auto;
-  min-inline-size: 0;
-  margin-inline: var(--space-1);
-  padding-inline: var(--space-2);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--label);
-  font: 650 var(--text-subheadline-size)/var(--text-subheadline-line) var(--font-text);
-  text-align: start;
+  inline-size: 100%;
+  min-block-size: 38px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--separator));
+  border-radius: var(--radius-md);
+  background: var(--workspace-canvas);
+  color: var(--accent-text);
+  font: 600 var(--text-subheadline-size)/var(--text-subheadline-line) var(--font-text);
   cursor: pointer;
 }
-.jin-section-switcher:hover,
-.jin-section-switcher[aria-expanded='true'] { background: var(--workspace-row-hover); }
-.jin-section-switcher:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.jin-section-switcher__label { flex: 1 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jin-section-switcher svg { inline-size: 16px; block-size: 16px; flex: none; }
-.jin-section-switcher__unread { display: none; inline-size: 7px; block-size: 7px; border-radius: 50%; background: var(--system-red); }
-.jin-sidebar[data-has-unread='true'] .jin-section-switcher__unread { display: block; }
+.jin-capture-btn:hover { background: var(--workspace-row-selected); }
+.jin-capture-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.jin-capture-btn svg { inline-size: 18px; block-size: 18px; flex: none; }
+.jin-app-name { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--ink-primary); font: 650 var(--text-title2-size)/var(--text-title2-line) var(--font-text); letter-spacing: -.04em; }
+.jin-brand-mark { inline-size: 28px; block-size: 22px; fill: none; stroke: currentColor; stroke-width: 1.45; stroke-linecap: round; stroke-linejoin: round; }
+.jin-app-name__seal { inline-size: 7px; block-size: 7px; border-radius: 2px; background: var(--seal); }
+.jin-sidebar-toggle { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--label-secondary); cursor: pointer; }
+.jin-sidebar-toggle:hover { background: var(--workspace-row-hover); color: var(--label); }
+.jin-sidebar-toggle svg { inline-size: 18px; block-size: 18px; }
+.jin-sidebar-toggle__icon--open { display: none; }
+.jin-sidebar-actions .jin-capture-btn > span { min-inline-size: 0; overflow-wrap: anywhere; }
 
 .jin-shell > .jin-sidebar .jin-nav {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-block-size: 0;
-  padding: var(--space-half) var(--space-1);
-  overflow: auto;
+  max-block-size: 42dvh;
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  overflow-y: auto;
 }
 .jin-shell > .jin-sidebar .jin-nav-list { gap: 2px; }
-.jin-shell > .jin-sidebar .jin-navigation-row { min-block-size: 32px; }
-
-/* Context and app routes share the same sidebar body without a second column. */
-.jin-shell[data-active-section='notes']:not([data-switcher-open='true']) > .jin-sidebar .jin-nav,
-.jin-shell[data-active-section='tasks']:not([data-switcher-open='true']) > .jin-sidebar .jin-nav,
-.jin-shell[data-active-section='events']:not([data-switcher-open='true']) > .jin-sidebar .jin-nav,
-.jin-shell[data-active-section='settings']:not([data-switcher-open='true']) > .jin-sidebar .jin-nav { display: none; }
-
-.jin-shell[data-switcher-open='true'] > .jin-sidebar { z-index: 120; }
-.jin-shell[data-switcher-open='true'] > .jin-sidebar .jin-nav {
-  position: absolute;
-  inset-block-start: var(--sidebar-body-top, 132px);
-  inset-inline: var(--space-1);
-  inline-size: calc(100% - var(--space-2));
-  max-block-size: calc(100dvh - var(--sidebar-body-top, 132px) - var(--space-1));
-  flex: none;
-  padding: var(--space-half);
-  border: 1px solid var(--separator);
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  box-shadow: var(--elevation-shadow);
-  z-index: 2;
+.jin-shell > .jin-sidebar .jin-navigation-row { min-block-size: 40px; }
+/* Utilities belong to the header so the rail has one continuous surface. */
+.jin-sidebar-utilities {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  padding: 0;
+  background: transparent;
 }
+.jin-sidebar-utilities > .jin-navigation-list {
+  flex-direction: row;
+  inline-size: auto;
+  gap: 0;
+}
+.jin-sidebar-utility {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  inline-size: 32px;
+  min-inline-size: 32px;
+  block-size: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--label-secondary);
+  text-decoration: none;
+}
+.jin-sidebar-utility:hover {
+  background: var(--workspace-row-hover);
+  color: var(--label);
+  text-decoration: none;
+}
+.jin-sidebar-utility[aria-current='page'] {
+  background: var(--workspace-row-selected);
+  color: var(--accent-text);
+}
+.jin-sidebar-utility:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.jin-sidebar-utility > .jin-navigation-row__icon {
+  inline-size: 17px;
+  block-size: 17px;
+  min-inline-size: 17px;
+  max-inline-size: 17px;
+}
+.jin-sidebar-utility > .jin-nav-badge {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: -1px;
+  min-inline-size: 16px;
+  margin: 0;
+  padding-inline: 3px;
+  border: 0;
+  font: 650 11px/16px var(--font-text);
+  color: var(--seal-on);
+}
+.jin-sidebar-utility > .jin-nav-badge[hidden] { display: none; }
 
 .jin-shell [data-section-name='notes'].notes-paned,
 .jin-shell [data-section-name='notes'].notes-paned.detail-open,
@@ -123,10 +153,15 @@
 .jin-shell [data-section-name='tasks'].jin-split-view,
 .jin-shell .settings-view { grid-template-columns: minmax(0, 1fr); }
 
+/* Notes can retain its live library alongside the document on wide windows. */
+.jin-shell [data-section-name='notes'].notes-paned.notes-split {
+  grid-template-columns: minmax(270px, 300px) minmax(0, 1fr);
+}
+
 .jin-shell [data-sidebar-context] {
   position: fixed;
-  inset-block-start: var(--sidebar-body-top, 132px);
-  inset-block-end: 0;
+  inset-block-start: var(--sidebar-body-top);
+  inset-block-end: var(--sidebar-body-bottom);
   inset-inline-start: 0;
   display: flex;
   flex-direction: column;
@@ -134,7 +169,7 @@
   block-size: auto;
   max-inline-size: var(--sidebar-width);
   min-inline-size: 0;
-  padding-block-end: var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-1);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -147,7 +182,6 @@
   transition: none;
 }
 
-.jin-shell[data-switcher-open='true'] [data-sidebar-context] { pointer-events: none; }
 .jin-shell .notes-collections,
 .jin-shell .notes-folder-rail__list {
   flex: 0 0 auto;
@@ -155,6 +189,10 @@
   overflow: visible;
 }
 .jin-shell .notes-collections { border: 0; padding-block: var(--space-half); }
+.jin-shell .tasks-lists-rail__header { min-block-size: 32px; padding-block: 0; }
+.jin-shell .tasks-lists-rail__title { font-size: var(--text-caption1-size); }
+.jin-shell .tasks-lists-rail__smart-list { padding-block: var(--space-1); margin-block-start: var(--space-1); border: 0; }
+.jin-shell .tasks-lists-rail__list { flex: 0 0 auto; overflow: visible; }
 .jin-shell .notes-folder-rail__list { padding-block: var(--space-half); }
 .jin-shell .notes-folder-rail__header { border-block-end: 0; }
 .jin-shell .notes-folder-rail__new-btn { flex: 0 0 auto; margin-block-start: auto; }
@@ -180,10 +218,6 @@
   overflow: visible;
   overflow-wrap: anywhere;
 }
-.jin-shell[data-active-section='notes'] .notes-folder-rail__collapse-btn,
-.jin-shell[data-active-section='notes'] .notes-rail-reveal,
-.jin-shell[data-active-section='tasks'] .tasks-rail-toggle,
-.jin-shell[data-active-section='tasks'] .tasks-lists-rail__mobile-header { display: none; }
 .jin-shell .settings-nav .settings-view__heading { display: none; }
 
 .jin-shell[data-nav-visible='false'] > .jin-sidebar {
@@ -215,26 +249,29 @@
   transform: translateX(-100%);
   z-index: 100;
 }
-.jin-shell[data-nav-presentation='drawer'][data-nav-visible='true'] > .jin-sidebar { transform: none; }
+.jin-shell[data-nav-presentation='drawer'][data-nav-visible='true'] > .jin-sidebar {
+  transform: none;
+  /* A supported 3.1× text drawer must remain the active hit layer above
+   * route panes that establish their own stacking contexts. */
+  z-index: 200;
+}
 .jin-shell[data-nav-presentation='drawer'] [data-sidebar-context] {
   inline-size: min(var(--sidebar-width), calc(100vw - var(--space-2)));
   max-inline-size: calc(100vw - var(--space-2));
-  z-index: 101;
+  z-index: 201;
 }
 .jin-shell[data-nav-presentation='drawer'][data-nav-visible='true'] > .jin-sidebar-backdrop {
   display: block;
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 190;
   background: color-mix(in srgb, var(--label) 28%, transparent);
 }
-.jin-shell[data-nav-presentation='drawer'][data-switcher-open='true'] > .jin-sidebar { z-index: 120; }
 .jin-shell[data-nav-presentation='drawer'] .jin-content-navigation { display: flex; }
 .jin-shell[data-nav-presentation='drawer'][data-nav-visible='true'] .jin-content-navigation { display: none; }
 .jin-shell[data-nav-presentation='drawer'] .jin-navigation-reveal { visibility: visible; transition: none; }
 
 :root[data-text-scale='accessibility'] .jin-shell { --sidebar-width: 100vw; }
-:root[data-text-scale='accessibility'] .jin-section-switcher__label { white-space: normal; overflow: visible; }
 :root[data-text-scale='accessibility'] .jin-shell > .jin-sidebar .jin-navigation-row__label {
   white-space: normal;
   overflow: visible;
@@ -257,8 +294,11 @@
 :root[data-text-scale='accessibility'] .jin-shell[data-nav-presentation='drawer'] [data-sidebar-context] { inline-size: 100vw; max-inline-size: 100vw; }
 
 @media (pointer: coarse) {
+  .jin-sidebar-header { gap: 0; padding-inline: 12px; }
+  .jin-sidebar-header .jin-app-name { gap: var(--space-half); }
+  .jin-shell > .jin-sidebar .jin-sidebar-toggle { margin-inline-start: auto; inline-size: 44px; min-inline-size: 44px; block-size: 44px; min-block-size: 44px; }
+  .jin-sidebar-utility { inline-size: 44px; min-inline-size: 44px; block-size: 44px; }
   .jin-shell > .jin-sidebar .jin-navigation-row,
-  .jin-section-switcher,
   .jin-navigation-reveal { min-block-size: var(--coarse-hit-target); }
 }
 
@@ -302,68 +342,7 @@
   inset-inline: 0;
   block-size: 6px;
 }
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'][data-nav-visible='false'] .jin-content { position: relative; }
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'][data-nav-visible='false'] .jin-content > .jin-content-navigation {
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline-start: 90px;
-  inline-size: 44px;
-  min-block-size: 52px;
-  padding: 0;
-  border: 0;
-  z-index: 20;
-}
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'][data-nav-visible='false'] .jin-content .jin-navigation-reveal {
-  justify-content: center;
-  inline-size: 44px;
-  block-size: 44px;
-  padding: 0;
-}
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'][data-nav-visible='false'] .jin-content .jin-navigation-reveal > span { display: none; }
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'][data-nav-visible='false'] [data-tasks-target='listPanel'] .jin-workspace-header--paired {
-  padding-inline-start: 142px;
-}
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='tasks'][data-nav-visible='false'] .tasks-workspace-drag { inset-inline-start: 142px; }
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'][data-nav-visible='false'] .jin-content { position: relative; }
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'][data-nav-visible='false'] .jin-content > .jin-content-navigation {
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline-start: 90px;
-  inline-size: 44px;
-  min-block-size: 52px;
-  padding: 0;
-  border: 0;
-  z-index: 20;
-}
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'][data-nav-visible='false'] .jin-content .jin-navigation-reveal {
-  justify-content: center;
-  inline-size: 44px;
-  block-size: 44px;
-  padding: 0;
-}
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'][data-nav-visible='false'] .jin-content .jin-navigation-reveal > span { display: none; }
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'][data-nav-visible='false'] .calendar-month-controls { padding-inline-start: 142px; }
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='events'][data-nav-visible='false'] .calendar-workspace-drag { inset-inline-start: 142px; }
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'][data-nav-visible='false'] .jin-content { position: relative; }
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'][data-nav-visible='false'] .jin-content > .jin-content-navigation {
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline-start: 90px;
-  inline-size: 44px;
-  min-block-size: 52px;
-  padding: 0;
-  border: 0;
-  z-index: 20;
-}
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'][data-nav-visible='false'] .jin-content .jin-navigation-reveal {
-  justify-content: center;
-  inline-size: 44px;
-  block-size: 44px;
-  padding: 0;
-}
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'][data-nav-visible='false'] .jin-content .jin-navigation-reveal > span { display: none; }
 :root[data-native-macos-overlay='true'] .notes-list-pane__header { min-block-size: 52px; }
-:root[data-native-macos-overlay='true'] .jin-shell[data-active-section='notes'][data-nav-visible='false'] .notes-list-pane__header .notes-explorer__toolbar { padding-inline-start: 118px; }
 :root[data-native-macos-overlay='true'] .notes-detail-pane__header { min-block-size: 52px; }
 :root[data-native-macos-overlay='true'] .notes-detail-pane__drag {
   display: block;
@@ -372,12 +351,37 @@
   inset-inline: var(--notes-native-drag-start, 0px) 0;
   block-size: 6px;
 }
-:root[data-native-macos-overlay='true'] .jin-shell[data-nav-visible='false'] .notes-detail-pane__header {
-  --notes-native-drag-start: 90px;
-  padding-inline-start: 142px;
+/* A hidden rail leaves one shared titlebar above every route. Window controls
+ * and navigation have space here without narrowing nested route toolbars. */
+:root[data-native-macos-overlay='true'] .jin-shell[data-nav-visible='false'] .jin-content > .jin-native-content-drag { display: none; }
+:root[data-native-macos-overlay='true'] .jin-shell[data-nav-visible='false'] .jin-content-navigation {
+  position: relative;
+  flex: 0 0 44px;
+  min-block-size: 44px;
+  padding-inline: 90px var(--space-2);
+  border: 0;
+}
+:root[data-native-macos-overlay='true'] .jin-navigation-reveal {
+  justify-content: center;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+}
+:root[data-native-macos-overlay='true'] .jin-navigation-reveal > span { display: none; }
+.jin-content-navigation__drag { display: none; }
+:root[data-native-macos-overlay='true'] .jin-content-navigation__drag {
+  display: block;
+  flex: 1 1 auto;
+  align-self: stretch;
 }
 :root[data-native-macos-overlay='true'] [data-first-run-root] { padding-block-start: 52px; }
 
 @media (prefers-reduced-motion: reduce) {
   .jin-shell > .jin-sidebar { transition: none; }
 }
+
+/* Keep a useful collection viewport when type grows in a short window. */
+:root[data-text-scale='accessibility'] .jin-sidebar-header { min-block-size: 56px; padding-block: 0; }
+:root[data-text-scale='accessibility'] .jin-app-name { font-size: 22px; line-height: 28px; }
+:root[data-text-scale='accessibility'] .jin-shell > .jin-sidebar .jin-nav { max-block-size: 24dvh; padding-block: var(--space-half); }
+:root[data-text-scale='accessibility'] .jin-sidebar-utility { inline-size: 44px; min-inline-size: 44px; block-size: 44px; }

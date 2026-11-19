@@ -51,6 +51,7 @@
 }
 
 @media (forced-colors: active) {
+  .jin-sidebar-utility[aria-current='page'],
   .calendar-view-switch__button[aria-pressed='true'],
   .notifications-row--selected,
   .settings-nav__item[aria-current='page'] { outline: 2px solid CanvasText; outline-offset: -2px; }
@@ -80,20 +81,19 @@
   box-shadow: none !important;
 }
 
-/* Structural rails stay continuous in opaque mode. The generic glass
- * fallback above uses a complete border for floating chrome; rails only need
- * their content-edge separator. */
+/* Structural rails keep the shared canvas in opaque mode. Floating chrome
+ * retains its own border while navigation joins the working surface. */
 @media (prefers-reduced-transparency: reduce) {
   .jin-navigation-rail {
     background-color: var(--workspace-context) !important;
     border: 0 !important;
-    border-inline-end: 1px solid var(--separator-opaque) !important;
+    border-inline-end: 0 !important;
     box-shadow: none !important;
   }
   .jin-shell > .jin-sidebar {
     background: var(--workspace-context) !important;
     border: 0 !important;
-    border-inline-end: 1px solid var(--separator-opaque) !important;
+    border-inline-end: 0 !important;
     box-shadow: none !important;
     -webkit-backdrop-filter: none !important;
             backdrop-filter: none !important;
@@ -103,13 +103,13 @@
 [data-reduce-transparency="1"] .jin-navigation-rail {
   background-color: var(--workspace-context) !important;
   border: 0 !important;
-  border-inline-end: 1px solid var(--separator-opaque) !important;
+  border-inline-end: 0 !important;
   box-shadow: none !important;
 }
 [data-reduce-transparency="1"] .jin-shell > .jin-sidebar {
   background: var(--workspace-context) !important;
   border: 0 !important;
-  border-inline-end: 1px solid var(--separator-opaque) !important;
+  border-inline-end: 0 !important;
   box-shadow: none !important;
   -webkit-backdrop-filter: none !important;
           backdrop-filter: none !important;
@@ -554,8 +554,11 @@
     height: auto;
   }
 
-  .notes-detail-pane__actions,
-  .notes-detail-pane .cm-toolbar {
+  .notes-detail-pane__actions {
+    flex-wrap: wrap;
+  }
+
+  :root[data-text-scale='accessibility'] .notes-detail-pane .cm-toolbar {
     flex-wrap: wrap;
   }
 

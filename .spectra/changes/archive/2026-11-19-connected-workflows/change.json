@@ -1,0 +1,20 @@
+{
+  "esl_version": "1.1",
+  "change_id": "connected-workflows",
+  "status": "archived",
+  "tier": "full",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    "When a workspace search is opened, the user can filter and open matching notes, tasks and events through the existing guarded routes.",
+    "When the user selects note prose, Jin preserves the passage and can create a titled task with a persistent typed relationship to its source note.",
+    "When a user starts a prep note from an event, Jin opens the linked local note with an editable meeting outline and can navigate back to the correct event.",
+    "When an interrupted linked creation is retried with the same operation identity, the canonical files and index resolve to one object and its relationship.",
+    "When a task is scheduled, the user can choose its start and block duration through the task and Calendar entry points.",
+    "When controls are exercised on compact screens and with a keyboard, they remain reachable and preserve editor and navigation guards."
+  ],
+  "spec_ref": "spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-11-19-connected-workflows",
+  "has_code": true
+}

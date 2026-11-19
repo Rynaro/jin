@@ -1,9 +1,7 @@
+import { openEventPrepNote } from '../lib/ui/linked_creation';
 import { saveSettingsPane } from '../lib/settings/navigation';
 /**
- * EventsController — Stimulus controller for the Events browse + detail view (GUI-S4).
- *
- * Data flow (list):
- *   listEvents() → EventDto[] → sortEventsList() → renderEventsList()
+ * EventsController — event detail actions shared by Calendar and linked views.
  *
  * Data flow (detail):
  *   getEventById(id) → EventDto → renderEventDetail()
@@ -14,14 +12,9 @@ import { saveSettingsPane } from '../lib/settings/navigation';
  *
  * Connect pattern: data-controller="events" on the events <section> element.
  * Required <template> elements in the document:
- *   #tmpl-event-browse-row  — event list row shell
  *   #tmpl-backlink-row      — link/backlink item shell (shared)
  *
  * Targets:
- *   listPanel           — wraps the list + empty/loading states
- *   list                — <ul> for event rows
- *   emptyState          — shown when list is empty
- *   loadingState        — shown while list invoke is in-flight
  *   detailPanel         — wraps the detail content area
  *   detailLoadingState  — shown while detail invoke is in-flight
  *   detailNotFoundState — shown when get_event returns not-found
@@ -34,7 +27,6 @@ import { saveSettingsPane } from '../lib/settings/navigation';
 
 import { Controller } from '@hotwired/stimulus';
 import {
-  listEvents,
   getEventDetailById,
   editEventDelta,
   editRoutedEventDelta,
@@ -49,13 +41,9 @@ import {
 import { isJinErrorDto, toSyntheticErrorDto } from '../types/error';
 import type { EventDetailDto } from '../types/dto';
 import type { JinErrorDetails } from '../types/error';
-import { sortEventsList } from '../lib/events/transform';
 import {
   type EventsViewElements,
   type EventsTemplates,
-  showEventsListLoading,
-  hideEventsListLoading,
-  renderEventsList,
   renderEventDetail,
 } from '../lib/events/render';
 import type { InvitationResponseChoice } from '../lib/events/invitation';
@@ -76,20 +64,12 @@ import type { SupportedRecurrenceScope } from '../lib/events/recurrence_scope';
 export default class EventsController extends Controller {
   // ── Targets ───────────────────────────────────────────────────────────────
   static targets = [
-    'listPanel',
-    'list',
-    'emptyState',
-    'loadingState',
     'detailPanel',
     'detailLoadingState',
     'detailNotFoundState',
     'detailContent',
   ];
 
-  declare listPanelTarget: HTMLElement;
-  declare listTarget: HTMLElement;
-  declare emptyStateTarget: HTMLElement;
-  declare loadingStateTarget: HTMLElement;
   declare detailPanelTarget: HTMLElement;
   declare detailLoadingStateTarget: HTMLElement;
   declare detailNotFoundStateTarget: HTMLElement;
@@ -105,42 +85,12 @@ export default class EventsController extends Controller {
 
   connect(): void {
     this.localeChanged();
-    void this.loadList();
   }
 
   disconnect(): void {
     this.companion?.close(true);
     this.companion = null;
     this.removalDialog?.destroy();
-  }
-
-  // ── List ──────────────────────────────────────────────────────────────────
-
-  async loadList(): Promise<void> {
-    const el = this.viewElements;
-    showEventsListLoading(el);
-
-    try {
-      const events = await listEvents();
-      hideEventsListLoading(el);
-
-      const sorted = sortEventsList(events);
-
-      renderEventsList(el, this.viewTemplates, sorted, (kind, id) => {
-        if (kind === 'events') {
-          void this.loadDetail(id);
-        } else {
-          this.navigateTo(kind, id);
-        }
-      });
-
-      initIcons();
-    } catch (err: unknown) {
-      hideEventsListLoading(el);
-      this.dispatch('error', {
-        detail: { message: eventMessage('failedLoadEvents') }, prefix: 'app', bubbles: true,
-      });
-    }
   }
 
   // ── Detail ────────────────────────────────────────────────────────────────
@@ -194,8 +144,6 @@ export default class EventsController extends Controller {
     if ((event as CustomEvent<{ source?: string }> | undefined)?.detail?.source === 'events') return;
     if (this.currentDetail) {
       void this.loadDetail(this.currentDetail.event.id, undefined, this.companion?.isOpen() === true);
-    } else {
-      void this.loadList();
     }
   }
 
@@ -219,7 +167,6 @@ export default class EventsController extends Controller {
 
     this.element.querySelectorAll<HTMLElement>('.calendar-month-view, .calendar-day-view')
       .forEach(panel => panel.classList.add('hidden'));
-    this.listPanelTarget.classList.add('hidden');
     this.detailPanelTarget.classList.remove('hidden');
     this.setGlobalAddHidden(true);
 
@@ -269,6 +216,7 @@ export default class EventsController extends Controller {
       {
         locale: resolveEventLocale(),
         onEdit: (current) => this.beginEdit(current),
+        onCreatePrepNote: current => openEventPrepNote(current, note => this.navigateTo('notes', note.id)),
         onRemove: (current) => this.confirmRemoval(current),
         onRespondInvitation: (current, choice, control) => { void this.respondToInvitation(current, choice, control); },
         onManageMeet: (current, action) => { void this.manageMeet(current, action); },
@@ -529,7 +477,6 @@ export default class EventsController extends Controller {
       // back to the calendar list so the action has an immediate, visible
       // result instead of rendering a cancelled stale entry.
       this.showList();
-      await this.loadList();
     } catch (error: unknown) {
       const details: JinErrorDetails | undefined = isJinErrorDto(error) ? error.details : undefined;
       if (details?.type === 'operation_conflict') {
@@ -599,12 +546,8 @@ export default class EventsController extends Controller {
     });
   }
 
-  private get viewElements(): EventsViewElements {
+  private get viewElements(): Pick<EventsViewElements, 'detailPanel' | 'detailLoadingState' | 'detailNotFoundState' | 'detailContent'> {
     return {
-      listPanel: this.listPanelTarget,
-      list: this.listTarget,
-      emptyState: this.emptyStateTarget,
-      loadingState: this.loadingStateTarget,
       detailPanel: this.detailPanelTarget,
       detailLoadingState: this.detailLoadingStateTarget,
       detailNotFoundState: this.detailNotFoundStateTarget,
@@ -612,19 +555,9 @@ export default class EventsController extends Controller {
     };
   }
 
-  private get viewTemplates(): EventsTemplates {
-    const eventBrowseRowEl = document.getElementById(
-      'tmpl-event-browse-row'
-    ) as HTMLTemplateElement | null;
-    const backlinkRowEl = document.getElementById(
-      'tmpl-backlink-row'
-    ) as HTMLTemplateElement | null;
-    if (!eventBrowseRowEl || !backlinkRowEl) {
-      throw new Error(
-        '[EventsController] required <template> elements not found. ' +
-          'Ensure #tmpl-event-browse-row and #tmpl-backlink-row are present in the document.'
-      );
-    }
-    return { eventBrowseRow: eventBrowseRowEl, backlinkRow: backlinkRowEl };
+  private get viewTemplates(): Pick<EventsTemplates, 'backlinkRow'> {
+    const backlinkRow = document.getElementById('tmpl-backlink-row') as HTMLTemplateElement | null;
+    if (!backlinkRow) throw new Error('[EventsController] #tmpl-backlink-row is required.');
+    return { backlinkRow };
   }
 }

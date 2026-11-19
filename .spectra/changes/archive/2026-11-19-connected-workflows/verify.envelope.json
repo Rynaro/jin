@@ -1,0 +1,14 @@
+{
+  "envelope_version": "1.0",
+  "from": { "eidolon": "vigil" },
+  "to": { "eidolon": "idg" },
+  "performative": "INFORM",
+  "objective": "Independent workflow verification passed; verification.md separates direct checks, team browser/native evidence, and visual acceptance limits.",
+  "context_delta": {
+    "focused_frontend_tests": 233,
+    "focused_core_tests": 11,
+    "actual_tauri_dispatch_tests": 1,
+    "native_persistence_roundtrip": "passed",
+    "owner_aesthetic_signoff": "not claimed"
+  }
+}

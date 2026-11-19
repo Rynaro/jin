@@ -1,31 +1,28 @@
 /** One navigation coordinator; contextual roots stay inside their route controllers. */
 import { Controller } from '@hotwired/stimulus';
 import { loadSidebarPrefs, saveSidebarPrefs } from '../lib/sidebar/state';
+import { updateSidebarUtilities } from '../lib/sidebar/utilities';
 
 type Section = 'today' | 'notes' | 'tasks' | 'events' | 'notifications' | 'settings';
 const SECTION_LABEL: Record<Section, string> = {
-  today: 'Today', notes: 'Notes', tasks: 'Tasks', events: 'Events',
+  today: 'Today', notes: 'Notes', tasks: 'Tasks', events: 'Calendar',
   notifications: 'Notifications', settings: 'Settings',
 };
 const CONTEXT_SECTIONS = new Set<Section>(['notes', 'tasks', 'events', 'settings']);
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export default class SidebarController extends Controller {
-  static targets = ['root', 'toggle', 'reveal', 'switcher', 'routes', 'sectionLabel', 'backdrop'];
+  static targets = ['root', 'toggle', 'reveal', 'routes', 'backdrop'];
   declare readonly rootTarget: HTMLElement;
   declare readonly toggleTarget: HTMLButtonElement;
   declare readonly revealTarget: HTMLButtonElement;
-  declare readonly switcherTarget: HTMLButtonElement;
   declare readonly routesTarget: HTMLElement;
-  declare readonly sectionLabelTarget: HTMLElement;
 
   private expanded = true;
   private drawerOpen = false;
-  private switcherOpen = false;
   private presentation: 'desktop' | 'drawer' = 'desktop';
   private activeSection: Section = 'today';
   private resizeObserver: ResizeObserver | null = null;
-  private unreadObserver: MutationObserver | null = null;
   private rootObserver: MutationObserver | null = null;
   private headerObserver: ResizeObserver | null = null;
   private returnFocus: HTMLElement | null = null;
@@ -39,35 +36,29 @@ export default class SidebarController extends Controller {
     this.sync();
     window.addEventListener('resize', this.updatePresentation);
     document.addEventListener('keydown', this.onDocumentKeydown, true);
-    document.addEventListener('pointerdown', this.onDocumentPointerdown, true);
     document.addEventListener('click', this.onSkipClick, true);
     if (typeof ResizeObserver !== 'undefined') {
       this.resizeObserver = new ResizeObserver(this.updatePresentation);
       this.resizeObserver.observe(shell);
       this.headerObserver = new ResizeObserver(this.updateHeaderGeometry);
-      for (const part of [this.rootTarget.querySelector('.jin-sidebar-header'), this.rootTarget.querySelector('.jin-sidebar-actions'), this.switcherTarget]) {
+      for (const part of [this.rootTarget.querySelector('.jin-sidebar-header'), this.rootTarget.querySelector('.jin-sidebar-actions'), this.routesTarget]) {
         if (part) this.headerObserver.observe(part);
       }
     }
     this.rootObserver = new MutationObserver(this.updatePresentation);
     this.rootObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-text-scale'] });
-    const unread = this.rootTarget.querySelector('[data-notifications-nav]');
-    if (unread) {
-      this.unreadObserver = new MutationObserver(() => this.syncUnread());
-      this.unreadObserver.observe(unread, { subtree: true, childList: true, characterData: true, attributes: true });
-    }
-    this.syncUnread();
     this.updateHeaderGeometry();
+    this.updateUtilityLabels();
+    window.addEventListener('jin:event-locale-changed', this.updateUtilityLabels);
   }
 
   disconnect(): void {
     window.removeEventListener('resize', this.updatePresentation);
+    window.removeEventListener('jin:event-locale-changed', this.updateUtilityLabels);
     document.removeEventListener('keydown', this.onDocumentKeydown, true);
-    document.removeEventListener('pointerdown', this.onDocumentPointerdown, true);
     document.removeEventListener('click', this.onSkipClick, true);
     this.resizeObserver?.disconnect();
     this.headerObserver?.disconnect();
-    this.unreadObserver?.disconnect();
     this.rootObserver?.disconnect();
     this.restoreInert();
   }
@@ -80,12 +71,14 @@ export default class SidebarController extends Controller {
     const focusInPriorContext = !!priorContext?.contains(document.activeElement);
     this.activeSection = next;
     (this.element as HTMLElement).dataset.activeSection = next;
-    this.switcherOpen = false;
     if (this.presentation === 'drawer') this.drawerOpen = false;
     this.sync();
-    if (focusInNavigation) {
-      this.focusAfterReconcile(this.presentation === 'drawer' ? this.revealTarget : this.switcherTarget, true);
-    } else if (focusInPriorContext) this.focusAfterReconcile(this.switcherTarget, true);
+    if (focusInNavigation && this.presentation === 'drawer') {
+      this.focusAfterReconcile(this.revealTarget, true);
+    } else if (focusInPriorContext) {
+      const destination = this.rootTarget.querySelector<HTMLElement>(`[data-section="${next}"]`);
+      if (destination) this.focusAfterReconcile(destination, true);
+    }
   }
 
   toggle(): void {
@@ -111,12 +104,11 @@ export default class SidebarController extends Controller {
       saveSidebarPrefs({ version: 2, expanded: true });
     }
     this.sync();
-    this.switcherTarget.focus({ preventScroll: true });
+    this.toggleTarget.focus({ preventScroll: true });
   }
 
   hide(): void {
     const focusInNavigation = this.navigationContainsFocus();
-    this.switcherOpen = false;
     if (this.presentation === 'drawer') this.drawerOpen = false;
     else {
       this.expanded = false;
@@ -129,15 +121,6 @@ export default class SidebarController extends Controller {
     if (focusInNavigation) this.focusAfterReconcile(returnTarget, true);
   }
 
-  toggleSwitcher(): void {
-    this.switcherOpen = !this.switcherOpen;
-    this.sync();
-    if (this.switcherOpen) {
-      (this.routesTarget.querySelector(`[data-section="${this.activeSection}"]`) as HTMLElement | null)
-        ?.focus({ preventScroll: true });
-    } else this.switcherTarget.focus({ preventScroll: true });
-  }
-
   private readonly updatePresentation = (): void => {
     const shell = this.element as HTMLElement;
     const width = shell.getBoundingClientRect().width || window.innerWidth;
@@ -147,10 +130,9 @@ export default class SidebarController extends Controller {
     const focusInNavigation = this.navigationContainsFocus();
     this.presentation = next;
     this.drawerOpen = false;
-    this.switcherOpen = false;
     this.sync();
     if (focusInNavigation) {
-      this.focusAfterReconcile(next === 'drawer' || !this.expanded ? this.revealTarget : this.switcherTarget, true);
+      this.focusAfterReconcile(next === 'drawer' || !this.expanded ? this.revealTarget : this.toggleTarget, true);
     }
   };
 
@@ -160,29 +142,31 @@ export default class SidebarController extends Controller {
     const visible = this.presentation === 'desktop' ? this.expanded : this.drawerOpen;
     shell.dataset.navPresentation = this.presentation;
     shell.dataset.navVisible = String(visible);
-    shell.dataset.switcherOpen = String(this.switcherOpen);
     shell.dataset.activeSection = this.activeSection;
-    this.sectionLabelTarget.textContent = SECTION_LABEL[this.activeSection];
-    this.switcherTarget.setAttribute('aria-expanded', String(this.switcherOpen));
     this.toggleTarget.setAttribute('aria-expanded', String(visible));
     this.toggleTarget.setAttribute('aria-label', this.presentation === 'drawer' ? 'Close navigation' : 'Hide navigation');
     this.rootTarget.toggleAttribute('inert', !visible);
     this.rootTarget.setAttribute('aria-hidden', String(!visible));
     this.revealTarget.setAttribute('aria-expanded', String(visible));
-    this.routesTarget.toggleAttribute('inert', !visible || (CONTEXT_SECTIONS.has(this.activeSection) && !this.switcherOpen));
+    this.routesTarget.toggleAttribute('inert', !visible);
     const context = this.contextFor(this.activeSection);
     for (const item of shell.querySelectorAll<HTMLElement>('[data-sidebar-context]')) {
-      item.toggleAttribute('inert', item !== context || !visible || this.switcherOpen);
+      item.toggleAttribute('inert', item !== context || !visible);
     }
     this.syncWorkingContent();
-    this.syncUnread();
     this.updateHeaderGeometry();
   }
 
+  private readonly updateUtilityLabels = (): void => {
+    updateSidebarUtilities(this.rootTarget);
+  };
+
   private readonly updateHeaderGeometry = (): void => {
     const shell = this.element as HTMLElement;
-    const top = Math.ceil(this.switcherTarget.getBoundingClientRect().bottom - shell.getBoundingClientRect().top);
+    const shellBounds = shell.getBoundingClientRect();
+    const top = Math.ceil(this.routesTarget.getBoundingClientRect().bottom - shellBounds.top);
     if (top > 0) shell.style.setProperty('--sidebar-body-top', `${top}px`);
+    shell.style.setProperty('--sidebar-body-bottom', '0px');
   };
 
   private syncWorkingContent(): void {
@@ -202,14 +186,6 @@ export default class SidebarController extends Controller {
     for (const item of shell.querySelectorAll<HTMLElement>('[data-sidebar-context], [data-sidebar-workspace], [data-section-name], .jin-sidebar, .jin-nav')) {
       item.removeAttribute('inert');
     }
-  }
-
-  private syncUnread(): void {
-    const badge = this.rootTarget.querySelector<HTMLElement>('[data-notifications-badge]');
-    const hasUnread = !!badge && !badge.hidden && (Number(badge.textContent?.trim()) || 0) > 0;
-    this.rootTarget.dataset.hasUnread = String(hasUnread);
-    const unreadLabel = this.rootTarget.querySelector<HTMLElement>('[data-notifications-badge-label]')?.textContent?.trim();
-    this.switcherTarget.setAttribute('aria-label', `${SECTION_LABEL[this.activeSection]}, choose section${hasUnread && unreadLabel ? `, ${unreadLabel}` : ''}`);
   }
 
   private contextFor(section: Section): HTMLElement | null {
@@ -253,44 +229,36 @@ export default class SidebarController extends Controller {
     destination.focus();
   };
 
-  private readonly onDocumentPointerdown = (event: PointerEvent): void => {
-    if (!this.switcherOpen) return;
-    const target = event.target as Node;
-    if (this.switcherTarget.contains(target) || this.routesTarget.contains(target)) return;
-    this.switcherOpen = false;
-    this.sync();
-  };
-
   private readonly onDocumentKeydown = (event: KeyboardEvent): void => {
     if (document.querySelector('dialog[open]')) return;
     if (event.key === 'Escape') {
       if (document.querySelector('.folder-row__menu:not([hidden]), .lists-rail__menu:not([hidden]), .notes-collection-menu:not([hidden])')) return;
-      if (this.switcherOpen) {
-        event.preventDefault();
-        this.switcherOpen = false;
-        this.sync();
-        this.switcherTarget.focus({ preventScroll: true });
-      } else if (this.presentation === 'drawer' && this.drawerOpen) {
+      if (this.presentation === 'drawer' && this.drawerOpen) {
         event.preventDefault();
         this.hide();
       }
       return;
     }
-    if (event.key !== 'Tab' || this.presentation !== 'drawer' || !this.drawerOpen) return;
-    const roots = [this.rootTarget, this.contextFor(this.activeSection)].filter(Boolean) as HTMLElement[];
-    const items = roots.flatMap(root => Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)))
-      .filter(item => !item.closest('[inert], [hidden]') && getComputedStyle(item).display !== 'none'
+    if (event.key !== 'Tab') return;
+    const drawerTrap = this.presentation === 'drawer' && this.drawerOpen;
+    if (!drawerTrap && !this.navigationContainsFocus()) return;
+    const primary = Array.from(this.rootTarget.querySelectorAll<HTMLElement>(FOCUSABLE));
+    const context = Array.from(this.contextFor(this.activeSection)?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
+    const items = [...primary, ...context]
+      .filter(item => !item.closest('[inert], [hidden], .hidden, dialog:not([open])') && getComputedStyle(item).display !== 'none'
         && getComputedStyle(item).visibility === 'visible');
     if (!items.length) return;
-    const first = items[0];
-    const last = items[items.length - 1];
-    if (!items.includes(document.activeElement as HTMLElement)) {
-      event.preventDefault();
-      (event.shiftKey ? last : this.switcherTarget).focus({ preventScroll: true });
-    } else if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault(); last.focus({ preventScroll: true });
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault(); first.focus({ preventScroll: true });
+    const current = items.indexOf(document.activeElement as HTMLElement);
+    if (current < 0) {
+      if (drawerTrap) {
+        event.preventDefault();
+        items[event.shiftKey ? items.length - 1 : 0].focus();
+      }
+      return;
     }
+    const next = current + (event.shiftKey ? -1 : 1);
+    if (!drawerTrap && (next < 0 || next >= items.length)) return;
+    event.preventDefault();
+    items[(next + items.length) % items.length].focus();
   };
 }

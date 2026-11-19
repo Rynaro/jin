@@ -30,16 +30,16 @@ describe('Continuous Ink Workspace', () => {
 
   it('publishes the continuous workspace geometry and semantic surface tokens', () => {
     for (const contract of [
-      '--app-rail-width: 248px',
+      '--app-rail-width: 236px',
       '--app-rail-collapsed-width: 52px',
       '--navigation-rail-width: var(--app-rail-width)',
       '--context-rail-width: var(--navigation-rail-width)',
-      '--toolbar-height: 40px',
-      '--control-height: 28px',
-      '--control-height-prominent: 32px',
-      '--desktop-hit-target: 28px',
+      '--toolbar-height: 56px',
+      '--control-height: 34px',
+      '--control-height-prominent: 38px',
+      '--desktop-hit-target: 32px',
       '--coarse-hit-target: 44px',
-      '--icon-size-standard: 15px',
+      '--icon-size-standard: 16px',
       '--icon-size-small: 13px',
       '--check-visual-size: 16px',
       '--check-mark-size: 12px',
@@ -47,8 +47,8 @@ describe('Continuous Ink Workspace', () => {
       '--switch-track-width: 32px',
       '--switch-track-height: 20px',
       '--switch-thumb-size: 16px',
-      '--rail-row-height: 32px',
-      '--task-row-height: 40px',
+      '--rail-row-height: 40px',
+      '--task-row-height: 48px',
       '--note-row-height: 68px',
       '--reading-width: 760px',
       '--workspace-canvas',
@@ -58,7 +58,7 @@ describe('Continuous Ink Workspace', () => {
       '--ink-bleed',
       '--ink-on',
       '--display-title-size: 1.5rem',
-      '--document-title-size: 1.5rem',
+      '--document-title-size: 1.375rem',
       '--editor-text-size: 1rem',
     ]) {
       expect(tokens).toContain(contract);
@@ -68,10 +68,10 @@ describe('Continuous Ink Workspace', () => {
   it('uses system type for shared chrome while retaining the optional display utility', () => {
     expect(typography).toContain('.text-display-title');
     expect(typography).toContain('font-family: var(--font-display)');
-    expect(today).toMatch(/\.today-masthead__date \{[\s\S]*?font: 700 [^;]*var\(--font-text\);/);
+    expect(today).toMatch(/\.today-masthead__date \{[\s\S]*?font: [^;]*var\(--font-text\);/);
     expect(settings).toMatch(/\.settings-view__heading \{[\s\S]*?font-family: var\(--font-text\);/);
     expect(forms).toMatch(/\.action-dialog__title \{[\s\S]*?font-family: var\(--font-text\);/);
-    expect(browse).toMatch(/\.notes-detail-pane \.browse-detail__title--input\.jin-title-field \{[\s\S]*?font-family: var\(--font-text\);/);
+    expect(browse).toMatch(/\.notes-detail-pane \.browse-detail__title--input\.jin-title-field \{[\s\S]*?font-family: var\(--notes-prose-font\);/);
     expect(browse).toMatch(/\.notes-detail-pane \.cm-content \{[\s\S]*?font-size: var\(--notes-prose-size\);/);
   });
 
@@ -118,7 +118,7 @@ describe('Continuous Ink Workspace', () => {
     expect(navigation).toMatch(/\.jin-navigation-rail \{[\s\S]*?inline-size: var\(--navigation-rail-width\);/);
     expect(navigation).toMatch(/\.jin-navigation-rail \{[\s\S]*?border: 0;[\s\S]*?border-inline-end: 0\.5px solid var\(--separator\);/);
     expect(navigation).toMatch(/\.jin-navigation-list\.jin-navigation-list--inset,[\s\S]*?\.jin-navigation-row\.jin-navigation-row--inset \{[\s\S]*?inline-size: calc\(100% - var\(--space-2\)\);[\s\S]*?margin-inline: var\(--space-1\);/);
-    expect(navigation).toMatch(/\.jin-navigation-row \{[\s\S]*?gap: var\(--space-1\);[\s\S]*?min-block-size: var\(--rail-row-height\);[\s\S]*?padding: 0 10px;[\s\S]*?border-radius: var\(--radius-sm\);[\s\S]*?font-size: var\(--text-footnote-size\);[\s\S]*?line-height: var\(--text-footnote-line\);/);
+    expect(navigation).toMatch(/\.jin-navigation-row \{[\s\S]*?gap: var\(--space-1\);[\s\S]*?min-block-size: var\(--rail-row-height\);[\s\S]*?padding: var\(--space-half\) var\(--space-1\);[\s\S]*?border-radius: var\(--radius-sm\);[\s\S]*?font-size: var\(--text-subheadline-size\);[\s\S]*?line-height: var\(--text-footnote-line\);/);
     expect(navigation).toMatch(/\.jin-navigation-row__label \{[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap;/);
     expect(navigation).toMatch(/\.jin-navigation-row--tree \{[\s\S]*?var\(--tree-depth, 0\)/);
     expect(navigation).toMatch(/\.jin-navigation-row--actions > \.jin-navigation-row__actions \{[\s\S]*?opacity: 0;[\s\S]*?pointer-events: none;/);
@@ -168,7 +168,7 @@ describe('Continuous Ink Workspace', () => {
     expect(browse).toContain("grid-template-columns: 32px minmax(0, 1fr) 64px");
     expect(browse).toContain('height: auto;');
     expect(browse).toContain('max-height: none;');
-    expect(browse).toContain('min-block-size: 92px;');
+    expect(browse).toContain('min-block-size: 132px;');
     expect(browse).toContain('max-block-size: none;');
     expect(browse).toContain('width: var(--notes-writing-column)');
     expect(browse).toContain('font-size: var(--notes-detail-title-size) !important');
@@ -288,7 +288,7 @@ describe('Continuous Ink Workspace', () => {
     expect(markup).not.toMatch(/class="settings-nav__item jin-rail-row tap-target"/);
     expect(markup).not.toContain('<aside class="settings-nav');
     expect(markup.match(/<nav class="settings-nav__items jin-navigation-list" aria-label="Settings categories">/g)).toHaveLength(1);
-    expect(settings).toMatch(/\.settings-nav \{[\s\S]*?padding: var\(--space-3\) var\(--space-1\);/);
+    expect(sidebar).toMatch(/\.jin-shell \[data-sidebar-context\] \{[\s\S]*?padding: var\(--space-2\) var\(--space-2\) var\(--space-1\);/);
     expect(navigation).toMatch(/\.jin-navigation-list \{[\s\S]*?gap: 0;/);
     expect(navigation).toMatch(/\.jin-navigation-row \{[\s\S]*?min-block-size: var\(--rail-row-height\);/);
     expect(navigation).toMatch(/\.jin-navigation-row\[aria-current="page"\]::before,[\s\S]*?content: none;/);
@@ -337,7 +337,7 @@ describe('Continuous Ink Workspace', () => {
     expect(markup).toMatch(/data-settings-pane-key="calendars"[\s\S]*?Google calendar accounts[\s\S]*?Quarantined calendar changes[\s\S]*?aria-label="Sync"/);
     expect(markup).toMatch(/<details class="settings-section settings-diagnostics">[\s\S]*?infoDisplayTz[\s\S]*?infoCalendarId[\s\S]*?infoSchemaVersion/);
     expect(settings).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.settings-view\.jin-split-view \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
-    expect(settings).toMatch(/:root\[data-text-scale="accessibility"\] \.settings-nav__items \{[\s\S]*?flex-wrap: wrap;[\s\S]*?gap: var\(--space-1\);[\s\S]*?overflow-x: visible;/);
+    expect(sidebar).toContain(".jin-shell[data-nav-presentation='drawer'] [data-sidebar-context]");
     expect(settings).toMatch(/:root\[data-text-scale="accessibility"\] \.settings-nav__item > \.jin-navigation-row__label \{[\s\S]*?overflow: visible;[\s\S]*?text-overflow: clip;[\s\S]*?white-space: normal;[\s\S]*?overflow-wrap: anywhere;/);
     expect(settings).toMatch(/\.settings-pane,\s*\.settings-section,[\s\S]*?\.google-account-card,[\s\S]*?min-inline-size: 0;/);
     expect(settings).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.settings-nav__item:focus-visible \{[\s\S]*?outline: 0;[\s\S]*?box-shadow: inset 0 0 0 2px var\(--accent\);/);
@@ -352,7 +352,7 @@ describe('Continuous Ink Workspace', () => {
   it('owns Settings scrolling by mode without moving the desktop rail', () => {
     expect(settings).toMatch(/\[data-section-name="settings"\]\.jin-content-body \{[\s\S]*?block-size: 100%;[\s\S]*?overflow-y: hidden;/);
     expect(settings).toMatch(/\.settings-view \{[\s\S]*?block-size: 100%;[\s\S]*?max-block-size: 100%;[\s\S]*?overflow: hidden;/);
-    expect(settings).toMatch(/\.settings-nav \{[\s\S]*?position: static;[\s\S]*?align-self: stretch;[\s\S]*?block-size: 100%;/);
+    expect(sidebar).toMatch(/\.jin-shell \[data-sidebar-context\] \{[\s\S]*?position: fixed;[\s\S]*?inset-block-start: var\(--sidebar-body-top\);[\s\S]*?inset-block-end: var\(--sidebar-body-bottom\);[\s\S]*?overflow-y: auto;/);
     expect(settings).toMatch(/\.settings-workspace \{[\s\S]*?min-block-size: 0;[\s\S]*?overflow-y: auto;/);
     expect(settings).toMatch(/:root\[data-text-scale="accessibility"\] \[data-section-name="settings"\]\.jin-content-body \{[\s\S]*?block-size: auto;[\s\S]*?overflow-y: auto;/);
     expect(settings).toMatch(/:root\[data-text-scale="accessibility"\] \.settings-workspace \{[\s\S]*?overflow-y: visible;/);
@@ -406,7 +406,7 @@ describe('Continuous Ink Workspace', () => {
     for (const token of [
       '--notes-writing-paper:', '--notes-writing-ink:', '--notes-toolbar-wash:',
       '--notes-selection-tint:', '--notes-quote-rule:', '--notes-code-wash:',
-      '--notes-prose-measure: 66ch', '--notes-prose-size: .9375rem', '--notes-prose-line: 1.5',
+      '--notes-prose-measure: 66ch', '--notes-prose-size: 1.125rem', '--notes-prose-line: 1.7',
     ]) expect(tokens).toContain(token);
 
     expect(browse).toMatch(/\.notes-detail-pane,\n\.notes-detail-pane \.note-detail__body,[\s\S]*?background: var\(--notes-writing-paper\);/);
@@ -414,7 +414,11 @@ describe('Continuous Ink Workspace', () => {
     expect(browse).toMatch(/\.notes-detail-pane \.cm-reading-wrapper \{[\s\S]*?font-size: var\(--notes-prose-size\);[\s\S]*?line-height: var\(--notes-prose-line\);/);
     expect(browse).toMatch(/\.notes-detail-pane \.browse-detail__title--input\.jin-title-field:focus-visible \{[\s\S]*?border-bottom-color: var\(--notes-focus-tint\);/);
     expect(browse).toContain('.cm-toolbar__group');
-    expect(browse).toMatch(/\.notes-detail-pane \{ container-type: inline-size; \}[\s\S]*?@container \(max-width: 42rem\) \{[\s\S]*?\.notes-detail-pane \.cm-toolbar \{[\s\S]*?flex-wrap: wrap;/);
+    expect(browse).toContain('.cm-toolbar__more-panel');
+    expect(browse).toContain('.notes-detail-pane { container-type: inline-size; }');
+    expect(browse).toMatch(/\.notes-detail-pane__formatting[\s\S]*?overflow: visible;[\s\S]*?\.notes-detail-pane__formatting \.cm-toolbar[\s\S]*?flex-wrap: wrap;/);
+    expect(browse).not.toMatch(/\.notes-detail-pane__formatting[\s\S]*?overflow-x:\s*auto;[\s\S]*?\.notes-detail-pane__formatting \.cm-toolbar[\s\S]*?flex-wrap:\s*nowrap;/);
+    expect(browse).toMatch(/:root\[data-text-scale="accessibility"\] \.notes-detail-pane \.cm-toolbar \{[\s\S]*?flex-wrap: wrap;/);
     expect(browse).toMatch(/\.notes-detail-pane \.note-detail__status \{[\s\S]*?inline-size: var\(--control-height-prominent\);[\s\S]*?align-self: center;/);
     expect(browse).toMatch(/\.notes-detail-pane \.note-detail__status-icon svg \{[\s\S]*?inline-size: 18px;[\s\S]*?block-size: 18px;/);
     expect(browse).toMatch(/@media \(pointer: coarse\) \{[\s\S]*?\.notes-detail-pane \.note-detail__status \{[\s\S]*?inline-size: var\(--coarse-hit-target\);/);

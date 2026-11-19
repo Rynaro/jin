@@ -296,7 +296,13 @@ export function renderEventComposer(options: ComposerRenderOptions): ComposerVie
     options.onDraftChange?.();
     refresh();
   });
-  titleInput.addEventListener('blur', () => markTouched('title'));
+  titleInput.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || event.isComposing) return;
+    event.preventDefault();
+    submitted = true;
+    refresh();
+    if (!save.disabled) options.onSave?.();
+  });
   titleField.appendChild(titleLabel);
   titleField.appendChild(titleInput);
   header.prepend(titleField);
@@ -705,7 +711,9 @@ export function renderEventComposer(options: ComposerRenderOptions): ComposerVie
       const relevant = error.field === 'duration' ? ['start', 'end'] : [error.field];
       if (!submitted && !relevant.some(field => touched.has(field))) continue;
       const item = document.createElement('li');
-      item.textContent = error.message;
+      item.textContent = error.field === 'title' && error.code === 'required'
+        ? eventMessage('titleRequired', locale)
+        : error.message;
       item.dataset.field = error.field;
       errorsEl.appendChild(item);
       const controls = error.field === 'title' ? [titleInput]

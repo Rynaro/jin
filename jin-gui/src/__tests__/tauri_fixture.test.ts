@@ -3,6 +3,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { JSDOM } from 'jsdom';
 import type { TaskDto, TaskRecurrence } from '../types/dto';
+import { formatEventDate, formatEventTime } from '../lib/events/transform';
 
 interface FixtureBridge {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -28,6 +29,19 @@ function loadFixture(scenarios: { today?: string; calendar?: string; notificatio
 }
 
 describe('deterministic Tauri visual-QA fixture', () => {
+  it('matches the native edit response and refreshes the list excerpt from saved prose', async () => {
+    const bridge = loadFixture();
+    const body = '  New\n\nnotebook\u0085entry\u2003' + '葉'.repeat(210);
+    const edited = await bridge.invoke('edit_note', {
+      id: 'n1', input: { body, expected_revision: 1 },
+    });
+    expect(edited).toMatchObject({ body_markdown: body, excerpt: null, revision: 2 });
+    const notes = await bridge.invoke('list_notes') as Array<{ id: string; excerpt: string }>;
+    const excerpt = notes.find(note => note.id === 'n1')!.excerpt;
+    expect(excerpt).toBe(Array.from('New notebook entry ' + '葉'.repeat(210)).slice(0, 200).join(''));
+    expect(Array.from(excerpt)).toHaveLength(200);
+  });
+
   it('loads the local fixture before the application entrypoint in the real index', () => {
     const source = readFileSync(
       fileURLToPath(new URL('../../index.html', import.meta.url)),
@@ -447,7 +461,7 @@ describe('deterministic Tauri visual-QA fixture', () => {
       link.source_id === 'n4' && link.edge_type === 'references');
 
     expect(first).toEqual({ edge_type: 'references', source_id: 'n4', target_id: 'e1' });
-    expect(matches).toEqual([{ source_id: 'n4', source_kind: 'note', edge_type: 'references', label: 'Small rituals' }]);
+    expect(matches).toEqual([{ source_id: 'n4', source_kind: 'note', edge_type: 'references', label: 'referenced-by', source_title: 'Small rituals' }]);
     const google = await bridge.invoke('get_event_detail', { id: 'e7' }) as Record<string, any>;
     expect(google.event.backlinks).toEqual([]);
     await expect(bridge.invoke('link', { source_id: 'e1', target_id: 'n4', edge_type: 'references' }))
@@ -471,6 +485,42 @@ describe('deterministic Tauri visual-QA fixture', () => {
     expect(removed.originating_task.agenda_bucket).toBe('flexible');
     const flexible = await bridge.invoke('list_tasks', {}) as Array<Record<string, unknown>>;
     expect(flexible.find(task => task.id === 't2')?.agenda_bucket).toBe('flexible');
+  });
+
+  it('displays an anchored UTC fixture block correctly in a non-UTC host', async () => {
+    const previous = process.env.TZ;
+    process.env.TZ = 'America/Sao_Paulo';
+    try {
+      const bridge = loadFixture();
+      const result = await bridge.invoke('promote_task', {
+        task_id: 't2', slot: { when: '2026-11-20T00:15:00', tzid: 'UTC' },
+        duration_minutes: 45, local_only: true, operation_id: 'fixture-zone-review',
+      }) as { start: string; end: string; start_tzid: string };
+      expect(formatEventTime(result.start, result.end, false, false, result.start_tzid, 'en')).toContain('12:15');
+      expect(formatEventDate(result.start, false, result.start_tzid, 'en')).toContain('November 20');
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  });
+
+  it('keeps a chosen task time block duration and identity through fixture retries', async () => {
+    const bridge = loadFixture();
+    const request = {
+      task_id: 't2', slot: { when: '2026-08-28T09:00:00' },
+      duration_minutes: 45, local_only: true, operation_id: 'reviewed-duration-45',
+    };
+    const created = await bridge.invoke('promote_task', request) as Record<string, unknown>;
+    expect(created.start).toBe('2026-08-28T09:00:00');
+    expect(created.end).toBe('2026-08-28T09:45:00');
+    expect(await bridge.invoke('promote_task', request)).toEqual(created);
+    const existing = await bridge.invoke('promote_task', {
+      ...request, duration_minutes: 120, operation_id: 'second-review',
+    }) as Record<string, unknown>;
+    expect(existing.id).toBe(created.id);
+    expect(existing.end).toBe(created.end);
+    const all = await bridge.invoke('list_events', {}) as Array<Record<string, unknown>>;
+    expect(all.filter(event => event.derived_from === 't2')).toHaveLength(1);
   });
 });
 
@@ -660,5 +710,31 @@ describe('persistent recurring task fixture contract', () => {
     await bridge.invoke('maintain_task_recurrences');
     expect((await rows(bridge)).filter(task => task.recurrence_instance)).toHaveLength(2);
     expect(await get(bridge, next.id)).toMatchObject({ deleted_at: expect.any(String) });
+  });
+});
+
+
+describe('contextual creation fixture', () => {
+  it('creates one linked task with a canonical source backlink across retries', async () => {
+    const bridge = loadFixture();
+    const input = { operation_id: 'selection-op', note_id: 'n1', expected_revision: 1, title: 'Follow up', excerpt: 'Follow up with studio', list: 'inbox' };
+    const first = await bridge.invoke('create_task_from_note', { input }) as { task: TaskDto; note: { revision: number; outgoing_links: unknown[] } };
+    const retry = await bridge.invoke('create_task_from_note', { input });
+    expect(retry).toEqual(first);
+    expect(first.task.backlinks).toContainEqual(expect.objectContaining({ source_id: 'n1', edge_type: 'references' }));
+    expect(first.note.revision).toBe(2);
+    expect(first.note.outgoing_links).toContainEqual(expect.objectContaining({ target_id: first.task.id, target_kind: 'task' }));
+    await expect(bridge.invoke('create_task_from_note', { input: { ...input, title: 'Different intent' } })).rejects.toMatchObject({ message: 'Operation payload changed' });
+    expect((await bridge.invoke('list_tasks') as TaskDto[]).filter(task => task.title === 'Follow up')).toHaveLength(1);
+  });
+
+  it('keeps prep notes local and visible through event backlinks', async () => {
+    const bridge = loadFixture();
+    const events = await bridge.invoke('list_events') as Array<{ id: string }>;
+    const input = { operation_id: 'prep-op', event_id: events[0].id, title: 'Meeting notes', body: '## Agenda' };
+    const note = await bridge.invoke('create_event_prep_note', { input }) as { id: string };
+    expect(await bridge.invoke('create_event_prep_note', { input })).toEqual(note);
+    const event = await bridge.invoke('get_event', { id: input.event_id }) as { backlinks: unknown[] };
+    expect(event.backlinks).toContainEqual(expect.objectContaining({ source_id: note.id, edge_type: 'prep-for' }));
   });
 });

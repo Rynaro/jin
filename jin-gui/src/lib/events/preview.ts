@@ -22,6 +22,8 @@ export interface EventPreviewCallbacks {
   onEdit?: () => void;
   onOpenFullDetails?: (eventId: string) => void;
   onJoin?: (href: string) => void;
+  onCreatePrepNote?: () => void;
+  onNavigate?: (kind: 'notes' | 'tasks' | 'events', id: string) => void;
 }
 
 export interface EventPreviewContext {
@@ -252,7 +254,13 @@ export function renderEventPreview(
   if (task) {
     const taskEl = document.createElement('p');
     taskEl.className = 'event-preview__task text-footnote';
-    taskEl.textContent = `${eventMessage('originTask', locale)}: ${task.title}`;
+    const openTask = document.createElement('button');
+    openTask.type = 'button';
+    openTask.className = 'btn-secondary';
+    openTask.textContent = `${eventMessage('originTask', locale)}: ${task.title}`;
+    openTask.addEventListener('click', () => callbacks.onNavigate?.('tasks', task.id));
+    if (callbacks.onNavigate) taskEl.append(openTask);
+    else taskEl.textContent = `${eventMessage('originTask', locale)}: ${task.title}`;
     root.appendChild(taskEl);
   }
   if (event.backlinks?.length) {
@@ -260,10 +268,28 @@ export function renderEventPreview(
     links.className = 'event-preview__backlinks';
     for (const link of event.backlinks) {
       const item = document.createElement('li');
-      item.textContent = link.label || link.source_id;
+      const kind = link.source_kind.toLowerCase();
+      const route = kind === 'note' ? 'notes' : kind === 'task' ? 'tasks' : kind === 'event' ? 'events' : null;
+      if (route && callbacks.onNavigate) {
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'btn-secondary';
+        open.textContent = link.label || link.source_id;
+        open.addEventListener('click', () => callbacks.onNavigate?.(route, link.source_id));
+        item.append(open);
+      } else item.textContent = link.label || link.source_id;
       links.appendChild(item);
     }
     root.appendChild(links);
+  }
+
+  if (callbacks.onCreatePrepNote) {
+    const create = document.createElement('button');
+    create.type = 'button';
+    create.className = 'btn-secondary event-preview__new-prep';
+    create.textContent = eventMessage('newPrepNote', locale);
+    create.addEventListener('click', callbacks.onCreatePrepNote);
+    root.append(create);
   }
 
   // 8. Concise sync status

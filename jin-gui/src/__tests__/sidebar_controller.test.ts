@@ -5,6 +5,8 @@ import { resolve } from 'path';
 import { Application, defaultSchema } from '@hotwired/stimulus';
 import SidebarController from '../controllers/sidebar_controller';
 import { SIDEBAR_STORAGE_KEY } from '../lib/sidebar/state';
+import { updateSidebarUtilities } from '../lib/sidebar/utilities';
+import { saveEventLocalePreference } from '../lib/events/locale';
 
 const INDEX_HTML = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
 const BODY = INDEX_HTML.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? '';
@@ -12,7 +14,6 @@ const originalWidth = window.innerWidth;
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const shell = () => document.querySelector<HTMLElement>('.jin-shell')!;
 const sidebar = () => document.querySelector<HTMLElement>('[data-sidebar-target="root"]')!;
-const switcher = () => document.querySelector<HTMLButtonElement>('[data-sidebar-target="switcher"]')!;
 const reveal = () => document.querySelector<HTMLButtonElement>('[data-sidebar-target="reveal"]')!;
 const toggle = () => document.querySelector<HTMLButtonElement>('[data-sidebar-target="toggle"]')!;
 
@@ -51,18 +52,69 @@ describe('one adaptive SidebarController', () => {
     expect(shell().dataset.navVisible).toBe('true');
   });
 
-  it('exposes all six routes through one switcher without duplicating links', async () => {
+  it('keeps each primary route and utility reachable without a section chooser', async () => {
     await mount();
-    expect(Array.from(document.querySelectorAll('.jin-nav-list [data-section]'),
+    expect(Array.from(sidebar().querySelectorAll('[data-section]'),
       item => item.getAttribute('data-section'))).toEqual([
-      'notifications', 'today', 'notes', 'tasks', 'events', 'settings',
+      'notifications', 'settings', 'today', 'tasks', 'notes', 'events',
     ]);
-    switcher().click();
-    expect(switcher().getAttribute('aria-expanded')).toBe('true');
-    expect(document.querySelector('[data-section="today"]')).toBe(document.activeElement);
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    expect(switcher().getAttribute('aria-expanded')).toBe('false');
-    expect(document.activeElement).toBe(switcher());
+    expect(document.querySelector('[data-sidebar-target="switcher"]')).toBeNull();
+    for (const route of ['today', 'tasks', 'notes', 'events', 'notifications', 'settings']) {
+      window.dispatchEvent(new CustomEvent('jin:route-committed', { detail: { section: route } }));
+      for (const link of sidebar().querySelectorAll<HTMLElement>('[data-section]')) {
+        expect(link.closest('[inert]')).toBeNull();
+      }
+      expect(document.querySelector('.jin-nav')?.hasAttribute('inert')).toBe(false);
+    }
+    expect(sidebar().querySelector('[data-section="events"]')?.getAttribute('aria-label')).toBe('Calendar');
+  });
+
+  it('keeps one notification link and settings link beside the brand with the live badge hooks', async () => {
+    await mount();
+    const header = sidebar().querySelector('.jin-sidebar-header')!;
+    const notification = header.querySelector<HTMLAnchorElement>('[data-notifications-nav]')!;
+    const settings = header.querySelector<HTMLAnchorElement>('[data-section="settings"]')!;
+    expect(notification.getAttribute('href')).toBe('#notifications');
+    expect(settings.getAttribute('href')).toBe('#settings');
+    expect(notification.querySelector('[data-notifications-badge]')).toBeTruthy();
+    expect(sidebar().querySelectorAll('[data-section="notifications"]')).toHaveLength(1);
+    expect(sidebar().querySelectorAll('[data-section="settings"]')).toHaveLength(1);
+    expect(header.querySelector('[data-sidebar-target="toggle"]')).toBe(toggle());
+    expect(shell().style.getPropertyValue('--sidebar-body-bottom')).toBe('0px');
+  });
+
+  it('commits either header utility through the same drawer navigation lifecycle', async () => {
+    await mount(760);
+    for (const section of ['notifications', 'settings']) {
+      reveal().click();
+      const link = sidebar().querySelector<HTMLAnchorElement>(`[data-section="${section}"]`)!;
+      link.focus();
+      link.click();
+      expect(shell().dataset.navVisible).toBe('true');
+      window.dispatchEvent(new CustomEvent('jin:route-committed', { detail: { section } }));
+      expect(shell().dataset.activeSection).toBe(section);
+      expect(shell().dataset.navVisible).toBe('false');
+      expect(document.activeElement).toBe(reveal());
+    }
+  });
+
+  it('updates utility names in Portuguese without losing the live unread count', async () => {
+    await mount();
+    updateSidebarUtilities(sidebar(), 4);
+    saveEventLocalePreference('pt-BR');
+    const notification = sidebar().querySelector('[data-notifications-nav]')!;
+    expect(notification.getAttribute('aria-label')).toBe('Notificações, 4 não lidas');
+    expect(notification.getAttribute('title')).toBe('4 notificações não lidas');
+    expect(sidebar().querySelector('[data-section="settings"]')?.getAttribute('aria-label')).toBe('Ajustes');
+    updateSidebarUtilities(sidebar(), 1);
+    expect(notification.getAttribute('aria-label')).toBe('Notificações, 1 não lida');
+    updateSidebarUtilities(sidebar(), 120);
+    expect(notification.querySelector('[data-notifications-badge]')?.textContent).toBe('99+');
+    expect(notification.getAttribute('title')).toBe('120 notificações não lidas');
+    saveEventLocalePreference('en');
+    expect(notification.getAttribute('aria-label')).toBe('Notifications, 120 unread');
+    updateSidebarUtilities(sidebar(), 0);
+    expect(notification.querySelector('[data-notifications-badge]')?.hasAttribute('hidden')).toBe(true);
   });
 
   it('changes context only when the router publishes an accepted commit', async () => {
@@ -71,9 +123,28 @@ describe('one adaptive SidebarController', () => {
     expect(shell().dataset.activeSection).toBe('today');
     window.dispatchEvent(new CustomEvent('jin:route-committed', { detail: { section: 'notes' } }));
     expect(shell().dataset.activeSection).toBe('notes');
-    expect(switcher().textContent).toContain('Notes');
     expect(document.querySelector('[data-sidebar-context="notes"]')?.hasAttribute('inert')).toBe(false);
-    expect(document.querySelector('.jin-nav')?.hasAttribute('inert')).toBe(true);
+    expect(document.querySelector('.jin-nav')?.hasAttribute('inert')).toBe(false);
+  });
+
+  it('preserves the chosen destination focus after an accepted desktop route', async () => {
+    await mount();
+    const destination = sidebar().querySelector<HTMLAnchorElement>('[data-section="notes"]')!;
+    destination.focus();
+    window.dispatchEvent(new CustomEvent('jin:route-committed', { detail: { section: 'notes' } }));
+    expect(document.activeElement).toBe(destination);
+  });
+
+  it('wraps keyboard focus through the persistent routes and utilities in the drawer', async () => {
+    await mount(760);
+    shell().hidden = false;
+    reveal().click();
+    const last = sidebar().querySelector<HTMLAnchorElement>('[data-section="settings"]')!;
+    toggle().focus();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }));
+    expect(document.activeElement).toBe(last);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+    expect(document.activeElement).toBe(toggle());
   });
 
   it('fully releases desktop width, persists v2 state, and leaves a reachable reopen', async () => {
@@ -105,7 +176,7 @@ describe('one adaptive SidebarController', () => {
     reveal().focus();
     reveal().click();
     expect(shell().dataset.navVisible).toBe('true');
-    expect(document.activeElement).toBe(switcher());
+    expect(document.activeElement).toBe(toggle());
     window.dispatchEvent(new CustomEvent('jin:sidebar-selection'));
     expect(shell().dataset.navVisible).toBe('false');
     expect(document.activeElement).toBe(reveal());
@@ -173,12 +244,12 @@ describe('one adaptive SidebarController', () => {
     reveal().click();
     const context = document.querySelector<HTMLElement>('[data-sidebar-context="settings"]')!;
     context.style.visibility = 'hidden';
-    switcher().focus();
+    toggle().focus();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
     expect(sidebar().contains(document.activeElement)).toBe(true);
     document.body.tabIndex = -1;
     document.body.focus();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
-    expect(document.activeElement).toBe(switcher());
+    expect(document.activeElement).toBe(sidebar().querySelector('[data-section="notifications"]'));
   });
 });

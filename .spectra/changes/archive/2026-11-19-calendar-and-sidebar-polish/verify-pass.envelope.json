@@ -1,0 +1,18 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "INFORM",
+  "objective": "verify_pass: CP-1 through CP-6 pass distinct checker review; see verification.md.",
+  "context_delta": {
+    "fresh_context": false,
+    "independent_tests": "113 passed in 5 files",
+    "parent_tests": "2266 GUI, 150 Rust GUI, 12 projection; production smoke and native signed app passed",
+    "transcript_access": "inherited",
+    "verification_report": ".spectra/changes/calendar-and-sidebar-polish/verification.md"
+  }
+}

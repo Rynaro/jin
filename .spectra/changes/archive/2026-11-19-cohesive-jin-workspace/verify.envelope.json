@@ -1,0 +1,16 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "idg"
+  },
+  "performative": "INFORM",
+  "objective": "Independent implementation checks passed; verification.md records evidence and native visual coverage limits.",
+  "context_delta": {
+    "focused_tests": 454,
+    "full_frontend_tests": 2206,
+    "native_visual_owner_signoff": "pending"
+  }
+}

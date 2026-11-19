@@ -94,6 +94,7 @@ fn cli_task_show_surfaces_note_reference_backlink() {
     assert_eq!(bl["source_kind"].as_str().unwrap(), "note");
     assert_eq!(bl["edge_type"].as_str().unwrap(), "references");
     assert_eq!(bl["label"].as_str().unwrap(), "referenced-by");
+    assert_eq!(bl["source_title"].as_str().unwrap(), "Kickoff prep notes");
 }
 
 /// promote with `--tz`: `jin task show` must surface the `derived-from` backlink.
@@ -138,6 +139,7 @@ fn cli_task_show_surfaces_derived_from_backlink_after_promote() {
 
     assert_eq!(bl["source_kind"].as_str().unwrap(), "event");
     assert_eq!(bl["label"].as_str().unwrap(), "has-event");
+    assert_eq!(bl["source_title"].as_str().unwrap(), "Prepare Q3 report");
 }
 
 /// note→event `prep-for` edge: `jin event show` must surface the backlink.

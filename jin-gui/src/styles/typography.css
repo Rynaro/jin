@@ -23,7 +23,7 @@ body {
   line-height: var(--text-body-line);
   font-weight: var(--text-body-weight);
   color: var(--label);
-  background-color: var(--bg-base);
+  background-color: var(--workspace-canvas);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -39,7 +39,7 @@ body {
   font-size: var(--text-large-title-size);
   line-height: var(--text-large-title-line);
   font-weight: var(--text-large-title-weight);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--workspace-title-tracking);
 }
 
 .text-title1 {
@@ -103,8 +103,7 @@ body {
   font-weight: var(--text-caption2-weight);
 }
 
-/* A restrained mincho display voice for the application name and prominent
- * view/document titles. Never apply this utility to dense UI or body copy. */
+/* Prominent view titles share the same family and optical rhythm as the UI. */
 .text-display-title {
   color: var(--ink-primary);
   font-family: var(--font-display);

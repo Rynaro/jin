@@ -48,6 +48,7 @@ export interface EventsViewElements {
 export interface EventDetailRenderOptions {
   locale?: EventLocaleKey;
   onEdit?: (detail: EventDetailDto) => void;
+  onCreatePrepNote?: (detail: EventDetailDto) => void;
   onRemove?: (detail: EventDetailDto) => void;
   onRespondInvitation?: (detail: EventDetailDto, choice: InvitationResponseChoice, control: HTMLButtonElement) => void;
   onManageMeet?: (detail: EventDetailDto, action: 'add' | 'retry' | 'remove') => void;
@@ -126,8 +127,8 @@ export function renderEventsList(
  *   - Prep notes from backlinks (notes with prep-for edge — reachable, fires navigate)
  */
 export function renderEventDetail(
-  el: EventsViewElements,
-  templates: EventsTemplates,
+  el: Pick<EventsViewElements, 'detailContent'>,
+  templates: Pick<EventsTemplates, 'backlinkRow'>,
   detailOrEvent: EventDetailDto | EventDto,
   onNavigate: BrowseNavigateCallback,
   onAttach?: (noteId: string, targetId: string) => void,
@@ -247,7 +248,9 @@ export function renderEventDetail(
     metaEl.appendChild(recurEl);
   }
 
-  article.appendChild(metaEl);
+  const sourceContext = document.createElement('section');
+  sourceContext.className = 'event-detail__source-context';
+  sourceContext.appendChild(metaEl);
 
   if (event.sync_context?.provider === 'google') {
     const route = event.sync_context;
@@ -263,43 +266,44 @@ export function renderEventDetail(
     destination.textContent = event.source === 'jin'
       ? `${membershipLine} · ${provenance}`
       : membershipLine;
-    article.appendChild(destination);
+    sourceContext.appendChild(destination);
     if (route.state === 'pending' || route.state === 'synced') {
       const syncState = document.createElement('p');
       syncState.className = 'event-detail__sync-state text-footnote';
       syncState.setAttribute('role', 'status');
       syncState.textContent = eventMessage(route.state === 'synced' ? 'googleSynced' : 'awaitingGoogleSync', locale);
-      article.appendChild(syncState);
+      sourceContext.appendChild(syncState);
     }
     if (route.state === 'paused' || route.state === 'sending') {
       const review = document.createElement('p');
       review.className = 'event-detail__sync-state text-footnote';
       review.setAttribute('role', 'status');
       review.textContent = eventMessage('syncReview', locale);
-      article.appendChild(review);
+      sourceContext.appendChild(review);
     }
     if (route.state === 'cancelled' || route.state === 'unpublished') {
       const state = document.createElement('p');
       state.className = 'event-detail__sync-state text-footnote';
       state.setAttribute('role', 'status');
       state.textContent = eventMessage(route.state === 'cancelled' ? 'publicationCancelled' : 'googleUnpublished', locale);
-      article.appendChild(state);
+      sourceContext.appendChild(state);
     }
     if (options.onReviewSync && (route.state === 'paused' || route.state === 'sending')) {
       const review = document.createElement('button');
       review.type = 'button'; review.className = 'btn-secondary event-detail__review-sync';
       review.textContent = eventMessage('reviewCalendarSync', locale);
       review.addEventListener('click', options.onReviewSync);
-      article.appendChild(review);
+      sourceContext.appendChild(review);
     }
     if (options.onSyncEvent && route.writable && (route.state === 'pending' || route.state === 'synced')) {
       const sync = document.createElement('button');
       sync.type = 'button'; sync.className = 'btn-secondary event-detail__sync';
       sync.textContent = eventMessage('syncEvent', locale);
       sync.addEventListener('click', () => { sync.disabled = true; options.onSyncEvent?.(detail); });
-      article.appendChild(sync);
+      sourceContext.appendChild(sync);
     }
   }
+  article.appendChild(sourceContext);
 
   if (detail.capabilities.read_only_reason) {
     const notice = document.createElement('p');
@@ -415,6 +419,15 @@ export function renderEventDetail(
       eventMessage('findPrep', locale),
       () => onAttach('', event.id),
     ));
+  }
+
+  if (options.onCreatePrepNote) {
+    const create = document.createElement('button');
+    create.type = 'button';
+    create.className = 'btn-secondary event-detail__new-prep';
+    create.textContent = eventMessage('newPrepNote', locale);
+    create.addEventListener('click', () => options.onCreatePrepNote?.(detail));
+    article.append(create);
   }
 
   // ── All backlinks (remaining, for full context) ────────────────────────────
@@ -904,7 +917,7 @@ function buildOriginatingTaskSection(
  */
 function buildPrepNotesSection(
   prepNotes: EventBacklinkDto[],
-  templates: EventsTemplates,
+  templates: Pick<EventsTemplates, 'backlinkRow'>,
   onNavigate: BrowseNavigateCallback,
   locale: EventLocaleKey,
   onSearch?: () => void,
@@ -936,7 +949,7 @@ function buildPrepNotesSection(
  */
 function buildEventBacklinksSection(
   backlinks: EventBacklinkDto[],
-  templates: EventsTemplates,
+  templates: Pick<EventsTemplates, 'backlinkRow'>,
   onNavigate: BrowseNavigateCallback,
   locale: EventLocaleKey,
   onSearch?: () => void,
@@ -965,7 +978,7 @@ function buildEventBacklinksSection(
 
 function buildEventBacklinkItem(
   backlink: EventBacklinkDto,
-  templates: EventsTemplates,
+  templates: Pick<EventsTemplates, 'backlinkRow'>,
   onNavigate: BrowseNavigateCallback
 ): HTMLElement {
   const frag = templates.backlinkRow.content.cloneNode(true) as DocumentFragment;

@@ -10,6 +10,7 @@ pub mod export;
 pub mod google_accounts;
 pub mod init;
 pub mod link;
+pub mod linked_creation;
 pub mod lists;
 pub mod notes;
 pub mod promote;

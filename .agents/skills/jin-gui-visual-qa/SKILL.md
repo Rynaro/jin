@@ -34,11 +34,11 @@ mobile, accessibility, or the shared system. Record the sizes and states used.
 
 Check the affected surface against the dossier:
 
-- semantic roles are used instead of raw component colors, and seal/brand,
-  capture vermilion, today seal, indigo focus/selection, and semantic danger
-  remain distinct;
-- type, continuous paper fields, spacing, geometry, material depth, and motion
-  match the owning surface rather than accumulating rounded cards or shadows;
+- semantic roles are used instead of raw component colors, and brand, Capture,
+  selected/current, primary action, and semantic danger remain distinct;
+- type, continuous neutral fields, spacing, geometry, material depth, and
+  motion match the owning surface rather than accumulating rounded cards,
+  historical glass prescriptions, or competing shadows;
 - the closest stylesheet owns the rule and no late override or global patch is
   masking an earlier authority;
 - real DOM semantics, labels, focus, current/selected/pressed states, handlers,

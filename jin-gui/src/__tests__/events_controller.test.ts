@@ -960,7 +960,6 @@ describe('Event detail capability controller gates (AC-022–AC-028)', () => {
       </template>
       <section data-controller="events" data-action="jin:section-activated->events#activateSection jin:open-detail->events#openDetail">
         <button class="calendar-global-add">Add Event</button>
-        <div data-events-target="listPanel"><ul data-events-target="list"></ul><p data-events-target="emptyState"></p><p data-events-target="loadingState"></p></div>
         <div data-events-target="detailPanel" class="events-detail-pane hidden">
           <button class="calendar-back-btn"><span>Calendar</span></button>
           <p data-events-target="detailLoadingState"></p>
@@ -996,6 +995,13 @@ describe('Event detail capability controller gates (AC-022–AC-028)', () => {
   afterEach(() => {
     app?.stop();
     localStorage.clear();
+  });
+
+  it('opens canonical event detail without loading the retired hidden browse list', async () => {
+    await start(makeDetail());
+    expect(invokeMocks.getEventDetailById).toHaveBeenCalledWith('evt-001');
+    expect(invokeMocks.listEvents).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-events-target="listPanel"]')).toBeNull();
   });
 
   it('hides global Add from layout and the accessibility tree while detail is visible', async () => {
@@ -1156,7 +1162,7 @@ describe('Event detail capability controller gates (AC-022–AC-028)', () => {
     });
   });
 
-  it('localizes list and detail bridge failures without passing through English messages', async () => {
+  it('localizes detail bridge failures without passing through English messages', async () => {
     localStorage.setItem('jin:event-locale', 'pt-BR');
     await start(makeDetail());
     const host = document.querySelector<HTMLElement>('[data-controller="events"]')!;
@@ -1165,16 +1171,12 @@ describe('Event detail capability controller gates (AC-022–AC-028)', () => {
       errors.push((event as CustomEvent<{ message: string }>).detail.message);
     });
     const englishError = { code: 1, kind: 'other', message: 'English bridge detail', retriable: false };
-    const controller = app.getControllerForElementAndIdentifier(host, 'events') as EventsController;
 
-    invokeMocks.listEvents.mockRejectedValueOnce(englishError);
-    await controller.loadList();
     invokeMocks.getEventDetailById.mockRejectedValueOnce(englishError);
     host.dispatchEvent(new CustomEvent('jin:open-detail', { bubbles: true, detail: { id: 'evt-001' } }));
     await flushController();
 
     expect(errors).toEqual([
-      'Não foi possível carregar os eventos',
       'Não foi possível carregar o evento completo',
     ]);
     expect(errors.join(' ')).not.toContain('English bridge detail');

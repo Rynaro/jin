@@ -1,0 +1,56 @@
+{
+  "esl_version": "1.1",
+  "change_id": "continuous-workspace-surface",
+  "status": "archived",
+  "tier": "full",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    {
+      "id": "CS-1",
+      "given": "The desktop shell in light or dark appearance",
+      "when": "Sidebar and main region are rendered",
+      "then": "The desktop chrome presents one adaptive canvas without a contrasting shell seam",
+      "verify_method": "Desktop light and dark screenshots plus computed background styles"
+    },
+    {
+      "id": "CS-2",
+      "given": "The desktop workspace is visible",
+      "when": "Its outer main-region treatment is inspected",
+      "then": "The main region has a continuous surface without a raised outer card",
+      "verify_method": "Desktop screenshots and owning layout CSS review"
+    },
+    {
+      "id": "CS-3",
+      "given": "The native macOS overlay or Reduce Transparency is active",
+      "when": "The sidebar is shown beside working content",
+      "then": "The shared desktop canvas remains uniform across the sidebar boundary",
+      "verify_method": "Signed macOS screenshot and reduced-transparency browser check"
+    },
+    {
+      "id": "CS-4",
+      "given": "Existing Today, Tasks, Notes, Calendar, Settings and Notifications routes",
+      "when": "The user navigates among them",
+      "then": "Working content retains readable hierarchy and interactive state",
+      "verify_method": "All-route screenshot review and real navigation checks"
+    },
+    {
+      "id": "CS-5",
+      "given": "Compact navigation or enlarged text",
+      "when": "The drawer is opened and its destinations are activated",
+      "then": "Navigation controls remain reachable with visible focus and working dismissal",
+      "verify_method": "Compact and large-text keyboard drawer checks"
+    },
+    {
+      "id": "CS-6",
+      "given": "Increase Contrast or forced colors is active",
+      "when": "The desktop shell and its interactive states are displayed",
+      "then": "Readable labels and visible focus remain available on continuous desktop chrome",
+      "verify_method": "Contrast and forced-color visual checks"
+    }
+  ],
+  "spec_ref": ".spectra/changes/continuous-workspace-surface/spec.yaml",
+  "drift_checked": true,
+  "archive_path": "archive/2026-11-19-continuous-workspace-surface",
+  "has_code": true
+}

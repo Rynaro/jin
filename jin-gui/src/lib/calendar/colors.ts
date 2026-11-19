@@ -129,11 +129,12 @@ export function calendarColorForEvent(event: Pick<EventDto, 'source' | 'sync_con
 }
 
 export function applyCalendarColor(element: HTMLElement, color: JinColor): void {
-  if (isJinPaletteColor(color)) {
-    element.dataset.calendarColor = color;
+  const normalized = normalizeJinColor(color) ?? 'accent';
+  if (isJinPaletteColor(normalized)) {
+    element.dataset.calendarColor = normalized;
     element.style.removeProperty('--calendar-color-value');
   } else {
     element.dataset.calendarColor = 'custom';
-    element.style.setProperty('--calendar-color-value', color);
+    element.style.setProperty('--calendar-color-value', normalized);
   }
 }

@@ -8,11 +8,13 @@
  * Tested by: src/__tests__/notes_controller.test.ts
  */
 
-import type { NoteDto, BacklinkDto, FolderDto, LinkDto } from '../../types/dto';
+import type { NoteDto, BacklinkDto, FolderDto, LinkDto, OutgoingLinkDto } from '../../types/dto';
 import { noteStatusLabel, noteStatusGlyph, noteStatusTooltip, formatNoteDate, noteDisplayTitle } from './transform';
 import { guardNativeDrag } from '../ui/movement';
 
 let statusInfoSequence = 0;
+const LINK_LABELS: Record<string, string> = { note: 'Note', task: 'Task', event: 'Calendar event' };
+const LINK_ROUTES: Record<string, 'notes' | 'tasks' | 'events'> = { note: 'notes', task: 'tasks', event: 'events' };
 import { mountEditor, type EditorHandle } from './editor';
 import { flattenVisible, type TreeNode } from './folderTree';
 
@@ -440,6 +442,7 @@ export function renderNoteDetail(
   onAddAttachment?: (noteId: string) => void,
   onHistory?: (noteId: string) => void,
   onTagsChange?: (add: string[], remove: string[]) => Promise<void>,
+  onCreateTask?: (excerpt: string) => void,
 ): EditorHandle {
   el.detailContent.innerHTML = '';
 
@@ -787,6 +790,7 @@ export function renderNoteDetail(
     doc: note.body_markdown ?? '',
     onSave: onSave ?? (async () => {}),
     onAddAttachment: () => onAddAttachment?.(note.id),
+    onCreateTask,
   });
   const destroyEditor = editorHandle.destroy.bind(editorHandle);
   const toolbar = bodyEl.querySelector<HTMLElement>('.cm-toolbar');
@@ -836,7 +840,8 @@ export function renderNoteDetail(
 
   // ── Outgoing links (appended into scroll region, after the editor) ────────
   if (note.links.length > 0) {
-    const linksSection = buildLinksSection('Links', note.links, templates, onNavigate);
+    const linksSection = buildLinksSection('Links', note.links, templates, onNavigate, note.outgoing_links ?? []);
+    linksSection.classList.add('note-detail__outgoing');
     scrollRegion.appendChild(linksSection);
   }
 
@@ -1091,7 +1096,8 @@ function buildLinksSection(
   heading: string,
   links: LinkDto[],
   templates: NotesTemplates,
-  onNavigate: BrowseNavigateCallback
+  onNavigate: BrowseNavigateCallback,
+  resolved: OutgoingLinkDto[] = [],
 ): HTMLElement {
   const section = document.createElement('section');
   section.className = 'browse-detail__links-section';
@@ -1107,7 +1113,7 @@ function buildLinksSection(
   ul.setAttribute('role', 'list');
 
   for (const link of links) {
-    ul.appendChild(buildLinkItem(link, templates, onNavigate));
+    ul.appendChild(buildLinkItem(link, templates, onNavigate, resolved.find(target => target.target_id === link.target && target.edge_type === link.edge_type)));
   }
 
   section.appendChild(ul);
@@ -1144,10 +1150,27 @@ function buildBacklinksSection(
   return section;
 }
 
+/** Update persisted relationships without replacing the active CodeMirror view. */
+export function refreshNoteOutgoingLinks(
+  el: NotesViewElements,
+  templates: NotesTemplates,
+  note: NoteDto,
+  onNavigate: BrowseNavigateCallback,
+): void {
+  const scrollRegion = el.detailContent.querySelector('.cm-scroll-region');
+  if (!scrollRegion) return;
+  scrollRegion.querySelector('.note-detail__outgoing')?.remove();
+  if (!note.links.length) return;
+  const section = buildLinksSection('Links', note.links, templates, onNavigate, note.outgoing_links ?? []);
+  section.classList.add('note-detail__outgoing');
+  scrollRegion.append(section);
+}
+
 function buildLinkItem(
   link: LinkDto,
   templates: NotesTemplates,
-  onNavigate: BrowseNavigateCallback
+  onNavigate: BrowseNavigateCallback,
+  resolved?: OutgoingLinkDto,
 ): HTMLElement {
   const frag = templates.backlinkRow.content.cloneNode(true) as DocumentFragment;
   const row = frag.firstElementChild as HTMLElement;
@@ -1158,15 +1181,19 @@ function buildLinkItem(
 
   if (btnEl) {
     btnEl.dataset.linkId = link.target;
-    btnEl.dataset.linkKind = 'note';
-    btnEl.setAttribute('aria-label', `Link to: ${link.target} (${link.edge_type})`);
-    btnEl.addEventListener('click', () => {
-      onNavigate('notes', link.target);
-    });
+    const kind = resolved?.target_kind.toLowerCase();
+    const route = kind ? LINK_ROUTES[kind] : undefined;
+    btnEl.dataset.linkKind = kind ?? 'unavailable';
+    btnEl.setAttribute('aria-label', resolved ? `Open ${kind}: ${resolved.label}` : 'Linked item unavailable');
+    if (route) btnEl.addEventListener('click', () => onNavigate(route, link.target));
+    else {
+      btnEl.setAttribute('aria-disabled', 'true');
+      if (btnEl instanceof HTMLButtonElement) btnEl.disabled = true;
+    }
   }
 
-  if (labelEl) labelEl.textContent = `${link.edge_type}: ${link.target}`;
-  if (idEl) idEl.textContent = link.target;
+  if (labelEl) labelEl.textContent = resolved?.label || 'Linked item unavailable';
+  if (idEl) idEl.textContent = resolved ? LINK_LABELS[resolved.target_kind.toLowerCase()] ?? 'Linked item' : link.target;
 
   return row;
 }
@@ -1196,7 +1223,8 @@ function buildBacklinkItem(
   }
 
   if (labelEl) labelEl.textContent = displayLabel;
-  if (idEl) idEl.textContent = backlink.source_id;
+  if (idEl) idEl.textContent = backlink.source_kind.toLowerCase() === 'note'
+    ? 'Source note' : LINK_LABELS[backlink.source_kind.toLowerCase()] ?? 'Linked item';
 
   return row;
 }

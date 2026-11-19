@@ -62,6 +62,22 @@ WebKitGTK support.
 **Desktop:** Open Jin and follow the first-run guide to choose a folder for
 your workspace. Capture a note or task, then open Today to see what is ahead.
 
+### Connect your notes, tasks, and calendar
+
+- On a wide screen, keep the Notes library open beside the current document or
+  choose **Hide note library** for a focused writing view. Choose **Show note
+  library** to return to your notes.
+- Open **Find in Jin** or press **⌘⇧F** on Mac or **Ctrl+Shift+F** on Windows
+  and Linux to search notes, tasks, and calendar events.
+- In a calendar event, choose **New meeting note** to create an editable
+  preparation note linked to that event.
+- Select text in a note and choose **Create task from selection**. Review the
+  task title and selected text, then choose **Create task** to keep writing or
+  **Create and open task** to continue from the task.
+- Choose **Schedule time** on a task or a task in the calendar day view to
+  review its start time, duration, timezone, and calendar before saving. If the
+  task already has a time block, Jin offers to open it.
+
 **CLI:** Initialize a folder, add some work, and view your agenda:
 
 ```console

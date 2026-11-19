@@ -780,13 +780,26 @@ pub fn execute_task_operation<F>(
 where
     F: FnOnce() -> Result<(String, Vec<TargetPlan>)>,
 {
+    execute_task_operation_with_failpoint(root, operation_id, kind, None, build)
+}
+
+pub(crate) fn execute_task_operation_with_failpoint<F>(
+    root: &Path,
+    operation_id: &str,
+    kind: &str,
+    failpoint: Option<OperationFailpoint>,
+    build: F,
+) -> Result<OperationOutcome>
+where
+    F: FnOnce() -> Result<(String, Vec<TargetPlan>)>,
+{
     execute_operation_inner(
         root,
         operation_id,
         kind,
         OperationEffects::task(),
         false,
-        None,
+        failpoint,
         build,
     )
 }

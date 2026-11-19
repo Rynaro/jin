@@ -52,6 +52,13 @@ export interface ResolvedImageAssetDto {
   bytes: number[];
 }
 
+export interface OutgoingLinkDto {
+  target_id: string;
+  target_kind: string;
+  label: string;
+  edge_type: string;
+}
+
 export interface BacklinkDto {
   source_id: string;
   source_kind: string;
@@ -72,6 +79,7 @@ export interface NoteDto {
   tags: string[];
   links: LinkDto[];
   backlinks: BacklinkDto[];
+  outgoing_links?: OutgoingLinkDto[];
   /**
    * Full markdown body of the note.
    * `Some` / present on `get_note` (read fresh from disk, D3 Wave 1).
@@ -163,6 +171,7 @@ export interface TaskBacklinkDto {
   source_kind: string;
   edge_type: string;
   label: string;
+  source_title?: string | null;
 }
 
 /**

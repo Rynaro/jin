@@ -665,13 +665,25 @@ describe('renderTaskPane — backlinks (reachability gate)', () => {
     expect(labelEl?.textContent).toBe(EVT_LABEL);
   });
 
-  it('renders the backlink source_id in the DOM (reachable: id visible)', () => {
+  it('displays source titles while retaining relationship labels in backlink data', () => {
     const task = makeTask({
-      backlinks: [makeTaskBacklink({ source_id: EVT_ID })],
+      backlinks: [makeTaskBacklink({ source_id: EVT_ID, label: 'has-event', source_title: EVT_LABEL })],
     });
     renderTaskPane(el, templates, task, noopNavigate);
+    expect(el.detailContent.querySelector('.browse-link-row__label')?.textContent).toBe(EVT_LABEL);
+    expect(task.backlinks[0].label).toBe('has-event');
+  });
+
+  it('keeps backlink identity in data while displaying a readable type', () => {
+    const navigate = vi.fn();
+    const task = makeTask({ backlinks: [makeTaskBacklink({ source_id: EVT_ID })] });
+    renderTaskPane(el, templates, task, navigate);
     const idEl = el.detailContent.querySelector('.browse-link-row__id');
-    expect(idEl?.textContent).toBe(EVT_ID);
+    expect(idEl?.textContent).toBe('Calendar event');
+    const button = el.detailContent.querySelector<HTMLButtonElement>('.browse-link-row__btn')!;
+    expect(button.dataset.linkId).toBe(EVT_ID);
+    button.click();
+    expect(navigate).toHaveBeenCalledWith('events', EVT_ID);
   });
 
   it('clicking an event backlink fires onNavigate with kind="events" (has-event backlink reachable)', () => {
@@ -2739,10 +2751,6 @@ function fireScopeChanged(scope: { kind: 'list'; id: string } | { kind: 'smart';
 function buildStimulusTasksHTML(): string {
   return `
     <section data-controller="tasks" data-action="jin:section-activated->tasks#activateSection jin:open-detail->tasks#openDetail jin:scope-changed->tasks#setScope">
-      <button data-tasks-target="railToggleBtn" data-action="click->tasks#toggleRail" aria-expanded="false">Task lists</button>
-      <aside>
-        <button data-tasks-target="railCloseBtn" data-action="click->tasks#toggleRail">Close task lists</button>
-      </aside>
       <div class="tasks-main" data-tasks-target="main">
       <div data-tasks-target="listPanel">
         <h1 data-tasks-target="workspaceTitle">Inbox</h1>
@@ -2921,26 +2929,15 @@ describe('S1 — view persists globally + toggle honesty (real TasksController)'
     expect(toggleBtn.hasAttribute('aria-disabled')).toBe(false);
   });
 
-  it('delegates task-list navigation to the shared sidebar without a second overlay', async () => {
+  it('uses the shared task context without a second navigation overlay', async () => {
     vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([]);
     vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([]);
-
     startStimulusApp();
     await flushStimulusAsync();
-
-    const toggle = document.querySelector('[data-tasks-target="railToggleBtn"]') as HTMLButtonElement;
-    const close = document.querySelector('[data-tasks-target="railCloseBtn"]') as HTMLButtonElement;
-    const toggleRequest = vi.fn();
-    window.addEventListener('jin:sidebar-toggle', toggleRequest, { once: true });
-
-    toggle.click();
-    expect(toggleRequest).toHaveBeenCalledOnce();
+    const realMarkup = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
+    expect(realMarkup).toContain('data-sidebar-context="tasks"');
+    expect(realMarkup).not.toMatch(/data-tasks-target="(?:railToggleBtn|railCloseBtn)"/);
     expect(document.querySelector('[data-controller~="tasks"]')?.classList.contains('tasks-rail-open')).toBe(false);
-
-    const closeRequest = vi.fn();
-    window.addEventListener('jin:sidebar-toggle', closeRequest, { once: true });
-    close.click();
-    expect(closeRequest).toHaveBeenCalledOnce();
   });
 });
 

@@ -1,0 +1,11 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "ramza"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "PROPOSE",
+  "objective": "Implement the cohesive workspace design recorded in spec.md"
+}

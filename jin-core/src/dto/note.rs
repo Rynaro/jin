@@ -16,6 +16,9 @@ pub struct NoteDto {
     pub deleted_at: Option<String>,
     pub tags: Vec<String>,
     pub links: Vec<LinkDto>,
+    /// Resolved active targets for routing linked work to its actual detail view.
+    #[serde(default)]
+    pub outgoing_links: Vec<OutgoingLinkDto>,
     pub backlinks: Vec<BacklinkDto>,
     /// Full markdown body of the note.
     /// `Some` on `get_note` (read fresh from disk, D3).
@@ -44,6 +47,14 @@ pub struct NoteDto {
 pub struct LinkDto {
     pub edge_type: String,
     pub target: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutgoingLinkDto {
+    pub target_id: String,
+    pub target_kind: String,
+    pub label: String,
+    pub edge_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +105,7 @@ impl NoteDto {
             deleted_at: note.frontmatter.deleted_at.map(|d| d.to_rfc3339()),
             tags,
             links,
+            outgoing_links: vec![],
             backlinks: vec![],
             body_markdown: Some(note.body.clone()),
             excerpt: None,
@@ -125,6 +137,7 @@ impl NoteDto {
             deleted_at: row.deleted_at.clone(),
             tags,
             links: vec![],
+            outgoing_links: vec![],
             backlinks: vec![],
             body_markdown: None,
             excerpt: Some(row.excerpt.clone()),
@@ -169,6 +182,15 @@ impl NoteDto {
         candidates: impl IntoIterator<Item = (String, String)>,
     ) -> Self {
         self.properties = Some(note.frontmatter.properties.clone());
+        self.links = note
+            .frontmatter
+            .links
+            .iter()
+            .map(|link| LinkDto {
+                edge_type: link.edge_type.to_string(),
+                target: link.target.clone(),
+            })
+            .collect();
         self.revision = Some(note.frontmatter.revision);
         self.canonical_links = parse_canonical_links(&note.body)
             .into_iter()
