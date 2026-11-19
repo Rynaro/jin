@@ -1,0 +1,18 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "idg"
+  },
+  "to": {
+    "eidolon": "orchestrator"
+  },
+  "performative": "INFORM",
+  "objective": "INFORM(promotion): archived change \"stable-notes-visual-capture\" ready for CRYSTALIUM Semantic promotion.",
+  "context_delta": {
+    "archive_path": "archive/2026-11-19-stable-notes-visual-capture",
+    "change_id": "stable-notes-visual-capture",
+    "intent": "promotion",
+    "spec_ref": "spec.yaml",
+    "summary": "Verified and archived spec. Route to mcp__crystalium__ingest for the Semantic layer. Tonberry does not call Crystalium."
+  }
+}
