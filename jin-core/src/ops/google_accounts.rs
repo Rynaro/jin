@@ -554,12 +554,31 @@ mod tests {
             let root = TempDir::new().unwrap();
             crate::ops::init(root.path()).unwrap();
 
-            let error = prepare_new_account(root.path(), None).unwrap_err();
-
-            assert!(error.to_string().contains("client_id not configured"));
             let config = Config::load(root.path()).unwrap();
-            assert!(!config.google_v2_active());
-            assert!(config.google_registry.accounts.is_empty());
+            let publisher_client_is_complete = matches!(
+                (
+                    option_env!("JIN_PUBLISHER_GOOGLE_CLIENT_ID"),
+                    option_env!("JIN_PUBLISHER_GOOGLE_CLIENT_SECRET"),
+                ),
+                (Some(client_id), Some(client_secret))
+                    if !client_id.trim().is_empty()
+                        && client_id.ends_with(".apps.googleusercontent.com")
+                        && !client_secret.trim().is_empty()
+            );
+
+            if publisher_client_is_complete {
+                let account = prepare_new_account(root.path(), None)
+                    .expect("official builds should begin onboarding without owner credentials");
+                let config = Config::load(root.path()).unwrap();
+                assert!(config.google_v2_active());
+                assert!(config.google_registry.account(&account).is_ok());
+            } else {
+                let error = prepare_new_account(root.path(), None).unwrap_err();
+
+                assert!(error.to_string().contains("not configured for this build"));
+                assert!(!config.google_v2_active());
+                assert!(config.google_registry.accounts.is_empty());
+            }
         });
     }
 

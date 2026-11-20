@@ -8,9 +8,10 @@ pub const GOOGLE_SYNC_SCHEMA_VERSION: u32 = 2;
 pub const CONFIG_FILENAME: &str = "config.toml";
 pub const JIN_DIR: &str = ".jin";
 
-/// Google OAuth client credentials (owner-provisioned desktop app).
+/// Owner-provisioned Google OAuth client credentials for this vault.
 /// Read from the `[google]` section of `.jin/config.toml`.
-/// Never shipped with jin — each owner creates their own GCP project.
+/// Official builds can instead use the publisher Desktop client compiled into
+/// the executable. Per-vault values remain a self-hosted override.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GoogleConfig {
     /// OAuth client ID (ends in .apps.googleusercontent.com)
@@ -29,7 +30,7 @@ pub struct Config {
     pub calendar_id: Option<String>,
     /// Preferred token backend: "keyring" or "file"
     pub token_backend: String,
-    /// Google OAuth credentials (owner-provisioned; never shipped)
+    /// Owner-provided Google OAuth credentials for this vault.
     #[serde(default)]
     pub google: GoogleConfig,
     /// Versioned multi-account registry. The core config schema remains v1 for

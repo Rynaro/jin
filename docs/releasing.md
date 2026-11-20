@@ -36,6 +36,16 @@ open a PR.
 
 ## Binary validation and publication
 
+### Google Calendar publisher client
+
+Official bundles receive `JIN_PUBLISHER_GOOGLE_CLIENT_ID` and
+`JIN_PUBLISHER_GOOGLE_CLIENT_SECRET` from repository secrets at native bundle
+build time. Before merging a release pull request, confirm both secret names
+are present, the production Google Auth Platform consent screen is ready, and
+the client has not been replaced unexpectedly. The full Google Cloud setup,
+pilot instructions, scope list, and rotation guidance are in the
+[Google Calendar setup guide](google-smoke-test.md#official-release-publisher-owned-google-oauth).
+
 Before merging a release pull request, check the existing platform build
 evidence and run the [native GUI checklist](gui-testing.md) on macOS, Linux,
 and Windows. Build jobs compile the CLI, run its version and help commands,
