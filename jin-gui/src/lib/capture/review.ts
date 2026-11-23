@@ -36,10 +36,10 @@ export function renderCaptureReview(
     open.className = 'capture-review__title';
     open.textContent = item.title;
     open.setAttribute('aria-expanded', String(item.id === expandedId));
-    const chevron = document.createElement('span');
+    const chevron = document.createElement('i');
     chevron.className = 'capture-review__chevron';
+    chevron.setAttribute('data-lucide', 'chevron-down');
     chevron.setAttribute('aria-hidden', 'true');
-    chevron.textContent = item.id === expandedId ? '⌃' : '⌄';
     open.append(chevron);
     open.dataset.reviewId = item.id;
     open.addEventListener('click', () => actions.toggle(item));
@@ -103,26 +103,20 @@ export function renderCaptureReview(
       }
       controls.append(eventGroup);
     }
-    const checkback = document.createElement('div');
-    checkback.className = 'capture-review__checkback';
-    const dateLabel = document.createElement('label');
-    dateLabel.id = `capture-review-checkback-${item.id}`;
-    dateLabel.textContent = 'Check back';
     const date = document.createElement('button');
     date.type = 'button';
     date.id = `capture-review-checkback-picker-${item.id}`;
-    dateLabel.htmlFor = date.id;
-    date.className = 'due-picker-trigger capture-review__date';
-    date.setAttribute('aria-labelledby', `${dateLabel.id} ${date.id}`);
+    date.className = 'btn-secondary capture-review__checkback-action';
     date.setAttribute('aria-haspopup', 'dialog');
     date.setAttribute('aria-controls', 'jin-due-date-dialog');
-    date.textContent = item.return_on || 'Choose date';
+    const dateIcon = document.createElement('i');
+    dateIcon.setAttribute('data-lucide', 'calendar');
+    dateIcon.setAttribute('aria-hidden', 'true');
+    const dateText = document.createElement('span');
+    dateText.textContent = item.return_on ? `Check back ${item.return_on}` : 'Check back';
+    date.append(dateIcon, dateText);
     date.addEventListener('click', () => actions.pickCheckback(item, date));
-    const dateControls = document.createElement('div');
-    dateControls.className = 'capture-review__date-controls';
-    dateControls.append(date);
-    checkback.append(dateLabel, dateControls);
-    controls.append(checkback);
+    controls.append(date);
     row.append(controls);
     return row;
   });

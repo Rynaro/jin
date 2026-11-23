@@ -65,11 +65,41 @@ describe('capture review renderer', () => {
     renderCaptureReview(target, [note], null, 'n1', null, {
       toggle: vi.fn(), open: vi.fn(), process: vi.fn(), task: vi.fn(), loadEvents: vi.fn(), selectEvent: vi.fn(), attach: vi.fn(), pickCheckback,
     });
-    const date = target.querySelector<HTMLButtonElement>('.capture-review__date')!;
-    expect(date.textContent).toBe('Choose date');
+    const date = target.querySelector<HTMLButtonElement>('.capture-review__checkback-action')!;
+    expect(date.textContent).toBe('Check back');
+    expect(date.querySelector('i[data-lucide="calendar"]')).not.toBeNull();
+    expect(date.getAttribute('aria-label')).toBeNull();
     date.click();
     expect(pickCheckback).toHaveBeenCalledWith(note, date);
     expect(target.querySelector('input[type="date"]')).toBeNull();
+  });
+
+  it('uses one chevron shape that rotates with the expanded state', () => {
+    const target = document.createElement('ul');
+    renderCaptureReview(target, [note], [], null, null, {
+      toggle: vi.fn(), open: vi.fn(), process: vi.fn(), task: vi.fn(), loadEvents: vi.fn(), selectEvent: vi.fn(), attach: vi.fn(), pickCheckback: vi.fn(),
+    });
+    const collapsed = target.querySelector<HTMLButtonElement>('.capture-review__title')!;
+    expect(collapsed.querySelector('i[data-lucide="chevron-down"]')).not.toBeNull();
+    expect(collapsed.getAttribute('aria-expanded')).toBe('false');
+
+    renderCaptureReview(target, [note], [], 'n1', null, {
+      toggle: vi.fn(), open: vi.fn(), process: vi.fn(), task: vi.fn(), loadEvents: vi.fn(), selectEvent: vi.fn(), attach: vi.fn(), pickCheckback: vi.fn(),
+    });
+    const expanded = target.querySelector<HTMLButtonElement>('.capture-review__title')!;
+    expect(expanded.querySelector('i[data-lucide="chevron-down"]')).not.toBeNull();
+    expect(expanded.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('keeps an existing check-back date in the aligned action', () => {
+    const target = document.createElement('ul');
+    const deferred = { ...note, return_on: '2026-11-23' };
+    renderCaptureReview(target, [deferred], [], 'n1', null, {
+      toggle: vi.fn(), open: vi.fn(), process: vi.fn(), task: vi.fn(), loadEvents: vi.fn(), selectEvent: vi.fn(), attach: vi.fn(), pickCheckback: vi.fn(),
+    });
+    const date = target.querySelector<HTMLButtonElement>('.capture-review__checkback-action')!;
+    expect(date.textContent).toBe('Check back 2026-11-23');
+    expect(date.getAttribute('aria-label')).toBeNull();
   });
 
   it('formats all-day events without midnight', () => {

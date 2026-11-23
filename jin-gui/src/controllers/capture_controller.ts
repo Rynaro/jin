@@ -452,6 +452,7 @@ export default class CaptureController extends Controller {
       if (request !== this.reviewRequest || !this.reviewDialogTarget.open) return;
       this.reviewItems = items;
       const first = renderCaptureReview(this.reviewListTarget, items, this.reviewEvents, this.expandedReviewId, this.selectedReviewEventId, this.reviewActions());
+      initIcons(this.reviewListTarget);
       this.applyReviewCount(items.length);
       this.reviewStatusTarget.hidden = items.length > 0;
       this.reviewStatusTarget.textContent = items.length ? '' : 'Nothing needs a decision right now.';
@@ -466,6 +467,7 @@ export default class CaptureController extends Controller {
 
   private renderReview(): void {
     renderCaptureReview(this.reviewListTarget, this.reviewItems, this.reviewEvents, this.expandedReviewId, this.selectedReviewEventId, this.reviewActions());
+    initIcons(this.reviewListTarget);
   }
 
   private reviewActions(): CaptureReviewActions {
