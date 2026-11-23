@@ -3,6 +3,7 @@ use std::path::Path;
 
 use crate::id::new_ulid;
 use crate::model::task::Reminder;
+use crate::model::CaptureReview;
 use crate::model::{DueDate, Priority, Task, TaskFrontmatter, TaskRecurrence, TaskStatus};
 use crate::store::fs;
 use crate::{JinError, Result};
@@ -70,7 +71,7 @@ pub struct MoveTaskParams {
 
 /// Create a new Task, write to disk.
 pub fn create_task(tasks_dir: &Path, params: CreateTaskParams) -> Result<Task> {
-    create_task_with_column(tasks_dir, params, None, TaskStatus::Todo)
+    create_task_with_column_and_review(tasks_dir, params, None, TaskStatus::Todo, None)
 }
 
 /// Persist a new task with validated board placement in the same file write.
@@ -81,8 +82,19 @@ pub fn create_task_with_column(
     board_column_id: Option<String>,
     initial_status: TaskStatus,
 ) -> Result<Task> {
+    create_task_with_column_and_review(tasks_dir, params, board_column_id, initial_status, None)
+}
+
+fn create_task_with_column_and_review(
+    tasks_dir: &Path,
+    params: CreateTaskParams,
+    board_column_id: Option<String>,
+    initial_status: TaskStatus,
+    capture_review: Option<CaptureReview>,
+) -> Result<Task> {
     let upcoming_count = params.recurrence_upcoming_count;
     let mut task = prepare_new_task(tasks_dir, params, board_column_id, initial_status)?;
+    task.frontmatter.capture_review = capture_review;
     super::recurrence::initialize_created(&mut task, upcoming_count)?;
     fs::write_task(tasks_dir, &task)?;
     Ok(task)
@@ -160,6 +172,7 @@ pub(crate) fn prepare_new_task(
         },
         deleted_at: None,
         links: vec![],
+        capture_review: None,
         // P2 fields: default values for newly created tasks.
         section_id: None,
         board_column_id,

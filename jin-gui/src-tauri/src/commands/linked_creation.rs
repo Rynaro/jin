@@ -34,6 +34,27 @@ pub fn create_event_prep_note_fn(
     let note = linked_creation::create_event_prep_note(root, input).map_err(JinErrorDto::from)?;
     api::get_note(root, note.id()).map_err(JinErrorDto::from)
 }
+pub fn review_capture_create_task_fn(
+    root: &Path,
+    input: linked_creation::ReviewTaskFromNoteInput,
+) -> Result<TaskFromNoteResult, JinErrorDto> {
+    let (task, note) =
+        linked_creation::review_capture_create_task(root, input).map_err(JinErrorDto::from)?;
+    api::refresh(root).map_err(JinErrorDto::from)?;
+    Ok(TaskFromNoteResult {
+        task: api::get_task(root, task.id()).map_err(JinErrorDto::from)?,
+        note: api::get_note(root, note.id()).map_err(JinErrorDto::from)?,
+    })
+}
+pub fn review_capture_attach_event_fn(
+    root: &Path,
+    input: linked_creation::ReviewAttachNoteInput,
+) -> Result<NoteDto, JinErrorDto> {
+    let note =
+        linked_creation::review_capture_attach_event(root, input).map_err(JinErrorDto::from)?;
+    api::refresh(root).map_err(JinErrorDto::from)?;
+    api::get_note(root, note.id()).map_err(JinErrorDto::from)
+}
 
 #[tauri::command]
 pub async fn create_task_from_note(
@@ -49,6 +70,20 @@ pub async fn create_event_prep_note(
     input: linked_creation::EventPrepNoteInput,
 ) -> Result<NoteDto, JinErrorDto> {
     create_event_prep_note_fn(&state.root, input)
+}
+#[tauri::command]
+pub async fn review_capture_create_task(
+    state: tauri::State<'_, AppState>,
+    input: linked_creation::ReviewTaskFromNoteInput,
+) -> Result<TaskFromNoteResult, JinErrorDto> {
+    review_capture_create_task_fn(&state.root, input)
+}
+#[tauri::command]
+pub async fn review_capture_attach_event(
+    state: tauri::State<'_, AppState>,
+    input: linked_creation::ReviewAttachNoteInput,
+) -> Result<NoteDto, JinErrorDto> {
+    review_capture_attach_event_fn(&state.root, input)
 }
 
 #[cfg(test)]

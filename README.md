@@ -69,6 +69,10 @@ your workspace. Capture a note or task, then open Today to see what is ahead.
   library** to return to your notes.
 - Open **Find in Jin** or press **⌘⇧F** on Mac or **Ctrl+Shift+F** on Windows
   and Linux to search notes, tasks, and calendar events.
+- Use **Capture** to save a thought without leaving your current work. Capture
+  a note for later review, or save a task directly to Inbox. In **Review
+  captures**, keep a note as reference, make a linked task, attach it to an
+  exact calendar event, or choose a day for it to return.
 - In a calendar event, choose **New meeting note** to create an editable
   preparation note linked to that event.
 - Select text in a note and choose **Create task from selection**. Review the
@@ -85,6 +89,7 @@ $ jin --root ~/jin-store init
 $ jin --root ~/jin-store note add "Roadmap review notes"
 $ jin --root ~/jin-store task add "Draft quarterly roadmap"
 $ jin --root ~/jin-store today
+$ jin --root ~/jin-store review list
 ```
 
 Run `jin --help` to explore commands and `jin <command> --help` for options.

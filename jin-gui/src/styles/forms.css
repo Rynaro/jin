@@ -1038,6 +1038,30 @@ dialog::backdrop {
 
 .action-dialog__inner, .jin-modal__content, dialog .modal-content { background: var(--dialog-paper); }
 .action-dialog__header, .action-dialog__footer { border-color: var(--separator); }
+.capture-review-dialog { inline-size:min(92vw, 560px); }
+.capture-review-dialog .action-dialog__body { gap:var(--space-2); }
+.capture-review-dialog .form-error.hidden,
+.capture-review__status[hidden] { display:none; }
+.capture-review__status, .capture-review__meta { margin:var(--space-half) 0 0; color:var(--label-secondary); font-size:var(--text-footnote-size); }
+.capture-review__list { display:flex; flex-direction:column; margin:0; padding:0; list-style:none; }
+.capture-review__item { padding-block:var(--space-2); border-block-end:0.5px solid var(--separator); }
+.capture-review__title { display:inline-flex; align-items:center; gap:var(--space-1); padding:0; border:0; background:none; color:var(--label); font:600 var(--text-body-size)/var(--text-body-line) var(--font-text); text-align:start; cursor:pointer; }
+.capture-review__chevron { inline-size:1em; block-size:1em; flex:none; color:var(--label-secondary); }
+.capture-review__title[aria-expanded="true"] .capture-review__chevron { transform:rotate(180deg); }
+.capture-review__title:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.capture-review__actions { display:flex; align-items:start; flex-wrap:wrap; gap:var(--space-1); margin-block-start:var(--space-2); }
+.capture-review__event { display:grid; gap:2px; color:var(--label-secondary); font-size:var(--text-footnote-size); min-inline-size:12rem; }
+.form-group[data-capture-target="captureNoteOptions"][hidden],
+.form-group[data-capture-target="captureTaskOptions"][hidden] { display:none; }
+.capture-review__checkback-action { display:inline-flex; align-items:center; justify-content:center; gap:var(--space-1); }
+.capture-review__checkback-action svg { inline-size:1em; block-size:1em; flex:none; }
+@media (max-width:480px) {
+  .capture-review__actions { gap:var(--space-half); }
+  .capture-review__actions > button { padding-inline:var(--space-1); }
+  .capture-review__checkback-action { gap:var(--space-half); }
+}
+@media (max-width:420px) { .capture-review-dialog { inline-size:calc(100vw - var(--space-2)); } .capture-review__actions > button { flex:1 1 auto; } }
+.jin-capture-status { margin:var(--space-half) var(--space-2) 0; color:var(--label-secondary); font:var(--text-footnote-size)/var(--text-footnote-line) var(--font-text); }
 .form-input, .form-select, .jin-select__trigger { border-color: var(--control-edge); background: var(--control-surface); color: var(--label); }
 .form-input:focus-visible, .form-select:focus-visible, .jin-select__trigger:focus-visible { border-color: var(--accent); outline-color: var(--accent); }
 

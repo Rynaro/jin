@@ -543,6 +543,12 @@
   flex: 0 0 auto;
 }
 
+.calendar-dialog[data-temporal-editor-presentation='review'] .action-dialog__footer .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .calendar-dialog__body {
   padding: var(--space-2) var(--space-3) 0;
   display: flex;
@@ -562,7 +568,7 @@
 
 /* The recurrence cutoff is a civil date, never a timed due instant. The
  * component's own presentation state wins over this row's flex layout. */
-.calendar-dialog[data-temporal-editor-presentation='recurrence'] .calendar-dialog__time-row {
+.calendar-dialog:is([data-temporal-editor-presentation='recurrence'], [data-temporal-editor-presentation='review']) .calendar-dialog__time-row {
   display: none;
 }
 

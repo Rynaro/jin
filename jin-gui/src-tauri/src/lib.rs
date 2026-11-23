@@ -104,6 +104,8 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
             commands::notes::create_note,
             commands::linked_creation::create_task_from_note,
             commands::linked_creation::create_event_prep_note,
+            commands::linked_creation::review_capture_create_task,
+            commands::linked_creation::review_capture_attach_event,
             commands::notes::edit_note,
             commands::notes::set_note_properties,
             commands::notes::delete_note,
@@ -179,6 +181,8 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
             commands::link::link,
             // Capture
             commands::capture::capture,
+            commands::capture_review::list_capture_review,
+            commands::capture_review::set_capture_review,
             // Sync / auth / export
             commands::sync_cmd::run_sync,
             commands::sync_cmd::sync_calendar_event,
