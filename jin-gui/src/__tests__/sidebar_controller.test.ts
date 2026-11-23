@@ -15,6 +15,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const shell = () => document.querySelector<HTMLElement>('.jin-shell')!;
 const sidebar = () => document.querySelector<HTMLElement>('[data-sidebar-target="root"]')!;
 const reveal = () => document.querySelector<HTMLButtonElement>('[data-sidebar-target="reveal"]')!;
+const contextReveal = () => document.querySelector<HTMLButtonElement>('[data-sidebar-target="contextReveal"]')!;
 const toggle = () => document.querySelector<HTMLButtonElement>('[data-sidebar-target="toggle"]')!;
 
 describe('one adaptive SidebarController', () => {
@@ -147,26 +148,96 @@ describe('one adaptive SidebarController', () => {
     expect(document.activeElement).toBe(toggle());
   });
 
-  it('fully releases desktop width, persists v2 state, and leaves a reachable reopen', async () => {
+  it('keeps Capture, Review captures, and Find ahead of direct routes in every rail state', async () => {
     await mount();
+    const primaryBlocks = () => Array.from(sidebar().children)
+      .filter((element) => element.matches('.jin-sidebar-actions, .jin-nav'))
+      .map((element) => element.className);
+    expect(primaryBlocks()).toEqual([
+      expect.stringContaining('jin-sidebar-actions'), expect.stringContaining('jin-nav'),
+    ]);
+    expect(sidebar().querySelector('.jin-sidebar-header > .jin-sidebar-utilities')).toBeTruthy();
     toggle().click();
     expect(shell().dataset.navVisible).toBe('false');
-    expect(sidebar().hasAttribute('inert')).toBe(true);
+    expect(sidebar().hasAttribute('inert')).toBe(false);
+    expect(sidebar().querySelector('[data-section="tasks"]')?.closest('[inert]')).toBeNull();
+    expect(sidebar().querySelector('.jin-capture-btn')?.closest('[inert]')).toBeNull();
+    expect(sidebar().querySelector('.jin-find-trigger')?.closest('[inert]')).toBeNull();
+    expect(primaryBlocks()).toEqual([
+      expect.stringContaining('jin-sidebar-actions'), expect.stringContaining('jin-nav'),
+    ]);
+    expect(sidebar().lastElementChild?.classList.contains('jin-sidebar-utilities')).toBe(true);
+    expect(toggle().getAttribute('title')).toBe('Expand navigation');
     expect(localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBe('{"version":2,"expanded":false}');
-    expect(reveal().getAttribute('aria-expanded')).toBe('false');
-    reveal().click();
+    toggle().click();
     expect(shell().dataset.navVisible).toBe('true');
+    expect(primaryBlocks()).toEqual([
+      expect.stringContaining('jin-sidebar-actions'), expect.stringContaining('jin-nav'),
+    ]);
+    expect(sidebar().querySelector('.jin-sidebar-header > .jin-sidebar-utilities')).toBeTruthy();
     expect(localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBe('{"version":2,"expanded":true}');
   });
 
-  it('imports the old collapsed preference without restoring an icon strip', async () => {
+  it('imports the old collapsed preference into the compact route rail', async () => {
     localStorage.setItem(SIDEBAR_STORAGE_KEY, '{"collapsed":true}');
     await mount();
     expect(shell().dataset.navVisible).toBe('false');
-    expect(sidebar().classList.contains('is-collapsed')).toBe(false);
-    expect(sidebar().hasAttribute('inert')).toBe(true);
-    reveal().click();
-    expect(shell().dataset.navVisible).toBe('true');
+    expect(sidebar().hasAttribute('inert')).toBe(false);
+    expect(sidebar().querySelector('[data-section="notes"]')?.closest('[inert]')).toBeNull();
+  });
+
+  it('opens and closes the active context as a temporary compact-rail flyout', async () => {
+    await mount();
+    window.dispatchEvent(new CustomEvent('jin:route-committed', { detail: { section: 'tasks' } }));
+    toggle().click();
+    expect(contextReveal().hidden).toBe(false);
+    expect(contextReveal().parentElement?.classList.contains('tasks-context-trigger-host')).toBe(true);
+    expect(contextReveal().getAttribute('aria-label')).toBe('Task lists');
+    contextReveal().click();
+    expect(shell().dataset.navVisible).toBe('false');
+    expect(shell().dataset.contextVisible).toBe('true');
+    expect(document.querySelector('[data-sidebar-context="tasks"]')?.hasAttribute('inert')).toBe(false);
+    expect(contextReveal().getAttribute('aria-expanded')).toBe('true');
+    contextReveal().click();
+    expect(shell().dataset.contextVisible).toBe('false');
+    expect(contextReveal().getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(contextReveal());
+    contextReveal().click();
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(shell().dataset.contextVisible).toBe('false');
+    contextReveal().click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(shell().dataset.contextVisible).toBe('false');
+    expect(document.activeElement).toBe(contextReveal());
+  });
+
+  it('does not render a generic context action for Today or Notifications', async () => {
+    await mount();
+    toggle().click();
+    expect(contextReveal().hidden).toBe(true);
+    expect(contextReveal().parentElement?.matches('[data-sidebar-target="contextSlot"]')).toBe(true);
+    expect(document.querySelector('.jin-content-navigation [data-sidebar-target="contextReveal"]')).toBeNull();
+    window.dispatchEvent(new CustomEvent('jin:route-committed', { detail: { section: 'notifications' } }));
+    expect(contextReveal().hidden).toBe(true);
+    expect(shell().dataset.contextVisible).toBe('false');
+  });
+
+  it('places the Settings categories disclosure beside Settings in the compact utilities', async () => {
+    await mount();
+    toggle().click();
+    window.dispatchEvent(new CustomEvent('jin:route-committed', { detail: { section: 'settings' } }));
+    expect(contextReveal().getAttribute('aria-label')).toBe('Settings categories');
+    expect(contextReveal().parentElement?.classList.contains('settings-context-trigger-host')).toBe(true);
+  });
+
+  it('uses the event locale for the Calendar disclosure', async () => {
+    await mount();
+    saveEventLocalePreference('pt-BR');
+    window.dispatchEvent(new Event('jin:event-locale-changed'));
+    window.dispatchEvent(new CustomEvent('jin:route-committed', { detail: { section: 'events' } }));
+    toggle().click();
+    expect(contextReveal().textContent).toContain('Calendários');
+    expect(contextReveal().getAttribute('aria-label')).toBe('Calendários');
   });
 
   it('uses one transient drawer below 960px and returns focus after selection', async () => {

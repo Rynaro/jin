@@ -71,7 +71,7 @@ async function navigateTo(page, name) {
     return shell?.dataset.navPresentation === expected;
   });
   const shell = page.locator('.jin-shell');
-  if (await shell.getAttribute('data-nav-visible') !== 'true') {
+  if (await shell.getAttribute('data-nav-presentation') === 'drawer' && await shell.getAttribute('data-nav-visible') !== 'true') {
     await page.getByRole('button', { name: 'Show navigation', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('.jin-shell')?.dataset.navVisible === 'true');
   }
@@ -166,8 +166,7 @@ async function verifyHiddenNativeNavigation(page) {
   await page.evaluate(() => { document.documentElement.dataset.nativeMacosOverlay = 'true'; });
   const editor = await openFixtureNote(page);
   const before = await editor.evaluate((element) => { window.__hiddenSidebarEditor = element; return element.textContent; });
-  const hide = page.getByRole('button', { name: 'Hide navigation', exact: true });
-  const reveal = page.getByRole('button', { name: 'Show navigation', exact: true });
+  const hide = page.getByRole('button', { name: 'Collapse navigation', exact: true });
   await hide.click();
   await page.waitForFunction(() => document.querySelector('.jin-shell')?.dataset.navVisible === 'false');
   const metrics = await page.evaluate(() => {
@@ -185,38 +184,44 @@ async function verifyHiddenNativeNavigation(page) {
       detail: box('.notes-detail-pane'),
       back: box('.notes-detail-pane__header .browse-back-btn'),
       titlebar: box('.jin-content-navigation'),
-      reveal: box('.jin-navigation-reveal'),
+      nativeDrag: box('.jin-native-content-drag'),
+      rail: box('.jin-sidebar'),
+      expand: box('.jin-sidebar-toggle'),
     };
   });
   if (metrics.search.width < metrics.library.width * 0.75
       || Math.abs(metrics.list.y - metrics.cards.y) > 1
       || metrics.back.x - metrics.detail.x > 24
-      || metrics.library.y < metrics.titlebar.bottom - 1
-      || metrics.detail.y < metrics.titlebar.bottom - 1
-      || metrics.reveal.x < 90 || metrics.reveal.height < 36) {
+      || metrics.titlebar.height > 1
+      || metrics.nativeDrag.width < 100 || metrics.nativeDrag.height < 6
+      || metrics.expand.y < 52
+      || metrics.rail.width < 86 || metrics.rail.width > 96) {
     throw new Error(`Hidden native Notes layout squeezed controls or overlapped window chrome: ${JSON.stringify(metrics)}`);
   }
-  await reveal.focus(); await page.keyboard.press('Enter');
-  await hide.waitFor({ state: 'visible' });
-  await hide.click();
   if (!(await editor.evaluate((element) => element === window.__hiddenSidebarEditor)) || await editor.textContent() !== before) {
     throw new Error('Toggling shared navigation replaced the active Notes editor or its content');
   }
 
-  for (const name of ['Today — agenda view', 'Tasks', 'Notes', 'Calendar', /^Notifications/, 'Settings']) {
-    await reveal.click();
+  for (const [name, expected] of [
+    ['Today — agenda view', 'today'], ['Tasks', 'tasks'], ['Notes', 'notes'], ['Calendar', 'events'], [/^Notifications/, 'notifications'], ['Settings', 'settings'],
+  ]) {
     await page.getByRole('navigation', { name: 'Application navigation', exact: true }).getByRole('link', { name, exact: typeof name === 'string' }).click();
-    await hide.click();
     const geometry = await page.evaluate(() => {
       const section = [...document.querySelectorAll('[data-section-name]')].find((element) => !element.classList.contains('hidden'));
-      const bar = document.querySelector('.jin-content-navigation');
-      const drag = document.querySelector('.jin-content-navigation__drag');
+      const drag = document.querySelector('.jin-native-content-drag');
       const sectionRect = section?.getBoundingClientRect();
-      const barRect = bar?.getBoundingClientRect();
       const dragRect = drag?.getBoundingClientRect();
-      return { section: section?.getAttribute('data-section-name'), top: sectionRect?.top ?? -1, barBottom: barRect?.bottom ?? 0, dragWidth: dragRect?.width ?? 0, overflow: document.documentElement.scrollWidth > window.innerWidth + 1 };
+      const current = document.querySelector('[data-router-target="navItem"][aria-current="page"]');
+      return {
+        section: section?.getAttribute('data-section-name'),
+        current: current?.getAttribute('data-section'),
+        dragWidth: dragRect?.width ?? 0,
+        dragHeight: dragRect?.height ?? 0,
+        overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+      };
     });
-    if (geometry.top < geometry.barBottom - 1 || geometry.dragWidth < 100 || geometry.overflow) {
+    if (geometry.current !== expected
+      || geometry.dragWidth < 100 || geometry.dragHeight < 6 || geometry.overflow) {
       throw new Error(`Hidden native route did not retain titlebar clearance: ${JSON.stringify(geometry)}`);
     }
     if (geometry.section === 'tasks') {
@@ -232,7 +237,156 @@ async function verifyHiddenNativeNavigation(page) {
     }
     await assertNoHorizontalOverflow(page, `hidden native ${geometry.section}`);
   }
-  await reveal.click();
+
+  const compactLink = (name) => page.getByRole('navigation', { name: 'Application navigation', exact: true })
+    .getByRole('link', { name, exact: true });
+  const compactTrigger = (name) => page.getByRole('button', { name, exact: true });
+  const sameCompactHeaderBaseline = (boxes) => {
+    const entries = Object.entries(boxes);
+    const origin = entries[0]?.[1];
+    if (!origin || entries.some(([, box]) => !box || Math.abs(box.x - origin.x) > 2 || Math.abs(box.y - origin.y) > 2)) {
+      throw new Error(`Compact route controls must share the same header baseline: ${JSON.stringify(boxes)}`);
+    }
+  };
+
+  for (const [name, expected] of [['Today — agenda view', 'today'], [/^Notifications/, 'notifications']]) {
+    await compactLink(name).click();
+    await page.waitForFunction((section) => document.querySelector('.jin-shell')?.dataset.activeSection === section, expected);
+    if (await page.locator('.jin-page-context-trigger:visible').count()) {
+      throw new Error(`${expected} exposed a contextual action without a contextual menu`);
+    }
+  }
+
+  await compactLink('Tasks').click();
+  await page.waitForFunction(() => document.querySelector('.jin-shell')?.dataset.activeSection === 'tasks');
+  const taskTitle = page.locator('.tasks-workspace-title');
+  const taskLists = compactTrigger('Task lists');
+  await taskLists.waitFor({ state: 'visible' });
+  const [taskTitleBox, taskListsBox] = await Promise.all([taskTitle.boundingBox(), taskLists.boundingBox()]);
+  if (!taskTitleBox || !taskListsBox || Math.abs(taskTitleBox.y - taskListsBox.y) > 12 || taskListsBox.x + taskListsBox.width > taskTitleBox.x + 1) {
+    throw new Error(`Task lists must lead the workspace title on the shared header row: ${JSON.stringify({ taskTitleBox, taskListsBox })}`);
+  }
+  await taskLists.click();
+  await page.locator('[data-sidebar-context="tasks"]').waitFor({ state: 'visible' });
+  await taskLists.click();
+  await page.locator('[data-sidebar-context="tasks"]').waitFor({ state: 'hidden' });
+
+  await compactLink('Notes').click();
+  await page.waitForFunction(() => document.querySelector('.jin-shell')?.dataset.activeSection === 'notes');
+  const folders = compactTrigger('Folders');
+  await folders.waitFor({ state: 'visible' });
+  const foldersBox = await folders.boundingBox();
+  await folders.click();
+  await page.locator('[data-sidebar-context="notes"]').waitFor({ state: 'visible' });
+  await folders.click();
+  await page.locator('[data-sidebar-context="notes"]').waitFor({ state: 'hidden' });
+
+  await compactLink('Calendar').click();
+  await page.waitForFunction(() => document.querySelector('.jin-shell')?.dataset.activeSection === 'events');
+  const calendars = compactTrigger('Calendars');
+  await calendars.waitFor({ state: 'visible' });
+  const monthCalendarsBox = await calendars.boundingBox();
+  await calendars.click();
+  await page.locator('[data-sidebar-context="events"]').waitFor({ state: 'visible' });
+  await calendars.click();
+  await page.locator('[data-sidebar-context="events"]').waitFor({ state: 'hidden' });
+  await page.getByRole('button', { name: 'Day', exact: true }).click();
+  await calendars.waitFor({ state: 'visible' });
+  const dayCalendarsBox = await calendars.boundingBox();
+  if (!monthCalendarsBox || !dayCalendarsBox || Math.abs(monthCalendarsBox.x - dayCalendarsBox.x) > 2 || Math.abs(monthCalendarsBox.y - dayCalendarsBox.y) > 2) {
+    throw new Error(`Calendar context control moved between Month and Day: ${JSON.stringify({ monthCalendarsBox, dayCalendarsBox })}`);
+  }
+  await page.evaluate(() => {
+    localStorage.setItem('jin:event-locale', 'pt-BR');
+    window.dispatchEvent(new Event('jin:event-locale-changed'));
+  });
+  const portugueseDayTitle = page.locator('.calendar-day-view .calendar-month-label');
+  await portugueseDayTitle.waitFor({ state: 'visible' });
+  await page.waitForFunction(() => document.querySelector('.calendar-day-view .calendar-month-label')?.textContent?.includes('de') === true);
+  const portugueseDayLayout = await page.evaluate(() => {
+    const rect = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element) throw new Error(`Missing Calendar Day header element ${selector}`);
+      const { left, right, top, bottom, height } = element.getBoundingClientRect();
+      return { left, right, top, bottom, height };
+    };
+    const heading = rect('.calendar-day-view .calendar-month-label');
+    const leading = rect('.calendar-day-view .calendar-month-leading');
+    const controls = rect('.calendar-day-view .calendar-month-controls');
+    const title = document.querySelector('.calendar-day-view .calendar-month-label');
+    const titleRange = document.createRange();
+    titleRange.selectNodeContents(title);
+    const lineTops = [...titleRange.getClientRects()]
+      .filter(({ width, height }) => width > 0 && height > 0)
+      .map(({ top }) => Math.round(top))
+      .filter((top, index, tops) => tops.indexOf(top) === index);
+    return {
+      heading, leading, controls, lineTops,
+      redundantIdentity: !!document.querySelector('.calendar-day-view .calendar-workspace-title'),
+      backInLeading: !!document.querySelector('.calendar-day-view .calendar-month-leading .calendar-back-btn'),
+      backInViewControls: !!document.querySelector('.calendar-day-view .calendar-view-controls .calendar-back-btn'),
+      overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+    };
+  });
+  if (portugueseDayLayout.redundantIdentity || portugueseDayLayout.backInLeading
+    || !portugueseDayLayout.backInViewControls
+    || portugueseDayLayout.heading.right > portugueseDayLayout.controls.right + 1
+    || portugueseDayLayout.heading.left < portugueseDayLayout.leading.left - 1
+    || portugueseDayLayout.lineTops.length !== 1
+    || portugueseDayLayout.overflow) {
+    throw new Error(`Localized Calendar Day header lost its coherent structure: ${JSON.stringify(portugueseDayLayout)}`);
+  }
+  await page.evaluate(() => {
+    localStorage.setItem('jin:event-locale', 'en');
+    window.dispatchEvent(new Event('jin:event-locale-changed'));
+  });
+  await calendars.click();
+  await page.locator('[data-sidebar-context="events"]').waitFor({ state: 'visible' });
+  await calendars.click();
+  await page.locator('[data-sidebar-context="events"]').waitFor({ state: 'hidden' });
+
+  await compactLink('Settings').click();
+  await page.waitForFunction(() => document.querySelector('.jin-shell')?.dataset.activeSection === 'settings');
+  const settingsCategories = compactTrigger('Settings categories');
+  await settingsCategories.waitFor({ state: 'visible' });
+  const settingsBox = await settingsCategories.boundingBox();
+  await settingsCategories.click();
+  await page.locator('[data-sidebar-context="settings"]').waitFor({ state: 'visible' });
+  await settingsCategories.click();
+  await page.locator('[data-sidebar-context="settings"]').waitFor({ state: 'hidden' });
+
+  sameCompactHeaderBaseline({ tasks: taskListsBox, notes: foldersBox, calendarMonth: monthCalendarsBox, calendarDay: dayCalendarsBox, settings: settingsBox });
+
+  // At the real 1100px split seam, an open Note covers and inerts its list.
+  // The route control must move to the live detail header instead of leaving
+  // a visible-looking control stranded under the covered pane.
+  await page.setViewportSize({ width: 960, height: 800 });
+  await compactLink('Notes').click();
+  await page.waitForFunction(() => document.querySelector('.jin-shell')?.dataset.activeSection === 'notes');
+  const narrowBack = page.locator('.notes-detail-pane .browse-back-btn');
+  if (await narrowBack.isVisible()) await narrowBack.click();
+  const narrowRow = page.locator('.browse-row__inner[data-note-id="n1"]');
+  await narrowRow.waitFor({ state: 'visible' });
+  await narrowRow.click();
+  await page.locator('.notes-detail-pane .cm-content[contenteditable="true"]').waitFor({ state: 'visible' });
+  await folders.waitFor({ state: 'visible' });
+  await folders.click();
+  await page.locator('[data-sidebar-context="notes"]').waitFor({ state: 'visible' });
+  await folders.click();
+  await page.locator('[data-sidebar-context="notes"]').waitFor({ state: 'hidden' });
+
+  const stableEditor = page.locator('.notes-detail-pane .cm-content[contenteditable="true"]');
+  const stableEditorText = await stableEditor.textContent();
+  await page.evaluate((element) => { window.__hiddenSidebarEditor = element; }, await stableEditor.elementHandle());
+  await page.setViewportSize({ width: 1200, height: 800 });
+  const expand = page.getByRole('button', { name: 'Expand navigation', exact: true });
+  await expand.focus();
+  await page.keyboard.press('Enter');
+  await hide.waitFor({ state: 'visible' });
+  await hide.click();
+  if (!(await stableEditor.evaluate((element) => element === window.__hiddenSidebarEditor)) || await stableEditor.textContent() !== stableEditorText) {
+    throw new Error('Expanding and re-collapsing navigation replaced the active Notes editor or its content');
+  }
   await page.evaluate(() => { delete document.documentElement.dataset.nativeMacosOverlay; delete window.__hiddenSidebarEditor; });
 }
 

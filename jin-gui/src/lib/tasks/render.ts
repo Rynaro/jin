@@ -1197,6 +1197,11 @@ export function renderTaskPane(
     paneHeader = document.createElement('div');
     paneHeader.className = 'tasks-detail-pane__header';
 
+    const contextHost = document.createElement('span');
+    contextHost.className = 'tasks-detail-context-trigger-host';
+    contextHost.dataset.sidebarContextAnchor = 'tasks-detail';
+    paneHeader.appendChild(contextHost);
+
     const actions = document.createElement('div');
     actions.className = 'tasks-detail-pane__header-actions';
 
@@ -1258,7 +1263,7 @@ export function renderTaskPane(
   }
 
   if (paneHeader) {
-    paneHeader.prepend(titleEl);
+    paneHeader.insertBefore(titleEl, paneHeader.querySelector('.tasks-detail-pane__header-actions'));
     el.detailContent.appendChild(paneHeader);
   } else {
     el.detailContent.appendChild(titleEl);

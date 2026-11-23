@@ -2500,6 +2500,8 @@ figure.code-block {
 .task-detail__title-row .task-completion { margin-block-start: 2px; }
 
 .task-detail__main .tasks-detail-pane__header {
+  display: flex;
+  align-items: flex-start;
   justify-content: flex-end;
   margin-block-end: var(--space-2);
 }
@@ -4119,6 +4121,7 @@ figure.code-block {
 }
 .notes-split .notes-explorer__toolbar { align-items: flex-start; flex-wrap: wrap; gap: var(--space-2); padding-block: var(--space-3); }
 .notes-split .notes-explorer__identity { flex: 1 1 100%; }
+.notes-split .notes-context-trigger-host:not(:empty) + .notes-explorer__identity { flex: 1 1 0; }
 .notes-split .notes-workspace-title { font-size: var(--text-title2-size); letter-spacing: -0.025em; }
 .notes-split .notes-explorer__controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; flex: 1 1 100%; margin: 0; inline-size: 100%; gap: var(--space-1); }
 .notes-split .notes-list-pane__header .notes-search { grid-column: 1 / -1; grid-row: 2; inline-size: 100%; box-sizing: border-box; }
@@ -4690,6 +4693,7 @@ figure.code-block {
   position: static;
   background: transparent;
 }
+[data-tasks-target="listPanel"] .tasks-context-trigger-host { flex: 0 0 auto; }
 [data-tasks-target="listPanel"] .tasks-workspace-header { flex: 1 1 auto; display: grid; gap: var(--space-half); align-items: start; }
 [data-tasks-target="listPanel"] > :is(.browse-list, .browse-loading, .browse-empty) { max-inline-size: 58rem; margin-inline: auto; }
 [data-tasks-target="listPanel"] > .browse-list.tasks-board { max-inline-size: none; }
@@ -4701,6 +4705,26 @@ figure.code-block {
 }
 [data-tasks-target="listPanel"] .tasks-filter-bar { flex: 0 0 auto; align-self: center; justify-content: flex-end; }
 [data-tasks-target="listPanel"] .tasks-workspace-title { white-space: normal; }
+
+/* The compact route control follows the shared 36px header baseline: the
+ * paired Tasks header already contributes its 24px workspace padding. */
+.jin-shell[data-nav-presentation='desktop'][data-nav-visible='false'] [data-tasks-target="listPanel"] .tasks-context-trigger-host:not(:empty) {
+  margin-block-start: calc(var(--compact-context-block-start) - var(--space-3));
+}
+.jin-shell[data-nav-presentation='desktop'][data-nav-visible='false'] .notes-context-trigger-host:not(:empty) {
+  margin-block-start: calc(var(--compact-context-block-start) - var(--space-2));
+}
+.jin-shell[data-nav-presentation='desktop'][data-nav-visible='false'] .notes-split .notes-context-trigger-host:not(:empty) {
+  margin-block-start: calc(var(--compact-context-block-start) - var(--space-3));
+}
+.jin-shell[data-nav-presentation='desktop'][data-nav-visible='false'] .tasks-detail-pane__header {
+  justify-content: flex-start;
+}
+.jin-shell[data-nav-presentation='desktop'][data-nav-visible='false'] .tasks-detail-context-trigger-host:not(:empty) {
+  order: -1;
+  margin-inline-end: auto;
+  margin-block-start: calc(var(--compact-context-block-start) - var(--space-3));
+}
 @container (max-width: 760px) {
   [data-tasks-target="listPanel"] .jin-workspace-header--paired { flex-wrap: wrap; padding-block: var(--space-half); }
   [data-tasks-target="listPanel"] .tasks-filter-bar { flex: 1 1 100%; justify-content: flex-start; flex-wrap: wrap; }

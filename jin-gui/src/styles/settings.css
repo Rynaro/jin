@@ -63,6 +63,19 @@
   margin-inline: auto;
 }
 
+/* Settings normally inherits the generic content-body gutter in addition to
+ * its own workspace measure. Once its rail is compacted that outer gutter is
+ * redundant, so use the same single workspace inset as the other routes. */
+.jin-shell[data-nav-presentation='desktop'][data-nav-visible='false'] [data-section-name='settings'].jin-content-body {
+  padding: 0;
+}
+.jin-shell[data-nav-presentation='desktop'][data-nav-visible='false'] .settings-pane {
+  margin-inline: 0 auto;
+}
+.jin-shell[data-nav-presentation='desktop'][data-nav-visible='false'] .settings-workspace {
+  padding-block-start: var(--compact-context-block-start);
+}
+
 .settings-pane[hidden] {
   display: none;
 }
