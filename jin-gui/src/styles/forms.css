@@ -1055,6 +1055,11 @@ dialog::backdrop {
 .form-group[data-capture-target="captureTaskOptions"][hidden] { display:none; }
 .capture-review__checkback-action { display:inline-flex; align-items:center; justify-content:center; gap:var(--space-1); }
 .capture-review__checkback-action svg { inline-size:1em; block-size:1em; flex:none; }
+@media (max-width:480px) {
+  .capture-review__actions { gap:var(--space-half); }
+  .capture-review__actions > button { padding-inline:var(--space-1); }
+  .capture-review__checkback-action { gap:var(--space-half); }
+}
 @media (max-width:420px) { .capture-review-dialog { inline-size:calc(100vw - var(--space-2)); } .capture-review__actions > button { flex:1 1 auto; } }
 .jin-capture-status { margin:var(--space-half) var(--space-2) 0; color:var(--label-secondary); font:var(--text-footnote-size)/var(--text-footnote-line) var(--font-text); }
 .form-input, .form-select, .jin-select__trigger { border-color: var(--control-edge); background: var(--control-surface); color: var(--label); }
