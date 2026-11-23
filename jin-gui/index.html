@@ -116,6 +116,7 @@
       data-active-section="today"
       data-action="today:navigate->router#handleTodayNavigate jin:navigate->router#handleNavigate jin:open-promote->actions#openPromote jin:open-attach->actions#openAttach jin:open-link->actions#openLink jin:route-committed@window->sidebar#routeCommitted jin:sidebar-toggle@window->sidebar#toggle jin:sidebar-selection@window->sidebar#selectionCommitted"
     >
+      <p class="sr-only" role="status" aria-live="polite" data-capture-target="captureStatus"></p>
       <!-- ── Sidebar navigation ─────────────────────────────────────────── -->
       <aside
         class="jin-sidebar jin-navigation-rail jin-chrome"
@@ -187,6 +188,10 @@
             <i data-lucide="plus" aria-hidden="true"></i>
             <span>Capture</span>
           </button>
+          <button class="jin-review-captures-btn tap-target" type="button" data-action="click->capture#openReview" aria-label="Review captures">
+            <i data-lucide="inbox" aria-hidden="true"></i><span>Review captures</span><span class="jin-review-count" hidden data-capture-target="reviewCount">0</span><span class="sr-only" data-capture-target="reviewCountLabel"></span>
+          </button>
+          <p class="jin-capture-status" role="status" aria-live="polite" hidden data-capture-target="captureStatus"></p>
           <button type="button" class="jin-find-trigger tap-target" data-action="click->find#open"
             aria-label="Find in Jin" aria-keyshortcuts="Control+Shift+F Meta+Shift+F">
             <i data-lucide="search" aria-hidden="true"></i>
@@ -2980,24 +2985,30 @@
                 rows="3"
                 placeholder="Type a note or task…"
                 aria-required="true"
+                aria-keyshortcuts="Control+Enter Meta+Enter"
+                data-action="keydown->capture#captureKeydown"
                 data-capture-target="captureText"
               ></textarea>
             </div>
 
             <div class="capture-meta-row">
-            <div class="form-group">
+            <div class="form-group" data-capture-target="captureKindOptions">
               <label class="form-label jin-checkbox">
                 <input
                   type="checkbox"
                   data-capture-target="captureAsTask"
+                  data-action="change->capture#captureTypeChanged"
                   aria-label="Create as task instead of note"
                 />
                 <span class="jin-checkbox__mark" aria-hidden="true"></span>
                 <span>Save as task</span>
               </label>
             </div>
+            <div class="form-group" data-capture-target="captureNoteOptions">
+              <label class="form-label jin-checkbox"><input type="checkbox" data-capture-target="captureReviewEnabled" /><span class="jin-checkbox__mark" aria-hidden="true"></span><span>Review this later</span></label>
+            </div>
 
-            <div class="form-group">
+            <div class="form-group" data-capture-target="captureTaskOptions">
               <label class="form-label" for="capture-list">List</label>
               <!-- S6: id-valued select (populated by CaptureController#populateCaptureListSelects).
                    Static Inbox option is the safe fallback if the API call has not resolved yet. -->
@@ -3284,6 +3295,10 @@
             ></div>
           </div>
         </div>
+      </dialog>
+
+      <dialog class="action-dialog capture-review-dialog" aria-label="Review captures" aria-modal="true" data-capture-target="reviewDialog" data-action="cancel->capture#closeReview">
+        <div class="action-dialog__inner"><div class="action-dialog__header"><h2 class="action-dialog__title">Review captures</h2><button type="button" class="modal-close-btn tap-target" aria-label="Close" data-action="click->capture#closeReview"><i data-lucide="x" aria-hidden="true"></i></button></div><div class="action-dialog__body"><p class="form-error hidden" aria-live="polite" data-capture-target="reviewError"></p><p class="capture-review__status" role="status" aria-live="polite" hidden data-capture-target="reviewStatus"></p><ul class="capture-review__list" data-capture-target="reviewList"></ul></div></div>
       </dialog>
 
       <!--

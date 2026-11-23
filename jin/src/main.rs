@@ -142,6 +142,15 @@ enum Commands {
         task: bool,
         #[arg(long)]
         list: Option<String>,
+        #[arg(long)]
+        review: bool,
+        #[arg(long, requires = "review")]
+        return_on: Option<String>,
+    },
+    /// Review captured work that still needs a decision.
+    Review {
+        #[command(subcommand)]
+        action: ReviewAction,
     },
 
     /// Diagnostic: list dangling edges and index health.
@@ -157,6 +166,43 @@ enum Commands {
     Google {
         #[command(subcommand)]
         action: GoogleAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ReviewAction {
+    List,
+    Process {
+        kind: String,
+        id: String,
+    },
+    Defer {
+        kind: String,
+        id: String,
+        #[arg(long)]
+        return_on: String,
+    },
+    CreateTask {
+        note_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        title: String,
+        #[arg(long)]
+        excerpt: String,
+        #[arg(long)]
+        list: Option<String>,
+        #[arg(long)]
+        operation_id: String,
+    },
+    AttachEvent {
+        note_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        event_id: String,
+        #[arg(long)]
+        operation_id: String,
     },
 }
 
@@ -784,9 +830,19 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
             }
         }
 
-        Commands::Capture { text, task, list } => {
+        Commands::Capture {
+            text,
+            task,
+            list,
+            review,
+            return_on,
+        } => {
             let root = resolve_root(root_override)?;
-            cmd_capture(&root, text, task, list, json)?;
+            cmd_capture(&root, text, task, list, review, return_on, json)?;
+        }
+        Commands::Review { action } => {
+            let root = resolve_root(root_override)?;
+            cmd_review(&root, action, json)?;
         }
 
         Commands::Doctor => {
@@ -1989,16 +2045,26 @@ fn cmd_capture(
     text: String,
     as_task: bool,
     list: Option<String>,
+    review: bool,
+    return_on: Option<String>,
     json: bool,
 ) -> anyhow::Result<()> {
     let cfg = Config::load(root)?;
+    let return_date = return_on
+        .as_deref()
+        .map(|value| chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d"))
+        .transpose()
+        .context("--return-on must use YYYY-MM-DD")?;
+    let (title, body) = jin_core::ops::capture_review::split_capture_text(&text)?;
+    let capture_review =
+        jin_core::ops::capture_review::initial_capture_review(review, return_date)?;
     if as_task {
-        let task = jin_core::ops::workflows::create_task(
+        let task = jin_core::ops::workflows::create_task_with_capture_review(
             root,
             jin_core::ops::tasks::CreateTaskParams {
                 recurrence_upcoming_count: None,
-                title: text,
-                body: String::new(),
+                title,
+                body,
                 priority: None,
                 due: None,
                 list,
@@ -2008,6 +2074,7 @@ fn cmd_capture(
                 recurrence: None,
             },
             None,
+            capture_review,
         )?;
         api::refresh(root)?;
         if json {
@@ -2018,14 +2085,15 @@ fn cmd_capture(
             println!("{}", task.id());
         }
     } else {
-        let note = jin_core::ops::notes::create_note(
+        let note = jin_core::ops::notes::create_note_with_capture_review(
             &cfg.notes_dir(),
             jin_core::ops::notes::CreateNoteParams {
-                title: text,
-                body: String::new(),
+                title,
+                body,
                 tags: vec![],
                 folder: String::new(),
             },
+            capture_review,
         )?;
         api::refresh(root)?;
         if json {
@@ -2034,6 +2102,115 @@ fn cmd_capture(
             output::print_json(&env);
         } else {
             println!("{}", note.id());
+        }
+    }
+    Ok(())
+}
+
+fn cmd_review(root: &std::path::Path, action: ReviewAction, json: bool) -> anyhow::Result<()> {
+    use jin_core::model::CaptureReviewState;
+    use jin_core::ops::{api, capture_review, linked_creation};
+    match action {
+        ReviewAction::List => {
+            let items = api::list_capture_review(root)?;
+            if json {
+                output::print_json(&Envelope::ok("list", serde_json::to_value(items)?));
+            } else {
+                for item in items {
+                    println!("{} {} — {}", item.kind, item.id, item.title);
+                }
+            }
+        }
+        ReviewAction::Process { kind, id } => {
+            api::set_capture_review(
+                root,
+                capture_review::SetCaptureReviewInput {
+                    kind: kind.clone(),
+                    id: id.clone(),
+                    state: CaptureReviewState::Processed,
+                    return_on: None,
+                },
+            )?;
+            if json {
+                output::print_json(&Envelope::ok(
+                    "result",
+                    serde_json::json!({"ok": true, "kind": kind, "id": id, "state": "processed"}),
+                ));
+            } else {
+                println!("Processed {kind} {id}.");
+            }
+        }
+        ReviewAction::Defer {
+            kind,
+            id,
+            return_on,
+        } => {
+            let date = chrono::NaiveDate::parse_from_str(&return_on, "%Y-%m-%d")
+                .context("--return-on must use YYYY-MM-DD")?;
+            api::set_capture_review(
+                root,
+                capture_review::SetCaptureReviewInput {
+                    kind: kind.clone(),
+                    id: id.clone(),
+                    state: CaptureReviewState::Deferred,
+                    return_on: Some(date),
+                },
+            )?;
+            if json {
+                output::print_json(&Envelope::ok(
+                    "result",
+                    serde_json::json!({"ok": true, "kind": kind, "id": id, "state": "deferred", "return_on": date}),
+                ));
+            } else {
+                println!("Deferred {kind} {id} until {date}.");
+            }
+        }
+        ReviewAction::CreateTask {
+            note_id,
+            expected_revision,
+            title,
+            excerpt,
+            list,
+            operation_id,
+        } => {
+            let (task, note) = linked_creation::review_capture_create_task(
+                root,
+                linked_creation::ReviewTaskFromNoteInput {
+                    operation_id,
+                    note_id,
+                    expected_revision,
+                    title,
+                    excerpt,
+                    list,
+                },
+            )?;
+            api::refresh(root)?;
+            if json {
+                output::print_json(&Envelope::ok(
+                    "result",
+                    serde_json::json!({"task": task.id(), "note": note.id()}),
+                ));
+            }
+        }
+        ReviewAction::AttachEvent {
+            note_id,
+            expected_revision,
+            event_id,
+            operation_id,
+        } => {
+            let note = linked_creation::review_capture_attach_event(
+                root,
+                linked_creation::ReviewAttachNoteInput {
+                    operation_id,
+                    note_id,
+                    expected_revision,
+                    event_id,
+                },
+            )?;
+            api::refresh(root)?;
+            if json {
+                output::print_json(&Envelope::ok("note", serde_json::json!({"id": note.id()})));
+            }
         }
     }
     Ok(())

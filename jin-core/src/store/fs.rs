@@ -662,6 +662,7 @@ mod tests {
             deleted_at: None,
             tags: vec![],
             links: vec![],
+            capture_review: None,
             properties: Default::default(),
             revision: 1,
             extra: Default::default(),

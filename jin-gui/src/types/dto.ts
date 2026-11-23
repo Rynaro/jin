@@ -967,6 +967,15 @@ export interface CaptureResultDto {
   data: NoteDto | TaskDto;
 }
 
+export interface CaptureReviewItemDto {
+  kind: 'note' | 'task';
+  id: string;
+  title: string;
+  created: string;
+  return_on: string | null;
+  state: 'pending' | 'deferred' | 'processed';
+}
+
 export type FirstRunStepDto = 'welcome' | 'storage' | 'functions' | 'settings' | 'review';
 
 export interface FirstRunStateDto {

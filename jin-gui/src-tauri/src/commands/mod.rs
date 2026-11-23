@@ -19,6 +19,7 @@ pub mod attach;
 pub mod auth;
 mod blocking;
 pub mod capture;
+pub mod capture_review;
 pub mod collections;
 pub mod events;
 pub mod export;

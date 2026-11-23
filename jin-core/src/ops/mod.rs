@@ -3,6 +3,7 @@ pub mod api;
 pub mod assets;
 pub mod attach;
 pub mod calendar_projection;
+pub mod capture_review;
 pub mod collections;
 pub mod event_mutation;
 pub mod events;

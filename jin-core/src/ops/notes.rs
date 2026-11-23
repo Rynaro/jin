@@ -4,6 +4,7 @@ use chrono::Local;
 use std::path::Path;
 
 use crate::id::new_ulid;
+use crate::model::CaptureReview;
 use crate::model::{validate_property_key, Note, NoteFrontmatter, NoteStatus, PropertyValue};
 use crate::store::fs;
 use crate::{JinError, Result};
@@ -39,6 +40,15 @@ pub struct EditNoteParams {
 /// Create a new Note, write it to disk, return the Note.
 /// Wave 2A: writes into the specified folder (D-UI-NEWNOTE, AC-S5.1).
 pub fn create_note(notes_dir: &Path, params: CreateNoteParams) -> Result<Note> {
+    create_note_with_capture_review(notes_dir, params, None)
+}
+
+/// Creates a note and its optional review marker in the same canonical write.
+pub fn create_note_with_capture_review(
+    notes_dir: &Path,
+    params: CreateNoteParams,
+    capture_review: Option<CaptureReview>,
+) -> Result<Note> {
     fs::validate_folder_path(&params.folder)?;
     let now = Local::now().fixed_offset();
     let id = new_ulid();
@@ -52,6 +62,7 @@ pub fn create_note(notes_dir: &Path, params: CreateNoteParams) -> Result<Note> {
         deleted_at: None,
         tags: params.tags,
         links: vec![],
+        capture_review,
         properties: BTreeMap::new(),
         revision: 1,
         extra: BTreeMap::new(),

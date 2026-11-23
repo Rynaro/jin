@@ -5,7 +5,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use jin_core::dto::{NoteDto, TaskDto};
-use jin_core::ops::{api, notes, tasks};
+use jin_core::ops::{api, notes, tasks, workflows};
 use jin_core::Config;
 
 use crate::error::JinErrorDto;
@@ -26,15 +26,30 @@ pub fn capture_fn(
     as_task: bool,
     list: Option<String>,
 ) -> Result<CaptureResultDto, JinErrorDto> {
+    capture_with_review_fn(root, text, as_task, list, false, None)
+}
+
+pub fn capture_with_review_fn(
+    root: &Path,
+    text: String,
+    as_task: bool,
+    list: Option<String>,
+    review: bool,
+    return_on: Option<chrono::NaiveDate>,
+) -> Result<CaptureResultDto, JinErrorDto> {
     let cfg = Config::load(root).map_err(JinErrorDto::from)?;
+    let (title, body) =
+        jin_core::ops::capture_review::split_capture_text(&text).map_err(JinErrorDto::from)?;
+    let capture_review = jin_core::ops::capture_review::initial_capture_review(review, return_on)
+        .map_err(JinErrorDto::from)?;
 
     if as_task {
-        let task = jin_core::ops::workflows::create_task(
+        let task = workflows::create_task_with_capture_review(
             root,
             tasks::CreateTaskParams {
                 recurrence_upcoming_count: None,
-                title: text,
-                body: String::new(),
+                title,
+                body,
                 priority: None,
                 due: None,
                 list,
@@ -44,6 +59,7 @@ pub fn capture_fn(
                 recurrence: None,
             },
             None,
+            capture_review,
         )
         .map_err(JinErrorDto::from)?;
         api::refresh(root).map_err(JinErrorDto::from)?;
@@ -55,14 +71,15 @@ pub fn capture_fn(
             data: serde_json::to_value(&dto).unwrap_or(serde_json::Value::Null),
         })
     } else {
-        let note = notes::create_note(
+        let note = notes::create_note_with_capture_review(
             &cfg.notes_dir(),
             notes::CreateNoteParams {
-                title: text,
-                body: String::new(),
+                title,
+                body,
                 tags: vec![],
                 folder: String::new(),
             },
+            capture_review,
         )
         .map_err(JinErrorDto::from)?;
         api::refresh(root).map_err(JinErrorDto::from)?;
@@ -76,12 +93,32 @@ pub fn capture_fn(
     }
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn capture(
     state: tauri::State<'_, AppState>,
     text: String,
     as_task: Option<bool>,
     list: Option<String>,
+    review: Option<bool>,
+    return_on: Option<String>,
 ) -> Result<CaptureResultDto, JinErrorDto> {
-    capture_fn(&state.root, text, as_task.unwrap_or(false), list)
+    let return_on = return_on
+        .map(|date| {
+            chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d").map_err(|_| JinErrorDto {
+                code: 2,
+                kind: "usage".into(),
+                message: "Return date must use YYYY-MM-DD.".into(),
+                retriable: false,
+                details: None,
+            })
+        })
+        .transpose()?;
+    capture_with_review_fn(
+        &state.root,
+        text,
+        as_task.unwrap_or(false),
+        list,
+        review.unwrap_or(false),
+        return_on,
+    )
 }

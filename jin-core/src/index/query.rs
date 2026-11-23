@@ -51,6 +51,21 @@ pub(crate) struct TaskRow {
     pub(crate) recurrence_exception: bool,
 }
 
+/// A compact, cross-domain row for the capture review projection.
+///
+/// This intentionally keeps capture-review fields out of generic task/note
+/// projections. The sidebar and review dialog are the only consumers that
+/// need them, and their query must stay index-only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CaptureReviewRow {
+    pub(crate) kind: String,
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) created: String,
+    pub(crate) return_on: Option<String>,
+    pub(crate) state: String,
+}
+
 /// A summary row for lists (P2 — used by rebuild; full query surface in P3).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[allow(dead_code)] // Will be used in P3 list query surface.
@@ -339,6 +354,65 @@ pub(crate) fn list_tasks(
     rows.collect()
 }
 
+/// List capture-review candidates from the derived index.
+///
+/// `today` is already resolved in Jin's configured display timezone by the
+/// caller. `return_on` is stored as an ISO date, so SQLite's lexical comparison
+/// preserves date ordering without deriving a browser or host-local date.
+pub(crate) fn list_capture_review(
+    conn: &Connection,
+    today: &str,
+) -> SqlResult<Vec<CaptureReviewRow>> {
+    let mut statement = conn.prepare(
+        "SELECT kind, id, title, created, capture_review_return_on, state
+         FROM (
+             SELECT 'note' AS kind, id, title, created,
+                    capture_review_return_on, capture_review_state AS state
+             FROM notes
+             WHERE status = 'active'
+               AND capture_review_state IN ('pending', 'deferred')
+               AND (capture_review_return_on IS NULL OR capture_review_return_on <= ?1)
+
+             UNION ALL
+
+             SELECT 'task' AS kind, t.id, t.title, t.created,
+                    t.capture_review_return_on,
+                    COALESCE(t.capture_review_state, 'pending') AS state
+             FROM tasks AS t
+             WHERE t.status IN ('todo', 'doing')
+               AND t.parent IS NULL
+               AND (
+                   (t.capture_review_state IN ('pending', 'deferred')
+                    AND (t.capture_review_return_on IS NULL
+                         OR t.capture_review_return_on <= ?1))
+                   OR (
+                       t.capture_review_state IS NULL
+                       AND (
+                           t.list_name = 'inbox'
+                           OR NOT EXISTS (
+                               SELECT 1 FROM lists AS l WHERE l.id = t.list_name
+                           )
+                       )
+                   )
+               )
+         )
+         ORDER BY julianday(created) ASC, id ASC",
+    )?;
+    let rows = statement
+        .query_map(params![today], |row| {
+            Ok(CaptureReviewRow {
+                kind: row.get(0)?,
+                id: row.get(1)?,
+                title: row.get(2)?,
+                created: row.get(3)?,
+                return_on: row.get(4)?,
+                state: row.get(5)?,
+            })
+        })?
+        .collect();
+    rows
+}
+
 pub(crate) fn get_task(conn: &Connection, id: &str) -> SqlResult<Option<TaskRow>> {
     let mut stmt = conn.prepare(
         "SELECT id, title, status, priority, due, list_name, completed_at, deleted_at, \
@@ -481,6 +555,115 @@ pub(crate) fn count_sections(conn: &Connection, list_id: &str) -> SqlResult<i64>
         params![list_id],
         |r| r.get(0),
     )
+}
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)] // Event projections follow this task-specific test block.
+mod capture_review_tests {
+    use super::*;
+    use crate::index::schema;
+
+    fn open_index() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        schema::apply(&conn).unwrap();
+        conn
+    }
+
+    fn insert_task(
+        conn: &Connection,
+        id: &str,
+        list_name: &str,
+        state: Option<&str>,
+        return_on: Option<&str>,
+        status: &str,
+        parent: Option<&str>,
+    ) {
+        conn.execute(
+            "INSERT INTO tasks
+             (id, title, status, priority, list_name, created, updated, file_path,
+              parent, capture_review_state, capture_review_return_on)
+             VALUES (?1, ?2, ?3, 'none', ?4, ?5, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                id,
+                id,
+                status,
+                list_name,
+                "2026-11-22T23:30:00-03:00",
+                format!("/tmp/{id}.md"),
+                parent,
+                state,
+                return_on,
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn capture_review_projection_respects_dates_and_legacy_inbox_semantics() {
+        let conn = open_index();
+        conn.execute(
+            "INSERT INTO lists
+             (id, name, color, icon, position, view, sort_mode, columns, created, updated, file_path)
+             VALUES ('known', 'Known', 'accent', 'list', 'a', 'list', 'manual', '[]',
+                     '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '/tmp/known.md')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO notes
+             (id, title, status, created, updated, tags, file_path, excerpt,
+              capture_review_state, capture_review_return_on)
+             VALUES ('due-note', 'Due note', 'active', '2026-11-20T09:00:00Z',
+                     '2026-11-20T09:00:00Z', '[]', '/tmp/due-note.md', '', 'deferred', '2026-11-23')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO notes
+             (id, title, status, created, updated, tags, file_path, excerpt,
+              capture_review_state, capture_review_return_on)
+             VALUES ('future-note', 'Future note', 'active', '2026-11-20T10:00:00Z',
+                     '2026-11-20T10:00:00Z', '[]', '/tmp/future-note.md', '', 'deferred', '2026-11-24')",
+            [],
+        )
+        .unwrap();
+        insert_task(&conn, "legacy-inbox", "inbox", None, None, "todo", None);
+        insert_task(
+            &conn,
+            "legacy-orphan",
+            "removed-list",
+            None,
+            None,
+            "doing",
+            None,
+        );
+        insert_task(&conn, "known-list", "known", None, None, "todo", None);
+        insert_task(
+            &conn,
+            "future-task",
+            "known",
+            Some("deferred"),
+            Some("2026-11-24"),
+            "todo",
+            None,
+        );
+        insert_task(
+            &conn,
+            "subtask",
+            "inbox",
+            None,
+            None,
+            "todo",
+            Some("parent"),
+        );
+        insert_task(&conn, "done", "inbox", None, None, "done", None);
+
+        let rows = list_capture_review(&conn, "2026-11-23").unwrap();
+        let ids = rows.iter().map(|row| row.id.as_str()).collect::<Vec<_>>();
+        assert_eq!(ids, vec!["due-note", "legacy-inbox", "legacy-orphan"]);
+        assert_eq!(rows[0].state, "deferred");
+        assert_eq!(rows[0].return_on.as_deref(), Some("2026-11-23"));
+    }
 }
 
 /// Build the SELECT column list for events — shared by list and get.

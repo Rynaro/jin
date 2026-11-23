@@ -27,6 +27,7 @@ export interface CaptureFormState {
   text: string;
   asTask: boolean;
   list: string;
+  review?: boolean;
 }
 
 /**
@@ -48,11 +49,13 @@ export function buildCapturePayload(state: CaptureFormState): {
   text: string;
   as_task?: boolean;
   list?: string;
+  review?: boolean;
 } {
   return {
     text: state.text.trim(),
     as_task: state.asTask ? true : undefined,
     list: state.list.trim() || undefined,
+    ...(state.review ? { review: true } : {}),
   };
 }
 
