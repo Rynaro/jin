@@ -19,7 +19,7 @@ export interface TemporalEditorSession {
   onCommit: (result: TemporalEditorCommit) => void;
   onCancel?: () => void;
   restoreFocusTo?: HTMLElement | null;
-  presentation?: 'task' | 'event' | 'notification' | 'recurrence';
+  presentation?: 'task' | 'event' | 'notification' | 'recurrence' | 'review';
   requireDate?: boolean;
   requireTime?: boolean;
   validate?: (result: Extract<TemporalEditorCommit, { kind: 'set' }>) => string | null;
@@ -129,7 +129,7 @@ export default class TemporalEditorController extends Controller<HTMLDialogEleme
     const result = this.naturalResult;
     if (!result) return;
     this.draftDate = result.date;
-    if (this.session.presentation !== 'recurrence' && result.time) this.timeTarget.value = result.time;
+    if (this.session.presentation !== 'recurrence' && this.session.presentation !== 'review' && result.time) this.timeTarget.value = result.time;
     this.calendarController()?.setInitial(result.date);
     this.clearValidation();
     this.updateSummary();
@@ -137,7 +137,7 @@ export default class TemporalEditorController extends Controller<HTMLDialogEleme
 
   confirm(): void {
     if (!this.session) return;
-    const dateOnly = this.session.presentation === 'recurrence';
+    const dateOnly = this.session.presentation === 'recurrence' || this.session.presentation === 'review';
     const normalized = normalizeClockInput(dateOnly ? '' : this.timeTarget.value);
     if (!normalized.ok) {
       this.showValidation(eventMessage('invalidTime', resolveEventLocale()));
@@ -154,7 +154,9 @@ export default class TemporalEditorController extends Controller<HTMLDialogEleme
     if (this.session.requireDate && !this.draftDate) {
       this.showValidation(this.session.presentation === 'notification'
         ? 'Choose a date to defer this notification.'
-        : 'Choose a date for this event.');
+        : this.session.presentation === 'review'
+          ? 'Choose a check-back date.'
+          : 'Choose a date for this event.');
       this.calendarController()?.focusSelected();
       return;
     }
@@ -213,10 +215,12 @@ export default class TemporalEditorController extends Controller<HTMLDialogEleme
     const eventPresentation = this.session?.presentation === 'event';
     const notificationPresentation = this.session?.presentation === 'notification';
     const recurrencePresentation = this.session?.presentation === 'recurrence';
+    const reviewPresentation = this.session?.presentation === 'review';
+    this.confirmTarget.disabled = reviewPresentation && !this.draftDate;
     if (!this.draftDate) {
       this.summaryTarget.textContent = notificationPresentation
         ? 'Choose a date and time'
-        : eventPresentation || recurrencePresentation ? 'Choose a date' : 'No due date selected';
+        : eventPresentation || recurrencePresentation || reviewPresentation ? 'Choose a date' : 'No due date selected';
       return;
     }
     const time = this.timeTarget.value.trim();
@@ -225,18 +229,20 @@ export default class TemporalEditorController extends Controller<HTMLDialogEleme
       : eventPresentation
       ? (time ? `${this.draftDate} at ${time}` : `${this.draftDate} · All day`)
       : recurrencePresentation ? `Ends on ${this.draftDate}`
+      : reviewPresentation ? `Check back on ${this.draftDate}`
       : (time ? `Due ${this.draftDate} at ${time}` : `Due ${this.draftDate}, no time`);
   }
 
-  private applyPresentation(presentation: 'task' | 'event' | 'notification' | 'recurrence'): void {
+  private applyPresentation(presentation: 'task' | 'event' | 'notification' | 'recurrence' | 'review'): void {
     const eventPresentation = presentation === 'event';
     const notificationPresentation = presentation === 'notification';
     const recurrencePresentation = presentation === 'recurrence';
+    const reviewPresentation = presentation === 'review';
     this.element.dataset.temporalEditorPresentation = presentation;
-    this.titleTarget.textContent = notificationPresentation ? 'Custom defer time' : eventPresentation ? 'When' : recurrencePresentation ? 'Repeat until' : 'Set Due Date';
+    this.titleTarget.textContent = notificationPresentation ? 'Custom defer time' : eventPresentation ? 'When' : recurrencePresentation ? 'Repeat until' : reviewPresentation ? 'Check back' : 'Set Due Date';
     this.element.setAttribute('aria-label', notificationPresentation
       ? 'Choose custom defer date and time'
-      : eventPresentation ? 'Set event date and time' : recurrencePresentation ? 'Choose repeat end date' : 'Set due date');
+      : eventPresentation ? 'Set event date and time' : recurrencePresentation ? 'Choose repeat end date' : reviewPresentation ? 'Choose check-back date' : 'Set due date');
     this.timeLabelTarget.textContent = notificationPresentation
       ? 'Time'
       : eventPresentation ? 'Time (leave blank for all day)' : 'Time (optional)';
@@ -244,7 +250,7 @@ export default class TemporalEditorController extends Controller<HTMLDialogEleme
       ? 'Defer time'
       : eventPresentation ? 'Event time (optional)' : 'Due time (optional)');
     const timeRow = this.timeTarget.closest('.calendar-dialog__time-row, label') as HTMLElement | null;
-    if (recurrencePresentation) {
+    if (recurrencePresentation || reviewPresentation) {
       this.timeTarget.value = '';
       this.timeTarget.disabled = true;
       timeRow?.setAttribute('hidden', '');
@@ -252,7 +258,7 @@ export default class TemporalEditorController extends Controller<HTMLDialogEleme
       this.timeTarget.disabled = false;
       timeRow?.removeAttribute('hidden');
     }
-    this.confirmTarget.textContent = notificationPresentation ? 'Defer notification' : eventPresentation ? 'Set When' : recurrencePresentation ? 'Set date' : 'Set Date';
+    this.confirmTarget.textContent = notificationPresentation ? 'Defer notification' : eventPresentation ? 'Set When' : recurrencePresentation ? 'Set date' : reviewPresentation ? 'Apply' : 'Set Date';
   }
 
   private showValidation(message: string): void {
@@ -267,7 +273,7 @@ export default class TemporalEditorController extends Controller<HTMLDialogEleme
 
   private localizeNaturalInput(): void {
     const locale = resolveEventLocale();
-    if (this.session?.presentation === 'recurrence') {
+    if (this.session?.presentation === 'recurrence' || this.session?.presentation === 'review') {
       const portuguese = locale === 'pt-BR';
       this.naturalLabelTarget.textContent = eventMessage('date', locale);
       this.naturalTarget.placeholder = portuguese ? 'Amanhã' : 'Tomorrow';

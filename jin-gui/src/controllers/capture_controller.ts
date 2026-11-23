@@ -481,7 +481,7 @@ export default class CaptureController extends Controller {
         this.navigateAfterCreate(item.kind === 'note' ? 'notes' : 'tasks', item.id);
       },
       process: item => void this.setReview(item.kind, item.id, 'processed'),
-      defer: (item, date) => void this.setReview(item.kind, item.id, 'deferred', date),
+      pickCheckback: (item, trigger) => this.openReviewCheckbackPicker(item, trigger),
       task: item => void this.createReviewTask(item.id),
       loadEvents: item => void this.loadReviewEvents(item.id),
       selectEvent: (_item, eventId) => {
@@ -493,6 +493,26 @@ export default class CaptureController extends Controller {
   }
 
   private reviewItems: import('../types/dto').CaptureReviewItemDto[] = [];
+
+  private openReviewCheckbackPicker(
+    item: import('../types/dto').CaptureReviewItemDto,
+    trigger: HTMLButtonElement,
+  ): void {
+    if (!this.hasDueDateDialogTarget) return;
+    const editor = this.application.getControllerForElementAndIdentifier(
+      this.dueDateDialogTarget,
+      'temporal-editor',
+    ) as TemporalEditorController | null;
+    editor?.open({
+      initialDue: item.return_on,
+      presentation: 'review',
+      requireDate: true,
+      restoreFocusTo: trigger,
+      onCommit: result => {
+        if (result.kind === 'set') void this.setReview(item.kind, item.id, 'deferred', result.date);
+      },
+    });
+  }
 
   private async loadReviewEvents(focusId: string): Promise<void> {
     if (this.reviewEvents !== null) {

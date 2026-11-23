@@ -271,6 +271,27 @@ describe('TemporalEditorController', () => {
     expect(dialog.open).toBe(false);
   });
 
+  it('uses the shared calendar for a date-only review check-back and commits only on Apply', () => {
+    editor.open({
+      initialDue: null,
+      presentation: 'review',
+      requireDate: true,
+      onCommit: (result) => commits.push(result),
+    });
+
+    const time = dialog.querySelector<HTMLInputElement>('[data-temporal-editor-target="time"]')!;
+    expect(dialog.getAttribute('aria-label')).toBe('Choose check-back date');
+    expect(dialog.querySelector('[data-temporal-editor-target="title"]')?.textContent).toBe('Check back');
+    expect(dialog.querySelector('[data-temporal-editor-target="confirm"]')?.textContent).toBe('Apply');
+    expect(time.disabled).toBe(true);
+    expect(time.closest('label')?.hidden).toBe(true);
+
+    dialog.dispatchEvent(new CustomEvent('calendar:selected', { bubbles: true, detail: { iso: '2026-08-28' } }));
+    expect(commits).toEqual([]);
+    editor.confirm();
+    expect(commits).toEqual([{ kind: 'set', due: '2026-08-28', date: '2026-08-28', time: '' }]);
+  });
+
   it('uses notification presentation, requires time, and keeps custom validation in the dialog', () => {
     const validate = vi.fn((result: Extract<TemporalEditorCommit, { kind: 'set' }>) => (
       result.date === '2026-08-28' ? 'Choose a future date and time within 30 days.' : null
