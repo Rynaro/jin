@@ -25,6 +25,9 @@ fn data(value: &Value) -> &Value {
 #[test]
 fn review_uses_index_despite_corrupt_unrelated_note_and_emits_json_results() {
     let root = TempDir::new().unwrap();
+    let today = chrono::Utc::now().date_naive();
+    let return_on = today.to_string();
+    let tomorrow = today.succ_opt().unwrap().to_string();
     run_json(root.path(), &["init"]);
 
     let captured = run_json(
@@ -35,7 +38,7 @@ fn review_uses_index_despite_corrupt_unrelated_note_and_emits_json_results() {
             "--task",
             "--review",
             "--return-on",
-            "1900-01-01",
+            &return_on,
         ],
     );
     let id = data(&captured)["id"].as_str().unwrap().to_string();
@@ -57,13 +60,48 @@ fn review_uses_index_despite_corrupt_unrelated_note_and_emits_json_results() {
 
     let deferred = run_json(
         root.path(),
-        &["review", "defer", "task", &id, "--return-on", "1900-01-02"],
+        &["review", "defer", "task", &id, "--return-on", &tomorrow],
     );
     assert_eq!(deferred["kind"], "result");
     assert_eq!(data(&deferred)["state"], "deferred");
-    assert_eq!(data(&deferred)["return_on"], "1900-01-02");
+    assert_eq!(data(&deferred)["return_on"], tomorrow);
+    let deferred_list = run_json(root.path(), &["review", "list"]);
+    assert!(!data(&deferred_list)
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["id"] == id));
 
     let processed = run_json(root.path(), &["review", "process", "task", &id]);
     assert_eq!(processed["kind"], "result");
     assert_eq!(data(&processed)["state"], "processed");
+}
+
+#[test]
+fn review_defer_rejects_a_past_return_date() {
+    let root = TempDir::new().unwrap();
+    let yesterday = chrono::Utc::now()
+        .date_naive()
+        .pred_opt()
+        .unwrap()
+        .to_string();
+    run_json(root.path(), &["init"]);
+    let captured = run_json(
+        root.path(),
+        &["capture", "Review this task", "--task", "--review"],
+    );
+    let id = data(&captured)["id"].as_str().unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jin"));
+    command
+        .arg("--root")
+        .arg(root.path())
+        .arg("review")
+        .arg("defer")
+        .arg("task")
+        .arg(id)
+        .arg("--return-on")
+        .arg(yesterday);
+    let output = command.output().expect("spawn jin");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("must be today or later"));
 }

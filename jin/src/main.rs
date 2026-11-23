@@ -2056,8 +2056,11 @@ fn cmd_capture(
         .transpose()
         .context("--return-on must use YYYY-MM-DD")?;
     let (title, body) = jin_core::ops::capture_review::split_capture_text(&text)?;
-    let capture_review =
-        jin_core::ops::capture_review::initial_capture_review(review, return_date)?;
+    let capture_review = jin_core::ops::capture_review::initial_capture_review(
+        review,
+        return_date,
+        &cfg.display_tz,
+    )?;
     if as_task {
         let task = jin_core::ops::workflows::create_task_with_capture_review(
             root,

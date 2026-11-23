@@ -60,6 +60,7 @@ pub fn split_capture_text(text: &str) -> Result<(String, String)> {
 pub fn initial_capture_review(
     review: bool,
     return_on: Option<NaiveDate>,
+    display_tz: &str,
 ) -> Result<Option<CaptureReview>> {
     if !review && return_on.is_some() {
         return Err(JinError::Validation {
@@ -67,6 +68,7 @@ pub fn initial_capture_review(
             reason: "requires review".into(),
         });
     }
+    validate_check_back_date(return_on, today_in_display_timezone(display_tz, Utc::now()))?;
     Ok(review.then(|| CaptureReview {
         state: if return_on.is_some() {
             CaptureReviewState::Deferred
@@ -104,6 +106,16 @@ fn today_in_display_timezone(display_tz: &str, now: DateTime<Utc>) -> NaiveDate 
     now.with_timezone(&display_tz).date_naive()
 }
 
+fn validate_check_back_date(return_on: Option<NaiveDate>, today: NaiveDate) -> Result<()> {
+    if return_on.is_some_and(|date| date < today) {
+        return Err(JinError::Validation {
+            field: "return_on".into(),
+            reason: "must be today or later".into(),
+        });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod timezone_tests {
     use super::*;
@@ -124,11 +136,24 @@ mod timezone_tests {
 
     #[test]
     fn initial_review_with_return_date_is_deferred() {
-        let date = NaiveDate::from_ymd_opt(2026, 11, 24).unwrap();
-        let review = initial_capture_review(true, Some(date)).unwrap().unwrap();
+        let date = Utc::now().date_naive().succ_opt().unwrap();
+        let review = initial_capture_review(true, Some(date), "UTC")
+            .unwrap()
+            .unwrap();
         assert_eq!(review.state, CaptureReviewState::Deferred);
         assert_eq!(review.return_on, Some(date));
-        assert!(initial_capture_review(false, Some(date)).is_err());
+        assert!(initial_capture_review(false, Some(date), "UTC").is_err());
+    }
+
+    #[test]
+    fn check_back_dates_allow_today_and_reject_past_dates_in_the_display_timezone() {
+        let now = Utc.with_ymd_and_hms(2026, 11, 24, 1, 30, 0).unwrap();
+        let today = today_in_display_timezone("America/Sao_Paulo", now);
+        assert!(validate_check_back_date(Some(today), today).is_ok());
+        assert!(matches!(
+            validate_check_back_date(Some(today.pred_opt().unwrap()), today),
+            Err(JinError::Validation { field, .. }) if field == "return_on"
+        ));
     }
 }
 
@@ -149,6 +174,7 @@ pub fn set(root: &Path, input: SetCaptureReviewInput) -> Result<()> {
         _ => {}
     }
     let cfg = Config::load(root)?;
+    let today = today_in_display_timezone(&cfg.display_tz, Utc::now());
     let operation_id = format!(
         "capture-review-{}-{}-{:?}-{}",
         input.kind,
@@ -182,6 +208,9 @@ pub fn set(root: &Path, input: SetCaptureReviewInput) -> Result<()> {
                         })
                     {
                         return Ok((note.id().to_string(), vec![]));
+                    }
+                    if matches!(input.state, CaptureReviewState::Deferred) {
+                        validate_check_back_date(input.return_on, today)?;
                     }
                     let processed_at = matches!(input.state, CaptureReviewState::Processed)
                         .then(|| Local::now().fixed_offset());
@@ -226,6 +255,9 @@ pub fn set(root: &Path, input: SetCaptureReviewInput) -> Result<()> {
                         })
                     {
                         return Ok((task.id().to_string(), vec![]));
+                    }
+                    if matches!(input.state, CaptureReviewState::Deferred) {
+                        validate_check_back_date(input.return_on, today)?;
                     }
                     let processed_at = matches!(input.state, CaptureReviewState::Processed)
                         .then(|| Local::now().fixed_offset());

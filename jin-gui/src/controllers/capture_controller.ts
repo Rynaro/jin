@@ -56,7 +56,7 @@ import {
 } from '../lib/capture/render';
 import { isJinErrorDto } from '../types/error';
 import {
-  capture, createNote, createTask, createEvent, createRoutedEvent, listCaptureReview, setCaptureReview, getNoteById, listEvents, reviewCaptureAttachEvent, reviewCaptureCreateTask,
+  capture, createNote, createTask, createEvent, createRoutedEvent, listCaptureReview, setCaptureReview, getNoteById, listEvents, reviewCaptureAttachEvent, reviewCaptureCreateTask, appConfig,
   listGoogleAccounts, listLists, newOperationId, getEventDetailById,
 } from '../invoke';
 import {
@@ -76,6 +76,25 @@ import { mountCompactEditor, type CompactEditorHandle } from '../lib/notes/edito
 import { JinSelectField } from '../lib/ui/select';
 import { TagInput } from '../lib/ui/tag_input';
 import { renderCaptureReview, type CaptureReviewActions } from '../lib/capture/review';
+
+function currentDateInTimezone(timeZone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const field = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value;
+    const year = field('year');
+    const month = field('month');
+    const day = field('day');
+    if (year && month && day) return `${year}-${month}-${day}`;
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default class CaptureController extends Controller {
   // ── Targets ───────────────────────────────────────────────────────────────
@@ -496,19 +515,29 @@ export default class CaptureController extends Controller {
 
   private reviewItems: import('../types/dto').CaptureReviewItemDto[] = [];
 
-  private openReviewCheckbackPicker(
+  private async openReviewCheckbackPicker(
     item: import('../types/dto').CaptureReviewItemDto,
     trigger: HTMLButtonElement,
-  ): void {
+  ): Promise<void> {
     if (!this.hasDueDateDialogTarget) return;
     const editor = this.application.getControllerForElementAndIdentifier(
       this.dueDateDialogTarget,
       'temporal-editor',
     ) as TemporalEditorController | null;
-    editor?.open({
+    if (!editor) return;
+    let displayTz = 'UTC';
+    try {
+      displayTz = (await appConfig()).display_tz || displayTz;
+    } catch {
+      renderFormError(this.reviewErrorTarget, 'Could not determine today for this workspace. Try again.');
+      return;
+    }
+    if (!trigger.isConnected || !this.reviewDialogTarget.open) return;
+    editor.open({
       initialDue: item.return_on,
       presentation: 'review',
       requireDate: true,
+      reviewToday: currentDateInTimezone(displayTz),
       restoreFocusTo: trigger,
       onCommit: result => {
         if (result.kind === 'set') void this.setReview(item.kind, item.id, 'deferred', result.date);

@@ -292,6 +292,57 @@ describe('TemporalEditorController', () => {
     expect(commits).toEqual([{ kind: 'set', due: '2026-08-28', date: '2026-08-28', time: '' }]);
   });
 
+  it('blocks past review dates while preserving a fresh review picker as an unselected draft', () => {
+    editor.open({
+      initialDue: '2026-08-20',
+      presentation: 'review',
+      requireDate: true,
+      reviewToday: '2026-08-28',
+      onCommit: (result) => commits.push(result),
+    });
+
+    const beforeFloor = dialog.querySelector<HTMLButtonElement>('button[data-iso="2026-08-27"]')!;
+    const floor = dialog.querySelector<HTMLButtonElement>('button[data-iso="2026-08-28"]')!;
+    expect(beforeFloor.getAttribute('aria-disabled')).toBe('true');
+    expect(floor.getAttribute('data-state')).toBe('today');
+    expect(dialog.querySelector('[data-temporal-editor-target="summary"]')?.textContent).toBe('Choose a date');
+    expect(dialog.querySelector<HTMLButtonElement>('[data-temporal-editor-target="confirm"]')?.disabled).toBe(true);
+
+    dialog.dispatchEvent(new CustomEvent('calendar:selected', { bubbles: true, detail: { iso: '2026-08-27' } }));
+    expect(dialog.querySelector('[data-temporal-editor-target="error"]')?.textContent).toBe('Choose today or a future date for check back.');
+    expect(commits).toEqual([]);
+  });
+
+  it('rejects a typed past review date without replacing its empty draft', () => {
+    editor.open({
+      initialDue: null,
+      presentation: 'review',
+      requireDate: true,
+      reviewToday: '2026-08-28',
+      onCommit: (result) => commits.push(result),
+    });
+
+    const natural = dialog.querySelector<HTMLInputElement>('[data-temporal-editor-target="natural"]')!;
+    natural.value = 'yesterday';
+    natural.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(dialog.querySelector('[data-temporal-editor-target="naturalPreview"]')?.dataset.state).toBe('error');
+    editor.applyNatural();
+
+    expect(dialog.querySelector('[data-temporal-editor-target="naturalPreview"]')?.dataset.state).toBe('error');
+    expect(dialog.querySelector('[data-temporal-editor-target="summary"]')?.textContent).toBe('Choose a date');
+    expect(dialog.querySelector<HTMLButtonElement>('[data-temporal-editor-target="confirm"]')?.disabled).toBe(true);
+  });
+
+  it('restores unbounded task dates after a review session', () => {
+    editor.open({ initialDue: null, presentation: 'review', requireDate: true, reviewToday: '2026-08-28', onCommit: vi.fn() });
+    editor.cancelDraft();
+    editor.open({ initialDue: null, onCommit: (result) => commits.push(result) });
+
+    dialog.dispatchEvent(new CustomEvent('calendar:selected', { bubbles: true, detail: { iso: '2026-08-20' } }));
+    editor.confirm();
+    expect(commits).toEqual([{ kind: 'set', due: '2026-08-20', date: '2026-08-20', time: '' }]);
+  });
+
   it('uses notification presentation, requires time, and keeps custom validation in the dialog', () => {
     const validate = vi.fn((result: Extract<TemporalEditorCommit, { kind: 'set' }>) => (
       result.date === '2026-08-28' ? 'Choose a future date and time within 30 days.' : null

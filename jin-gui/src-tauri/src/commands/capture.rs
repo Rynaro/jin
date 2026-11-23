@@ -40,8 +40,9 @@ pub fn capture_with_review_fn(
     let cfg = Config::load(root).map_err(JinErrorDto::from)?;
     let (title, body) =
         jin_core::ops::capture_review::split_capture_text(&text).map_err(JinErrorDto::from)?;
-    let capture_review = jin_core::ops::capture_review::initial_capture_review(review, return_on)
-        .map_err(JinErrorDto::from)?;
+    let capture_review =
+        jin_core::ops::capture_review::initial_capture_review(review, return_on, &cfg.display_tz)
+            .map_err(JinErrorDto::from)?;
 
     if as_task {
         let task = workflows::create_task_with_capture_review(

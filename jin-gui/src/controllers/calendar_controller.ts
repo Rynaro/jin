@@ -233,6 +233,20 @@ export default class CalendarController extends Controller {
     if (this.refs) this.render();
   }
 
+  /**
+   * Configure an editor session's calendar floor and civil Today before its
+   * caller initializes the selection. This avoids intermediate grid renders.
+   */
+  setDateContext({ min, today }: { min: string | null; today: string | null }): void {
+    this.minValue = datePart(min);
+    this.todayValue = datePart(today);
+    this.focusedIso = clampToBounds(
+      this.focusedIso || this.resolveToday(),
+      this.minValue || undefined,
+      this.maxValue || undefined,
+    );
+  }
+
   /** Return the currently selected ISO date (empty string = nothing selected). */
   get currentIso(): string {
     return this.currentSelected;
@@ -336,6 +350,7 @@ export default class CalendarController extends Controller {
   // ── Selection ─────────────────────────────────────────────────────────────
 
   private selectDate(iso: string, restoreFocus = false): void {
+    if ((this.minValue && iso < this.minValue) || (this.maxValue && iso > this.maxValue)) return;
     if (this.modeValue === 'range') {
       if (!this.rangeStart || this.rangeComplete) {
         this.rangeStart = iso;

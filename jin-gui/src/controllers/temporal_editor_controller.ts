@@ -23,6 +23,8 @@ export interface TemporalEditorSession {
   requireDate?: boolean;
   requireTime?: boolean;
   validate?: (result: Extract<TemporalEditorCommit, { kind: 'set' }>) => string | null;
+  /** Workspace civil date for the review workflow's today/floor semantics. */
+  reviewToday?: string;
 }
 
 /** Owns the draft/commit lifecycle around the shared CalendarController grid. */
@@ -59,16 +61,20 @@ export default class TemporalEditorController extends Controller<HTMLDialogEleme
     }
 
     const parts = decomposeDueString(session.initialDue);
+    const reviewToday = this.reviewToday(session);
+    const initialDate = parts.date && (!reviewToday || parts.date >= reviewToday) ? parts.date : '';
     this.session = session;
     this.restoreFocusTo = session.restoreFocusTo
       ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-    this.draftDate = parts.date;
+    this.draftDate = initialDate;
     this.timeTarget.value = parts.time;
     this.naturalTarget.value = '';
     this.naturalResult = null;
     this.applyPresentation(session.presentation ?? 'task');
     this.localizeNaturalInput();
-    this.calendarController()?.setInitial(parts.date || null);
+    const calendar = this.calendarController();
+    calendar?.setDateContext({ min: reviewToday || null, today: reviewToday || null });
+    calendar?.setInitial(initialDate || null);
     this.clearValidation();
     this.updateSummary();
     this.element.showModal();
@@ -79,7 +85,12 @@ export default class TemporalEditorController extends Controller<HTMLDialogEleme
 
   select(event: CustomEvent<{ iso?: string }>): void {
     if (!this.session) return;
-    this.draftDate = event.detail.iso ?? '';
+    const date = event.detail.iso ?? '';
+    if (date && this.isBeforeMinimum(date)) {
+      this.showValidation('Choose today or a future date for check back.');
+      return;
+    }
+    this.draftDate = date;
     if (!this.draftDate) this.timeTarget.value = '';
     this.clearValidation();
     this.updateSummary();
@@ -112,6 +123,12 @@ export default class TemporalEditorController extends Controller<HTMLDialogEleme
       locale,
     });
     if (result.ok) {
+      if (this.isBeforeMinimum(result.date)) {
+        this.naturalResult = null;
+        this.naturalPreviewTarget.textContent = 'Choose today or a future date for check back.';
+        this.naturalPreviewTarget.dataset.state = 'error';
+        return;
+      }
       this.naturalResult = result;
       this.naturalPreviewTarget.textContent = formatNaturalDateResult(result, locale);
       this.naturalPreviewTarget.dataset.state = 'valid';
@@ -146,6 +163,11 @@ export default class TemporalEditorController extends Controller<HTMLDialogEleme
     }
     const time = dateOnly ? '' : normalized.time ?? '';
     this.timeTarget.value = time;
+    if (this.draftDate && this.isBeforeMinimum(this.draftDate)) {
+      this.showValidation('Choose today or a future date for check back.');
+      this.calendarController()?.focusSelected();
+      return;
+    }
     if (time && !this.draftDate) {
       this.showValidation('Choose a date before adding a time.');
       this.timeTarget.focus();
@@ -292,8 +314,21 @@ export default class TemporalEditorController extends Controller<HTMLDialogEleme
   }
 
   private todayIso(): string {
+    const minimum = this.reviewToday();
+    if (minimum) return minimum;
     const today = new Date();
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  }
+
+  private reviewToday(session = this.session): string {
+    if (session?.presentation !== 'review') return '';
+    const date = session.reviewToday ?? '';
+    return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '';
+  }
+
+  private isBeforeMinimum(date: string): boolean {
+    const minimum = this.reviewToday();
+    return Boolean(minimum && date < minimum);
   }
 
   private calendarController(): CalendarController | null {
