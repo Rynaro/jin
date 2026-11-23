@@ -260,10 +260,18 @@
             </li>
           </ul>
         </nav>
+        <div hidden data-sidebar-target="contextSlot">
+          <button type="button" class="jin-page-context-trigger tap-target"
+                data-sidebar-target="contextReveal" data-action="click->sidebar#showContext"
+                aria-controls="jin-nav-routes" aria-expanded="false">
+                <span></span>
+                <i data-lucide="chevron-down" aria-hidden="true"></i>
+          </button>
+        </div>
       </aside>
 
       <div class="jin-sidebar-backdrop" data-sidebar-target="backdrop"
-        data-action="click->sidebar#hide" aria-hidden="true"></div>
+        data-action="click->sidebar#backdropClick" aria-hidden="true"></div>
 
       <!-- ── Main content area ────────────────────────────────────────────── -->
       <main
@@ -562,9 +570,12 @@
           <div id="notes-library" class="notes-list-pane jin-workspace-pane" data-notes-target="listPanel" data-sidebar-workspace>
             <div class="notes-list-pane__header jin-workspace-header">
               <div class="notes-explorer__toolbar">
+                <span class="notes-context-trigger-host" data-sidebar-context-anchor="notes-list"></span>
                 <div class="notes-explorer__identity">
                   <i data-lucide="file-text" aria-hidden="true"></i>
-                  <h1 class="notes-workspace-title" data-notes-target="scopeTitle" tabindex="-1">All Notes</h1>
+                  <div class="notes-workspace-title-row">
+                    <h1 class="notes-workspace-title" data-notes-target="scopeTitle" tabindex="-1">All Notes</h1>
+                  </div>
                   <span class="notes-explorer__count" data-notes-target="resultCount" role="status" aria-live="polite">Loading…</span>
                 </div>
                 <div class="notes-explorer__controls">
@@ -642,6 +653,7 @@
             -->
             <div class="notes-detail-pane__header jin-toolbar-strip jin-chrome">
               <span class="notes-detail-pane__drag" data-tauri-drag-region aria-hidden="true"></span>
+              <span class="notes-detail-context-trigger-host" data-sidebar-context-anchor="notes-detail"></span>
                 <button
                 type="button"
                 class="browse-back-btn jin-control tap-target"
@@ -1384,9 +1396,12 @@
           <div data-tasks-target="listPanel">
             <div class="jin-workspace-header jin-workspace-header--paired">
               <span class="tasks-workspace-drag" data-tauri-drag-region aria-hidden="true"></span>
+              <span class="tasks-context-trigger-host" data-sidebar-context-anchor="tasks-list"></span>
               <header class="tasks-workspace-header jin-workspace-header__identity">
-                <h1 class="tasks-workspace-title" data-tasks-target="workspaceTitle">Inbox</h1>
-                <span class="tasks-workspace-count" data-tasks-target="workspaceCount" aria-live="polite"></span>
+                <div class="tasks-workspace-title-row">
+                  <h1 class="tasks-workspace-title" data-tasks-target="workspaceTitle">Inbox</h1>
+                  <span class="tasks-workspace-count" data-tasks-target="workspaceCount" aria-live="polite"></span>
+                </div>
               </header>
               <!-- Filter bar — selects are passed through to invoke list_tasks -->
               <div class="tasks-filter-bar jin-workspace-header__controls" role="group" aria-label="Filter tasks">
@@ -1702,6 +1717,7 @@
 
           <!-- Calendar cards and linked objects share the event detail pane. -->
           <div data-events-target="detailPanel" class="events-detail-pane hidden" data-sidebar-workspace>
+            <span class="calendar-detail-context-trigger-host" data-sidebar-context-anchor="events-detail"></span>
             <button type="button" class="calendar-back-btn tap-target" data-action="click->events#showList">
               <i data-lucide="arrow-left" aria-hidden="true"></i><span>Calendar</span>
             </button>
@@ -1854,7 +1870,7 @@
                 hidden
               >
                 <header class="settings-pane__header">
-                  <h2 id="settings-pane-calendars-title" class="settings-pane__title">Calendars &amp; Sync</h2>
+                  <div class="settings-pane__title-row"><span class="settings-context-trigger-host" data-sidebar-context-anchor="settings"></span><h2 id="settings-pane-calendars-title" class="settings-pane__title">Calendars &amp; Sync</h2></div>
                   <p class="settings-pane__description">Connect calendars, review paused changes, and control synchronization.</p>
                 </header>
 
@@ -2037,7 +2053,7 @@
                 hidden
               >
                 <header class="settings-pane__header">
-                  <h2 id="settings-pane-notifications-title" class="settings-pane__title">Notifications</h2>
+                  <div class="settings-pane__title-row"><span class="settings-context-trigger-host" data-sidebar-context-anchor="settings"></span><h2 id="settings-pane-notifications-title" class="settings-pane__title">Notifications</h2></div>
                   <p class="settings-pane__description">Manage system permission and verify that reminders can reach you.</p>
                 </header>
             <section class="settings-section notification-settings" aria-label="Notifications">
@@ -2079,7 +2095,7 @@
                 hidden
               >
                 <header class="settings-pane__header">
-                  <h2 id="settings-pane-data-storage-title" class="settings-pane__title">Data &amp; Storage</h2>
+                  <div class="settings-pane__title-row"><span class="settings-context-trigger-host" data-sidebar-context-anchor="settings"></span><h2 id="settings-pane-data-storage-title" class="settings-pane__title">Data &amp; Storage</h2></div>
                   <p class="settings-pane__description">Choose where Jin stores data, export a portable copy, and inspect diagnostics.</p>
                 </header>
 
@@ -2258,7 +2274,7 @@
                 data-settings-pane-key="general"
               >
                 <header class="settings-pane__header">
-                  <h2 id="settings-pane-general-title" class="settings-pane__title">General</h2>
+                  <div class="settings-pane__title-row"><span class="settings-context-trigger-host" data-sidebar-context-anchor="settings"></span><h2 id="settings-pane-general-title" class="settings-pane__title">General</h2></div>
                   <p class="settings-pane__description">Personalize Jin's appearance, language, motion, and readability.</p>
                 </header>
             <section class="settings-section" aria-label="Appearance">

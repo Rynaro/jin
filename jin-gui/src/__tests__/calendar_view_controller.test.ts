@@ -424,6 +424,18 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(document.querySelector('[data-calendar-view-target="dayView"]')?.classList.contains('hidden')).toBe(false);
   });
 
+  it('keeps a localized Day date as the route heading and groups its return with date navigation', () => {
+    localStorage.setItem('jin:event-locale', 'pt-BR');
+    controller.localeChanged();
+    controller.selectDate('2026-11-22');
+
+    const header = document.querySelector('[data-calendar-view-target="dayView"] .calendar-month-header')!;
+    expect(header.querySelector('.calendar-workspace-title')).toBeNull();
+    expect(header.querySelector('.calendar-month-leading .calendar-back-btn')).toBeNull();
+    expect(header.querySelector('.calendar-view-controls .calendar-back-btn')?.getAttribute('aria-label')).toBe('Voltar para a visualização mensal');
+    expect(header.querySelector('.calendar-month-label')?.textContent).toBe('domingo, 22 de novembro de 2026');
+  });
+
   it('keeps month event chips on the companion preview path', async () => {
     const chip = document.querySelector<HTMLButtonElement>('.calendar-event-chip')!;
     chip.click();

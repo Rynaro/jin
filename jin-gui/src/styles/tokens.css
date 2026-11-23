@@ -254,6 +254,8 @@
   --sidebar-width: var(--app-rail-width);
   --sidebar-native-top: 0px;
   --app-rail-collapsed-width: 52px;
+  --sidebar-compact-width: 56px;
+  --compact-context-block-start: calc(var(--space-4) + var(--space-half));
   --navigation-rail-width: var(--app-rail-width);
   --context-rail-width: var(--navigation-rail-width);
   --toolbar-height: 56px;
