@@ -2076,7 +2076,11 @@ impl NotificationCenter {
     }
 
     pub fn recover_invitation_sagas(&mut self, root: &Path, now: DateTime<Utc>) -> Result<usize> {
-        let conn = crate::sync::state::open_sync_db(&root.join(".jin/sync"))?;
+        // The scheduler calls this during every GUI startup. In a portable
+        // workspace, sync state is device-local and must never be recreated
+        // beneath the folder a cloud provider replicates.
+        let config = crate::Config::load(root)?;
+        let conn = crate::sync::state::open_sync_db(&config.sync_dir())?;
         let mut stmt = self
             .conn
             .prepare(

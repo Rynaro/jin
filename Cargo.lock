@@ -2037,6 +2037,7 @@ dependencies = [
  "chacha20poly1305",
  "chrono",
  "chrono-tz",
+ "dirs 5.0.1",
  "keyring",
  "rand 0.8.6",
  "reqwest 0.12.28",

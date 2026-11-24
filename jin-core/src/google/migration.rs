@@ -49,24 +49,28 @@ fn inject(failpoint: Option<MigrationFailpoint>, at: MigrationFailpoint) -> crat
     Ok(())
 }
 
-fn journal_path(root: &Path) -> PathBuf {
-    root.join(".jin")
+fn journal_path(root: &Path) -> crate::Result<PathBuf> {
+    Ok(runtime_dir(root)?
         .join("sync")
-        .join("google-v2-migration.json")
+        .join("google-v2-migration.json"))
 }
 
-fn backup_path(root: &Path) -> PathBuf {
-    root.join(".jin").join("config.toml.google-v1.bak")
+fn backup_path(root: &Path) -> crate::Result<PathBuf> {
+    Ok(runtime_dir(root)?.join("config.toml.google-v1.bak"))
 }
 
-fn staged_config_path(root: &Path) -> PathBuf {
-    root.join(".jin")
+fn staged_config_path(root: &Path) -> crate::Result<PathBuf> {
+    Ok(runtime_dir(root)?
         .join("sync")
-        .join("google-v2-config.prepared.toml")
+        .join("google-v2-config.prepared.toml"))
+}
+
+fn runtime_dir(root: &Path) -> crate::Result<PathBuf> {
+    Config::state_dir(root)
 }
 
 fn write_staged_config(root: &Path, config: &Config) -> crate::Result<()> {
-    let path = staged_config_path(root);
+    let path = staged_config_path(root)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -82,12 +86,12 @@ fn write_staged_config(root: &Path, config: &Config) -> crate::Result<()> {
 }
 
 fn read_staged_config(root: &Path) -> crate::Result<Config> {
-    toml::from_str(&std::fs::read_to_string(staged_config_path(root))?)
-        .map_err(|error| JinError::Integrity(format!("parse staged Google config: {error}")))
+    let bytes = std::fs::read_to_string(staged_config_path(root)?)?;
+    Config::from_serialized(root, &bytes)
 }
 
 fn disable_legacy_token_slot(root: &Path) -> crate::Result<()> {
-    let legacy = root.join(".jin").join("sync").join("tokens.enc");
+    let legacy = runtime_dir(root)?.join("sync").join("tokens.enc");
     if legacy.exists() {
         let disabled = legacy.with_extension("enc.google-v1-disabled");
         if !disabled.exists() {
@@ -98,7 +102,7 @@ fn disable_legacy_token_slot(root: &Path) -> crate::Result<()> {
 }
 
 fn write_journal(root: &Path, journal: &MigrationJournal) -> crate::Result<()> {
-    let path = journal_path(root);
+    let path = journal_path(root)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -111,7 +115,7 @@ fn write_journal(root: &Path, journal: &MigrationJournal) -> crate::Result<()> {
 }
 
 fn read_journal(root: &Path) -> crate::Result<Option<MigrationJournal>> {
-    let path = journal_path(root);
+    let path = journal_path(root)?;
     if !path.exists() {
         return Ok(None);
     }
@@ -140,7 +144,7 @@ pub fn migrate_singleton_with_failpoint(
     let mut config = Config::load(root)?;
     if config.google_v2_active() {
         disable_legacy_token_slot(root)?;
-        let guard = root.join(".jin").join("google-v2-required");
+        let guard = runtime_dir(root)?.join("google-v2-required");
         if !guard.exists() {
             std::fs::write(
                 &guard,
@@ -170,9 +174,9 @@ pub fn migrate_singleton_with_failpoint(
             return Ok(None);
         };
         let account_id = GoogleAccountId::parse(id)?;
-        let config_path = Config::config_path(root);
-        if !backup_path(root).exists() {
-            std::fs::copy(config_path, backup_path(root))?;
+        let config_path = config.jin_dir().join(crate::config::CONFIG_FILENAME);
+        if !backup_path(root)?.exists() {
+            std::fs::copy(config_path, backup_path(root)?)?;
         }
         write_staged_config(root, &config)?;
         write_journal(
@@ -194,7 +198,7 @@ pub fn migrate_singleton_with_failpoint(
     }
     config.google_registry.account(&account_id)?;
 
-    let legacy_token_exists = root.join(".jin").join("sync").join("tokens.enc").exists();
+    let legacy_token_exists = runtime_dir(root)?.join("sync").join("tokens.enc").exists();
     let mut needs_reauth = false;
     if legacy_token_exists {
         let passphrase = token_passphrase.ok_or_else(|| {

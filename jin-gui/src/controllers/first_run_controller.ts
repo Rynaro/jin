@@ -4,6 +4,7 @@ import {
   chooseFirstRunRoot,
   completeFirstRun,
   getLaunchState,
+  openWorkspaceFolder,
   recoverStoreRoot,
   retryRootUnavailable,
   saveFirstRunStep,
@@ -29,7 +30,7 @@ const STEPS: FirstRunStepDto[] = ['welcome', 'storage', 'functions', 'settings',
 export default class FirstRunController extends Controller {
   static targets = [
     'step', 'railItem', 'heading', 'error', 'selectedRoot', 'reviewRoot',
-    'appearanceButton', 'textSize', 'reduceMotion', 'finish', 'recovery', 'reviewAppearance', 'reviewTextSize', 'reviewMotion', 'eyebrow',
+    'appearanceButton', 'textSize', 'reduceMotion', 'finish', 'recovery', 'reviewAppearance', 'reviewTextSize', 'reviewMotion', 'eyebrow', 'openWorkspace', 'recoveryStatus',
   ];
 
   declare stepTargets: HTMLElement[];
@@ -47,6 +48,8 @@ export default class FirstRunController extends Controller {
   declare reviewTextSizeTarget: HTMLElement;
   declare reviewMotionTarget: HTMLElement;
   declare eyebrowTarget: HTMLElement;
+  declare openWorkspaceTarget: HTMLButtonElement;
+  declare recoveryStatusTarget: HTMLElement;
 
   private state: FirstRunStateDto | null = null;
   private suggestedRoot = '';
@@ -162,6 +165,24 @@ export default class FirstRunController extends Controller {
     }
   }
 
+  async openWorkspace(): Promise<void> {
+    this.clearError();
+    this.openWorkspaceTarget.disabled = true;
+    const originalLabel = this.openWorkspaceTarget.textContent;
+    this.openWorkspaceTarget.textContent = 'Opening folder…';
+    try {
+      await openWorkspaceFolder();
+      this.recoveryStatusTarget.textContent =
+        'The workspace folder is open. Compare and preserve the files you need, then try again.';
+      this.recoveryStatusTarget.hidden = false;
+    } catch (error) {
+      this.showError(this.message(error, 'Jin could not open that workspace folder.'));
+    } finally {
+      this.openWorkspaceTarget.disabled = false;
+      this.openWorkspaceTarget.textContent = originalLabel;
+    }
+  }
+
   private async moveTo(step: FirstRunStepDto): Promise<void> {
     this.clearError();
     try {
@@ -183,13 +204,16 @@ export default class FirstRunController extends Controller {
     this.stepTargets.forEach((step) => { step.hidden = true; });
     this.railItemTargets.forEach((item) => item.hidden = true);
     this.recoveryTarget.hidden = false;
+    this.recoveryStatusTarget.hidden = true;
+    this.recoveryStatusTarget.textContent = '';
     this.eyebrowTarget.textContent = 'Storage recovery';
     this.recoveryTarget.querySelector<HTMLElement>('[data-first-run-recovery-message]')!.textContent =
       launch.mode === 'root_unavailable'
-        ? `${launch.reason} ${launch.root} ${launch.env_locked ? 'Update JIN_ROOT, then restart Jin.' : 'Restore that folder, then try again.'}`
+        ? `${launch.reason} ${launch.root} ${launch.env_locked ? 'JIN_ROOT keeps this workspace selected. Review it, then try again.' : 'Restore that folder, then try again.'}`
         : 'Jin is ready. Restart the window to continue.';
-    this.recoveryTarget.querySelector<HTMLButtonElement>('[data-first-run-retry]')!.hidden = launch.mode !== 'root_unavailable' || launch.env_locked;
+    this.recoveryTarget.querySelector<HTMLButtonElement>('[data-first-run-retry]')!.hidden = launch.mode !== 'root_unavailable';
     this.recoveryTarget.querySelector<HTMLButtonElement>('[data-first-run-replace]')!.hidden = launch.mode !== 'root_unavailable' || launch.env_locked;
+    this.openWorkspaceTarget.hidden = launch.mode !== 'root_unavailable';
     this.recoveryTarget.querySelector<HTMLButtonElement>('[data-first-run-retry]')!.focus();
   }
 

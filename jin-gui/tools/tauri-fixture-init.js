@@ -49,6 +49,27 @@
     return { schema_version: 1, status: 'in_progress', step: 'welcome', selected_root: null };
   }
   function saveFirstRunState(state) { fixtureStorageSet('jin.fixture.firstRunState', JSON.stringify(state)); }
+  // Workspace controls deliberately model Jin's view of the local folder. The
+  // fixture does not claim to know whether a third-party provider has uploaded
+  // anything. Set jin.fixture.workspaceScenario to `attention`, `error`, or
+  // `stale` before loading the page to exercise owner-facing recovery states.
+  function workspaceStatus() {
+    var scenario = fixtureStorageGet('jin.fixture.workspaceScenario') || 'ready';
+    if (scenario === 'error') {
+      throw { code: 1, kind: 'other', message: 'Jin could not read the workspace. Check the folder permissions and try again.', retriable: true };
+    }
+    var attention = scenario === 'attention';
+    return {
+      status: attention ? 'attention' : 'ready',
+      portable: true,
+      root_path: '/Users/fixture/Jin shared folder',
+      recovery_path: '/Users/fixture/Library/Application Support/Jin/history',
+      checked_at: scenario === 'stale' ? '2026-06-29T10:00:00Z' : '2026-07-01T10:00:00Z',
+      canonical_file_count: attention ? 16 : 14,
+      conflicts: attention ? [{ kind: 'note', id: '01JINFIXTURECONFLICT', paths: ['notes/Travel plans.md', 'notes/Travel plans (conflicted copy).md'] }] : [],
+      message: attention ? 'Jin found two files with the same identity. Both versions are preserved. Review the listed files in your workspace, then check again.' : null
+    };
+  }
   var lists = [
     { id: 'inbox', name: 'Inbox', color: 'accent', icon: 'inbox', position: 'V', parent_id: null, view: 'list', sort_mode: 'manual', workflow_kind: 'checklist', columns: [], initial_column_id: null, is_default: true, task_count: 4, sections: [] },
     { id: 'work', name: 'Work', color: 'blue', icon: 'briefcase', position: 'W', parent_id: null, view: 'list', sort_mode: 'manual', workflow_kind: null, columns: [], initial_column_id: null, is_default: false, task_count: 3, sections: [
@@ -285,8 +306,8 @@
       { id: 'e8', title: 'Partner review', start: '2026-08-20T11:00:00', end: '2026-08-20T12:00:00', is_all_day: false, start_tzid: null, floating: false, status: 'confirmed', source: 'google', authority: 'google', ical_uid: 'fixture-work-e8@google', derived_from: null, recurrence_unexpanded: false, created: NOW, updated: NOW, display_start: '11:00', originating_task: null, prep_notes: [], sync_context: syncContext('acct-work', 'work-primary') }
     ] },
     auth_status: { state: 'disconnected', account: null, expires_at: null, backend: 'none' },
-    app_config: { root_path: '/tmp', display_tz: 'UTC', calendar_id: null, schema_version: 3 },
-    get_config: { root_path: '/tmp', display_tz: 'UTC', calendar_id: null, schema_version: 3 }
+    app_config: { root_path: '/Users/fixture/Jin shared folder', display_tz: 'UTC', calendar_id: null, schema_version: 3 },
+    get_config: { root_path: '/Users/fixture/Jin shared folder', display_tz: 'UTC', calendar_id: null, schema_version: 3 }
   };
   function todayTask(id, title, due, bucket) {
     return { id: id, title: title, status: 'todo', priority: 'high', due: due, list: 'Work', position: id, parent: null, agenda_bucket: bucket || null };
@@ -774,8 +795,44 @@
         fixtureStorageRemove('jin.fixture.rootUnavailable');
         return Promise.resolve();
       }
+      if (cmd === 'workspace_status' || cmd === 'refresh_workspace_projection') {
+        try {
+          return Promise.resolve(clone(workspaceStatus()));
+        } catch (error) {
+          return Promise.reject(error);
+        }
+      }
+      if (cmd === 'open_workspace_folder') {
+        window.__JIN_WORKSPACE_OPEN_CALLS__ = window.__JIN_WORKSPACE_OPEN_CALLS__ || [];
+        window.__JIN_WORKSPACE_OPEN_CALLS__.push('/Users/fixture/Jin shared folder');
+        return fixtureStorageGet('jin.fixture.workspaceOpenError') === 'true'
+          ? Promise.reject({ code: 1, kind: 'other', message: 'Fixture could not open the workspace folder.', retriable: true })
+          : Promise.resolve();
+      }
+      if (cmd === 'export_files') {
+        var exportMode = fixtureStorageGet('jin.fixture.exportMode');
+        if (exportMode === 'collision') {
+          return Promise.reject({ code: 2, kind: 'usage', message: 'destination already exists', retriable: false });
+        }
+        if (exportMode === 'error') {
+          return Promise.reject({ code: 1, kind: 'other', message: 'Fixture export failed before a verified manifest was written.', retriable: true });
+        }
+        return Promise.resolve({
+          dest: String(options.dest || '/Users/fixture/Jin export'),
+          file_count: 14,
+          included_audit: true,
+          files: ['notes/Travel plans.md', 'tasks/Pack.md', 'jin-export-manifest.json'],
+          verified: true
+        });
+      }
       if (cmd === 'plugin:dialog|open') {
         var dialogOptions = options.options || {};
+        if (dialogOptions.directory === true && dialogOptions.multiple !== true) {
+          var exportPicker = fixtureStorageGet('jin.fixture.exportPicker');
+          if (exportPicker === 'cancel') return Promise.resolve(null);
+          if (exportPicker === 'error') return Promise.reject({ code: 1, kind: 'other', message: 'Fixture export folder picker failed.', retriable: true });
+          return Promise.resolve('/Users/fixture/Jin export');
+        }
         if (dialogOptions.multiple === true || dialogOptions.directory === true) {
           return Promise.reject(new Error('Jin fixture only supports one image file'));
         }

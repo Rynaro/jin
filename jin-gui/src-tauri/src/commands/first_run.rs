@@ -100,6 +100,77 @@ fn root_retry_outcome(launch: &LaunchState) -> Result<RootRetryOutcome, JinError
     }
 }
 
+/// A portable folder deliberately has no derived state inside the folder. A
+/// retry therefore has to rebuild this device's local state before a restart
+/// can safely attach the normal controllers.
+fn initialize_portable_root_with<Initialize>(
+    root: &std::path::Path,
+    mut initialize: Initialize,
+) -> Result<(), JinErrorDto>
+where
+    Initialize: FnMut(&std::path::Path) -> Result<(), String>,
+{
+    if jin_core::Config::is_portable_workspace(root) {
+        initialize(root).map_err(|error| bootstrap_error(error, true))?;
+    }
+    Ok(())
+}
+
+fn workspace_folder_for_open(root: &std::path::Path) -> Result<PathBuf, JinErrorDto> {
+    let canonical = match std::fs::canonicalize(root) {
+        Ok(path) => path,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(bootstrap_error(
+                "Jin's workspace folder is no longer available.",
+                true,
+            ));
+        }
+        Err(error) => {
+            return Err(bootstrap_error(
+                format!("Jin could not inspect the workspace folder: {error}"),
+                true,
+            ));
+        }
+    };
+    match std::fs::metadata(&canonical) {
+        Ok(metadata) if metadata.is_dir() => Ok(canonical),
+        Ok(_) => Err(usage_error("Jin's workspace location is not a folder.")),
+        Err(error) => Err(bootstrap_error(
+            format!("Jin could not inspect the workspace folder: {error}"),
+            true,
+        )),
+    }
+}
+
+fn reveal_workspace_folder(path: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        // Explorer can report a non-zero exit after it has accepted a folder.
+        // A successful spawn is the only portable acknowledgement available.
+        return std::process::Command::new("explorer.exe")
+            .arg(path)
+            .spawn()
+            .map(|_| ());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        #[cfg(target_os = "macos")]
+        let mut command = std::process::Command::new("open");
+        #[cfg(target_os = "linux")]
+        let mut command = std::process::Command::new("xdg-open");
+
+        let status = command.arg(path).status()?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(std::io::Error::other(
+                "The system file browser rejected the folder",
+            ))
+        }
+    }
+}
+
 /// The durable write ordering for Finish. Kept independent of Tauri so the
 /// interruption boundaries can be tested without a process restart.
 fn finalize_first_run_with<SaveState, Initialize, SaveRoot>(
@@ -270,9 +341,13 @@ pub async fn complete_first_run(
                 .map_err(|error| format!("Could not save setup progress: {error}"))
         },
         |candidate| {
-            jin_core::ops::init(candidate)
-                .map(|_| ())
-                .map_err(|error| format!("Could not prepare the selected folder: {error}"))
+            if jin_core::Config::load(candidate).is_ok() {
+                jin_core::ops::init(candidate)
+            } else {
+                jin_core::ops::init_portable_workspace(candidate)
+            }
+            .map(|_| ())
+            .map_err(|error| format!("Could not prepare the selected folder: {error}"))
         },
         |candidate| {
             write_persisted_root(&config_dir, &candidate.display().to_string())
@@ -331,6 +406,18 @@ pub async fn recover_store_root(
     Ok(())
 }
 
+/// Reveal only the immutable workspace root selected at launch. This command
+/// accepts no path from the WebView, which keeps storage recovery from becoming
+/// a general-purpose OS command launcher.
+#[tauri::command]
+pub async fn open_workspace_folder(state: tauri::State<'_, AppState>) -> Result<(), JinErrorDto> {
+    let root = workspace_folder_for_open(&state.root)?;
+    tokio::task::spawn_blocking(move || reveal_workspace_folder(&root))
+        .await
+        .map_err(|_| bootstrap_error("The workspace folder could not be opened.", true))?
+        .map_err(|_| bootstrap_error("The workspace folder could not be opened.", true))
+}
+
 /// Recheck a restored persisted root from a `RootUnavailable` process. A
 /// restart is mandatory: scheduler and normal services were intentionally not
 /// started for this process, so a WebView-only reload would be split-brain.
@@ -339,14 +426,14 @@ pub async fn retry_root_unavailable(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), JinErrorDto> {
-    let LaunchState::RootUnavailable { env_locked, .. } = &state.launch else {
+    let LaunchState::RootUnavailable { .. } = &state.launch else {
         return Err(usage_error("Storage recovery is not available right now."));
     };
-    if *env_locked {
-        return Err(usage_error(
-            "JIN_ROOT is set. Update JIN_ROOT, then restart Jin.",
-        ));
-    }
+    initialize_portable_root_with(&state.root, |root| {
+        jin_core::ops::init(root).map(|_| ()).map_err(|error| {
+            format!("Jin could not rebuild local state for this workspace: {error}")
+        })
+    })?;
     let launch = crate::root_resolver::resolve_launch_state(
         std::env::var("JIN_ROOT").ok().as_deref(),
         dirs::home_dir().as_deref(),
@@ -379,6 +466,49 @@ mod tests {
         })
         .expect_err("an unavailable root cannot reveal Ready in this process");
         assert!(error.retriable);
+    }
+
+    #[test]
+    fn portable_retry_rebuilds_device_state_before_restart() {
+        let workspace = tempfile::TempDir::new().unwrap();
+        let marker = jin_core::Config::portable_workspace_path(workspace.path());
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(marker, "marker").unwrap();
+        let mut initialized = false;
+
+        initialize_portable_root_with(workspace.path(), |_| {
+            initialized = true;
+            Ok(())
+        })
+        .unwrap();
+
+        assert!(initialized);
+    }
+
+    #[test]
+    fn failed_portable_rebuild_keeps_recovery_active() {
+        let workspace = tempfile::TempDir::new().unwrap();
+        let marker = jin_core::Config::portable_workspace_path(workspace.path());
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(marker, "marker").unwrap();
+
+        let error = initialize_portable_root_with(workspace.path(), |_| {
+            Err("duplicate files still need review".to_string())
+        })
+        .expect_err("a failed rebuild must prevent the restart path");
+
+        assert!(error.retriable);
+        assert!(error.message.contains("duplicate files"));
+    }
+
+    #[test]
+    fn opening_workspace_requires_an_existing_directory() {
+        let workspace = tempfile::TempDir::new().unwrap();
+        assert_eq!(
+            workspace_folder_for_open(workspace.path()).unwrap(),
+            std::fs::canonicalize(workspace.path()).unwrap()
+        );
+        assert!(workspace_folder_for_open(&workspace.path().join("missing")).is_err());
     }
 
     #[test]

@@ -247,6 +247,7 @@ export interface ExportResultView {
   dest: string;
   fileCount: number;
   includedAudit: boolean;
+  verified: boolean;
   /** First 3 files for display summary (full list can be long). */
   previewFiles: string[];
 }
@@ -260,6 +261,7 @@ export function formatExportResult(dto: ExportResultDto): ExportResultView {
     dest: dto.dest,
     fileCount: dto.file_count,
     includedAudit: dto.included_audit,
+    verified: dto.verified === true,
     previewFiles: dto.files.slice(0, 3),
   };
 }
@@ -289,7 +291,10 @@ export function formatExportError(err: JinErrorDto): string {
  * Lets the render layer show a "use force" affordance.
  */
 export function isExportDestCollision(err: JinErrorDto): boolean {
-  return err.code === 2;
+  const message = err.message.toLowerCase();
+  return err.code === 2
+    && message.includes('export destination')
+    && message.includes('not empty');
 }
 
 // ── Appearance prefs initializer ───────────────────────────────────────────────

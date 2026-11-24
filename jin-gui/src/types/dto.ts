@@ -763,6 +763,25 @@ export interface ExportResultDto {
   file_count: number;
   included_audit: boolean;
   files: string[];
+  verified: boolean;
+}
+
+/** A local inspection of canonical files. It says nothing about provider upload state. */
+export interface WorkspaceConflictDto {
+  kind: string;
+  id: string;
+  paths: string[];
+}
+
+export interface WorkspaceStatusDto {
+  status: 'ready' | 'attention';
+  portable: boolean;
+  root_path: string;
+  recovery_path: string;
+  checked_at: string;
+  canonical_file_count: number;
+  conflicts: WorkspaceConflictDto[];
+  message: string | null;
 }
 
 /** Mirrors jin-gui/src-tauri/src/commands/export.rs AppConfigDto */

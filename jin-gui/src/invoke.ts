@@ -57,6 +57,7 @@ import type {
   TagDto,
   TaskDto,
   TestNotificationResultDto,
+  WorkspaceStatusDto,
   FirstRunStateDto,
   LaunchStateDto,
 } from './types/dto';
@@ -916,6 +917,20 @@ export function exportFiles(dest: string, force?: boolean): Promise<ExportResult
 
 export function appConfig(): Promise<AppConfigDto> {
   return invoke<AppConfigDto>('app_config', {});
+}
+
+/** Checks Jin's local view of canonical files. External providers remain opaque. */
+export function workspaceStatus(): Promise<WorkspaceStatusDto> {
+  return invoke<WorkspaceStatusDto>('workspace_status', {});
+}
+
+/** Rebuild the local search/index projection after a clean workspace check. */
+export function refreshWorkspaceProjection(): Promise<WorkspaceStatusDto> {
+  return invoke<WorkspaceStatusDto>('refresh_workspace_projection', {});
+}
+
+export function openWorkspaceFolder(): Promise<void> {
+  return invoke<void>('open_workspace_folder', {});
 }
 
 export function notificationStatus(): Promise<NotificationStatusDto> {

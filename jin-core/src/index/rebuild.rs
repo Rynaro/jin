@@ -6,13 +6,25 @@ use rusqlite::{params, Connection};
 
 use crate::model::event::{render_temporal, TemporalValue};
 use crate::model::{parse_canonical_links, CaptureReview, CaptureReviewState, PropertyValue};
-use crate::store::fs;
+use crate::store::{canonical_scan, fs};
 use crate::{JinError, Result};
 
 use super::schema;
 
 /// Rebuild the entire index from `root`. Wipes and repopulates all tables.
 pub fn rebuild(conn: &mut Connection, root: &Path) -> Result<Vec<JinError>> {
+    // Run before the destructive rebuild transaction. A cloud conflict copy
+    // retains the embedded id, and must never be hidden by INSERT OR REPLACE.
+    // Legacy local roots retain their established best-effort diagnostic
+    // behavior. A portable shared root must fail closed because an external
+    // provider can otherwise hide a second writer's version.
+    let shared_scan = if crate::workspace::is_shared(root) {
+        let fingerprint = crate::store::history::current_fingerprint(root)?;
+        let files = canonical_scan::scan_identities(root)?;
+        Some((fingerprint, files))
+    } else {
+        None
+    };
     let notes_dir = root.join("notes");
     let tasks_dir = root.join("tasks");
     let events_dir = root.join("events");
@@ -476,6 +488,25 @@ pub fn rebuild(conn: &mut Connection, root: &Path) -> Result<Vec<JinError>> {
         }
     }
 
+    // The provider may replace a file while it is being parsed. Re-check the
+    // complete canonical metadata fingerprint before making this projection
+    // visible. Dropping `tx` on mismatch keeps the previous index intact.
+    if let Some((before, files)) = shared_scan {
+        // Persist observations before the matching fingerprint becomes current.
+        // If a provider races this rebuild, this device still retains every
+        // complete version it observed while parsing.
+        crate::store::history::archive_observations(root, &files)?;
+        if crate::store::history::current_fingerprint(root)? != before {
+            return Err(JinError::SyncConflict(
+                "canonical files changed while Jin rebuilt the local index; retry after the sync provider becomes idle".to_string(),
+            ));
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('canonical_fingerprint', ?1)",
+            params![before],
+        )
+        .map_err(JinError::Index)?;
+    }
     tx.commit().map_err(JinError::Index)?;
 
     Ok(diagnostics)

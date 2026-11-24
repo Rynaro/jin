@@ -386,9 +386,17 @@
   flex-basis: 0;
   inline-size: 0;
   border: 0;
+  /* A zero-width fixed rail can otherwise keep painting its overflowing
+   * controls over the workspace after the drawer closes. */
+  visibility: hidden;
+  overflow: hidden;
+  pointer-events: none;
 }
 .jin-shell[data-nav-presentation='drawer'][data-nav-visible='true'] > .jin-sidebar {
   transform: none;
+  visibility: visible;
+  overflow: visible;
+  pointer-events: auto;
   /* A supported 3.1× text drawer must remain the active hit layer above
    * route panes that establish their own stacking contexts. */
   z-index: 200;

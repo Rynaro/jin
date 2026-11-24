@@ -38,6 +38,9 @@ enum Commands {
         /// Target directory (defaults to current dir).
         #[arg(long)]
         root: Option<PathBuf>,
+        /// Create a portable workspace suitable for a synchronized folder.
+        #[arg(long)]
+        portable: bool,
     },
 
     /// Manage notes.
@@ -121,6 +124,17 @@ enum Commands {
         /// Replace only existing Jin-owned canonical paths in destination.
         #[arg(long)]
         force: bool,
+    },
+
+    /// Rebuild the local derived index from complete canonical files.
+    Refresh,
+
+    /// List device-local immutable copies of an object's canonical content.
+    /// This command never replaces the current workspace file.
+    History {
+        #[arg(value_parser = ["note", "task", "event", "list", "tag", "collection", "assets"])]
+        kind: String,
+        id: String,
     },
 
     /// Manage vault-managed content-addressed attachment assets.
@@ -523,11 +537,11 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
     let root_override = cli.root.clone();
 
     match cli.command {
-        Commands::Init { root } => {
+        Commands::Init { root, portable } => {
             let root = root
                 .or(root_override)
                 .unwrap_or_else(|| std::env::current_dir().expect("cwd"));
-            cmd_init(&root, json)?;
+            cmd_init(&root, portable, json)?;
         }
 
         Commands::Note { action } => {
@@ -809,6 +823,44 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
         } => {
             cmd_import(&source, &dest, force, json)?;
         }
+        Commands::Refresh => {
+            let root = resolve_root(root_override)?;
+            let diagnostics = api::refresh(&root)?;
+            if json {
+                let diagnostics = diagnostics
+                    .into_iter()
+                    .map(|diagnostic| diagnostic.to_string())
+                    .collect::<Vec<_>>();
+                output::print_json(&Envelope::ok(
+                    "refresh",
+                    serde_json::json!({ "diagnostics": diagnostics }),
+                ));
+            } else if diagnostics.is_empty() {
+                println!("Workspace refreshed.");
+            } else {
+                println!(
+                    "Workspace refreshed with {} diagnostic(s).",
+                    diagnostics.len()
+                );
+                for diagnostic in diagnostics {
+                    println!("  {diagnostic}");
+                }
+            }
+        }
+        Commands::History { kind, id } => {
+            let root = resolve_root(root_override)?;
+            let versions = jin_core::store::history::list(&root, &kind, &id)?;
+            if json {
+                output::print_json(&Envelope::ok(
+                    "history",
+                    serde_json::json!({ "kind": kind, "id": id, "versions": versions }),
+                ));
+            } else {
+                for version in versions {
+                    println!("{}", version.display());
+                }
+            }
+        }
 
         Commands::Asset { action } => {
             let root = resolve_root(root_override)?;
@@ -952,7 +1004,13 @@ fn cmd_google(root: &std::path::Path, action: GoogleAction, json: bool) -> anyho
 // ──────────────────────────────────────────────────────────────
 
 fn resolve_root(override_root: Option<PathBuf>) -> anyhow::Result<PathBuf> {
-    Ok(override_root.unwrap_or_else(|| std::env::current_dir().expect("cwd")))
+    let root = override_root.unwrap_or_else(|| std::env::current_dir().expect("cwd"));
+    // A copied portable workspace intentionally has no shared runtime config.
+    // Bootstrap its local derived state before command dispatch.
+    if jin_core::Config::is_portable_workspace(&root) {
+        jin_core::ops::init(&root).context("initialize portable workspace")?;
+    }
+    Ok(root)
 }
 
 /// Resolve positional and named title flags into a required `String`.
@@ -969,8 +1027,12 @@ fn resolve_title(flag: Option<String>, pos: Option<String>) -> anyhow::Result<St
 // Command implementations
 // ──────────────────────────────────────────────────────────────
 
-fn cmd_init(root: &std::path::Path, json: bool) -> anyhow::Result<()> {
-    jin_core::ops::init(root).context("init failed")?;
+fn cmd_init(root: &std::path::Path, portable: bool, json: bool) -> anyhow::Result<()> {
+    if portable {
+        jin_core::ops::init_portable_workspace(root).context("init failed")?;
+    } else {
+        jin_core::ops::init(root).context("init failed")?;
+    }
     if json {
         let env = Envelope::ok(
             "result",
@@ -1896,6 +1958,8 @@ fn cmd_export(
                 "notes": summary.notes,
                 "tasks": summary.tasks,
                 "events": summary.events,
+                "lists": summary.lists,
+                "tags": summary.tags,
                 "attachments": summary.attachments,
                 "collections": summary.collections,
                 "audit_included": summary.audit_included,
@@ -1908,6 +1972,8 @@ fn cmd_export(
         println!("  {} notes", summary.notes);
         println!("  {} tasks", summary.tasks);
         println!("  {} events", summary.events);
+        println!("  {} lists", summary.lists);
+        println!("  {} tags", summary.tags);
         println!("  {} attachments", summary.attachments);
         println!("  {} collections", summary.collections);
         if summary.audit_included {
@@ -1933,6 +1999,10 @@ fn cmd_import(
                 "dest": dest.display().to_string(),
                 "files_imported": summary.imported_files,
                 "notes": summary.notes,
+                "tasks": summary.tasks,
+                "events": summary.events,
+                "lists": summary.lists,
+                "tags": summary.tags,
                 "attachments": summary.attachments,
                 "collections": summary.collections,
             }),

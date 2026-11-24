@@ -164,8 +164,7 @@ pub(crate) fn acquire_refresh_lock(
     root: &Path,
     account_id: &crate::google::account::GoogleAccountId,
 ) -> crate::Result<RefreshLock> {
-    let dir = root
-        .join(".jin")
+    let dir = Config::state_dir(root)?
         .join("sync")
         .join("accounts")
         .join(account_id.as_str());

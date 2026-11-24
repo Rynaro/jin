@@ -20,7 +20,7 @@ function view() {
       <section data-first-run-step="review"><h1 tabindex="-1"></h1></section>
       <output></output><output></output><output></output><output></output><output></output>
       <button data-appearance="auto"></button><button data-appearance="light"></button><button data-appearance="dark"></button>
-      <input type="range"><input type="checkbox"><button>Finish setup</button><aside><p data-first-run-recovery-message></p><button data-first-run-retry></button><button data-first-run-replace></button></aside><p role="alert"></p>
+      <input type="range"><input type="checkbox"><button>Finish setup</button><aside><p data-first-run-recovery-message></p><p data-first-run-recovery-status></p><button data-first-run-open></button><button data-first-run-retry></button><button data-first-run-replace></button></aside><p role="alert"></p>
     </section>`;
   const root = document.body.firstElementChild as HTMLElement;
   const outputs = root.querySelectorAll('output');
@@ -35,7 +35,7 @@ function view() {
     selectedRootTarget: outputs[0], reviewRootTarget: outputs[1], reviewAppearanceTarget: outputs[2], reviewTextSizeTarget: outputs[3], reviewMotionTarget: outputs[4],
     appearanceButtonTargets: [...root.querySelectorAll<HTMLButtonElement>('[data-appearance]')],
     textSizeTarget: root.querySelector<HTMLInputElement>('[type=range]')!, reduceMotionTarget: root.querySelector<HTMLInputElement>('[type=checkbox]')!,
-    finishTarget: root.querySelectorAll<HTMLButtonElement>('button')[3], recoveryTarget: root.querySelector<HTMLElement>('aside')!, errorTarget: root.querySelector<HTMLElement>('[role=alert]')!,
+    finishTarget: root.querySelectorAll<HTMLButtonElement>('button')[3], recoveryTarget: root.querySelector<HTMLElement>('aside')!, openWorkspaceTarget: root.querySelector<HTMLButtonElement>('[data-first-run-open]')!, recoveryStatusTarget: root.querySelector<HTMLElement>('[data-first-run-recovery-status]')!, errorTarget: root.querySelector<HTMLElement>('[role=alert]')!,
     eyebrowTarget: root.querySelector<HTMLElement>('[data-first-run-eyebrow]')!,
   };
   return context;
@@ -87,5 +87,14 @@ describe('FirstRunController', () => {
     expect(mockInvoke).toHaveBeenCalledWith('retry_root_unavailable', {});
     expect(context.recoveryTarget.querySelector('[data-first-run-recovery-message]')?.textContent).toBe('Restarting Jin…');
     expect(context.element.querySelector('.jin-shell')).toBeNull();
+  });
+
+  it('opens only the current workspace folder for inspection before a retry', async () => {
+    const context = view();
+    context.clearError = vi.fn(); context.showError = vi.fn(); context.message = (error: { message: string }) => error.message;
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await (FirstRunController.prototype as unknown as { openWorkspace(): Promise<void> }).openWorkspace.call(context);
+    expect(mockInvoke).toHaveBeenCalledWith('open_workspace_folder', {});
+    expect(context.recoveryStatusTarget.textContent).toContain('workspace folder is open');
   });
 });
