@@ -925,31 +925,6 @@ button.task-due-chip {
 }
 
 /* Day view */
-.calendar-back-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-2);
-  background: none;
-  border: none;
-  color: var(--accent);
-  cursor: pointer;
-  font-family: var(--font-text);
-  font-size: var(--text-subheadline-size);
-  margin-bottom: var(--space-2);
-  min-block-size: auto;
-  min-inline-size: auto;
-}
-
-.calendar-back-btn:hover {
-  opacity: 0.8;
-}
-
-.calendar-back-btn svg {
-  width: 18px;
-  height: 18px;
-}
-
 .calendar-day-heading {
   font-size: var(--text-headline-size);
   font-weight: 600;
@@ -1523,6 +1498,16 @@ button.task-due-chip {
   white-space: nowrap;
 }
 
+/* Day has a single narrow source rail beside it. Give the all-day label one
+ * stable line and reserve enough gutter space for localized copy. */
+.calendar-timegrid--day {
+  --calendar-grid-gutter: 5.25rem;
+}
+
+.calendar-timegrid--day .calendar-timegrid__all-day-label {
+  white-space: nowrap;
+}
+
 .calendar-timegrid__body {
   position: relative;
   block-size: calc(var(--calendar-grid-total, 1440) * var(--calendar-px-per-minute, 0.9px));
@@ -1882,7 +1867,6 @@ button.task-due-chip {
   justify-content: flex-start;
   gap: var(--space-half);
   inline-size: fit-content;
-  min-inline-size: auto;
   min-block-size: 1.875rem;
   margin: 0;
   padding: 0 var(--space-2);

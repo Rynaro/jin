@@ -1,0 +1,96 @@
+eidolon: ramza
+kind: spec
+version: 1.1.0
+created_at: 2026-11-19
+change_id: google-calendar-connection
+esl_tier: full
+maker: vivi
+checker: vigil
+spec_ref: .spectra/changes/google-calendar-connection/spec.md
+intent_class: CHANGE
+intent: >-
+  Make Google Calendar connection a single actionable Settings flow with safe
+  local OAuth-client setup for source builds and recoverable account-isolated
+  authorization.
+decisions:
+  credential_sources:
+    - environment override
+    - per-vault Google config
+    - local installed-app JSON import when setup is required
+  embedded_distributor_credentials: forbidden
+  account_alias_at_connect: optional
+  oauth_flow: existing PKCE browser flow
+  callback_handling: URL-decoded loopback callback with bounded wait
+  secret_transport: backend-only import and persistence
+acceptance_checks:
+  - id: AC-GCONNECT-001
+    form: event-driven
+    given: a root with usable Google credentials
+    when: the user activates Connect Google Calendar
+    then: Jin SHALL create or reuse one pending account and start PKCE without an alias-first step
+    verify_method: "test: settings_controller and scripted auth seam"
+  - id: AC-GCONNECT-002
+    form: state-driven
+    given: no usable Google credentials
+    when: the user activates connection
+    then: Jin SHALL show setup and import before account creation or browser authorization
+    verify_method: "test: credential readiness and controller state"
+  - id: AC-GCONNECT-003
+    form: unwanted-behavior
+    given: picker cancellation or invalid OAuth JSON
+    when: import is attempted
+    then: Jin SHALL preserve config, create no account, and expose only a safe actionable error
+    verify_method: "test: Rust import validation and bridge contract"
+  - id: AC-GCONNECT-004
+    form: event-driven
+    given: valid installed-app OAuth JSON
+    when: import succeeds
+    then: Jin SHALL persist credentials in the existing vault config and resume connection
+    verify_method: "test: config round-trip and controller continuation"
+  - id: AC-GCONNECT-005
+    form: state-driven
+    given: auth cancellation, network failure, or token failure
+    when: connection ends
+    then: Jin SHALL retain at most one retryable pending account and reuse it on Retry
+    verify_method: "test: account lifecycle and controller retry"
+  - id: AC-GCONNECT-006
+    form: event-driven
+    given: successful auth and identity validation
+    when: calendar discovery fails
+    then: Jin SHALL retain connected auth and expose Refresh calendars
+    verify_method: "test: partial-success auth/discovery seam"
+  - id: AC-GCONNECT-007
+    form: unwanted-behavior
+    given: an additional account or reconnect
+    when: the provider subject is already bound elsewhere
+    then: Jin SHALL reject the duplicate before token replacement and preserve isolation and quarantine rules
+    verify_method: "test: account route and subject collision contracts"
+  - id: AC-GCONNECT-008
+    form: unwanted-behavior
+    given: any import or connection attempt
+    when: IPC, DTO, error, audit, log, or export output is produced
+    then: client secrets and raw OAuth JSON SHALL be absent
+    verify_method: "test: bridge, error-redaction, and export sovereignty checks"
+declared_scope:
+  - .spectra/changes/google-calendar-connection/**
+  - jin-core/src/google/config.rs
+  - jin-core/src/google/auth.rs
+  - jin-core/src/ops/google_accounts.rs
+  - jin-core/src/config.rs
+  - jin-gui/src-tauri/src/commands/google_accounts.rs
+  - jin-gui/src-tauri/src/lib.rs
+  - jin-gui/src-tauri/tests/bridge.rs
+  - jin-gui/src/controllers/settings_controller.ts
+  - jin-gui/src/invoke.ts
+  - jin-gui/src/__tests__/google_multi_account_acceptance.test.ts
+  - jin-gui/src/__tests__/settings_controller.test.ts
+  - jin-gui/src/__tests__/notes_visual_system.test.ts
+  - jin-gui/src/styles/settings.css
+  - jin-gui/index.html
+  - jin-gui/tools/tauri-fixture-init.js
+  - README.md
+  - docs/google-smoke-test.md
+out_of_scope:
+  - embedded or distributor-provided OAuth credentials
+  - changes to Google sync authority, token storage, quarantine, or export policy
+  - live Google credentials and native owner sign-off

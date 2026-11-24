@@ -96,6 +96,22 @@ describe('shared calendar identity fixture (AC-CALX-040)', () => {
     expect(composer.root.querySelector('.event-composer__account-alias')?.textContent).toBe('Work');
     expect(composer.root.querySelector('.event-composer__color')?.getAttribute('data-calendar-color')).toBe('pink');
 
+    // The create destination uses a native select. Its swatch is a sibling,
+    // rather than an overlay, so browser-native select metrics cannot cover
+    // the first letters of the selected calendar name.
+    const createComposer = renderEventComposer({
+      draft: draftFromSlot({ date: '2026-08-20', start_time: '14:00', end_time: '15:00' }),
+      locale: 'en',
+      destination: { name: membership.label, alias: membership.accountAlias ?? undefined, color: membership.color },
+      destinations: [
+        { name: membership.label, alias: membership.accountAlias ?? undefined, color: membership.color },
+        { name: 'Personal', alias: 'Home', color: 'sky' },
+      ],
+    });
+    const destinationRow = createComposer.root.querySelector('.event-composer__calendar-row')!;
+    expect(destinationRow.querySelector(':scope > .event-composer__color')).toBeTruthy();
+    expect(destinationRow.querySelector(':scope > .event-composer__destination-select')).toBeTruthy();
+
     const host = {
       listPanel: document.createElement('div'),
       list: document.createElement('ul'),

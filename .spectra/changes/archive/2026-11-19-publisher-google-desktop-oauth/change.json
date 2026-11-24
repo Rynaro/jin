@@ -1,0 +1,19 @@
+{
+  "esl_version": "1.1",
+  "change_id": "publisher-google-desktop-oauth",
+  "status": "archived",
+  "tier": "lite",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    "PUB-OAUTH-1",
+    "PUB-OAUTH-2",
+    "PUB-OAUTH-3",
+    "PUB-OAUTH-4",
+    "PUB-OAUTH-5"
+  ],
+  "spec_ref": ".spectra/changes/publisher-google-desktop-oauth/spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-11-19-publisher-google-desktop-oauth",
+  "has_code": true
+}

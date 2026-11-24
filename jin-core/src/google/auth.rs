@@ -12,6 +12,7 @@
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use sha2::{Digest, Sha256};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use super::config::GoogleCredentials;
 use super::secrets::TokenSet;
@@ -25,6 +26,65 @@ pub const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth"
 /// Calendar events scope — narrowest sufficient for bidirectional event sync.
 pub const CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
 pub const ACCOUNT_CALENDAR_SCOPES: &str = "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly";
+const LOOPBACK_AUTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+const LOOPBACK_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(20);
+const MAX_LOOPBACK_HEADERS: usize = 16 * 1024;
+
+/// One native-owned Google browser authorization attempt.
+///
+/// `cancel` may win only while the browser result is still non-durable. Once
+/// `claim_completion` succeeds, the caller owns an atomic commit boundary.
+pub struct GoogleAuthAttempt {
+    state: AtomicU8,
+}
+
+impl GoogleAuthAttempt {
+    pub fn new() -> Self {
+        Self {
+            state: AtomicU8::new(0),
+        }
+    }
+
+    pub fn cancel(&self) -> bool {
+        self.state
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    pub fn ensure_active(&self) -> crate::Result<()> {
+        if self.state.load(Ordering::Acquire) == 1 {
+            Err(cancelled_error())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn claim_completion(&self) -> crate::Result<()> {
+        match self
+            .state
+            .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
+        {
+            Ok(_) => Ok(()),
+            Err(1) => Err(cancelled_error()),
+            Err(_) => Err(JinError::Integrity(
+                "Google sign-in attempt entered an invalid completion state".to_string(),
+            )),
+        }
+    }
+}
+
+impl Default for GoogleAuthAttempt {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn cancelled_error() -> JinError {
+    JinError::Auth(
+        "Google sign-in was cancelled. You can connect an account again whenever you are ready."
+            .to_string(),
+    )
+}
 
 // ── HTTP abstraction (injectable for offline testing) ────────────────────────
 
@@ -124,18 +184,22 @@ pub fn validate_account_state(
 ///
 /// Returns `None` if no `state` parameter is present or the value is empty.
 pub fn parse_state_from_request(request_line: &str) -> Option<String> {
-    let mut parts = request_line.split_whitespace();
-    parts.next()?; // skip verb (GET)
-    let path = parts.next()?;
-    let query = path.split_once('?')?.1;
-    for kv in query.split('&') {
-        if let Some(val) = kv.strip_prefix("state=") {
-            if !val.is_empty() {
-                return Some(val.to_string());
-            }
-        }
-    }
-    None
+    parse_oauth_query_value(request_line, "state")
+}
+
+/// Parse one OAuth query parameter from the loopback HTTP request line.
+///
+/// `Url::query_pairs` applies application/x-www-form-urlencoded decoding once,
+/// so authorization codes such as `4%2Fexample%2Bvalue` reach the token endpoint
+/// as the opaque value Google issued.
+fn parse_oauth_query_value(request_line: &str, name: &str) -> Option<String> {
+    let target = request_line.split_whitespace().nth(1)?;
+    let url = reqwest::Url::parse("http://127.0.0.1")
+        .ok()?
+        .join(target)
+        .ok()?;
+    url.query_pairs()
+        .find_map(|(key, value)| (key == name && !value.is_empty()).then(|| value.into_owned()))
 }
 
 /// Validate the CSRF `state` parameter returned in the OAuth redirect.
@@ -232,23 +296,7 @@ fn url_encode(s: &str) -> String {
 ///
 /// Returns `None` if the request line is malformed or has no `code`.
 pub fn parse_code_from_request(request_line: &str) -> Option<String> {
-    // Extract the path+query part: "GET /path?query HTTP/1.1" → "/path?query"
-    let mut parts = request_line.split_whitespace();
-    parts.next()?; // skip verb (GET)
-    let path = parts.next()?;
-
-    // Find query string
-    let query = path.split_once('?')?.1;
-
-    // Find the `code` parameter
-    for kv in query.split('&') {
-        if let Some(val) = kv.strip_prefix("code=") {
-            if !val.is_empty() {
-                return Some(val.to_string());
-            }
-        }
-    }
-    None
+    parse_oauth_query_value(request_line, "code")
 }
 
 /// Bind a loopback TCP listener on an ephemeral port.
@@ -268,57 +316,168 @@ pub fn bind_loopback() -> crate::Result<(u16, std::net::TcpListener)> {
 /// respond with a minimal HTML success page (so the user's browser shows a clear
 /// message), then return `(code, state_opt)`.
 ///
-/// Blocks until a browser connects (the user clicks "Allow" in the consent screen).
-/// Ctrl-C or process termination aborts the wait.
+/// Waits until a browser connects (the user clicks "Allow" in the consent screen).
+/// The production flow bounds the wait so a closed consent tab cannot leave Jin
+/// waiting forever.
 ///
 /// The caller is responsible for validating `state_opt` against the expected state
 /// using `validate_oauth_state`.
 pub fn wait_for_code(listener: std::net::TcpListener) -> crate::Result<(String, Option<String>)> {
-    use std::io::{BufRead, BufReader, Write};
+    wait_for_code_with_timeout(listener, LOOPBACK_AUTH_TIMEOUT)
+}
 
-    let (mut stream, _) = listener
-        .accept()
-        .map_err(|e| JinError::Auth(format!("loopback accept: {e}")))?;
+fn wait_for_code_with_timeout(
+    listener: std::net::TcpListener,
+    timeout: std::time::Duration,
+) -> crate::Result<(String, Option<String>)> {
+    wait_for_code_with_timeout_and_cancel(listener, timeout, &GoogleAuthAttempt::new())
+}
 
-    let mut reader = BufReader::new(&stream);
-    let mut first_line = String::new();
-    reader
-        .read_line(&mut first_line)
-        .map_err(|e| JinError::Auth(format!("read loopback request: {e}")))?;
+fn wait_for_code_with_timeout_and_cancel(
+    listener: std::net::TcpListener,
+    timeout: std::time::Duration,
+    attempt: &GoogleAuthAttempt,
+) -> crate::Result<(String, Option<String>)> {
+    use std::io::Read;
+    use std::time::Instant;
 
-    // Drain remaining headers (required before responding)
-    let mut line = String::new();
-    loop {
-        line.clear();
-        reader
-            .read_line(&mut line)
-            .map_err(|e| JinError::Auth(format!("read loopback headers: {e}")))?;
-        if line == "\r\n" || line.is_empty() {
-            break;
+    let deadline = Instant::now() + timeout;
+    listener
+        .set_nonblocking(true)
+        .map_err(|e| JinError::Auth(format!("configure loopback listener: {e}")))?;
+    let (mut stream, _) = loop {
+        attempt.ensure_active()?;
+        match listener.accept() {
+            Ok(connection) => break connection,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err(JinError::Auth(
+                        "Google authorization timed out. Return to Jin and try Connect Google Calendar again."
+                            .to_string(),
+                    ));
+                }
+                std::thread::sleep(LOOPBACK_POLL_INTERVAL);
+            }
+            Err(error) => return Err(JinError::Auth(format!("loopback accept: {error}"))),
         }
+    };
+    let mut headers = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    while !headers_complete(&headers) {
+        attempt.ensure_active()?;
+        if headers.len() >= MAX_LOOPBACK_HEADERS {
+            write_loopback_response(
+                &mut stream,
+                "431 Request Header Fields Too Large",
+                "Jin could not read the authorization response. Return to Jin and try again.",
+            );
+            return Err(JinError::Auth(
+                "Google authorization response headers were too large".to_string(),
+            ));
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(loopback_timeout());
+        }
+        stream
+            .set_read_timeout(Some(remaining.min(LOOPBACK_POLL_INTERVAL)))
+            .map_err(|e| JinError::Auth(format!("configure loopback read timeout: {e}")))?;
+        let read_result = stream.read(&mut chunk);
+        // Cancellation has precedence over every possible outcome of the
+        // blocking read. The browser can close or reset its socket while the
+        // Settings action cancels the attempt, and it can also finish sending
+        // data during that same interval.
+        attempt.ensure_active()?;
+        let read = match read_result {
+            Ok(read) => read,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) =>
+            {
+                continue
+            }
+            Err(error) => return Err(loopback_read_error(error)),
+        };
+        if read == 0 {
+            return Err(JinError::Auth(
+                "Google authorization response ended before it was complete. Return to Jin and try again."
+                    .to_string(),
+            ));
+        }
+        headers.extend_from_slice(&chunk[..read]);
     }
+    let first_line = std::str::from_utf8(&headers)
+        .ok()
+        .and_then(|headers| headers.lines().next())
+        .ok_or_else(|| {
+            JinError::Auth("Google authorization response was not valid HTTP".to_string())
+        })?;
 
-    let code = parse_code_from_request(&first_line).ok_or_else(|| {
+    let code = parse_code_from_request(first_line).ok_or_else(|| {
+        let detail = oauth_redirect_error(first_line);
+        write_loopback_response(
+            &mut stream,
+            "400 Bad Request",
+            "Google authorization was not completed. Return to Jin to try again.",
+        );
         JinError::Auth(format!(
-            "OAuth redirect did not contain a code. Raw request line: {:?}",
-            first_line.trim()
+            "Google authorization was not completed: {detail}. Return to Jin and try again."
         ))
     })?;
 
-    let state = parse_state_from_request(&first_line);
+    let state = parse_state_from_request(first_line);
 
-    // Send success response to the browser
-    let body = "<html><body><h1>Jin — Authentication successful!</h1>\
-                <p>You can close this tab and return to the terminal.</p>\
+    // State validation and token exchange still run after this callback, so do
+    // not claim that sign-in has completed in the browser yet.
+    let body = "<html><body><h1>Jin received your authorization response.</h1>\
+                <p>You can close this tab and return to Jin to finish connecting.</p>\
                 </body></html>";
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}",
-        body.len(),
-        body
-    );
-    let _ = stream.write_all(response.as_bytes());
+    write_loopback_response(&mut stream, "200 OK", body);
 
     Ok((code, state))
+}
+
+fn headers_complete(headers: &[u8]) -> bool {
+    headers.windows(4).any(|window| window == b"\r\n\r\n")
+        || headers.windows(2).any(|window| window == b"\n\n")
+}
+
+fn write_loopback_response(stream: &mut std::net::TcpStream, status: &str, body: &str) {
+    use std::io::Write;
+
+    let response = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len(),
+    );
+    let _ = stream.write_all(response.as_bytes());
+}
+
+fn loopback_timeout() -> JinError {
+    JinError::Auth(
+        "Google authorization timed out before the browser completed its response. Return to Jin and try again."
+            .to_string(),
+    )
+}
+
+fn loopback_read_error(error: std::io::Error) -> JinError {
+    if matches!(
+        error.kind(),
+        std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+    ) {
+        loopback_timeout()
+    } else {
+        JinError::Auth(format!("read loopback request: {error}"))
+    }
+}
+
+fn oauth_redirect_error(request_line: &str) -> &'static str {
+    match parse_oauth_query_value(request_line, "error").as_deref() {
+        Some("access_denied") => "Google sign-in was cancelled",
+        Some(_) => "Google returned an authorization error",
+        None => "missing authorization code",
+    }
 }
 
 // ── Token exchange ────────────────────────────────────────────────────────────
@@ -399,8 +558,11 @@ pub fn run_auth_flow(creds: &GoogleCredentials) -> crate::Result<TokenSet> {
     println!("If it does not open automatically, copy-paste this URL:\n");
     println!("  {auth_url}\n");
 
-    // Best-effort: try to open the browser; ignore errors.
-    open_browser(&auth_url);
+    // The URL above remains a manual fallback when the platform browser cannot
+    // be launched from this process.
+    if let Err(error) = open_browser(&auth_url) {
+        eprintln!("Could not open the browser automatically: {error}");
+    }
 
     println!("Waiting for authorization... (press Ctrl-C to cancel)\n");
 
@@ -427,17 +589,33 @@ pub fn run_account_auth_flow(
     creds: &GoogleCredentials,
     account_id: &GoogleAccountId,
 ) -> crate::Result<(TokenSet, String, String)> {
+    run_account_auth_flow_cancellable(creds, account_id, &GoogleAuthAttempt::new())
+}
+
+/// Run account authorization while checking a native cancellation flag between
+/// loopback polls and before every durable OAuth result is returned.
+pub fn run_account_auth_flow_cancellable(
+    creds: &GoogleCredentials,
+    account_id: &GoogleAccountId,
+    attempt: &GoogleAuthAttempt,
+) -> crate::Result<(TokenSet, String, String)> {
     let pkce = generate_pkce();
     let state = generate_account_state(account_id);
     let (port, listener) = bind_loopback()?;
     let redirect_uri = format!("http://127.0.0.1:{port}/");
     let auth_url = build_account_auth_url(&creds.client_id, &redirect_uri, &pkce, &state);
 
-    println!("\nOpening Google authorization for account {account_id}...");
-    println!("If it does not open automatically, copy-paste this URL:\n\n  {auth_url}\n");
-    open_browser(&auth_url);
-    let (code, returned_state) = wait_for_code(listener)?;
+    println!("\nOpening Google authorization for account {account_id} in your default browser...");
+    open_browser(&auth_url).map_err(|error| {
+        JinError::Auth(format!(
+            "Could not open the default browser for Google authorization: {error}. \
+             Check the system browser configuration, then try Connect Google Calendar again."
+        ))
+    })?;
+    let (code, returned_state) =
+        wait_for_code_with_timeout_and_cancel(listener, LOOPBACK_AUTH_TIMEOUT, attempt)?;
     validate_account_state(account_id, &state, returned_state.as_deref())?;
+    attempt.ensure_active()?;
     let mut tokens = exchange_code(
         creds,
         &code,
@@ -447,6 +625,7 @@ pub fn run_account_auth_flow(
         &ReqwestPost,
     )?;
     let (subject, email) = fetch_google_identity(&tokens.access_token)?;
+    attempt.ensure_active()?;
     tokens.account = Some(email.clone());
     Ok((tokens, subject, email))
 }
@@ -479,16 +658,21 @@ fn fetch_google_identity(access_token: &str) -> crate::Result<(String, String)> 
     Ok((subject.to_string(), email.to_string()))
 }
 
-/// Attempt to open `url` in the default browser.  Silently swallows errors.
-fn open_browser(url: &str) {
+/// Attempt to open `url` in the default browser.
+///
+/// Callers that provide a printed URL can retain a manual fallback. Interactive
+/// desktop callers surface the launch failure instead of waiting for a callback
+/// that cannot arrive.
+fn open_browser(url: &str) -> std::io::Result<()> {
     #[cfg(target_os = "linux")]
-    let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+    let _ = std::process::Command::new("xdg-open").arg(url).spawn()?;
     #[cfg(target_os = "macos")]
-    let _ = std::process::Command::new("open").arg(url).spawn();
+    let _ = std::process::Command::new("open").arg(url).spawn()?;
     #[cfg(target_os = "windows")]
-    let _ = std::process::Command::new("cmd")
-        .args(["/c", "start", url])
-        .spawn();
+    let _ = std::process::Command::new("rundll32.exe")
+        .args(["url.dll,FileProtocolHandler", url])
+        .spawn()?;
+    Ok(())
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -665,7 +849,7 @@ mod tests {
     fn parse_code_from_simple_redirect() {
         let req = "GET /?code=4%2F0abc123XYZ HTTP/1.1";
         let code = parse_code_from_request(req);
-        assert_eq!(code.as_deref(), Some("4%2F0abc123XYZ"));
+        assert_eq!(code.as_deref(), Some("4/0abc123XYZ"));
     }
 
     #[test]
@@ -717,6 +901,128 @@ mod tests {
         // validate_oauth_state must pass for matching state
         validate_oauth_state(expected_state, state_opt.as_deref())
             .expect("matching state must pass validation");
+    }
+
+    #[test]
+    fn loopback_server_times_out_without_a_browser_callback() {
+        let (_, listener) = bind_loopback().expect("bind loopback");
+        let error = wait_for_code_with_timeout(listener, std::time::Duration::from_millis(25))
+            .expect_err("a missing callback must time out");
+        assert!(matches!(error, crate::JinError::Auth(_)));
+        assert!(error.to_string().contains("timed out"), "{error}");
+    }
+
+    #[test]
+    fn cancelled_loopback_wait_returns_before_a_callback_can_be_accepted() {
+        let attempt = GoogleAuthAttempt::new();
+        assert!(attempt.cancel());
+        let error = attempt
+            .ensure_active()
+            .expect_err("a cancelled browser attempt must stop waiting");
+
+        assert!(error.to_string().contains("cancelled"));
+    }
+
+    #[test]
+    fn cancellation_interrupts_a_partially_sent_loopback_response() {
+        use std::io::Write;
+        use std::net::TcpStream;
+        use std::sync::Arc;
+        use std::thread;
+
+        let (port, listener) = bind_loopback().expect("bind loopback");
+        let attempt = Arc::new(GoogleAuthAttempt::new());
+        let browser_attempt = Arc::clone(&attempt);
+        let handle = thread::spawn(move || {
+            let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).unwrap();
+            stream
+                .write_all(b"GET /?code=partial&state=state HTTP/1.1\r\n")
+                .unwrap();
+            thread::sleep(std::time::Duration::from_millis(30));
+            assert!(browser_attempt.cancel());
+        });
+
+        let error = wait_for_code_with_timeout_and_cancel(
+            listener,
+            std::time::Duration::from_secs(1),
+            &attempt,
+        )
+        .expect_err("cancelling a partial response must stop the wait");
+        handle.join().unwrap();
+        assert!(error.to_string().contains("cancelled"), "{error}");
+    }
+
+    #[test]
+    fn incomplete_loopback_response_without_cancellation_reports_eof() {
+        use std::io::Write;
+        use std::net::TcpStream;
+        use std::thread;
+
+        let (port, listener) = bind_loopback().expect("bind loopback");
+        let handle = thread::spawn(move || {
+            let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).unwrap();
+            stream
+                .write_all(b"GET /?code=partial&state=state HTTP/1.1\r\n")
+                .unwrap();
+        });
+
+        let error = wait_for_code_with_timeout(listener, std::time::Duration::from_secs(1))
+            .expect_err("an incomplete uncancelled response must report EOF");
+        handle.join().unwrap();
+        assert!(
+            error.to_string().contains("ended before it was complete"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn loopback_server_reports_google_denial_without_raw_request_data() {
+        use std::io::Write;
+        use std::net::TcpStream;
+        use std::thread;
+
+        let (port, listener) = bind_loopback().expect("bind loopback");
+        let handle = thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).unwrap();
+            stream
+                .write_all(b"GET /?error=access_denied HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+                .unwrap();
+        });
+
+        let error = wait_for_code_with_timeout(listener, std::time::Duration::from_secs(1))
+            .expect_err("a denied consent callback must fail");
+        handle.join().unwrap();
+        assert!(
+            error.to_string().contains("sign-in was cancelled"),
+            "{error}"
+        );
+        assert!(!error.to_string().contains("access_denied"), "{error}");
+        assert!(!error.to_string().contains("GET /"), "{error}");
+    }
+
+    #[test]
+    fn loopback_server_times_out_for_gradually_arriving_incomplete_headers() {
+        use std::io::Write;
+        use std::net::TcpStream;
+        use std::thread;
+
+        let (port, listener) = bind_loopback().expect("bind loopback");
+        let handle = thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).unwrap();
+            for byte in b"GET /?code=partial&state=state HTTP/1.1\r\n" {
+                if stream.write_all(&[*byte]).is_err() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        });
+
+        let error = wait_for_code_with_timeout(listener, std::time::Duration::from_millis(40))
+            .expect_err("trickled headers must not extend the authorization deadline");
+        handle.join().unwrap();
+        assert!(error.to_string().contains("timed out"), "{error}");
     }
 
     // ── OAuth state CSRF defense ──────────────────────────────────────────────
@@ -787,6 +1093,25 @@ mod tests {
         }
     }
 
+    struct CapturingHttp {
+        response: serde_json::Value,
+        code: std::sync::Mutex<Option<String>>,
+    }
+
+    impl HttpPost for CapturingHttp {
+        fn post_form(
+            &self,
+            _url: &str,
+            params: &[(&str, &str)],
+        ) -> crate::Result<serde_json::Value> {
+            let code = params
+                .iter()
+                .find_map(|(name, value)| (*name == "code").then_some((*value).to_string()));
+            *self.code.lock().expect("capture lock") = code;
+            Ok(self.response.clone())
+        }
+    }
+
     fn fake_creds() -> GoogleCredentials {
         GoogleCredentials {
             client_id: "test-client-id.apps.googleusercontent.com".to_string(),
@@ -828,6 +1153,35 @@ mod tests {
             "scope must include calendar.events"
         );
         assert_eq!(ts.client_id, "test-client-id.apps.googleusercontent.com");
+    }
+
+    #[test]
+    fn decoded_callback_code_is_passed_unchanged_to_token_exchange() {
+        let request = "GET /?code=4%2Fexample%2Bvalue&state=state%2Dvalue HTTP/1.1";
+        let code = parse_code_from_request(request).expect("decoded authorization code");
+        let state = parse_state_from_request(request).expect("decoded callback state");
+        assert_eq!(code, "4/example+value");
+        assert_eq!(state, "state-value");
+
+        let http = CapturingHttp {
+            response: token_response_json(),
+            code: std::sync::Mutex::new(None),
+        };
+        let pkce = generate_pkce();
+        exchange_code(
+            &fake_creds(),
+            &code,
+            &pkce.verifier,
+            "http://127.0.0.1:12345/",
+            "http://mock-token-endpoint/",
+            &http,
+        )
+        .expect("decoded callback code should exchange");
+
+        assert_eq!(
+            http.code.lock().expect("capture lock").as_deref(),
+            Some("4/example+value")
+        );
     }
 
     #[test]

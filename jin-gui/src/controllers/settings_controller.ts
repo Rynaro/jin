@@ -39,10 +39,11 @@
  */
 
 import { Controller } from '@hotwired/stimulus';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
-  runSync, exportFiles, appConfig, setStoreRoot, workspaceStatus, refreshWorkspaceProjection, openWorkspaceFolder,
-  listGoogleAccounts, addGoogleAccount, renameGoogleAccount,
-  connectGoogleAccount, disconnectGoogleAccount, refreshGoogleCalendars, setGoogleCalendarEnabled,
+  runSync, exportFiles, appConfig, setStoreRoot, workspaceStatus, refreshWorkspaceProjection, openWorkspaceFolder, openExternalUrl,
+  listGoogleAccounts, addGoogleAccount, connectNewGoogleAccount, importGoogleClientJson, googleClientConfigured, renameGoogleAccount,
+  connectGoogleAccount, cancelGoogleConnection, disconnectGoogleAccount, refreshGoogleCalendars, setGoogleCalendarEnabled,
   listQuarantinedSyncOperations, reviewQuarantinedSyncOperation, syncCalendarEvent,
   notificationStatus, requestNotificationPermission,
   openNotificationSettings, sendTestNotification,
@@ -95,6 +96,12 @@ import {
   loadSettingsPane,
   saveSettingsPane,
 } from '../lib/settings/navigation';
+
+interface GoogleInitialPullFinished {
+  attempt_id: string;
+  account_id: string;
+  status: 'ok' | 'partial' | 'error';
+}
 
 export default class SettingsController extends Controller {
   // ── Targets ───────────────────────────────────────────────────────────────
@@ -151,6 +158,11 @@ export default class SettingsController extends Controller {
     'jinCalendarColorPicker',
     'googleAccountsList',
     'googleAccountAliasInput',
+    'connectGoogleCalendarBtn',
+    'cancelGoogleConnectionBtn',
+    'googleAccountsStatus',
+    'googleInitialSyncRetryBtn',
+    'googleSetupDetails',
     'googleAccountsError',
     'quarantinedOperationsList',
     'quarantinedOperationsError',
@@ -229,6 +241,16 @@ export default class SettingsController extends Controller {
   declare googleAccountsErrorTarget: HTMLElement;
   declare readonly hasGoogleAccountsListTarget: boolean;
   declare readonly hasGoogleAccountAliasInputTarget: boolean;
+  declare connectGoogleCalendarBtnTarget: HTMLButtonElement;
+  declare readonly hasConnectGoogleCalendarBtnTarget: boolean;
+  declare cancelGoogleConnectionBtnTarget: HTMLButtonElement;
+  declare readonly hasCancelGoogleConnectionBtnTarget: boolean;
+  declare googleAccountsStatusTarget: HTMLElement;
+  declare readonly hasGoogleAccountsStatusTarget: boolean;
+  declare googleInitialSyncRetryBtnTarget: HTMLButtonElement;
+  declare readonly hasGoogleInitialSyncRetryBtnTarget: boolean;
+  declare googleSetupDetailsTarget: HTMLDetailsElement;
+  declare readonly hasGoogleSetupDetailsTarget: boolean;
   declare readonly hasGoogleAccountsErrorTarget: boolean;
   declare quarantinedOperationsListTarget: HTMLElement;
   declare quarantinedOperationsErrorTarget: HTMLElement;
@@ -248,6 +270,17 @@ export default class SettingsController extends Controller {
   private lastNotificationStatus: NotificationStatusDto | null = null;
   private notificationOperationGeneration = 0;
   private notificationActiveOperations = 0;
+  private googleConnectionBusy = false;
+  private pendingGoogleReconnectId: string | null = null;
+  private googleConnectionAttemptId: string | null = null;
+  private googleConnectionGeneration = 0;
+  private googleConnectionCancelling = false;
+  private googleConnectionBrowserStarted = false;
+  /** Retained after OAuth resolves so its background import can update only this connection. */
+  private googleInitialPullAttemptId: string | null = null;
+  private googleInitialPullResult: GoogleInitialPullFinished['status'] | null = null;
+  private googleInitialPullUnlisten: UnlistenFn | null = null;
+  private googleInitialPullSubscriptionGeneration = 0;
   private workspaceOperationGeneration = 0;
   private exportCollisionDestination: string | null = null;
   private notificationRefreshQueued = false;
@@ -277,6 +310,7 @@ export default class SettingsController extends Controller {
   }
 
   connect(): void {
+    this.googleInitialPullSubscriptionGeneration += 1;
     applySettingsPane(
       this.settingsNavItemTargets,
       this.settingsPaneTargets,
@@ -291,6 +325,7 @@ export default class SettingsController extends Controller {
     window.addEventListener('focus', this.refreshNotificationsOnFocus);
     window.addEventListener('focus', this.refreshGoogleState);
     window.addEventListener('jin:google-state-changed', this.refreshGoogleState);
+    void this.subscribeToGoogleInitialPulls();
     window.addEventListener('focus', this.refreshWorkspaceOnFocus);
 
     // Initialize appearance controls from persisted prefs
@@ -317,9 +352,12 @@ export default class SettingsController extends Controller {
   }
 
   disconnect(): void {
+    this.googleInitialPullSubscriptionGeneration += 1;
     window.removeEventListener('focus', this.refreshNotificationsOnFocus);
     window.removeEventListener('focus', this.refreshGoogleState);
     window.removeEventListener('jin:google-state-changed', this.refreshGoogleState);
+    this.googleInitialPullUnlisten?.();
+    this.googleInitialPullUnlisten = null;
     window.removeEventListener('focus', this.refreshWorkspaceOnFocus);
     window.removeEventListener(NOTES_EXPLORER_VIEW_CHANGED, this.refreshNotesLayout);
     this.colorPickers.forEach(picker => picker.destroy());
@@ -603,10 +641,192 @@ export default class SettingsController extends Controller {
     }
   }
 
+  async connectNewGoogleAccount(): Promise<void> {
+    if (this.googleConnectionBusy || this.googleConnectionCancelling) return;
+    const alias = this.hasGoogleAccountAliasInputTarget ? this.googleAccountAliasInputTarget.value.trim() : '';
+    await this.beginGoogleConnection(alias || undefined, null);
+  }
+
+  private async beginGoogleConnection(alias: string | undefined, accountId: string | null): Promise<void> {
+    if (this.googleConnectionBusy || this.googleConnectionCancelling) return;
+    const generation = ++this.googleConnectionGeneration;
+    const attemptId = crypto.randomUUID();
+    this.googleConnectionBusy = true;
+    this.googleConnectionAttemptId = attemptId;
+    this.googleConnectionBrowserStarted = false;
+    this.pendingGoogleReconnectId = accountId;
+    this.googleInitialPullAttemptId = attemptId;
+    this.googleInitialPullResult = null;
+    this.setGoogleConnectionBusy(true);
+    this.showGoogleAccountsError('');
+    this.showGoogleAccountsStatus('');
+    try {
+      const configured = await googleClientConfigured();
+      if (!this.isCurrentGoogleConnection(generation, attemptId)) return;
+      if (!configured) {
+        if (this.hasGoogleSetupDetailsTarget) {
+          this.googleSetupDetailsTarget.open = true;
+          this.googleSetupDetailsTarget.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true });
+        }
+        this.showGoogleAccountsStatus(accountId
+          ? 'Set up Google access, then import the Desktop OAuth client JSON to reconnect this account.'
+          : 'Set up Google access, then import the Desktop OAuth client JSON to connect.');
+        return;
+      }
+      this.showGoogleAccountsStatus('Complete Google sign-in in your system browser. Jin will finish connecting when you return.');
+      this.googleConnectionBrowserStarted = true;
+      const accounts = accountId
+        ? await connectGoogleAccount(accountId, attemptId)
+        : await connectNewGoogleAccount(alias, attemptId);
+      if (!this.isCurrentGoogleConnection(generation, attemptId)) return;
+      this.renderGoogleAccounts(accounts);
+      if (this.hasGoogleAccountAliasInputTarget) this.googleAccountAliasInputTarget.value = '';
+      if (this.hasGoogleSetupDetailsTarget) this.googleSetupDetailsTarget.hidden = true;
+      this.renderGoogleInitialPullStatus();
+      this.pendingGoogleReconnectId = null;
+    } catch (error: unknown) {
+      if (!this.isCurrentGoogleConnection(generation, attemptId)) return;
+      await this.loadGoogleAccounts();
+      if (!this.isCurrentGoogleConnection(generation, attemptId)) return;
+      this.showGoogleAccountsStatus('');
+      this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not connect Google Calendar.').message);
+    } finally {
+      if (!this.isCurrentGoogleConnection(generation, attemptId)) return;
+      this.googleConnectionBusy = false;
+      this.googleConnectionAttemptId = null;
+      this.googleConnectionBrowserStarted = false;
+      this.setGoogleConnectionBusy(false);
+    }
+  }
+
+  async cancelGoogleConnection(): Promise<void> {
+    const attemptId = this.googleConnectionAttemptId;
+    if (!attemptId || !this.googleConnectionBusy) return;
+
+    if (!this.googleConnectionBrowserStarted) {
+      this.finishGoogleConnectionCancellation();
+      return;
+    }
+
+    this.googleConnectionCancelling = true;
+    this.showGoogleAccountsError('');
+    this.setGoogleConnectionBusy(true);
+
+    try {
+      const cancelled = await cancelGoogleConnection(attemptId);
+      if (cancelled) {
+        this.finishGoogleConnectionCancellation();
+        await this.loadGoogleAccounts();
+        return;
+      }
+      // The attempt may have timed out, committed, or be completing discovery.
+      // Its original promise remains authoritative in every one of those cases.
+      return;
+    } catch (error: unknown) {
+      this.showGoogleAccountsError(isJinErrorDto(error)
+        ? error.message
+        : toSyntheticErrorDto(error, 'Could not cancel Google sign-in. The browser sign-in is still active.').message);
+    } finally {
+      this.googleConnectionCancelling = false;
+      this.setGoogleConnectionBusy(this.googleConnectionBusy);
+    }
+  }
+
+  private finishGoogleConnectionCancellation(): void {
+    ++this.googleConnectionGeneration;
+    this.googleConnectionBusy = false;
+    this.googleConnectionAttemptId = null;
+    this.googleConnectionBrowserStarted = false;
+    this.pendingGoogleReconnectId = null;
+    this.googleInitialPullAttemptId = null;
+    this.googleInitialPullResult = null;
+    this.setGoogleConnectionBusy(false);
+    this.showGoogleAccountsError('');
+    this.showGoogleAccountsStatus('Google sign-in cancelled. You can connect an account whenever you are ready.');
+  }
+
+  private isCurrentGoogleConnection(generation: number, attemptId: string): boolean {
+    return this.googleConnectionGeneration === generation && this.googleConnectionAttemptId === attemptId;
+  }
+
+  async importGoogleClientJson(): Promise<void> {
+    if (this.googleConnectionBusy || this.googleConnectionCancelling) return;
+    this.googleConnectionBusy = true;
+    this.setGoogleConnectionBusy(true);
+    this.showGoogleAccountsError('');
+    this.showGoogleAccountsStatus('');
+    let handingOffToGoogleConnection = false;
+    try {
+      const imported = await importGoogleClientJson();
+      if (imported) {
+        if (this.hasGoogleSetupDetailsTarget) this.googleSetupDetailsTarget.open = false;
+        this.googleConnectionBusy = false;
+        this.setGoogleConnectionBusy(false);
+        handingOffToGoogleConnection = true;
+        await this.beginGoogleConnection(
+          this.hasGoogleAccountAliasInputTarget ? this.googleAccountAliasInputTarget.value.trim() || undefined : undefined,
+          this.pendingGoogleReconnectId,
+        );
+      } else {
+        this.showGoogleAccountsStatus('Google OAuth client import was cancelled. Your account was not changed.');
+      }
+    } catch (error: unknown) {
+      this.showGoogleAccountsStatus('');
+      this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not import the Google OAuth client JSON.').message);
+    } finally {
+      if (!handingOffToGoogleConnection) {
+        this.googleConnectionBusy = false;
+        this.setGoogleConnectionBusy(false);
+      }
+    }
+  }
+
+  private setGoogleConnectionBusy(busy: boolean): void {
+    if (this.hasConnectGoogleCalendarBtnTarget) {
+      this.connectGoogleCalendarBtnTarget.disabled = busy || this.googleConnectionCancelling;
+      this.connectGoogleCalendarBtnTarget.textContent = this.googleConnectionCancelling
+        ? 'Cancelling Google sign-in…'
+        : busy
+          ? 'Opening Google sign-in…'
+          : 'Connect Google Calendar';
+    }
+    if (this.hasCancelGoogleConnectionBtnTarget) {
+      const canCancel = busy && this.googleConnectionAttemptId !== null;
+      this.cancelGoogleConnectionBtnTarget.hidden = !canCancel;
+      this.cancelGoogleConnectionBtnTarget.classList.toggle('hidden', !canCancel);
+      this.cancelGoogleConnectionBtnTarget.disabled = this.googleConnectionCancelling;
+    }
+    if (this.hasGoogleAccountsListTarget) {
+      const disabled = busy || this.googleConnectionCancelling;
+      this.googleAccountsListTarget
+        .querySelectorAll<HTMLButtonElement>('button[data-google-account-connect]')
+        .forEach(button => { button.disabled = disabled; });
+    }
+  }
+
+  async openGoogleCalendarApi(): Promise<void> {
+    await this.openGoogleSetupUrl('https://console.cloud.google.com/apis/library/calendar-json.googleapis.com');
+  }
+
+  async openGoogleOAuthClients(): Promise<void> {
+    await this.openGoogleSetupUrl('https://console.cloud.google.com/apis/credentials');
+  }
+
+  private async openGoogleSetupUrl(url: string): Promise<void> {
+    try {
+      await openExternalUrl(url);
+    } catch (error: unknown) {
+      this.showGoogleAccountsError(isJinErrorDto(error)
+        ? error.message
+        : 'Could not open Google Cloud. Open it in your browser and continue setup.');
+    }
+  }
+
   private async loadGoogleAccounts(): Promise<void> {
     try {
       this.renderGoogleAccounts(await listGoogleAccounts());
       this.showGoogleAccountsError('');
+      if (this.hasGoogleSetupDetailsTarget) this.googleSetupDetailsTarget.hidden = await googleClientConfigured();
     } catch (error: unknown) {
       this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not load accounts.').message);
     }
@@ -616,6 +836,56 @@ export default class SettingsController extends Controller {
     if (!this.hasGoogleAccountsErrorTarget) return;
     this.googleAccountsErrorTarget.textContent = message;
     this.googleAccountsErrorTarget.classList.toggle('hidden', !message);
+  }
+
+  private showGoogleAccountsStatus(message: string): void {
+    if (!this.hasGoogleAccountsStatusTarget) return;
+    this.googleAccountsStatusTarget.textContent = message;
+    this.googleAccountsStatusTarget.classList.toggle('hidden', !message);
+  }
+
+  private renderGoogleInitialPullStatus(): void {
+    const result = this.googleInitialPullResult;
+    const retry = result === 'partial' || result === 'error';
+    if (this.hasGoogleInitialSyncRetryBtnTarget) {
+      this.googleInitialSyncRetryBtnTarget.hidden = !retry;
+      this.googleInitialSyncRetryBtnTarget.classList.toggle('hidden', !retry);
+    }
+    if (result === 'ok') {
+      this.showGoogleAccountsStatus('Google Calendar is ready. Imported events are now available in Calendar.');
+    } else if (result === 'partial') {
+      this.showGoogleAccountsStatus('Google Calendar connected. Some events could not be imported. Use Sync Now to retry.');
+    } else if (result === 'error') {
+      this.showGoogleAccountsStatus('Google Calendar connected. The initial import could not finish. Use Sync Now to retry.');
+    } else {
+      this.showGoogleAccountsStatus('Google Calendar connected. Importing events…');
+    }
+  }
+
+  private async subscribeToGoogleInitialPulls(): Promise<void> {
+    const generation = this.googleInitialPullSubscriptionGeneration;
+    let unlisten: UnlistenFn;
+    try {
+      unlisten = await listen<GoogleInitialPullFinished>(
+        'jin:google-calendar-initial-pull-finished',
+        ({ payload }) => this.handleGoogleInitialPullFinished(payload),
+      );
+    } catch {
+      return;
+    }
+    if (generation !== this.googleInitialPullSubscriptionGeneration) {
+      unlisten();
+      return;
+    }
+    this.googleInitialPullUnlisten = unlisten;
+  }
+
+  private handleGoogleInitialPullFinished(result: GoogleInitialPullFinished): void {
+    if (!result || typeof result.attempt_id !== 'string' || typeof result.account_id !== 'string'
+      || !['ok', 'partial', 'error'].includes(result.status)) return;
+    if (result.attempt_id !== this.googleInitialPullAttemptId) return;
+    this.googleInitialPullResult = result.status;
+    this.renderGoogleInitialPullStatus();
   }
 
   private renderGoogleAccounts(accounts: GoogleAccountDto[]): void {
@@ -704,8 +974,14 @@ export default class SettingsController extends Controller {
       const connect = document.createElement('button');
       connect.type = 'button';
       connect.className = 'btn-primary tap-target';
-      connect.textContent = account.state === 'connected' || account.state === 'needs_reauth' ? 'Reconnect' : 'Connect';
-      connect.addEventListener('click', () => { connect.disabled = true; void this.connectGoogleAccount(account.id); });
+      connect.textContent = account.state === 'pending'
+        ? 'Retry'
+        : account.state === 'connected' || account.state === 'needs_reauth'
+          ? 'Reconnect'
+          : 'Connect';
+      connect.dataset.googleAccountConnect = account.id;
+      connect.disabled = this.googleConnectionBusy || this.googleConnectionCancelling;
+      connect.addEventListener('click', () => void this.connectGoogleAccount(account.id));
       const disconnect = document.createElement('button');
       disconnect.type = 'button';
       disconnect.className = 'btn-secondary tap-target';
@@ -746,15 +1022,8 @@ export default class SettingsController extends Controller {
   }
 
   private async connectGoogleAccount(accountId: string): Promise<void> {
-    try {
-      this.renderGoogleAccounts(await connectGoogleAccount(accountId));
-      this.showGoogleAccountsError('');
-    } catch (error: unknown) {
-      // Core persists successful auth before CalendarList discovery. Reload so
-      // that a partial discovery failure still displays the connected account.
-      await this.loadGoogleAccounts();
-      this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not connect account.').message);
-    }
+    if (this.googleConnectionBusy || this.googleConnectionCancelling) return;
+    await this.beginGoogleConnection(undefined, accountId);
   }
 
   private async toggleGoogleCalendar(accountId: string, calendarId: string, enabled: boolean): Promise<void> {
@@ -873,12 +1142,17 @@ export default class SettingsController extends Controller {
    */
   async runSync(): Promise<void> {
     const el = this.syncElements;
+    const retryingInitialImport = this.googleInitialPullResult === 'partial' || this.googleInitialPullResult === 'error';
+    if (retryingInitialImport && this.hasGoogleInitialSyncRetryBtnTarget) {
+      this.googleInitialSyncRetryBtnTarget.disabled = true;
+    }
     renderSyncLoading(el);
 
     try {
       const dto = await runSync();
       renderSyncResult(el, formatSyncResult(dto));
       this.dispatch('events-mutated', { prefix: 'jin', bubbles: true });
+      if (retryingInitialImport && dto.status === 'ok') this.clearGoogleInitialPullStatus();
     } catch (err: unknown) {
       if (isJinErrorDto(err)) {
         renderSyncError(el, formatSyncError(err));
@@ -886,10 +1160,23 @@ export default class SettingsController extends Controller {
         renderSyncError(el, toSyntheticErrorDto(err, 'Calendar sync').message);
       }
     } finally {
+      if (retryingInitialImport && this.hasGoogleInitialSyncRetryBtnTarget) {
+        this.googleInitialSyncRetryBtnTarget.disabled = false;
+      }
       await this.loadGoogleAccounts();
       if (this.hasQuarantinedOperationsListTarget) await this.loadQuarantinedOperations();
       window.dispatchEvent(new CustomEvent('jin:google-state-changed'));
     }
+  }
+
+  private clearGoogleInitialPullStatus(): void {
+    this.googleInitialPullAttemptId = null;
+    this.googleInitialPullResult = null;
+    if (this.hasGoogleInitialSyncRetryBtnTarget) {
+      this.googleInitialSyncRetryBtnTarget.hidden = true;
+      this.googleInitialSyncRetryBtnTarget.classList.add('hidden');
+    }
+    this.showGoogleAccountsStatus('');
   }
 
   // ── Export action ─────────────────────────────────────────────────────────

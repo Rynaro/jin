@@ -1879,17 +1879,40 @@
             <section class="settings-section" aria-label="Google calendar accounts">
               <h3 class="settings-section__heading">Calendar Accounts</h3>
               <p class="text-callout color-secondary">
-                Add an account, then connect once to sign in and discover its calendars.
-                Give accounts stable Jin aliases such as Personal, Work, or Project OSS.
+                Connect an account to sign in with Google and discover its calendars.
               </p>
-              <details class="text-callout color-secondary">
-                <summary>Advanced: use your own Google OAuth client</summary>
-                <p>
-                  Source builds without distributor-provided credentials, or owners who prefer
-                  their own Google Cloud project, can set JIN_GOOGLE_CLIENT_ID and
-                  JIN_GOOGLE_CLIENT_SECRET or configure the per-vault [google] section.
-                  See the Google smoke-test runbook for setup and verification requirements.
-                </p>
+              <div class="settings-section__actions settings-google-connect-actions">
+                <label class="settings-google-connect-name">
+                  <span class="settings-row__label">Account name <span class="color-secondary">optional</span></span>
+                <input
+                  class="settings-input"
+                  data-settings-target="googleAccountAliasInput"
+                  aria-label="Optional Google account name"
+                  placeholder="Work"
+                  />
+                </label>
+                <button
+                  type="button"
+                  class="btn-primary tap-target"
+                  data-settings-target="connectGoogleCalendarBtn"
+                  data-action="click->settings#connectNewGoogleAccount"
+                >Connect Google Calendar</button>
+                <button
+                  type="button"
+                  class="btn-secondary tap-target hidden"
+                  data-settings-target="cancelGoogleConnectionBtn"
+                  data-action="click->settings#cancelGoogleConnection"
+                >Cancel sign-in</button>
+              </div>
+              <details class="text-callout color-secondary" data-settings-target="googleSetupDetails">
+                <summary>Set up Google Calendar</summary>
+                <p>In the same Google Cloud project, enable Calendar and create a Desktop app client. Download its JSON file, then import it here.</p>
+                <ol class="settings-google-setup-steps">
+                  <li><button type="button" class="btn-secondary tap-target" data-action="click->settings#openGoogleCalendarApi">Enable Calendar API</button></li>
+                  <li><button type="button" class="btn-secondary tap-target" data-action="click->settings#openGoogleOAuthClients">Create Desktop OAuth client</button></li>
+                  <li><button type="button" class="btn-secondary tap-target" data-action="click->settings#importGoogleClientJson">Import Google OAuth client JSON</button></li>
+                </ol>
+                <p class="settings-google-setup-note">If the consent screen is in Testing, add your Google email as a test user.</p>
               </details>
               <div class="settings-row settings-calendar-row">
                 <div>
@@ -1898,19 +1921,8 @@
                 </div>
                 <div data-settings-target="jinCalendarColorPicker"></div>
               </div>
-              <div class="settings-section__actions">
-                <input
-                  class="settings-input"
-                  data-settings-target="googleAccountAliasInput"
-                  aria-label="New Google account alias"
-                  placeholder="Work"
-                />
-                <button
-                  type="button"
-                  class="btn-primary tap-target"
-                  data-action="click->settings#addGoogleAccount"
-                >Add account</button>
-              </div>
+              <p class="text-callout color-secondary hidden" role="status" aria-live="polite" data-settings-target="googleAccountsStatus"></p>
+              <button type="button" class="btn-secondary tap-target hidden" hidden data-settings-target="googleInitialSyncRetryBtn" data-action="click->settings#runSync">Sync Now</button>
               <p
                 class="settings-error hidden"
                 role="alert"

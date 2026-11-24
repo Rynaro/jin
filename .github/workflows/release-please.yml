@@ -56,8 +56,31 @@ jobs:
           version="$(python3 scripts/check-release-version.py --tag "$RELEASE_TAG" --version-only)"
           echo "release_version=$version" >> "$GITHUB_OUTPUT"
 
-  build:
+  publisher_oauth:
     needs: [release_please, version]
+    runs-on: ubuntu-24.04
+    env:
+      JIN_PUBLISHER_GOOGLE_CLIENT_ID: ${{ secrets.JIN_PUBLISHER_GOOGLE_CLIENT_ID }}
+      JIN_PUBLISHER_GOOGLE_CLIENT_SECRET: ${{ secrets.JIN_PUBLISHER_GOOGLE_CLIENT_SECRET }}
+    steps:
+      - name: Validate publisher OAuth release inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$JIN_PUBLISHER_GOOGLE_CLIENT_ID" || { echo 'JIN_PUBLISHER_GOOGLE_CLIENT_ID is required.' >&2; exit 1; }
+          test -n "$JIN_PUBLISHER_GOOGLE_CLIENT_SECRET" || { echo 'JIN_PUBLISHER_GOOGLE_CLIENT_SECRET is required.' >&2; exit 1; }
+          [[ "$JIN_PUBLISHER_GOOGLE_CLIENT_ID" != *[[:space:]]* ]] || { echo 'JIN_PUBLISHER_GOOGLE_CLIENT_ID must not contain whitespace.' >&2; exit 1; }
+          [[ "$JIN_PUBLISHER_GOOGLE_CLIENT_SECRET" != *[[:space:]]* ]] || { echo 'JIN_PUBLISHER_GOOGLE_CLIENT_SECRET must not contain whitespace.' >&2; exit 1; }
+          case "$JIN_PUBLISHER_GOOGLE_CLIENT_ID" in
+            *.apps.googleusercontent.com) ;;
+            *) echo 'JIN_PUBLISHER_GOOGLE_CLIENT_ID must be a Desktop OAuth client ID.' >&2; exit 1 ;;
+          esac
+          case "$JIN_PUBLISHER_GOOGLE_CLIENT_SECRET" in
+            \{*|\[*) echo 'JIN_PUBLISHER_GOOGLE_CLIENT_SECRET must be the client secret, not a JSON file.' >&2; exit 1 ;;
+          esac
+
+  build:
+    needs: [release_please, version, publisher_oauth]
     strategy:
       fail-fast: false
       matrix:
@@ -115,6 +138,9 @@ jobs:
           esac
       - name: Build CLI
         shell: bash
+        env:
+          JIN_PUBLISHER_GOOGLE_CLIENT_ID: ${{ secrets.JIN_PUBLISHER_GOOGLE_CLIENT_ID }}
+          JIN_PUBLISHER_GOOGLE_CLIENT_SECRET: ${{ secrets.JIN_PUBLISHER_GOOGLE_CLIENT_SECRET }}
         run: cargo build --release --locked -p jin
       - name: Smoke-test CLI
         shell: bash
@@ -129,6 +155,9 @@ jobs:
       - name: Build GUI bundles
         working-directory: jin-gui
         shell: bash
+        env:
+          JIN_PUBLISHER_GOOGLE_CLIENT_ID: ${{ secrets.JIN_PUBLISHER_GOOGLE_CLIENT_ID }}
+          JIN_PUBLISHER_GOOGLE_CLIENT_SECRET: ${{ secrets.JIN_PUBLISHER_GOOGLE_CLIENT_SECRET }}
         run: npm run tauri -- build --target '${{ matrix.target }}' --bundles '${{ matrix.bundles }}'
       - name: Package and inspect release files
         shell: bash

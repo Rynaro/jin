@@ -1,0 +1,22 @@
+{
+  "esl_version": "1.1",
+  "change_id": "google-calendar-connection",
+  "status": "archived",
+  "tier": "full",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    "AC-GCONNECT-001",
+    "AC-GCONNECT-002",
+    "AC-GCONNECT-003",
+    "AC-GCONNECT-004",
+    "AC-GCONNECT-005",
+    "AC-GCONNECT-006",
+    "AC-GCONNECT-007",
+    "AC-GCONNECT-008"
+  ],
+  "spec_ref": ".spectra/changes/google-calendar-connection/spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-11-19-google-calendar-connection",
+  "has_code": true
+}

@@ -75,6 +75,7 @@ pub fn pull_destination<H: HttpClient>(
     tokens: &TokenSet,
     http: &H,
 ) -> crate::Result<DestinationSyncResult> {
+    let _pull_guard = crate::ops::sync::acquire_destination_pull_lock(root, target)?;
     let destination = SyncDestination::google(
         target.account_id.as_str().to_string(),
         target.calendar_id.clone(),

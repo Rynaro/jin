@@ -32,9 +32,12 @@ desktop app and command-line interface use the same Rust core.
   and schedule one as an event when it needs time on the calendar.
 - **A desktop app and a CLI.** Work visually or script common actions against
   the same local workspace.
-- **Calendar when you want it.** Connect Google Calendar with your own OAuth
-  client, or keep your calendar data local. Desktop reminders run on your
-  device while Jin is open.
+- **Calendar when you want it.** Official desktop releases can connect Google
+  Calendar from **Settings → Calendars & Sync → Connect Google Calendar**.
+  Self-built and downstream packages can supply their own OAuth client. Desktop
+  reminders run on your device while Jin is open. The [Google Calendar setup
+  guide](docs/google-smoke-test.md) covers the publisher rollout, local pilot,
+  and advanced credential overrides.
 
 ## Download
 
@@ -152,9 +155,10 @@ confirming the restored contents.
 
 Your workspace’s Markdown and YAML files are canonical. Jin can rebuild its
 SQLite index from them, and the CLI supports export and import. Optional Google
-Calendar sync needs a Google Desktop OAuth client that you configure; see the
-[setup guide](docs/google-smoke-test.md). Reminders are local to the desktop
-app and do not sync between devices.
+Calendar sync in an official desktop release starts with **Connect Google
+Calendar** on first install; when building from source, configure your own
+Google Desktop OAuth client. See the [setup guide](docs/google-smoke-test.md).
+Reminders are local to the desktop app and do not sync between devices.
 
 Portable workspaces use generic file synchronizers and do not require provider
 APIs. Their reliability depends on the provider keeping the dedicated folder

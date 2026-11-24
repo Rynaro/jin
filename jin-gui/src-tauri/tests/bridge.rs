@@ -15,6 +15,63 @@ fn init_root() -> TempDir {
     tmp
 }
 
+#[test]
+fn google_client_import_is_local_validated_and_does_not_replace_existing_configuration() {
+    let root = init_root();
+    let valid = root.path().join("desktop-client.json");
+    std::fs::write(
+        &valid,
+        r#"{
+          "installed": {
+            "client_id": "desktop.apps.googleusercontent.com",
+            "client_secret": "desktop-secret"
+          }
+        }"#,
+    )
+    .expect("write fixture OAuth client");
+
+    jin_gui::commands::google_accounts::import_google_client_json_fn(root.path(), &valid)
+        .expect("import desktop client");
+    let imported = jin_core::Config::load(root.path()).expect("load imported config");
+    assert_eq!(
+        imported.google.client_id.as_deref(),
+        Some("desktop.apps.googleusercontent.com")
+    );
+    assert_eq!(
+        imported.google.client_secret.as_deref(),
+        Some("desktop-secret")
+    );
+
+    let invalid = root.path().join("web-client.json");
+    std::fs::write(&invalid, r#"{"web": {}}"#).expect("write invalid fixture");
+    let error =
+        jin_gui::commands::google_accounts::import_google_client_json_fn(root.path(), &invalid)
+            .expect_err("web credentials cannot replace the installed client");
+    assert!(error.message.contains("already configured"));
+
+    let after = jin_core::Config::load(root.path()).expect("load unchanged config");
+    assert_eq!(after.google.client_id, imported.google.client_id);
+    assert_eq!(after.google.client_secret, imported.google.client_secret);
+    assert!(after.google_registry.accounts.is_empty());
+}
+
+#[test]
+fn invalid_google_client_import_keeps_vault_configuration_unchanged() {
+    let root = init_root();
+    let invalid = root.path().join("not-a-client.json");
+    std::fs::write(&invalid, r#"{"web": {}}"#).expect("write invalid fixture");
+
+    let error =
+        jin_gui::commands::google_accounts::import_google_client_json_fn(root.path(), &invalid)
+            .expect_err("reject web client");
+    assert!(error.message.contains("Desktop app"));
+
+    let config = jin_core::Config::load(root.path()).expect("load untouched config");
+    assert!(config.google.client_id.is_none());
+    assert!(config.google.client_secret.is_none());
+    assert!(config.google_registry.accounts.is_empty());
+}
+
 fn create_workflow_list(root: &std::path::Path, name: &str, kind: &str) -> jin_core::dto::ListDto {
     jin_gui::commands::lists::create_list_fn(
         root,

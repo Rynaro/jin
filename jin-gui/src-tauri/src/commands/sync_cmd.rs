@@ -54,6 +54,7 @@ mod ipc_tests {
                 super::super::google_accounts::refresh_google_event_details,
                 super::super::google_accounts::rename_google_account,
                 super::super::google_accounts::connect_google_account,
+                super::super::google_accounts::cancel_google_connection,
                 super::super::google_accounts::disconnect_google_account,
                 super::super::google_accounts::refresh_google_calendars,
                 super::super::google_accounts::set_google_calendar_enabled,
@@ -71,7 +72,7 @@ mod ipc_tests {
             ),
             (
                 "connect_google_account",
-                serde_json::json!({"account_id": "invalid-account"}),
+                serde_json::json!({"account_id": "invalid-account", "attempt_id": "fixture-attempt"}),
             ),
             (
                 "disconnect_google_account",
@@ -122,5 +123,27 @@ mod ipc_tests {
             assert!(error.get("code").is_some());
             assert!(!error.to_string().contains("missing required key"));
         }
+
+        let response = tauri::test::get_ipc_response(
+            &webview,
+            tauri::webview::InvokeRequest {
+                cmd: "cancel_google_connection".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "tauri://localhost".parse().unwrap(),
+                body: tauri::ipc::InvokeBody::Json(
+                    serde_json::json!({"attempt_id": "stale-attempt"}),
+                ),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        )
+        .expect("cancel command must accept snake_case attempt_id")
+        .deserialize::<bool>()
+        .expect("cancel command must return whether it cancelled an active attempt");
+        assert!(
+            !response,
+            "a stale attempt id must not cancel a later attempt"
+        );
     }
 }

@@ -6,6 +6,8 @@
 use std::path::Path;
 use std::path::PathBuf;
 
+use sha2::{Digest, Sha256};
+
 use crate::google::account::GoogleAccountState;
 use crate::google::client::{HttpClient, ReqwestClient};
 use crate::google::secrets::{load_tokens, load_tokens_with_passphrase};
@@ -154,6 +156,12 @@ pub fn review_quarantined_operation(
 
 pub(crate) struct RefreshLock(PathBuf);
 
+/// An advisory lock held by the operating system. Unlike a create-new marker,
+/// it is released automatically if the process exits during an import.
+pub(crate) struct DestinationPullLock {
+    _file: std::fs::File,
+}
+
 impl Drop for RefreshLock {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
@@ -216,6 +224,34 @@ pub(crate) fn acquire_provider_request_guard(
         });
     }
     Ok(guard)
+}
+
+/// Serialize the complete inbound pull for one remote calendar. The provider
+/// request guard protects individual HTTP calls, while this guard also covers
+/// cursor and mapping updates between those calls.
+pub(crate) fn acquire_destination_pull_lock(
+    root: &Path,
+    target: &crate::google::account::EventSyncTarget,
+) -> crate::Result<DestinationPullLock> {
+    let dir = root
+        .join(".jin")
+        .join("sync")
+        .join("accounts")
+        .join(target.account_id.as_str())
+        .join("pulls");
+    std::fs::create_dir_all(&dir)?;
+    let digest = Sha256::digest(target.calendar_id.as_bytes());
+    let path = dir.join(format!("{:x}.lock", digest));
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(JinError::Io)?;
+    file.try_lock().map_err(|_| {
+        JinError::InvalidInput("Google calendar import is already in progress".to_string())
+    })?;
+    Ok(DestinationPullLock { _file: file })
 }
 
 struct HttpPostAdapter<'a, H>(&'a H);
@@ -570,6 +606,122 @@ pub fn sync_all_with_http<H: HttpClient>(
     })
 }
 
+/// Import remote events for one newly connected account without draining its
+/// outbox. This seeds the Calendar view after CalendarList discovery without
+/// publishing local changes.
+///
+/// Each provider request checks its account and route generation. A concurrent
+/// manual sync or route change is rejected by the existing request guard before
+/// it can advance a shared cursor out of order.
+pub fn pull_account_inbound(
+    root: &Path,
+    account_id: &crate::google::account::GoogleAccountId,
+) -> crate::Result<AggregateSyncSummary> {
+    let config = Config::load(root)?;
+    pull_account_inbound_with_http(root, &config, account_id, &ReqwestClient)
+}
+
+pub fn pull_account_inbound_with_http<H: HttpClient>(
+    root: &Path,
+    cfg: &Config,
+    account_id: &crate::google::account::GoogleAccountId,
+    http: &H,
+) -> crate::Result<AggregateSyncSummary> {
+    let account = cfg.google_registry.account(account_id)?;
+    if account.state != GoogleAccountState::Connected {
+        return Err(JinError::Auth(
+            "Google account is not connected".to_string(),
+        ));
+    }
+
+    let routes: Vec<_> = cfg
+        .google_registry
+        .calendars
+        .iter()
+        .filter(|calendar| {
+            calendar.account_id == *account_id && calendar.enabled && calendar.available
+        })
+        .map(|calendar| (calendar.calendar_id.clone(), calendar.route_generation))
+        .collect();
+    let conn = crate::sync::state::open_sync_db(&cfg.sync_dir())?;
+    let mut destinations = Vec::new();
+    let mut errors = Vec::new();
+    let mut changed = false;
+
+    let (tokens, auth_generation) =
+        match load_or_refresh_account_tokens_default(root, account_id, http) {
+            Ok(tokens) => tokens,
+            Err(error) => {
+                return Ok(AggregateSyncSummary {
+                    status: "error".to_string(),
+                    destinations,
+                    pulled: 0,
+                    pushed: 0,
+                    errors: vec![error.to_string()],
+                });
+            }
+        };
+
+    for (calendar_id, route_generation) in routes {
+        let target = crate::google::account::EventSyncTarget {
+            account_id: account_id.clone(),
+            calendar_id,
+        };
+        match crate::google::multi_sync::pull_destination(
+            root,
+            &conn,
+            &target,
+            auth_generation,
+            route_generation,
+            &tokens,
+            http,
+        ) {
+            Ok(result) => {
+                changed |= result.pulled > 0;
+                destinations.push(result);
+            }
+            Err(error) => {
+                // A first-import failure must not undo successful OAuth. A
+                // calendar-specific authorization change or concurrent manual
+                // sync is retriable from Settings or the normal Sync action.
+                errors.push(format!(
+                    "{}/{}: {error}",
+                    target.account_id, target.calendar_id
+                ));
+            }
+        }
+    }
+
+    if changed {
+        let mut index = crate::index::open(&cfg.index_path())?;
+        errors.extend(
+            crate::index::rebuild::rebuild(&mut index, root)?
+                .into_iter()
+                .map(|error| error.to_string()),
+        );
+    }
+    errors.extend(
+        destinations
+            .iter()
+            .flat_map(|result| result.errors.iter().cloned()),
+    );
+    let pulled = destinations.iter().map(|result| result.pulled).sum();
+    Ok(AggregateSyncSummary {
+        status: if errors.is_empty() {
+            "ok"
+        } else if destinations.is_empty() {
+            "error"
+        } else {
+            "partial"
+        }
+        .to_string(),
+        destinations,
+        pulled,
+        pushed: 0,
+        errors,
+    })
+}
+
 pub fn sync_all_with_http_and_passphrase<H: HttpClient>(
     root: &Path,
     cfg: &Config,
@@ -808,4 +960,199 @@ pub fn sync_with_http_and_passphrase<H: HttpClient>(
     }
 
     Ok(summary)
+}
+
+#[cfg(test)]
+mod initial_import_tests {
+    use super::*;
+    use crate::google::account::{DiscoveredCalendar, GoogleAccessRole, GOOGLE_ISSUER};
+    use crate::google::client::{HttpResponse, MockHttpClient};
+    use crate::google::secrets::TokenSet;
+
+    #[test]
+    fn initial_import_uses_only_the_inbound_calendar_request() {
+        let root = tempfile::tempdir().unwrap();
+        crate::ops::init(root.path()).unwrap();
+        let mut config = Config::load(root.path()).unwrap();
+        let account_id = config.google_registry.add_pending_account("Pilot").unwrap();
+        config
+            .google_registry
+            .account_mut(&account_id)
+            .unwrap()
+            .bind_subject(GOOGLE_ISSUER, "pilot-subject", None)
+            .unwrap();
+        config
+            .google_registry
+            .reconcile_calendars(
+                &account_id,
+                vec![DiscoveredCalendar {
+                    calendar_id: "primary".to_string(),
+                    name: "Primary".to_string(),
+                    primary: true,
+                    access_role: GoogleAccessRole::Owner,
+                    allowed_conference_solution_types: Vec::new(),
+                }],
+            )
+            .unwrap();
+        config.save().unwrap();
+
+        let target = crate::google::account::EventSyncTarget {
+            account_id,
+            calendar_id: "primary".to_string(),
+        };
+        let conn = crate::sync::state::open_sync_db(&config.sync_dir()).unwrap();
+        let http = MockHttpClient::new(vec![HttpResponse {
+            status: 200,
+            body: serde_json::json!({ "items": [], "nextSyncToken": "first-token" }),
+            etag: None,
+        }]);
+        let tokens = TokenSet {
+            access_token: "test-access".to_string(),
+            refresh_token: None,
+            expires_at: 9_999_999_999,
+            scope: "calendar.events".to_string(),
+            client_id: "test.apps.googleusercontent.com".to_string(),
+            account: None,
+        };
+
+        let result = crate::google::multi_sync::pull_destination(
+            root.path(),
+            &conn,
+            &target,
+            1,
+            0,
+            &tokens,
+            &http,
+        )
+        .unwrap();
+
+        assert_eq!(result.pushed, 0);
+        assert_eq!(http.requested_posts(), Vec::new());
+        assert_eq!(http.requested_patches(), Vec::new());
+        assert_eq!(http.requested_urls().len(), 1);
+    }
+
+    #[test]
+    fn destination_pull_lock_releases_when_the_owner_drops() {
+        let root = tempfile::tempdir().unwrap();
+        let account_id = crate::google::account::GoogleAccountId::parse("pilot").unwrap();
+        let target = crate::google::account::EventSyncTarget {
+            account_id,
+            calendar_id: "primary".to_string(),
+        };
+        let first = acquire_destination_pull_lock(root.path(), &target).unwrap();
+        assert!(acquire_destination_pull_lock(root.path(), &target).is_err());
+        drop(first);
+        acquire_destination_pull_lock(root.path(), &target).unwrap();
+    }
+
+    #[test]
+    fn account_initial_import_skips_disabled_routes_and_never_drains_local_work() {
+        let _passphrase = crate::test_support::EnvGuard::set(
+            "JIN_TOKEN_PASSPHRASE",
+            "initial-import-test-passphrase",
+            &crate::test_support::PASSPHRASE_ENV_LOCK,
+        );
+        let root = tempfile::tempdir().unwrap();
+        crate::ops::init(root.path()).unwrap();
+        let mut config = Config::load(root.path()).unwrap();
+        config.token_backend = "file".to_string();
+        let account_id = config.google_registry.add_pending_account("Pilot").unwrap();
+        config
+            .google_registry
+            .account_mut(&account_id)
+            .unwrap()
+            .bind_subject(GOOGLE_ISSUER, "pilot-subject", None)
+            .unwrap();
+        config
+            .google_registry
+            .reconcile_calendars(
+                &account_id,
+                vec![
+                    DiscoveredCalendar {
+                        calendar_id: "enabled".to_string(),
+                        name: "Enabled".to_string(),
+                        primary: true,
+                        access_role: GoogleAccessRole::Owner,
+                        allowed_conference_solution_types: Vec::new(),
+                    },
+                    DiscoveredCalendar {
+                        calendar_id: "disabled".to_string(),
+                        name: "Disabled".to_string(),
+                        primary: false,
+                        access_role: GoogleAccessRole::Owner,
+                        allowed_conference_solution_types: Vec::new(),
+                    },
+                ],
+            )
+            .unwrap();
+        config
+            .google_registry
+            .calendars
+            .iter_mut()
+            .find(|calendar| calendar.calendar_id == "disabled")
+            .unwrap()
+            .enabled = false;
+        config.save().unwrap();
+        let tokens = TokenSet {
+            access_token: "test-access".to_string(),
+            refresh_token: None,
+            expires_at: 9_999_999_999,
+            scope: "calendar.events".to_string(),
+            client_id: "test.apps.googleusercontent.com".to_string(),
+            account: None,
+        };
+        crate::google::secrets::save_tokens_for_account(root.path(), &config, &account_id, &tokens)
+            .unwrap();
+        let conn = crate::sync::state::open_sync_db(&config.sync_dir()).unwrap();
+        crate::sync::state::enqueue_dirty(&conn, "queued-local-event").unwrap();
+        let http = MockHttpClient::new(vec![HttpResponse {
+            status: 200,
+            body: serde_json::json!({
+                "items": [{
+                    "id": "remote-event",
+                    "iCalUID": "remote-event@example.test",
+                    "etag": "\\\"etag\\\"",
+                    "status": "confirmed",
+                    "summary": "Incoming",
+                    "start": {"dateTime": "2026-07-01T14:00:00", "timeZone": "America/Sao_Paulo"},
+                    "end": {"dateTime": "2026-07-01T14:30:00", "timeZone": "America/Sao_Paulo"},
+                    "sequence": 0,
+                    "created": "2026-06-01T00:00:00Z",
+                    "updated": "2026-06-26T09:00:00Z"
+                }],
+                "nextSyncToken": "enabled-token"
+            }),
+            etag: None,
+        }]);
+
+        let summary =
+            pull_account_inbound_with_http(root.path(), &config, &account_id, &http).unwrap();
+
+        assert_eq!(summary.pulled, 1);
+        assert_eq!(summary.pushed, 0);
+        assert_eq!(http.requested_urls().len(), 1);
+        assert!(http.requested_urls()[0].contains("enabled"));
+        assert!(http.requested_posts().is_empty());
+        assert!(http.requested_patches().is_empty());
+        assert_eq!(
+            crate::sync::state::list_route_outbox_for_drain(
+                &conn,
+                &crate::sync::state::SyncDestination::google(
+                    account_id.to_string(),
+                    "enabled".to_string()
+                ),
+            )
+            .unwrap()
+            .len(),
+            0,
+        );
+        assert!(root
+            .path()
+            .join("events")
+            .read_dir()
+            .unwrap()
+            .next()
+            .is_some());
+    }
 }

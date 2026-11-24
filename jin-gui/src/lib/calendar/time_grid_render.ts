@@ -34,6 +34,8 @@ export interface TimeGridRenderOptions {
   todayDate: string;
   nowMinute: number;
   expansion: NightExpansion;
+  /** Day keeps its full chronology visible. Week can disclose quiet night bands. */
+  nightControls?: boolean;
   displaySlots?: ReadonlyMap<string, readonly DisplayTimeSlot[]>;
   cursor?: TemporalCursor | null;
   onEvent: (eventId: string, control: HTMLButtonElement) => void;
@@ -301,15 +303,17 @@ export function renderTimeGrid(options: TimeGridRenderOptions): RenderedTimeGrid
     hourItems.push(label);
   }
   const toggles = new Map<NightBand, HTMLButtonElement>();
-  (['early', 'late'] as const).forEach(band => {
-    const toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'calendar-timegrid__night-toggle';
-    toggle.dataset.band = band;
-    toggle.addEventListener('click', () => options.onNightToggle(band));
-    gutter.appendChild(toggle);
-    toggles.set(band, toggle);
-  });
+  if (options.nightControls !== false) {
+    (['early', 'late'] as const).forEach(band => {
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'calendar-timegrid__night-toggle';
+      toggle.dataset.band = band;
+      toggle.addEventListener('click', () => options.onNightToggle(band));
+      gutter.appendChild(toggle);
+      toggles.set(band, toggle);
+    });
+  }
   body.appendChild(gutter);
 
   const dayColumns: HTMLElement[] = [];
@@ -439,7 +443,8 @@ export function renderTimeGrid(options: TimeGridRenderOptions): RenderedTimeGrid
 
   const updateToggleCopy = (): void => {
     (['early', 'late'] as const).forEach(band => {
-      const toggle = toggles.get(band)!;
+      const toggle = toggles.get(band);
+      if (!toggle) return;
       const summary = nightSummary(model, band, options.locale, currentTodayDate, currentNowMinute);
       toggle.setAttribute('aria-label', `${currentExpansion[band] ? eventMessage('hide', options.locale) : eventMessage('show', options.locale)} ${summary}`);
       toggle.title = summary;
@@ -500,7 +505,8 @@ export function renderTimeGrid(options: TimeGridRenderOptions): RenderedTimeGrid
       element.style.setProperty('--calendar-event-duration', String(geometry.end - geometry.start));
     });
     (['early', 'late'] as const).forEach(band => {
-      const toggle = toggles.get(band)!;
+      const toggle = toggles.get(band);
+      if (!toggle) return;
       const expanded = expansion[band];
       const startMinute = band === 'early' ? 0 : LATE_NIGHT_START;
       const endMinute = band === 'early' ? EARLY_NIGHT_END : MINUTES_PER_DAY;

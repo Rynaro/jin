@@ -84,6 +84,9 @@ describe('calendar interaction (S5)', () => {
     drag = beginTimedDrag('2026-08-20', 10 * 60);
     drag = updateTimedDrag(drag, 11 * 60);
     expect(finalizeTimedDrag(drag)).toMatchObject({ start_time: '10:00', end_time: '11:00' });
+    drag = beginTimedDrag('2026-08-20', 11 * 60);
+    drag = updateTimedDrag(drag, 10 * 60);
+    expect(finalizeTimedDrag(drag)).toMatchObject({ start_time: '10:00', end_time: '11:00' });
   });
 
   it('abort_restores: pointer cancel / Escape reports zero mutation', () => {

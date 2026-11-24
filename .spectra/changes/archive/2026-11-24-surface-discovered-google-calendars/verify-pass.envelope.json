@@ -1,0 +1,21 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "INFORM",
+  "objective": "Verify Calendar source refresh, inbound-only event import and retry after successful Google discovery",
+  "context_delta": {
+    "fresh_context": false,
+    "limitation": "No new OAuth consent or real remote sync performed.",
+    "transcript_access": "inherited",
+    "verified": [
+      "Frontend list renders post-discovery without manual sync",
+      "Import test uses scoped read-only Calendar request and leaves local work undrained",
+      "Route activation recovers after missed notification"
+    ]
+  }
+}

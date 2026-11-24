@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Application } from '@hotwired/stimulus';
+import { listen } from '@tauri-apps/api/event';
 import CalendarViewController, { eventIntersectsDate } from '../controllers/calendar_view_controller';
 import CalendarController from '../controllers/calendar_controller';
 import { initIcons } from '../lib/icons';
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../invoke', () => mocks);
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock('../lib/icons', () => ({ initIcons: vi.fn() }));
 
 function makeEvent(overrides: Partial<EventDto> = {}): EventDto {
@@ -214,6 +216,103 @@ describe('CalendarViewController safety and mode invariants', () => {
       .toContain('Imported from Google');
   });
 
+  it('shows newly discovered empty Google calendars without waiting for an event', async () => {
+    mocks.listGoogleAccounts.mockResolvedValue([]);
+    await controller.loadCalendar();
+    expect(document.querySelectorAll('.calendar-filter input[data-calendar-key^="google:"]')).toHaveLength(0);
+
+    window.dispatchEvent(new CustomEvent('jin:google-accounts-loaded', {
+      detail: [{
+        id: 'account-work', alias: 'Work', principal: null, state: 'connected', auth_generation: 1,
+        calendars: [{
+          account_id: 'account-work', calendar_id: 'team', name: 'Team', primary: false,
+          access_role: 'writer', writable: true, enabled: true, available: true, route_generation: 1,
+          allowed_conference_solution_types: [],
+        }],
+      }],
+    }));
+    await flush();
+
+    const key = googleCalendarKey('account-work', 'team');
+    const row = document.querySelector<HTMLInputElement>(`.calendar-filter input[data-calendar-key="${key}"]`);
+    expect(row?.checked).toBe(true);
+    expect(row?.parentElement?.textContent).toContain('Team · Work');
+  });
+
+  it('reloads once after the native initial Google import settles', async () => {
+    const callbacks: Array<(event: { payload: unknown }) => void> = [];
+    vi.mocked(listen).mockImplementation(async (_event, callback) => {
+      callbacks.push(callback as (event: { payload: unknown }) => void);
+      return () => {};
+    });
+    await (controller as unknown as { subscribeToGoogleInitialPulls(): Promise<void> }).subscribeToGoogleInitialPulls();
+    await flush();
+    const refresh = vi.spyOn(controller, 'loadCalendar');
+    mocks.listEvents.mockResolvedValue([makeEvent({ id: 'native-import', title: 'Native import' })]);
+
+    const callback = callbacks.at(-1)!;
+    callback({ payload: { attempt_id: 'attempt-work', account_id: 'account-work', status: 'ok' } });
+    callback({ payload: { attempt_id: 'attempt-home', account_id: 'account-home', status: 'partial' } });
+    await flush();
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+    controller.selectDate('2026-08-20');
+    expect(document.querySelector('[data-event-id="native-import"]')?.textContent).toContain('Native import');
+  });
+
+  it('keeps newer Google discovery when an older Calendar route read resolves late', async () => {
+    let resolveOldAccounts!: (accounts: any[]) => void;
+    const oldAccounts = new Promise<any[]>(resolve => { resolveOldAccounts = resolve; });
+    mocks.listGoogleAccounts.mockImplementationOnce(() => oldAccounts);
+    const loading = controller.loadCalendar();
+    await Promise.resolve();
+
+    window.dispatchEvent(new CustomEvent('jin:google-accounts-loaded', {
+      detail: [{
+        id: 'fresh', alias: 'Fresh', principal: null, state: 'connected', auth_generation: 1,
+        calendars: [{ account_id: 'fresh', calendar_id: 'current', name: 'Current', primary: false,
+          access_role: 'writer', writable: true, enabled: true, available: true, route_generation: 1,
+          allowed_conference_solution_types: [] }],
+      }],
+    }));
+    resolveOldAccounts([{ id: 'stale', alias: 'Stale', principal: null, state: 'connected', auth_generation: 1,
+      calendars: [{ account_id: 'stale', calendar_id: 'old', name: 'Old', primary: false,
+        access_role: 'writer', writable: true, enabled: true, available: true, route_generation: 1,
+        allowed_conference_solution_types: [] }],
+    }]);
+    await loading;
+
+    expect(document.querySelector('.calendar-filter')?.textContent).toContain('Current · Fresh');
+    expect(document.querySelector('.calendar-filter')?.textContent).not.toContain('Old · Stale');
+  });
+
+  it('unsubscribes when the Calendar route disconnects before the native listener resolves', async () => {
+    let resolveListen!: (unlisten: () => void) => void;
+    const unlisten = vi.fn();
+    vi.mocked(listen).mockImplementationOnce(() => new Promise(resolve => { resolveListen = resolve; }));
+    const subscribing = (controller as unknown as { subscribeToGoogleInitialPulls(): Promise<void> }).subscribeToGoogleInitialPulls();
+    controller.disconnect();
+    resolveListen(unlisten);
+    await subscribing;
+
+    expect(unlisten).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconciles an initial import when the Calendar route becomes active', async () => {
+    mocks.listEvents.mockResolvedValue([]);
+    await controller.loadCalendar();
+    mocks.listEvents.mockResolvedValue([
+      makeEvent({ id: 'initial-import', title: 'Imported on connect' }),
+    ]);
+
+    controller.activateSection();
+    await flush();
+    controller.selectDate('2026-08-20');
+
+    expect(document.querySelector('[data-event-id="initial-import"]')?.textContent)
+      .toContain('Imported on connect');
+  });
+
   it('does not reload twice for mutations it already refreshes locally', async () => {
     mocks.listEvents.mockClear();
 
@@ -365,21 +464,100 @@ describe('CalendarViewController safety and mode invariants', () => {
     await flush();
 
     const day = scroller.querySelector<HTMLElement>('.calendar-timegrid__day[data-date="2026-08-20"]')!;
-    const pointer = (type: string): Event => {
+    const pointer = (type: string, clientY = 120): Event => {
       const event = new Event(type, { bubbles: true, cancelable: true });
       Object.defineProperties(event, {
         pointerType: { value: 'mouse' },
-        clientY: { value: 120 },
+        clientY: { value: clientY },
+        button: { value: 0 },
       });
       return event;
     };
     day.dispatchEvent(pointer('pointerdown'));
-    window.dispatchEvent(pointer('pointerup'));
+    window.dispatchEvent(pointer('pointermove', 180));
+    window.dispatchEvent(pointer('pointerup', 180));
     await flush();
     expect(document.querySelector<HTMLInputElement>('#event-composer-title')?.value).toBe('Unsaved title');
     expect(document.querySelector('.event-companion__discard.hidden')).toBeNull();
     expect(mocks.createEvent).not.toHaveBeenCalled();
   });
+
+  it.each(['day', 'week'] as const)('keeps a %s drag range when the browser dispatches its compatibility click', async mode => {
+    if (mode === 'day') controller.selectDate('2026-08-20');
+    else (controller as unknown as { setViewMode(value: 'week'): void }).setViewMode('week');
+    await flush();
+    const day = document.querySelector<HTMLElement>('.calendar-timegrid__day[data-date="2026-08-20"]')!;
+    vi.spyOn(day, 'getBoundingClientRect').mockReturnValue({ top: 0, height: 1_296 } as DOMRect);
+    const pointer = (type: string, clientY: number): Event => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        pointerType: { value: 'mouse' },
+        clientY: { value: clientY },
+        button: { value: 0 },
+      });
+      return event;
+    };
+
+    // The projected 10:00–11:00 range becomes a selected one-hour draft.
+    day.dispatchEvent(pointer('pointerdown', 540));
+    window.dispatchEvent(pointer('pointermove', 594));
+    window.dispatchEvent(pointer('pointerup', 594));
+    day.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientY: 594 }));
+    await flush();
+    await flush();
+
+    const companion = (controller as unknown as {
+      companion: { getDraft(): { temporal: { start_time: string; end_time: string } } | null };
+    }).companion;
+    expect(companion.getDraft()?.temporal).toMatchObject({ start_time: '10:00', end_time: '11:00' });
+  });
+
+  it('keeps an ordinary empty-slot click available after a pointer press without movement', async () => {
+    controller.selectDate('2026-08-20');
+    await flush();
+    const day = document.querySelector<HTMLElement>('.calendar-timegrid__day[data-date="2026-08-20"]')!;
+    vi.spyOn(day, 'getBoundingClientRect').mockReturnValue({ top: 0, height: 1_296 } as DOMRect);
+    const pointer = (type: string): Event => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, { pointerType: { value: 'mouse' }, clientY: { value: 540 }, button: { value: 0 } });
+      return event;
+    };
+
+    day.dispatchEvent(pointer('pointerdown'));
+    window.dispatchEvent(pointer('pointerup'));
+    day.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientY: 540 }));
+    await flush();
+    await flush();
+
+    const companion = (controller as unknown as {
+      companion: { getDraft(): { temporal: { start_time: string; end_time: string } } | null };
+    }).companion;
+    expect(companion.getDraft()?.temporal).toMatchObject({ start_time: '10:00', end_time: '11:00' });
+  });
+
+  it('does not let a cancelled drag swallow the next unrelated click', async () => {
+    controller.selectDate('2026-08-20');
+    await flush();
+    const day = document.querySelector<HTMLElement>('.calendar-timegrid__day[data-date="2026-08-20"]')!;
+    vi.spyOn(day, 'getBoundingClientRect').mockReturnValue({ top: 0, height: 1_296 } as DOMRect);
+    const pointer = (type: string, clientY: number): Event => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, { pointerType: { value: 'mouse' }, clientY: { value: clientY }, button: { value: 0 } });
+      return event;
+    };
+
+    day.dispatchEvent(pointer('pointerdown', 540));
+    window.dispatchEvent(pointer('pointermove', 594));
+    window.dispatchEvent(pointer('pointercancel', 594));
+    const unrelated = document.createElement('button');
+    const click = vi.fn();
+    unrelated.addEventListener('click', click);
+    document.body.appendChild(unrelated);
+    unrelated.click();
+
+    expect(click).toHaveBeenCalledTimes(1);
+  });
+
 
 
 
@@ -424,15 +602,16 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(document.querySelector('[data-calendar-view-target="dayView"]')?.classList.contains('hidden')).toBe(false);
   });
 
-  it('keeps a localized Day date as the route heading and groups its return with date navigation', () => {
+  it('keeps a localized Day date with its persistent picker and sidebar context', () => {
     localStorage.setItem('jin:event-locale', 'pt-BR');
     controller.localeChanged();
     controller.selectDate('2026-11-22');
 
     const header = document.querySelector('[data-calendar-view-target="dayView"] .calendar-month-header')!;
     expect(header.querySelector('.calendar-workspace-title')).toBeNull();
-    expect(header.querySelector('.calendar-month-leading .calendar-back-btn')).toBeNull();
-    expect(header.querySelector('.calendar-view-controls .calendar-back-btn')?.getAttribute('aria-label')).toBe('Voltar para a visualização mensal');
+    expect(header.querySelector<HTMLElement>('.calendar-context-trigger-host')?.dataset.sidebarContextAnchor).toBe('events');
+    expect(header.querySelector('.calendar-view-controls .calendar-view-switch')).not.toBeNull();
+    expect(header.querySelector('.calendar-back-btn')).toBeNull();
     expect(header.querySelector('.calendar-month-label')?.textContent).toBe('domingo, 22 de novembro de 2026');
   });
 
@@ -587,12 +766,15 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(document.querySelector('.calendar-timegrid--day')).not.toBeNull();
     expect(document.querySelectorAll('.calendar-timegrid--day .calendar-timegrid__day')).toHaveLength(1);
     expect(document.querySelectorAll('.calendar-timegrid--day .calendar-timegrid__gutter')).toHaveLength(1);
+    expect(document.querySelector('.calendar-timegrid--day .calendar-timegrid__night-toggle')).toBeNull();
+    expect(document.querySelector('.calendar-timegrid--day .calendar-back-btn')).toBeNull();
     expect(document.querySelector('.calendar-events-list')).toBeNull();
 
     document.querySelectorAll<HTMLButtonElement>('.calendar-view-switch__button')
       .forEach(button => { if (button.textContent === 'Week') button.click(); });
     expect(document.querySelectorAll('.calendar-timegrid--week .calendar-timegrid__day')).toHaveLength(7);
     expect(document.querySelectorAll('.calendar-timegrid--week .calendar-timegrid__gutter')).toHaveLength(1);
+    expect(document.querySelectorAll('.calendar-timegrid--week .calendar-timegrid__night-toggle')).toHaveLength(2);
   });
 
   it('keeps chronological controls focusable and routes activation to companion preview', async () => {
@@ -731,8 +913,11 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(document.activeElement?.getAttribute('data-event-id')).toBe(event.dataset.eventId);
   });
 
-  it('keeps active-view-local nighttime choices across rerender and resets them on identity change', () => {
-    controller.selectDate('2026-08-20');
+  it('keeps Week nighttime choices across rerender and resets them on identity change', async () => {
+    mocks.listEvents.mockResolvedValue([]);
+    await controller.loadCalendar();
+    document.querySelectorAll<HTMLButtonElement>('.calendar-view-switch__button')
+      .forEach(button => { if (button.textContent === 'Week') button.click(); });
     const early = document.querySelector<HTMLButtonElement>('.calendar-timegrid__night-toggle[data-band="early"]')!;
     expect(early.getAttribute('aria-expanded')).toBe('false');
     early.click();
@@ -741,7 +926,10 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(document.querySelector('.calendar-timegrid__night-toggle[data-band="early"]')?.getAttribute('aria-expanded')).toBe('true');
     controller.restoreActiveView();
     expect(document.querySelector('.calendar-timegrid__night-toggle[data-band="early"]')?.getAttribute('aria-expanded')).toBe('true');
-    controller.selectDate('2026-08-24');
+    (controller as unknown as { selectedDate: string }).selectedDate = '2026-08-24';
+    controller.restoreActiveView();
+    await flush();
+    await flush();
     expect(document.querySelector('.calendar-timegrid__night-toggle[data-band="early"]')?.getAttribute('aria-expanded')).toBe('false');
   });
 
@@ -833,7 +1021,7 @@ describe('CalendarViewController safety and mode invariants', () => {
 
       controller.selectDate('2026-08-24');
       await vi.advanceTimersByTimeAsync(20);
-      expect(document.querySelector<HTMLElement>('.calendar-timegrid__scroller')?.scrollTop).toBeCloseTo(156.6);
+      expect(document.querySelector<HTMLElement>('.calendar-timegrid__scroller')?.scrollTop).toBeCloseTo(432);
 
       route.classList.add('hidden');
       controller.selectDate('2026-08-25');

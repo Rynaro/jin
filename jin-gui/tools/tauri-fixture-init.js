@@ -159,6 +159,22 @@
       ]
     }
   ];
+  var googleClientReady = true;
+  // Deterministic connection-flow fixtures for browser QA. Set
+  // localStorage.jin.fixture.googleScenario before reload to one of
+  // `fresh-unconfigured`, `import-cancel`, or `import-invalid`.
+  function googleScenario() {
+    var scenario = fixtureStorageGet('jin.fixture.googleScenario');
+    if (scenario && scenario !== 'fresh-unconfigured' && scenario !== 'import-cancel' && scenario !== 'import-invalid') {
+      throw new Error('Unsupported Jin Google scenario: ' + scenario);
+    }
+    return scenario;
+  }
+  if (googleScenario()) googleClientReady = false;
+  if (googleScenario() === 'fresh-unconfigured') {
+    googleAccounts = [];
+    googleClientReady = false;
+  }
   function syncContext(accountId, calendarId, state) {
     var account = googleAccounts.find(function findAccount(item) { return item.id === accountId; });
     var calendar = account && account.calendars.find(function findCalendar(item) { return item.calendar_id === calendarId; });
@@ -233,6 +249,7 @@
   var quarantinedOperations = [
     { operation_id: 'fixture-paused-001', provider: 'google', operation: 'patch', jin_id: 'e8', recurrence_key: 'master', account_id: 'acct-work', account_alias: 'Work', calendar_id: 'work-primary', calendar_name: 'Team Calendar', pause_reason: 'provider_permission_changed' }
   ];
+  if (googleScenario() === 'fresh-unconfigured') quarantinedOperations = [];
 
   function eventEditToken(item) {
     return 'fixture-event:' + item.id + ':' + item.sequence;
@@ -1349,12 +1366,31 @@
       }
       if (cmd === 'calendar_range_projection') return Promise.resolve(clone(fixtureCalendarProjection(options.input)));
       if (cmd === 'list_google_accounts') return Promise.resolve(clone(googleAccounts));
+      if (cmd === 'google_client_configured') return Promise.resolve(googleClientReady);
       if (cmd === 'add_google_account') {
         var alias = String(options.alias || '').trim();
         if (!alias) return Promise.reject(new Error('account alias is required'));
         var addedAccount = { id: 'acct-' + String(googleAccounts.length + 1).padStart(3, '0'), alias: alias, principal: null, state: 'pending', auth_generation: 0, calendars: [] };
         googleAccounts.push(addedAccount);
         return Promise.resolve(clone(addedAccount));
+      }
+      if (cmd === 'import_google_client_json') {
+        if (googleScenario() === 'import-cancel') return Promise.resolve(false);
+        if (googleScenario() === 'import-invalid') return Promise.reject(new Error('The selected OAuth client is not a Desktop app JSON file.'));
+        googleClientReady = true;
+        return Promise.resolve(true);
+      }
+      if (cmd === 'connect_new_google_account') {
+        var requestedAlias = String(options.alias || '').trim();
+        var nextAlias = requestedAlias || ('Google ' + String(googleAccounts.length + 1));
+        var newAccount = { id: 'acct-' + String(googleAccounts.length + 1).padStart(3, '0'), alias: nextAlias, principal: null, state: 'pending', auth_generation: 0, calendars: [] };
+        googleAccounts.push(newAccount);
+        newAccount.state = 'connected';
+        newAccount.principal = nextAlias.toLowerCase().replace(/[^a-z0-9]+/g, '.') + '@example.com';
+        newAccount.auth_generation += 1;
+        newAccount.calendars.push({ account_id: newAccount.id, calendar_id: newAccount.id + '-primary', name: nextAlias, primary: true, access_role: 'owner', writable: true, enabled: true, available: true, route_generation: 1 });
+        refreshSyncContexts();
+        return Promise.resolve(clone(googleAccounts));
       }
       if (cmd === 'rename_google_account') {
         var renameAccount = googleAccounts.find(function findAccount(item) { return item.id === options.account_id; });

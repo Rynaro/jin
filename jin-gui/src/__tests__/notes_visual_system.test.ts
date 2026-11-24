@@ -307,7 +307,8 @@ describe('Continuous Ink Workspace', () => {
       'changeStoreFolderBtn', 'changeStoreFolderStatus', 'appearanceLight', 'appearanceDark',
       'appearanceAuto', 'reduceTransparencyToggle', 'increaseContrastToggle',
       'reduceMotionToggle', 'textSizeRange', 'eventLocaleSelect', 'jinCalendarColorPicker',
-      'googleAccountsList', 'googleAccountAliasInput', 'googleAccountsError',
+      'googleAccountsList', 'googleAccountAliasInput', 'connectGoogleCalendarBtn',
+      'googleAccountsStatus', 'googleSetupDetails', 'googleAccountsError',
       'quarantinedOperationsList', 'quarantinedOperationsError', 'notificationLoading',
       'notificationStatus', 'notificationReason', 'notificationAllowBtn',
       'notificationSettingsBtn', 'notificationTestBtn', 'notificationCheckBtn',
@@ -322,7 +323,9 @@ describe('Continuous Ink Workspace', () => {
     ]) expect(markup).toContain(`id="${id}"`);
 
     for (const action of [
-      'click->settings#addGoogleAccount', 'click->settings#runSync',
+      'click->settings#connectNewGoogleAccount', 'click->settings#importGoogleClientJson',
+      'click->settings#openGoogleCalendarApi', 'click->settings#openGoogleOAuthClients',
+      'click->settings#runSync',
       'click->settings#allowNotifications', 'click->settings#openNotificationSettings',
       'click->settings#sendTestNotification', 'click->settings#checkNotificationStatus',
       'click->settings#submitExport', 'click->settings#changeStoreFolder',

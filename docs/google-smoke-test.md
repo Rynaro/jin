@@ -18,18 +18,143 @@ Do the first run against a **dedicated test Google Calendar**, not your primary/
 - A working `jin` binary: `cargo build --release` (or run via `cargo run -p jin --`).
 - A Google account.
 
-## Step 1 — Choose the OAuth credential mode
+## Official release: publisher-owned Google OAuth
 
-An official distributor build may provide a production Desktop OAuth client so
-the user can connect without creating a Google Cloud project. Before describing
-that path as public or verified, the distributor must have completed Google's
-verification for every sensitive Calendar scope requested by that client.
-Publishing status **In production is a prerequisite, not verification itself**.
+An official Jin desktop release can include the publisher's Google Desktop OAuth
+client. A user then selects **Connect Google Calendar**, completes consent in
+their system browser, and returns to Jin. Their Calendar tokens remain on their
+device in the existing OS-keyring or encrypted-file token store.
 
-This repository and ordinary source builds do not contain real credentials.
-For those builds, use the advanced BYO path below.
+The publisher must create this client and configure the release pipeline before
+claiming this path is available. Source builds, downstream packages, and owners
+who want a separate Google project retain the BYO path below.
 
-## Step 1A — Advanced BYO client (Google Cloud Console)
+### 1. Create a testing project first
+
+Create a publisher-owned Google Cloud **testing** project first. Keep it
+separate from the production project that is created only after the pilot
+succeeds. Enable **Google Calendar API** under **APIs & Services → Library**,
+then configure **Google Auth Platform**:
+
+1. **Branding** — use Jin's production name, support email, developer contact,
+   homepage, and privacy-policy URL.
+2. **Audience** — choose **External**. In the testing project, add the pilot
+   Google account under **Test users**. Testing authorizations and refresh
+   tokens can expire after seven days. The GUI test account can remain in
+   **Testing** throughout this pilot.
+3. **Data Access** — declare only Jin's current scopes: `openid`, `email`,
+   `https://www.googleapis.com/auth/calendar.events`, and
+   `https://www.googleapis.com/auth/calendar.calendarlist.readonly`.
+4. **Clients** — create a client with application type **Desktop app**, then
+   download its JSON. Use `installed.client_id` and `installed.client_secret`.
+
+### 2. Pilot one-click sign-in on macOS
+
+From a new clone at the repository root, prepare the JavaScript dependencies
+before packaging. The storage guard keeps a large native bundle build from
+starting when the configured free-space reserve is unavailable:
+
+```sh
+cd /absolute/path/to/jin
+node --version
+npm --prefix jin-gui ci
+```
+
+Build the official-build path with the testing JSON. Keep that downloaded file
+outside the checkout. This fail-fast subshell validates **both** fields before
+starting the build; it keeps the credential values out of tracked files:
+
+```sh
+(
+  set -eu
+  JIN_OAUTH_JSON="/absolute/path/outside/jin/publisher-desktop-client.json"
+  test -r "$JIN_OAUTH_JSON"
+  publisher_client_id="$(jq -er '.installed.client_id | strings | select(length > 0)' "$JIN_OAUTH_JSON")"
+  publisher_client_secret="$(jq -er '.installed.client_secret | strings | select(length > 0)' "$JIN_OAUTH_JSON")"
+  JIN_PUBLISHER_GOOGLE_CLIENT_ID="$publisher_client_id" \
+  JIN_PUBLISHER_GOOGLE_CLIENT_SECRET="$publisher_client_secret" \
+    python3 scripts/dev_storage.py run --reserve-gib 5 --budget-gib 12 -- \
+    npm --prefix jin-gui run tauri -- build --debug --bundles app
+)
+```
+
+Use a dedicated vault so the pilot cannot touch existing Jin data. Build the
+CLI once to initialize it, then run the packaged app directly with its normal
+user-supplied OAuth overrides removed:
+
+```sh
+cargo build --locked -p jin
+JIN_PILOT_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/jin-google-pilot.XXXXXX")"
+./target/debug/jin --root "$JIN_PILOT_ROOT" init
+env -u JIN_GOOGLE_CLIENT_ID -u JIN_GOOGLE_CLIENT_SECRET \
+  JIN_ROOT="$JIN_PILOT_ROOT" \
+  ./target/debug/bundle/macos/Jin.app/Contents/MacOS/jin-gui
+```
+
+In that app, open **Settings → Calendars & Sync → Connect Google Calendar**.
+The system browser should identify Jin's testing consent screen without asking
+for a JSON import. Sign in only with a configured test user and use a disposable
+Google calendar. `JIN_ROOT` makes this a fresh vault test while leaving the
+current user's stored Jin root untouched. A separate macOS user is required to
+exercise first-run preferences and platform keychain state as a completely new
+desktop user.
+
+### 3. Create the production project after the pilot
+
+Create a second, publisher-owned Google Cloud project; do not reuse the testing
+client. Enable **Google Calendar API** and repeat the same **Google Auth
+Platform** Branding, **External** Audience, Data Access scopes, and **Desktop
+app** client setup above. The production project needs a verified publisher
+domain, accurate homepage and privacy-policy content, and Google's sensitive-
+scope verification before broad distribution. The verification submission needs
+a demonstration of consent and Jin's use of Calendar data. Publishing the
+consent screen as **In production** does not itself complete that review. See
+Google's [desktop OAuth guide](https://developers.google.com/identity/protocols/oauth2/native-app)
+and [verification requirements](https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification).
+
+### 4. Add the production publisher client to GitHub Actions
+
+Keep the production JSON outside the repository. The release workflow reads two
+**repository** secrets at bundle build time (the workflow does not select a
+GitHub Actions environment):
+
+- `JIN_PUBLISHER_GOOGLE_CLIENT_ID`
+- `JIN_PUBLISHER_GOOGLE_CLIENT_SECRET`
+
+With GitHub CLI authenticated for `Rynaro/jin`, set them without putting either
+value in shell history:
+
+```sh
+(
+  set -eu
+  JIN_OAUTH_JSON="/absolute/path/outside/jin/publisher-desktop-client.json"
+  test -r "$JIN_OAUTH_JSON"
+  publisher_client_id="$(jq -er '.installed.client_id | strings | select(length > 0)' "$JIN_OAUTH_JSON")"
+  publisher_client_secret="$(jq -er '.installed.client_secret | strings | select(length > 0)' "$JIN_OAUTH_JSON")"
+  printf '%s' "$publisher_client_id" | gh secret set JIN_PUBLISHER_GOOGLE_CLIENT_ID --repo Rynaro/jin
+  printf '%s' "$publisher_client_secret" | gh secret set JIN_PUBLISHER_GOOGLE_CLIENT_SECRET --repo Rynaro/jin
+)
+```
+
+The subshell stops before either secret is updated if either JSON field is
+missing or empty; `gh secret set` receives each value on standard input, so no
+value is placed in shell history. Confirm the secrets appear by name in the
+repository's Actions secrets list. In the GitHub web UI, use **Rynaro/jin →
+Settings → Secrets and variables → Actions → Repository secrets → New
+repository secret** for each name. Do not commit the JSON or paste either value
+into a workflow file. A Desktop client is a public client, so embedding its
+metadata does not protect it as a server secret. User access and refresh tokens
+remain confidential and must never enter release secrets, logs, or source
+control. Maintain the prior client during rotation so existing refresh tokens
+can continue to work, and retain the BYO override for self-built and downstream
+packages.
+
+## Advanced BYO OAuth client
+
+Create a Desktop OAuth client in your own Google Cloud project, or use
+credentials provided by your organization. Google treats installed desktop apps
+as public clients and recommends PKCE for the authorization-code flow. See Google's
+[OAuth 2.0 guide for desktop apps](https://developers.google.com/identity/protocols/oauth2/native-app).
 
 1. https://console.cloud.google.com → create a project (e.g. "jin").
 2. **APIs & Services → Library →** enable **Google Calendar API**.
@@ -41,10 +166,26 @@ For those builds, use the advanced BYO path below.
      mandatory verification; an unverified warning and user cap can still apply.
    - A user-facing public app is different: sensitive Calendar scopes require
      verification. Moving it to **In production** does not waive that review.
-4. **Credentials → Create credentials → OAuth client ID → Application type: "Desktop app".** Copy the **client ID** and **client secret**.
+4. **Credentials → Create credentials → OAuth client ID → Application type:
+   Desktop app.** Download the JSON file. Keep it private even though a desktop
+   client secret is not treated as confidential by Google's installed-app flow.
 
-## Step 2 — Configure an unbundled/BYO Jin build
-Provide the client credentials (env or the `[google]` section of `config.toml` in your jin root):
+## Connect with a BYO client
+
+Open **Settings → Calendars & Sync → Connect Google Calendar**. If the vault
+already has credentials, Jin opens the system browser for Google authorization.
+After consent, Jin discovers the calendars visible to that account. A calendar
+discovery outage leaves the account connected and offers **Refresh calendars**.
+
+If Jin reports that Google setup is required, choose **Import Google OAuth
+client JSON** and select the Desktop-app JSON downloaded from Google Cloud. Jin
+validates and stores the credentials in this vault's `.jin/config.toml`, then
+continues to the browser authorization flow. The JSON contents and secret do
+not enter the GUI state, account DTOs, logs, exports, or audit records.
+
+You can also configure credentials manually for a CLI or advanced workflow. Use
+environment variables for a temporary or machine-level override, or the
+`[google]` section of `config.toml` in your Jin root:
 ```
 export JIN_GOOGLE_CLIENT_ID="…apps.googleusercontent.com"
 export JIN_GOOGLE_CLIENT_SECRET="…"
@@ -52,17 +193,11 @@ export JIN_GOOGLE_CLIENT_SECRET="…"
 export JIN_TOKEN_PASSPHRASE="<a strong passphrase>"
 ```
 
-Runtime environment variables and per-vault config are advanced overrides; they
-take precedence over any distributor default when a release supports one.
+Environment variables take precedence over the per-vault config. The GUI uses a
+system browser for Google authorization. Canceling authorization leaves one
+retryable account entry, and **Retry** reuses it instead of creating a duplicate.
 
-## Step 3 — Authenticate and discover calendars
-
-In the GUI, open **Settings → Calendar Accounts**, add an alias, and choose
-**Connect**. Successful authentication immediately refreshes CalendarList, so
-visible calendars and access roles should appear without a second action. If
-authentication succeeds but discovery is temporarily unavailable, Jin keeps the
-account connected and reports a retriable partial-success error; choose
-**Refresh calendars** later.
+## Step 3 — Authenticate and discover calendars from the CLI
 
 The equivalent CLI/operator flow is:
 

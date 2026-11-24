@@ -1,0 +1,22 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "INFORM",
+  "objective": "verify_pass: independent publisher Desktop OAuth build and fresh-vault checks passed",
+  "context_delta": {
+    "evidence": [
+      "Debug arm64 Jin.app built with a synthetic Desktop OAuth pair and checked for both build values and ad hoc signature",
+      "Native fresh-vault account preparation used the embedded pair with runtime credential variables absent",
+      "Source build and owner override checks passed",
+      "Release workflow guard rejected malformed inputs without printing credential values"
+    ],
+    "fresh_context": false,
+    "limit": "No live Google consent, exchange or refresh was performed.",
+    "transcript_access": "inherited"
+  }
+}

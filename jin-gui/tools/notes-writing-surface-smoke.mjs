@@ -386,11 +386,12 @@ async function verifyHiddenNativeNavigation(page) {
       redundantIdentity: !!document.querySelector('.calendar-day-view .calendar-workspace-title'),
       backInLeading: !!document.querySelector('.calendar-day-view .calendar-month-leading .calendar-back-btn'),
       backInViewControls: !!document.querySelector('.calendar-day-view .calendar-view-controls .calendar-back-btn'),
+      viewPicker: !!document.querySelector('.calendar-day-view .calendar-view-controls .calendar-view-switch'),
       overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
   });
   if (portugueseDayLayout.redundantIdentity || portugueseDayLayout.backInLeading
-    || !portugueseDayLayout.backInViewControls
+    || portugueseDayLayout.backInViewControls || !portugueseDayLayout.viewPicker
     || portugueseDayLayout.heading.right > portugueseDayLayout.controls.right + 1
     || portugueseDayLayout.heading.left < portugueseDayLayout.leading.left - 1
     || portugueseDayLayout.lineTops.length !== 1

@@ -16,17 +16,147 @@ pub fn add_account(root: &Path, alias: &str) -> crate::Result<GoogleAccountId> {
     Ok(id)
 }
 
+/// Create one pending account only after credentials are ready, then run the
+/// existing PKCE account flow. A browser cancellation leaves that one pending
+/// account available for the ordinary retry control.
+pub fn connect_new_account(root: &Path, alias: Option<&str>) -> crate::Result<()> {
+    connect_new_account_cancellable(root, alias, &crate::google::auth::GoogleAuthAttempt::new())
+}
+
+/// Connect a new account while allowing a native UI to abandon its browser
+/// attempt without leaving a worker holding the loopback listener.
+pub fn connect_new_account_cancellable(
+    root: &Path,
+    alias: Option<&str>,
+    attempt: &crate::google::auth::GoogleAuthAttempt,
+) -> crate::Result<()> {
+    connect_new_account_cancellable_with_id(root, alias, attempt).map(|_| ())
+}
+
+/// Same browser connection flow as [`connect_new_account_cancellable`], while
+/// returning the account that completed authentication. Native callers use the
+/// id to begin the first inbound event import after CalendarList discovery.
+pub fn connect_new_account_cancellable_with_id(
+    root: &Path,
+    alias: Option<&str>,
+    attempt: &crate::google::auth::GoogleAuthAttempt,
+) -> crate::Result<GoogleAccountId> {
+    let account_id = prepare_new_account(root, alias)?;
+    login_account_cancellable(root, &account_id, attempt).map(|_| account_id)
+}
+
+/// Validate credential readiness and create or reuse the one safe onboarding
+/// slot before launching browser authorization. Kept separate from
+/// `connect_new_account` so the durable retry behavior is directly testable
+/// without starting OAuth.
+fn prepare_new_account(root: &Path, alias: Option<&str>) -> crate::Result<GoogleAccountId> {
+    let mut config = Config::load(root)?;
+    // Credential readiness is a precondition for both a fresh connection and
+    // a resumed v1 migration. It prevents a new imported root from being
+    // mistaken for a legacy connection merely because it has a client config.
+    crate::google::config::GoogleCredentials::load(&config)?;
+    if has_legacy_google_state(root, &config) {
+        let passphrase = std::env::var("JIN_TOKEN_PASSPHRASE")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
+        crate::google::migration::migrate_singleton(root, passphrase.as_deref())?;
+        config = Config::load(root)?;
+    }
+
+    let requested_alias = alias.filter(|value| !value.trim().is_empty());
+    let pending = config
+        .google_registry
+        .accounts
+        .iter()
+        .find(|account| {
+            account.state == GoogleAccountState::Pending
+                && account.provider_subject.is_none()
+                && account.principal.is_none()
+                && !config
+                    .google_registry
+                    .calendars
+                    .iter()
+                    .any(|calendar| calendar.account_id == account.id)
+                && requested_alias
+                    .map(|alias| account.alias.eq_ignore_ascii_case(alias))
+                    .unwrap_or_else(|| is_generated_onboarding_alias(&account.alias))
+        })
+        .map(|account| account.id.clone());
+    let alias = requested_alias.map(str::to_string).unwrap_or_else(|| {
+        let mut number = 1;
+        loop {
+            let candidate = if number == 1 {
+                "Google".to_string()
+            } else {
+                format!("Google {number}")
+            };
+            if !config
+                .google_registry
+                .accounts
+                .iter()
+                .any(|account| account.alias.eq_ignore_ascii_case(&candidate))
+            {
+                break candidate;
+            }
+            number += 1;
+        }
+    });
+    Ok(match pending {
+        Some(id) => id,
+        None => {
+            let id = config.google_registry.add_pending_account(alias)?;
+            config.google_sync_schema_version = Some(crate::config::GOOGLE_SYNC_SCHEMA_VERSION);
+            config.write_google_v2_guard()?;
+            config.save()?;
+            id
+        }
+    })
+}
+
+fn has_legacy_google_state(root: &Path, config: &Config) -> bool {
+    !config.google_v2_active()
+        && (config.calendar_id.is_some()
+            || root.join(".jin/sync/tokens.enc").exists()
+            || root.join(".jin/sync/google-v2-migration.json").exists())
+}
+
+fn is_generated_onboarding_alias(alias: &str) -> bool {
+    alias == "Google"
+        || alias
+            .strip_prefix("Google ")
+            .is_some_and(|suffix| suffix.parse::<u32>().is_ok())
+}
+
 pub fn login_account(root: &Path, account_id: &GoogleAccountId) -> crate::Result<()> {
+    login_account_cancellable(
+        root,
+        account_id,
+        &crate::google::auth::GoogleAuthAttempt::new(),
+    )
+}
+
+/// Complete an account login only while the owning browser attempt remains
+/// active. A cancelled attempt never writes tokens or binds an account.
+pub fn login_account_cancellable(
+    root: &Path,
+    account_id: &GoogleAccountId,
+    attempt: &crate::google::auth::GoogleAuthAttempt,
+) -> crate::Result<()> {
     let config = Config::load(root)?;
     config.google_registry.account(account_id)?;
     let credentials = crate::google::config::GoogleCredentials::load(&config)?;
     let (tokens, subject, principal) =
-        crate::google::auth::run_account_auth_flow(&credentials, account_id)?;
+        crate::google::auth::run_account_auth_flow_cancellable(&credentials, account_id, attempt)?;
+    attempt.ensure_active()?;
     {
         let _account_guard = crate::ops::sync::acquire_refresh_lock(root, account_id)?;
 
+        // OAuth can take several minutes. Reload immediately before writing so
+        // an independent config change made while the browser was open is not
+        // overwritten with the stale pre-auth snapshot.
+        let mut next = Config::load(root)?;
+        attempt.ensure_active()?;
         // Identity must be accepted before any credential replacement occurs.
-        let mut next = config.clone();
         if next.google_registry.accounts.iter().any(|account| {
             &account.id != account_id
                 && account.provider_issuer.as_deref() == Some(crate::google::account::GOOGLE_ISSUER)
@@ -41,6 +171,7 @@ pub fn login_account(root: &Path, account_id: &GoogleAccountId) -> crate::Result
             subject,
             Some(principal),
         )?;
+        attempt.claim_completion()?;
         crate::google::secrets::save_tokens_for_account(root, &next, account_id, &tokens)?;
         next.save()?;
     }
@@ -364,6 +495,7 @@ pub fn set_calendar_enabled(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::GoogleConfig;
     use crate::google::account::{GoogleAccountState, GOOGLE_ISSUER};
     use crate::google::client::{HttpResponse, MockHttpClient};
     use crate::model::{EventSource, TemporalValue, ValueType};
@@ -374,6 +506,42 @@ mod tests {
     };
     use chrono::NaiveDate;
     use tempfile::TempDir;
+
+    fn without_google_credential_environment<T>(run: impl FnOnce() -> T) -> T {
+        with_google_credential_environment(None, None, run)
+    }
+
+    fn with_google_credential_environment<T>(
+        client_id: Option<&str>,
+        client_secret: Option<&str>,
+        run: impl FnOnce() -> T,
+    ) -> T {
+        let _lock = crate::test_support::CREDENTIALS_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let original_client_id = std::env::var("JIN_GOOGLE_CLIENT_ID").ok();
+        let original_client_secret = std::env::var("JIN_GOOGLE_CLIENT_SECRET").ok();
+        set_env("JIN_GOOGLE_CLIENT_ID", client_id);
+        set_env("JIN_GOOGLE_CLIENT_SECRET", client_secret);
+        let result = run();
+        restore_env("JIN_GOOGLE_CLIENT_ID", original_client_id);
+        restore_env("JIN_GOOGLE_CLIENT_SECRET", original_client_secret);
+        result
+    }
+
+    fn set_env(key: &str, value: Option<&str>) {
+        match value {
+            Some(value) => std::env::set_var(key, value),
+            None => std::env::remove_var(key),
+        }
+    }
+
+    fn restore_env(key: &str, value: Option<String>) {
+        match value {
+            Some(value) => std::env::set_var(key, value),
+            None => std::env::remove_var(key),
+        }
+    }
 
     fn connected_account() -> (TempDir, GoogleAccountId) {
         let root = TempDir::new().unwrap();
@@ -388,6 +556,147 @@ mod tests {
         )
         .unwrap();
         (root, id)
+    }
+
+    fn onboarding_root() -> TempDir {
+        let root = TempDir::new().unwrap();
+        crate::ops::init(root.path()).unwrap();
+        let mut config = Config::load(root.path()).unwrap();
+        config.google = GoogleConfig {
+            client_id: Some("test.apps.googleusercontent.com".to_string()),
+            client_secret: Some("test-secret".to_string()),
+        };
+        config.save().unwrap();
+        root
+    }
+
+    #[test]
+    fn onboarding_reuses_the_unbound_pending_slot_after_a_cancelled_attempt() {
+        let root = onboarding_root();
+
+        let first = prepare_new_account(root.path(), None).unwrap();
+        let retry = prepare_new_account(root.path(), None).unwrap();
+
+        assert_eq!(first, retry);
+        let config = Config::load(root.path()).unwrap();
+        assert_eq!(config.google_registry.accounts.len(), 1);
+        assert_eq!(
+            config.google_registry.account(&first).unwrap().state,
+            GoogleAccountState::Pending
+        );
+    }
+
+    #[test]
+    fn onboarding_requires_credentials_before_creating_an_account() {
+        without_google_credential_environment(|| {
+            let root = TempDir::new().unwrap();
+            crate::ops::init(root.path()).unwrap();
+
+            let config = Config::load(root.path()).unwrap();
+            let publisher_client_is_complete = matches!(
+                (
+                    option_env!("JIN_PUBLISHER_GOOGLE_CLIENT_ID"),
+                    option_env!("JIN_PUBLISHER_GOOGLE_CLIENT_SECRET"),
+                ),
+                (Some(client_id), Some(client_secret))
+                    if !client_id.trim().is_empty()
+                        && client_id.ends_with(".apps.googleusercontent.com")
+                        && !client_secret.trim().is_empty()
+            );
+
+            if publisher_client_is_complete {
+                let account = prepare_new_account(root.path(), None)
+                    .expect("official builds should begin onboarding without owner credentials");
+                let config = Config::load(root.path()).unwrap();
+                assert!(config.google_v2_active());
+                assert!(config.google_registry.account(&account).is_ok());
+            } else {
+                let error = prepare_new_account(root.path(), None).unwrap_err();
+
+                assert!(error.to_string().contains("not configured for this build"));
+                assert!(!config.google_v2_active());
+                assert!(config.google_registry.accounts.is_empty());
+            }
+        });
+    }
+
+    #[test]
+    fn anonymous_onboarding_does_not_reuse_a_named_pending_account() {
+        let root = onboarding_root();
+        let manual = add_account(root.path(), "Work migration").unwrap();
+
+        let onboarding = prepare_new_account(root.path(), None).unwrap();
+
+        assert_ne!(onboarding, manual);
+        let config = Config::load(root.path()).unwrap();
+        assert_eq!(config.google_registry.accounts.len(), 2);
+        assert_eq!(
+            config.google_registry.account(&onboarding).unwrap().alias,
+            "Google"
+        );
+    }
+
+    #[test]
+    fn onboarding_migrates_a_legacy_route_before_creating_another_account() {
+        let root = onboarding_root();
+        let mut config = Config::load(root.path()).unwrap();
+        config.calendar_id = Some("legacy-primary".to_string());
+        config.save().unwrap();
+
+        let onboarding = prepare_new_account(root.path(), None).unwrap();
+
+        let config = Config::load(root.path()).unwrap();
+        assert!(config.google_v2_active());
+        assert!(config.calendar_id.is_none());
+        assert_eq!(config.google_registry.accounts.len(), 2);
+        assert!(config
+            .google_registry
+            .calendars
+            .iter()
+            .any(|calendar| calendar.calendar_id == "legacy-primary"));
+        assert_eq!(
+            config.google_registry.account(&onboarding).unwrap().state,
+            GoogleAccountState::Pending
+        );
+    }
+
+    #[test]
+    fn onboarding_detects_a_legacy_token_even_without_a_calendar_id() {
+        let root = onboarding_root();
+        let token_path = root.path().join(".jin/sync/tokens.enc");
+        std::fs::create_dir_all(token_path.parent().unwrap()).unwrap();
+        std::fs::write(&token_path, b"legacy-token-ciphertext").unwrap();
+
+        let error = prepare_new_account(root.path(), None).unwrap_err();
+
+        assert!(error.to_string().contains("passphrase is required"));
+        let config = Config::load(root.path()).unwrap();
+        assert!(!config.google_v2_active());
+        assert!(config.google_registry.accounts.is_empty());
+        assert!(token_path.exists());
+    }
+
+    #[test]
+    fn env_only_credentials_do_not_activate_v2_over_a_legacy_token() {
+        with_google_credential_environment(
+            Some("env.apps.googleusercontent.com"),
+            Some("env-secret"),
+            || {
+                let root = TempDir::new().unwrap();
+                crate::ops::init(root.path()).unwrap();
+                let token_path = root.path().join(".jin/sync/tokens.enc");
+                std::fs::create_dir_all(token_path.parent().unwrap()).unwrap();
+                std::fs::write(&token_path, b"legacy-token-ciphertext").unwrap();
+
+                let error = prepare_new_account(root.path(), None).unwrap_err();
+
+                assert!(error.to_string().contains("passphrase is required"));
+                let config = Config::load(root.path()).unwrap();
+                assert!(!config.google_v2_active());
+                assert!(config.google_registry.accounts.is_empty());
+                assert!(token_path.exists());
+            },
+        );
     }
 
     #[test]
