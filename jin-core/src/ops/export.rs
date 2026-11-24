@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::ops::assets;
+use crate::store::canonical_scan;
 use crate::store::fs;
 use crate::{Config, JinError, Result};
 
@@ -132,6 +133,10 @@ fn copy_file_new(source: &Path, dest: &Path) -> Result<()> {
 }
 
 fn write_export_manifest_new(dest: &Path, bytes: &[u8]) -> Result<()> {
+    // Manifest publication is the point at which a copied directory becomes a
+    // backup. Validate the copied candidate after its hashes were collected,
+    // using the same duplicate-identity rule as import.
+    validate_export_identities(dest)?;
     let path = dest.join(EXPORT_MANIFEST_FILE);
     let mut output = std::fs::OpenOptions::new()
         .write(true)
@@ -346,6 +351,31 @@ fn ensure_replaced_export_is_unchanged(backup: &Path, expected: &ExportManifest)
     ensure_export_has_no_unowned_content(backup, &observed)
 }
 
+/// A manifest proves that the listed file bytes arrived intact. It does not
+/// prove that those bytes form a vault which Jin can rebuild. Keep export on
+/// the same duplicate-identity boundary as import before publishing a
+/// manifest or replacing an existing backup.
+fn validate_export_identities(candidate: &Path) -> Result<()> {
+    // `inspect_identities` shares the parser and duplicate grouping used by
+    // `scan_identities`, which import invokes before promotion. Read once so a
+    // synchronizing provider cannot make the displayed pair differ from the
+    // pair that was validated.
+    let (_, duplicates) = canonical_scan::inspect_identities(candidate)?;
+    let Some(conflict) = duplicates.into_iter().next() else {
+        return Ok(());
+    };
+    let paths = conflict
+        .paths
+        .iter()
+        .map(|path| relative_string(path.strip_prefix(candidate).unwrap_or(path)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(JinError::SyncConflict(format!(
+        "cannot create a restorable backup. Manifest hashes can verify copied file bytes, but duplicate canonical identities cannot be restored. Duplicate {} id {} in canonical files: {}. Preserve and reconcile both versions in the workspace, then export again",
+        conflict.kind, conflict.id, paths
+    )))
+}
+
 fn restore_or_preserve_forced_export(
     dest: &Path,
     backup: &Path,
@@ -359,11 +389,18 @@ fn restore_or_preserve_forced_export(
         ));
     }
     match std::fs::rename(backup, dest) {
-        Ok(()) => JinError::Integrity(format!(
-            "forced export left the previous export restored at {} and retained the staged export at {} after: {failure}",
-            dest.display(),
-            stage.display()
-        )),
+        Ok(()) => match failure {
+            JinError::SyncConflict(message) => JinError::SyncConflict(format!(
+                "forced export kept the previous backup at {} and rejected the staged backup at {}: {message}",
+                dest.display(),
+                stage.display()
+            )),
+            failure => JinError::Integrity(format!(
+                "forced export left the previous export restored at {} and retained the staged export at {} after: {failure}",
+                dest.display(),
+                stage.display()
+            )),
+        },
         Err(rollback) => JinError::Integrity(format!(
             "forced export could not restore the previous export. Recover it from {} and the staged export from {}. Original failure: {failure}. Rollback failure: {rollback}",
             backup.display(),
@@ -387,6 +424,11 @@ where
     let replacement = (|| {
         after_backup(&backup)?;
         ensure_replaced_export_is_unchanged(&backup, previous)?;
+        // The private stage may have changed while the prior backup was
+        // checked. Recheck its bytes and restorable identities immediately
+        // before it can replace the old backup.
+        verify_export(stage)?;
+        validate_export_identities(stage)?;
         std::fs::rename(stage, dest)?;
         // Check immediately before removal as well. A failed check leaves the
         // intact backup beside the newly promoted export for explicit recovery.
@@ -422,6 +464,11 @@ pub fn export(root: &Path, dest: &Path, force: bool) -> Result<ExportSummary> {
         replace_verified_export_with(dest, &stage, &previous, |_| Ok(()))?;
         return Ok(summary);
     }
+    // Reject the current source before touching a fresh destination. Forced
+    // exports recurse through this fresh path for their private stage. The
+    // copied candidate is checked again below in case the provider changes a
+    // canonical file during the export.
+    validate_export_identities(root)?;
     std::fs::create_dir_all(dest)?;
 
     let mut files = Vec::new();
@@ -1198,6 +1245,144 @@ mod tests {
         verify_export(exported.path()).unwrap();
     }
 
+    fn create_export_test_note(root: &Path, body: &str) -> PathBuf {
+        let note = create_note(
+            &root.join("notes"),
+            CreateNoteParams {
+                title: "Original".to_string(),
+                body: body.to_string(),
+                tags: vec![],
+                folder: String::new(),
+            },
+        )
+        .unwrap();
+        fs::find_note_path(&root.join("notes"), note.id()).unwrap()
+    }
+
+    fn add_provider_conflict(original: &Path) -> (PathBuf, Vec<u8>) {
+        let original_bytes = std::fs::read(original).unwrap();
+        let stem = original.file_stem().unwrap().to_str().unwrap();
+        let (id, _) = stem.split_once("--").unwrap();
+        let conflict = original
+            .parent()
+            .unwrap()
+            .join(format!("{id}--provider-conflict.md"));
+        let mut conflict_bytes = original_bytes.clone();
+        conflict_bytes.extend_from_slice(b"\nprovider conflict body\n");
+        std::fs::write(&conflict, &conflict_bytes).unwrap();
+        (conflict, conflict_bytes)
+    }
+
+    #[test]
+    fn duplicate_identity_refuses_unrestorable_fresh_and_forced_exports() {
+        let workspace = TempDir::new().unwrap();
+        let good_backup = TempDir::new().unwrap();
+        let fresh_backup_parent = TempDir::new().unwrap();
+        let fresh_backup = fresh_backup_parent.path().join("fresh-backup");
+        let clean_restore = TempDir::new().unwrap();
+        let preserved_restore = TempDir::new().unwrap();
+        ops::init(workspace.path()).unwrap();
+        let original = create_export_test_note(workspace.path(), "original body");
+
+        export(workspace.path(), good_backup.path(), false).unwrap();
+        import(good_backup.path(), clean_restore.path(), false).unwrap();
+        let clean_note = clean_restore
+            .path()
+            .join("notes")
+            .join(original.file_name().unwrap());
+        assert_eq!(
+            std::fs::read(clean_note).unwrap(),
+            std::fs::read(&original).unwrap()
+        );
+        let good_backup_before = tree_fingerprint(good_backup.path());
+
+        let original_before = std::fs::read(&original).unwrap();
+        let (conflict, conflict_bytes) = add_provider_conflict(&original);
+        assert_ne!(original_before, conflict_bytes);
+
+        for force in [false, true] {
+            let destination = if force {
+                good_backup.path()
+            } else {
+                fresh_backup.as_path()
+            };
+            let error = export(workspace.path(), destination, force).unwrap_err();
+            assert!(matches!(error, JinError::SyncConflict(_)), "{error:?}");
+            let message = error.to_string();
+            assert!(message.contains("restorable"));
+            assert!(message.contains(original.file_name().unwrap().to_str().unwrap()));
+            assert!(message.contains(conflict.file_name().unwrap().to_str().unwrap()));
+        }
+
+        assert!(!fresh_backup.exists());
+        assert_eq!(std::fs::read(&original).unwrap(), original_before);
+        assert_eq!(std::fs::read(&conflict).unwrap(), conflict_bytes);
+        assert_eq!(tree_fingerprint(good_backup.path()), good_backup_before);
+        verify_export(good_backup.path()).unwrap();
+        import(good_backup.path(), preserved_restore.path(), false).unwrap();
+        let preserved_note = preserved_restore
+            .path()
+            .join("notes")
+            .join(original.file_name().unwrap());
+        assert_eq!(std::fs::read(preserved_note).unwrap(), original_before);
+    }
+
+    #[test]
+    fn manifest_publication_rejects_a_copied_duplicate_identity() {
+        let source = TempDir::new().unwrap();
+        let candidate = TempDir::new().unwrap();
+        ops::init(source.path()).unwrap();
+        let original = create_export_test_note(source.path(), "original body");
+        let copied = candidate
+            .path()
+            .join("notes")
+            .join(original.file_name().unwrap());
+        std::fs::create_dir_all(copied.parent().unwrap()).unwrap();
+        std::fs::copy(&original, &copied).unwrap();
+        let (conflict, _) = add_provider_conflict(&copied);
+
+        let files = vec![
+            relative_string(copied.strip_prefix(candidate.path()).unwrap()),
+            relative_string(conflict.strip_prefix(candidate.path()).unwrap()),
+        ];
+        let manifest = collect_manifest(candidate.path(), &files, &[]).unwrap();
+        let bytes = serde_json::to_vec_pretty(&manifest).unwrap();
+        let error = write_export_manifest_new(candidate.path(), &bytes).unwrap_err();
+
+        assert!(matches!(error, JinError::SyncConflict(_)));
+        assert!(error.to_string().contains("notes/"));
+        assert!(!candidate.path().join(EXPORT_MANIFEST_FILE).exists());
+    }
+
+    fn tree_fingerprint(root: &Path) -> Vec<(String, Option<Vec<u8>>)> {
+        fn collect(root: &Path, current: &Path, entries: &mut Vec<(String, Option<Vec<u8>>)>) {
+            let mut children = std::fs::read_dir(current)
+                .unwrap()
+                .map(|entry| entry.unwrap())
+                .collect::<Vec<_>>();
+            children.sort_by_key(|entry| entry.file_name());
+            for entry in children {
+                let path = entry.path();
+                if entry.file_type().unwrap().is_dir() {
+                    entries.push((
+                        format!("{}/", relative_string(path.strip_prefix(root).unwrap())),
+                        None,
+                    ));
+                    collect(root, &path, entries);
+                } else {
+                    entries.push((
+                        relative_string(path.strip_prefix(root).unwrap()),
+                        Some(std::fs::read(path).unwrap()),
+                    ));
+                }
+            }
+        }
+
+        let mut entries = Vec::new();
+        collect(root, root, &mut entries);
+        entries
+    }
+
     #[test]
     fn forced_replacement_preserves_a_file_added_after_initial_verification() {
         let source = TempDir::new().unwrap();
@@ -1233,6 +1418,59 @@ mod tests {
         assert!(
             stage.is_dir(),
             "the staged export remains available for recovery"
+        );
+    }
+
+    #[test]
+    fn forced_replacement_rejects_a_late_unrestorable_stage_and_restores_previous_backup() {
+        let source = TempDir::new().unwrap();
+        let exported = TempDir::new().unwrap();
+        let stage_parent = TempDir::new().unwrap();
+        let restored = TempDir::new().unwrap();
+        ops::init(source.path()).unwrap();
+        let original = create_export_test_note(source.path(), "original body");
+        export(source.path(), exported.path(), false).unwrap();
+        let previous = verify_export(exported.path()).unwrap();
+        let before = tree_fingerprint(exported.path());
+        let original_before = std::fs::read(&original).unwrap();
+
+        let stage = stage_parent.path().join("replacement");
+        export(source.path(), &stage, false).unwrap();
+        let stage_manifest = verify_export(&stage).unwrap();
+        let stage_files = stage_manifest
+            .files
+            .iter()
+            .map(|file| file.path.clone())
+            .collect::<Vec<_>>();
+        let result = replace_verified_export_with(exported.path(), &stage, &previous, |_| {
+            let staged_original = stage.join("notes").join(original.file_name().unwrap());
+            let (conflict, _) = add_provider_conflict(&staged_original);
+            let mut files = stage_files.clone();
+            files.push(relative_string(conflict.strip_prefix(&stage).unwrap()));
+            let refreshed = collect_manifest(&stage, &files, &stage_manifest.directories)?;
+            fs::atomic_write(
+                &stage.join(EXPORT_MANIFEST_FILE),
+                &serde_json::to_vec_pretty(&refreshed).unwrap(),
+            )?;
+            Ok(())
+        });
+
+        assert!(
+            matches!(result, Err(JinError::SyncConflict(_))),
+            "{result:?}"
+        );
+        assert_eq!(tree_fingerprint(exported.path()), before);
+        verify_export(exported.path()).unwrap();
+        import(exported.path(), restored.path(), false).unwrap();
+        assert_eq!(
+            std::fs::read(
+                restored
+                    .path()
+                    .join("notes")
+                    .join(original.file_name().unwrap())
+            )
+            .unwrap(),
+            original_before
         );
     }
 
