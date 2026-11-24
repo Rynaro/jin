@@ -210,7 +210,7 @@ pub fn pull_destination<H: HttpClient>(
                                 )?;
                             }
                             crate::sync::audit::append_scoped_audit_entry(
-                                &root.join(".jin").join("sync"),
+                                &crate::Config::load(root)?.sync_dir(),
                                 &crate::sync::audit::ScopedAuditEntry {
                                     timestamp: Utc::now().to_rfc3339(),
                                     operation_id: format!(
@@ -821,7 +821,7 @@ pub fn drain_destination_event<H: HttpClient>(
                 },
             )?;
             crate::sync::audit::append_scoped_audit_entry(
-                &root.join(".jin").join("sync"),
+                &crate::Config::load(root)?.sync_dir(),
                 &crate::sync::audit::ScopedAuditEntry {
                     timestamp: Utc::now().to_rfc3339(),
                     operation_id: operation.operation_id.clone(),

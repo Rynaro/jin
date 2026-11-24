@@ -276,7 +276,7 @@ describe('Continuous Ink Workspace', () => {
     expect(markup).toContain('settings-workspace jin-workspace-pane');
     expect(settings).toContain('grid-template-columns: var(--context-rail-width) minmax(0, 1fr)');
 
-    const labels = ['General', 'Calendars &amp; Sync', 'Notifications', 'Data &amp; Storage'];
+    const labels = ['General', 'Calendar connections', 'Notifications', 'Files &amp; backups'];
     const settingsNav = markup.slice(markup.indexOf('<nav class="settings-nav__items'), markup.indexOf('</nav>', markup.indexOf('<nav class="settings-nav__items')));
     const offsets = labels.map(label => settingsNav.indexOf(`>${label}</span></button>`));
     expect(offsets.every(offset => offset >= 0)).toBe(true);
@@ -338,6 +338,8 @@ describe('Continuous Ink Workspace', () => {
     expect(markup).toMatch(/<details class="settings-section settings-diagnostics">[\s\S]*?infoDisplayTz[\s\S]*?infoCalendarId[\s\S]*?infoSchemaVersion/);
     expect(settings).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.settings-view\.jin-split-view \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/);
     expect(sidebar).toContain(".jin-shell[data-nav-presentation='drawer'] [data-sidebar-context]");
+    expect(sidebar).toMatch(/\.jin-shell\[data-nav-presentation='drawer'\]\[data-nav-visible='false'\] > \.jin-sidebar \{[\s\S]*?visibility: hidden;[\s\S]*?overflow: hidden;[\s\S]*?pointer-events: none;/);
+    expect(sidebar).toMatch(/\.jin-shell\[data-nav-presentation='drawer'\]\[data-nav-visible='true'\] > \.jin-sidebar \{[\s\S]*?visibility: visible;[\s\S]*?overflow: visible;[\s\S]*?pointer-events: auto;/);
     expect(settings).toMatch(/:root\[data-text-scale="accessibility"\] \.settings-nav__item > \.jin-navigation-row__label \{[\s\S]*?overflow: visible;[\s\S]*?text-overflow: clip;[\s\S]*?white-space: normal;[\s\S]*?overflow-wrap: anywhere;/);
     expect(settings).toMatch(/\.settings-pane,\s*\.settings-section,[\s\S]*?\.google-account-card,[\s\S]*?min-inline-size: 0;/);
     expect(settings).toMatch(/@media \(max-width: 720px\) \{[\s\S]*?\.settings-nav__item:focus-visible \{[\s\S]*?outline: 0;[\s\S]*?box-shadow: inset 0 0 0 2px var\(--accent\);/);

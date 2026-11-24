@@ -128,7 +128,8 @@ fn drain_native_deliveries(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+    use std::ffi::OsString;
+    use std::sync::{Mutex, MutexGuard};
 
     use chrono::{Duration, TimeZone};
     use jin_core::model::task::Reminder;
@@ -137,6 +138,35 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    // `JIN_STATE_DIR` is process-wide. Keep the portable workspace boundary
+    // test isolated from other scheduler tests and restore the caller's value.
+    static STATE_DIR_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct StateDirGuard {
+        prior: Option<OsString>,
+        _lock: MutexGuard<'static, ()>,
+    }
+
+    impl StateDirGuard {
+        fn set(path: &Path) -> Self {
+            let lock = STATE_DIR_ENV_LOCK
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            let prior = std::env::var_os("JIN_STATE_DIR");
+            std::env::set_var("JIN_STATE_DIR", path);
+            Self { prior, _lock: lock }
+        }
+    }
+
+    impl Drop for StateDirGuard {
+        fn drop(&mut self) {
+            match &self.prior {
+                Some(value) => std::env::set_var("JIN_STATE_DIR", value),
+                None => std::env::remove_var("JIN_STATE_DIR"),
+            }
+        }
+    }
 
     #[derive(Default)]
     struct RecordingSink {
@@ -184,6 +214,31 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    #[test]
+    fn portable_startup_pass_keeps_sync_state_out_of_shared_workspace() {
+        let workspace = TempDir::new().unwrap();
+        let local_state = TempDir::new().unwrap();
+        let _state_dir = StateDirGuard::set(local_state.path());
+        jin_core::ops::init_portable_workspace(workspace.path()).unwrap();
+
+        let now = Utc.with_ymd_and_hms(2026, 9, 2, 12, 0, 0).unwrap();
+        process_once_at(workspace.path(), &RecordingSink::default(), now).unwrap();
+
+        let config = jin_core::Config::load(workspace.path()).unwrap();
+        assert!(config.sync_dir().join("sync-state.sqlite").is_file());
+        assert!(
+            !workspace
+                .path()
+                .join(".jin/sync/sync-state.sqlite")
+                .exists(),
+            "GUI startup must not put sync state in the synchronized workspace"
+        );
+        assert!(
+            !workspace.path().join(".jin/sync/tokens.enc").exists(),
+            "GUI startup must not put credentials in the synchronized workspace"
+        );
     }
 
     #[test]

@@ -11,6 +11,9 @@ use crate::{JinError, Result};
 /// sentinel is absent or outdated, runs a full rebuild to populate new columns
 /// (e.g. `excerpt`) for pre-existing notes (one-time, version-gated).
 pub fn init(root: &Path) -> Result<Config> {
+    if Config::is_portable_workspace(root) {
+        return init_portable(root);
+    }
     if Config::config_path(root).exists() {
         let cfg = Config::load(root)?;
         // K1: schema apply + version-gated one-time rebuild.
@@ -47,6 +50,58 @@ pub fn init(root: &Path) -> Result<Config> {
     version_gate_rebuild(root, &config)?;
 
     Ok(config)
+}
+
+/// Initialize a workspace intended for a generic synchronized folder. Only
+/// canonical content and an intentionally tiny format marker live in `root`.
+/// All mutable implementation state is initialized under the per-device
+/// runtime directory selected by `Config::runtime_dir_for`.
+pub fn init_portable(root: &Path) -> Result<Config> {
+    let runtime_dir = Config::shared_state_dir(root)?.ok_or_else(|| {
+        JinError::Integrity("portable initialization requires a workspace marker".to_string())
+    })?;
+    if runtime_dir.join(crate::config::CONFIG_FILENAME).exists() {
+        let cfg = Config::load(root)?;
+        version_gate_rebuild(root, &cfg)?;
+        return Ok(cfg);
+    }
+    let dirs = [
+        root.to_path_buf(),
+        root.join("notes"),
+        root.join("collections"),
+        root.join("tasks"),
+        root.join("events"),
+        root.join(".jin").join("assets").join("sha256"),
+    ];
+    for dir in &dirs {
+        std::fs::create_dir_all(dir)?;
+    }
+    Config::create_portable_workspace(root)?;
+    let config = Config::new_portable(root.to_path_buf())?;
+    std::fs::create_dir_all(config.jin_dir())?;
+    config.save()?;
+    version_gate_rebuild(root, &config)?;
+    Ok(config)
+}
+
+/// Explicit creation path for users selecting a cloud, NAS, or ordinary shared
+/// folder. Existing workspaces remain on the legacy layout until migrated by a
+/// future dedicated operation.
+pub fn init_portable_workspace(root: &Path) -> Result<Config> {
+    if root.join(".jin").join("config.toml").exists()
+        && !Config::is_portable_workspace(root)
+        && !Config::has_portable_tripwire(root)
+    {
+        return Err(JinError::InvalidInput(
+            "this is an existing legacy Jin workspace; export it and import into a fresh folder before enabling portable workspace mode".to_string(),
+        ));
+    }
+    if Config::is_portable_workspace(root) {
+        return init(root);
+    }
+    std::fs::create_dir_all(root.join(".jin"))?;
+    Config::create_portable_workspace(root)?;
+    init_portable(root)
 }
 
 /// K1 implementation: open the index (which applies the schema migration),

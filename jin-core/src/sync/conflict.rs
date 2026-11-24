@@ -106,7 +106,7 @@ pub fn resolve_all_conflicts<H: HttpClient>(
     http: &H,
     calendar_id: &str,
 ) -> crate::Result<(u32, Vec<ConflictInfo>)> {
-    let sync_dir = root.join(".jin").join("sync");
+    let sync_dir = crate::Config::state_dir(root)?.join("sync");
     let events_dir = root.join("events");
     let mut resolved_count = 0u32;
     let mut still_unresolved: Vec<ConflictInfo> = Vec::new();

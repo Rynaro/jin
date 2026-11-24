@@ -80,6 +80,7 @@ import {
   completeFirstRun,
   recoverStoreRoot,
   retryRootUnavailable,
+  openWorkspaceFolder,
 } from '../invoke';
 
 const mockInvoke = vi.mocked(invoke);
@@ -163,6 +164,10 @@ describe('first-run setup bridge', () => {
     mockInvoke.mockResolvedValueOnce(undefined);
     await retryRootUnavailable();
     expect(mockInvoke).toHaveBeenLastCalledWith('retry_root_unavailable', {});
+
+    mockInvoke.mockResolvedValueOnce(undefined);
+    await openWorkspaceFolder();
+    expect(mockInvoke).toHaveBeenLastCalledWith('open_workspace_folder', {});
   });
 });
 

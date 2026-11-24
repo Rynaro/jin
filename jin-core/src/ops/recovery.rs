@@ -17,6 +17,7 @@ use sha2::{Digest, Sha256};
 
 use crate::model::Note;
 use crate::store::{frontmatter, fs};
+use crate::Config;
 use crate::{JinError, Result};
 
 const JOURNAL_FILE: &str = "notes-journal.jsonl";
@@ -53,12 +54,12 @@ fn root_from_notes_dir(notes_dir: &Path) -> Result<&Path> {
     })
 }
 
-fn journal_path(root: &Path) -> PathBuf {
-    root.join(".jin").join(JOURNAL_FILE)
+fn journal_path(root: &Path) -> Result<PathBuf> {
+    Config::state_dir(root).map(|dir| dir.join(JOURNAL_FILE))
 }
 
-fn revision_dir(root: &Path, note_id: &str) -> PathBuf {
-    root.join(".jin").join("revisions").join(note_id)
+fn revision_dir(root: &Path, note_id: &str) -> Result<PathBuf> {
+    Config::state_dir(root).map(|dir| dir.join("revisions").join(note_id))
 }
 
 fn validated_note_id(root: &Path, note_id: &str) -> Result<()> {
@@ -84,8 +85,20 @@ fn relative_to_root(root: &Path, path: &Path) -> Result<String> {
         })
 }
 
+fn relative_to_runtime(root: &Path, path: &Path) -> Result<String> {
+    let runtime = Config::state_dir(root)?;
+    path.strip_prefix(runtime)
+        .map(|path| path.to_string_lossy().replace('\\', "/"))
+        .map_err(|_| {
+            JinError::Integrity(format!(
+                "recovery path escaped local runtime: {}",
+                path.display()
+            ))
+        })
+}
+
 fn append_entry(root: &Path, entry: &JournalEntry) -> Result<()> {
-    let path = journal_path(root);
+    let path = journal_path(root)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -98,13 +111,19 @@ fn append_entry(root: &Path, entry: &JournalEntry) -> Result<()> {
 }
 
 pub(crate) fn snapshot_before_write(root: &Path, note: &Note, content: &[u8]) -> Result<PathBuf> {
-    let dir = revision_dir(root, note.id());
+    let dir = revision_dir(root, note.id())?;
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{}.md", note.frontmatter.revision));
     // Snapshot files are immutable. An existing snapshot represents the same
     // revision and must agree byte-for-byte rather than be silently replaced.
     if path.exists() {
-        if std::fs::read(&path)? != content {
+        let existing = std::fs::read(&path)?;
+        if existing != content {
+            if crate::workspace::is_shared(root) {
+                crate::store::history::archive_bytes(root, "note", note.id(), "md", &existing)?;
+                crate::store::history::archive_bytes(root, "note", note.id(), "md", content)?;
+                return Ok(path);
+            }
             return Err(JinError::Integrity(format!(
                 "revision {} for note {} already exists with different content",
                 note.frontmatter.revision,
@@ -130,12 +149,19 @@ pub(crate) fn journaled_replace(
     let root = root_from_notes_dir(notes_dir)?;
     let backup = snapshot_before_write(root, old_note, old_content)?;
     let content = frontmatter::render(&new_note.frontmatter, &new_note.body)?;
+    crate::store::history::prepare_replacement(
+        notes_dir,
+        "note",
+        new_note.id(),
+        target,
+        content.as_bytes(),
+    )?;
     let operation_id = format!("{}-{}", new_note.id(), new_note.frontmatter.revision);
     let entry = JournalEntry {
         operation_id: operation_id.clone(),
         state: "started".to_string(),
         target: relative_to_root(root, target)?,
-        backup: Some(relative_to_root(root, &backup)?),
+        backup: Some(relative_to_runtime(root, &backup)?),
         after_sha256: sha256(content.as_bytes()),
     };
     append_entry(root, &entry)?;
@@ -159,7 +185,7 @@ pub(crate) fn journaled_replace(
 /// blocking access to canonical data; its absence is visible through the
 /// resulting index diagnostics on the next rebuild.
 pub fn recover_incomplete_operations(root: &Path) -> Result<RecoveryReport> {
-    let path = journal_path(root);
+    let path = journal_path(root)?;
     if !path.exists() {
         return Ok(RecoveryReport::default());
     }
@@ -216,7 +242,7 @@ pub fn recover_incomplete_operations(root: &Path) -> Result<RecoveryReport> {
 /// List immutable snapshots for a note, oldest revision first.
 pub fn list_revisions(root: &Path, note_id: &str) -> Result<Vec<NoteRevision>> {
     validated_note_id(root, note_id)?;
-    let dir = revision_dir(root, note_id);
+    let dir = revision_dir(root, note_id)?;
     if !dir.exists() {
         return Ok(vec![]);
     }
@@ -248,7 +274,7 @@ pub fn list_revisions(root: &Path, note_id: &str) -> Result<Vec<NoteRevision>> {
 /// this API's result.
 pub fn preview_note_revision(root: &Path, note_id: &str, revision: u64) -> Result<Note> {
     validated_note_id(root, note_id)?;
-    let snapshot = revision_dir(root, note_id).join(format!("{revision}.md"));
+    let snapshot = revision_dir(root, note_id)?.join(format!("{revision}.md"));
     fs::read_note(&snapshot)
         .map_err(|_| JinError::NotFound(format!("note/{note_id}/revision/{revision}")))
 }

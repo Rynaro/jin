@@ -147,6 +147,7 @@ pub fn write_first_run_state(config_dir: &Path, state: &FirstRunState) -> std::i
 
 pub fn root_is_initialized(root: &Path) -> bool {
     jin_core::Config::load(root).is_ok()
+        || jin_core::workspace::shared_state_dir(root).is_ok_and(|state| state.is_some())
 }
 
 /// A setup candidate must be an absolute directory that is either empty or

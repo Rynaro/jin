@@ -161,6 +161,7 @@ pub fn load_manifest(root: &Path) -> Result<AssetManifest> {
 fn save_manifest(root: &Path, manifest: &AssetManifest) -> Result<()> {
     let bytes = serde_json::to_vec_pretty(manifest)
         .map_err(|err| JinError::Integrity(format!("serialize asset manifest: {err}")))?;
+    crate::store::history::prepare_asset_manifest_write(root, &bytes)?;
     fs::atomic_write(&manifest_path(root), &bytes)
 }
 

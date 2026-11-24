@@ -14,6 +14,20 @@ pub mod store;
 pub mod sync;
 pub mod time;
 
+/// Portable-workspace inspection helpers for adapters that must keep runtime
+/// data outside a user-owned synchronized folder.
+pub mod workspace {
+    use std::path::{Path, PathBuf};
+
+    pub fn shared_state_dir(root: &Path) -> crate::Result<Option<PathBuf>> {
+        crate::Config::shared_state_dir(root)
+    }
+
+    pub fn is_shared(root: &Path) -> bool {
+        crate::Config::is_portable_workspace(root)
+    }
+}
+
 /// Shared test-infrastructure utilities (mutexes, env-var RAII guards).
 /// Compiled only during `cargo test` — never included in production builds.
 #[cfg(test)]

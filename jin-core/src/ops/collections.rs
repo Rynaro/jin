@@ -74,6 +74,14 @@ pub fn save_collection(root: &Path, document: &CollectionDocument) -> Result<()>
     let path = path_for(root, &document.id)?;
     let json = serde_json::to_vec_pretty(document)
         .map_err(|err| JinError::Integrity(format!("serialize collection: {err}")))?;
+    let directory = root.join("collections");
+    crate::store::history::prepare_replacement(
+        &directory,
+        "collection",
+        &document.id,
+        &path,
+        &json,
+    )?;
     fs::atomic_write(&path, &json)
 }
 

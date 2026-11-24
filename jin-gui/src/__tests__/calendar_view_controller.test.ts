@@ -87,7 +87,7 @@ function mockProjectionFromListEvents(): void {
 function fixture(): string {
   return `
     <section data-controller="calendar-view" data-action="jin:events-mutated@window->calendar-view#handleMutation" aria-label="Calendar">
-      <aside data-sidebar-context="events"><div data-calendar-view-target="filterHost"></div><button data-calendar-view-target="notificationsLink"><span>Notifications</span></button><button data-calendar-view-target="manageCalendarsLink"><span>Calendars &amp; Sync</span></button></aside>
+      <aside data-sidebar-context="events"><div data-calendar-view-target="filterHost"></div><button data-calendar-view-target="notificationsLink"><span>Notifications</span></button><button data-calendar-view-target="manageCalendarsLink"><span>Calendar connections</span></button></aside>
       <div data-calendar-view-target="workspace" class="calendar-workspace">
         <div data-calendar-view-target="field" class="calendar-field">
           <div data-calendar-view-target="monthView"><div data-calendar-view-target="monthViewContent"></div></div>

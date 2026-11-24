@@ -36,3 +36,4 @@ pub mod store_root;
 pub mod sync_cmd;
 pub mod tags;
 pub mod tasks;
+pub mod workspace;

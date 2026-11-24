@@ -1982,7 +1982,8 @@ fn bridge_export_creates_files() {
     .expect("create note");
     jin_core::ops::api::refresh(root).expect("refresh");
 
-    let dest = root.join("export-out");
+    let export_parent = tempfile::tempdir().expect("export parent");
+    let dest = export_parent.path().join("export-out");
     let result = jin_gui::commands::export::export_fn(root, dest.display().to_string(), false)
         .expect("export");
 

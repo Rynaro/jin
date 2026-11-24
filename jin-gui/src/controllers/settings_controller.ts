@@ -40,14 +40,14 @@
 
 import { Controller } from '@hotwired/stimulus';
 import {
-  runSync, exportFiles, appConfig, setStoreRoot,
+  runSync, exportFiles, appConfig, setStoreRoot, workspaceStatus, refreshWorkspaceProjection, openWorkspaceFolder,
   listGoogleAccounts, addGoogleAccount, renameGoogleAccount,
   connectGoogleAccount, disconnectGoogleAccount, refreshGoogleCalendars, setGoogleCalendarEnabled,
   listQuarantinedSyncOperations, reviewQuarantinedSyncOperation, syncCalendarEvent,
   notificationStatus, requestNotificationPermission,
   openNotificationSettings, sendTestNotification,
 } from '../invoke';
-import type { GoogleAccountDto, NotificationStatusDto, QuarantinedSyncOperationDto } from '../types/dto';
+import type { GoogleAccountDto, NotificationStatusDto, QuarantinedSyncOperationDto, WorkspaceStatusDto } from '../types/dto';
 import { isJinErrorDto, toSyntheticErrorDto } from '../types/error';
 import {
   formatSyncResult, formatCalendarPauseReason,
@@ -124,6 +124,7 @@ export default class SettingsController extends Controller {
     'exportFileCount',
     'exportDestDisplay',
     'exportAuditIncluded',
+    'exportVerified',
     'exportError',
     // App info
     'infoRootPath',
@@ -133,6 +134,9 @@ export default class SettingsController extends Controller {
     // Store root (P1 sovereignty)
     'changeStoreFolderBtn',
     'changeStoreFolderStatus',
+    'workspaceStatus', 'workspaceCheckedAt', 'workspaceFileCount', 'workspaceMessage', 'workspaceMode', 'workspaceConflictGuidance',
+    'workspaceConflicts', 'workspaceCheckBtn', 'workspaceRefreshBtn', 'workspaceOpenBtn',
+    'workspaceActivity', 'workspaceActivitySection',
     // Appearance (init-only)
     'appearanceLight',
     'appearanceDark',
@@ -179,6 +183,7 @@ export default class SettingsController extends Controller {
   declare exportFileCountTarget: HTMLElement;
   declare exportDestDisplayTarget: HTMLElement;
   declare exportAuditIncludedTarget: HTMLElement;
+  declare exportVerifiedTarget: HTMLElement;
   declare exportErrorTarget: HTMLElement;
 
   declare infoRootPathTarget: HTMLElement;
@@ -188,6 +193,20 @@ export default class SettingsController extends Controller {
 
   declare changeStoreFolderBtnTarget: HTMLButtonElement;
   declare changeStoreFolderStatusTarget: HTMLElement;
+
+  declare workspaceStatusTarget: HTMLElement;
+  declare workspaceCheckedAtTarget: HTMLElement;
+  declare workspaceFileCountTarget: HTMLElement;
+  declare workspaceMessageTarget: HTMLElement;
+  declare workspaceModeTarget: HTMLElement;
+  declare workspaceConflictGuidanceTarget: HTMLElement;
+  declare workspaceConflictsTarget: HTMLElement;
+  declare workspaceCheckBtnTarget: HTMLButtonElement;
+  declare workspaceRefreshBtnTarget: HTMLButtonElement;
+  declare workspaceOpenBtnTarget: HTMLButtonElement;
+  declare workspaceActivityTarget: HTMLElement;
+  declare workspaceActivitySectionTarget: HTMLElement;
+  declare readonly hasWorkspaceStatusTarget: boolean;
 
   declare appearanceLightTarget: HTMLElement;
   declare appearanceDarkTarget: HTMLElement;
@@ -229,6 +248,8 @@ export default class SettingsController extends Controller {
   private lastNotificationStatus: NotificationStatusDto | null = null;
   private notificationOperationGeneration = 0;
   private notificationActiveOperations = 0;
+  private workspaceOperationGeneration = 0;
+  private exportCollisionDestination: string | null = null;
   private notificationRefreshQueued = false;
   private hasSuccessfulNotificationStatus = false;
   private notificationFocusTarget: HTMLButtonElement | null = null;
@@ -237,20 +258,22 @@ export default class SettingsController extends Controller {
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   private readonly refreshGoogleState = (): void => { if (this.hasGoogleAccountsListTarget) void this.loadGoogleAccounts(); };
+  private readonly refreshWorkspaceOnFocus = (): void => { if (this.hasWorkspaceStatusTarget && loadSettingsPane() === 'data-storage') void this.checkWorkspace(false); };
   private readonly refreshNotesLayout = (): void => { this.renderNotesLayout(loadNotesExplorerView()); };
 
   activateSection(event: Event): void {
     const requested = (event as CustomEvent<{ id?: string | null }>).detail?.id;
-    const targeted = requested === 'calendars';
-    applySettingsPane(this.settingsNavItemTargets, this.settingsPaneTargets, targeted ? 'calendars' : loadSettingsPane());
-    if (targeted) {
+    const targeted = isSettingsPaneKey(requested) ? requested : loadSettingsPane();
+    applySettingsPane(this.settingsNavItemTargets, this.settingsPaneTargets, targeted);
+    if (requested && isSettingsPaneKey(requested)) {
       this.settingsWorkspaceTarget.scrollTop = 0;
-      saveSettingsPane('calendars');
+      saveSettingsPane(targeted);
     }
     this.refreshGoogleState();
     this.refreshAppearanceControls();
     this.refreshNotesLayout();
     if (this.hasQuarantinedOperationsListTarget) void this.loadQuarantinedOperations();
+    if (this.hasWorkspaceStatusTarget && targeted === 'data-storage') void this.checkWorkspace(false);
   }
 
   connect(): void {
@@ -261,12 +284,14 @@ export default class SettingsController extends Controller {
     );
 
     void this.loadAppConfig();
+    if (this.hasWorkspaceStatusTarget && this.isWorkspacePaneActive()) void this.checkWorkspace(false);
     if (this.hasGoogleAccountsListTarget) void this.loadGoogleAccounts();
     if (this.hasQuarantinedOperationsListTarget) void this.loadQuarantinedOperations();
     void this.loadNotificationStatus();
     window.addEventListener('focus', this.refreshNotificationsOnFocus);
     window.addEventListener('focus', this.refreshGoogleState);
     window.addEventListener('jin:google-state-changed', this.refreshGoogleState);
+    window.addEventListener('focus', this.refreshWorkspaceOnFocus);
 
     // Initialize appearance controls from persisted prefs
     this.populateTextSizeSelect();
@@ -287,6 +312,7 @@ export default class SettingsController extends Controller {
     applySettingsPane(this.settingsNavItemTargets, this.settingsPaneTargets, pane);
     this.settingsWorkspaceTarget.scrollTop = 0;
     saveSettingsPane(pane);
+    if (pane === 'data-storage' && this.hasWorkspaceStatusTarget) void this.checkWorkspace(false);
     window.dispatchEvent(new CustomEvent('jin:sidebar-selection'));
   }
 
@@ -294,6 +320,7 @@ export default class SettingsController extends Controller {
     window.removeEventListener('focus', this.refreshNotificationsOnFocus);
     window.removeEventListener('focus', this.refreshGoogleState);
     window.removeEventListener('jin:google-state-changed', this.refreshGoogleState);
+    window.removeEventListener('focus', this.refreshWorkspaceOnFocus);
     window.removeEventListener(NOTES_EXPLORER_VIEW_CHANGED, this.refreshNotesLayout);
     this.colorPickers.forEach(picker => picker.destroy());
     this.colorPickers.clear();
@@ -881,25 +908,142 @@ export default class SettingsController extends Controller {
       return;
     }
 
-    const force = this.exportForceToggleTarget.checked;
+    const force = this.exportForceToggleTarget.checked && this.exportCollisionDestination === dest;
     const el = this.exportElements;
     renderExportLoading(el);
 
     try {
       const dto = await exportFiles(dest, force);
       renderExportResult(el, formatExportResult(dto));
+      this.recordWorkspaceActivity(dto.verified ? `Export verified · ${dto.file_count} files` : `Export completed · ${dto.file_count} files`);
+      this.resetExportOverwriteConsent();
     } catch (err: unknown) {
       if (isJinErrorDto(err)) {
         const message = formatExportError(err);
         renderExportError(el, message);
         // Surface the dest-collision affordance (force toggle hint)
         if (isExportDestCollision(err)) {
-          this.exportForceToggleTarget.parentElement?.classList.remove('hidden');
+          this.exportCollisionDestination = dest;
+          this.exportOverwriteOption()?.classList.remove('hidden');
         }
       } else {
         renderExportError(el, 'Unexpected error during export.');
       }
     }
+  }
+
+  async chooseExportDestination(): Promise<void> {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({ directory: true, multiple: false, title: 'Choose export folder' });
+      if (!selected) return;
+      this.exportDestInputTarget.value = typeof selected === 'string' ? selected : selected[0];
+      this.resetExportOverwriteConsent();
+      this.exportDestInputTarget.focus();
+    } catch (error: unknown) {
+      renderExportError(this.exportElements, isJinErrorDto(error) ? error.message : 'Could not choose an export folder.');
+    }
+  }
+
+  resetExportOverwriteConsent(): void {
+    this.exportCollisionDestination = null;
+    this.exportForceToggleTarget.checked = false;
+    this.exportOverwriteOption()?.classList.add('hidden');
+  }
+
+  private exportOverwriteOption(): HTMLElement | null {
+    return this.exportForceToggleTarget.closest<HTMLElement>('[aria-label="Force overwrite option"]');
+  }
+
+  /** Check only what Jin can inspect locally. Cloud-provider progress is not available to the app. */
+  async checkWorkspace(userInitiated = true): Promise<void> {
+    if (!this.hasWorkspaceStatusTarget) return;
+    if (!userInitiated && !this.isWorkspacePaneActive()) return;
+    const generation = ++this.workspaceOperationGeneration;
+    this.setWorkspaceBusy(true);
+    try {
+      const status = await workspaceStatus();
+      if (generation !== this.workspaceOperationGeneration) return;
+      this.renderWorkspaceStatus(status);
+      if (userInitiated) this.recordWorkspaceActivity(status.status === 'ready' ? 'Workspace checked' : 'Workspace needs attention');
+    } catch (error: unknown) {
+      if (generation !== this.workspaceOperationGeneration) return;
+      this.workspaceStatusTarget.textContent = 'Check failed';
+      this.workspaceStatusTarget.dataset.status = 'attention';
+      this.workspaceMessageTarget.textContent = isJinErrorDto(error) ? error.message : 'Jin could not read the workspace. Your files were not changed.';
+      if (userInitiated) this.recordWorkspaceActivity('Workspace check failed');
+    } finally {
+      if (generation === this.workspaceOperationGeneration) this.setWorkspaceBusy(false);
+    }
+  }
+
+  async refreshWorkspaceProjection(): Promise<void> {
+    if (!this.hasWorkspaceStatusTarget) return;
+    const generation = ++this.workspaceOperationGeneration;
+    this.setWorkspaceBusy(true);
+    try {
+      const status = await refreshWorkspaceProjection();
+      if (generation !== this.workspaceOperationGeneration) return;
+      this.renderWorkspaceStatus(status);
+      this.recordWorkspaceActivity(status.status === 'ready' ? 'Local index refreshed' : 'Refresh paused for review');
+    } catch (error: unknown) {
+      if (generation !== this.workspaceOperationGeneration) return;
+      this.workspaceStatusTarget.textContent = 'Refresh failed';
+      this.workspaceStatusTarget.dataset.status = 'attention';
+      this.workspaceMessageTarget.textContent = isJinErrorDto(error) ? error.message : 'Jin could not refresh its local index. Your files were not changed.';
+      this.recordWorkspaceActivity('Local refresh failed');
+    } finally {
+      if (generation === this.workspaceOperationGeneration) this.setWorkspaceBusy(false);
+    }
+  }
+
+  async openWorkspaceFolder(): Promise<void> {
+    try {
+      await openWorkspaceFolder();
+    } catch (error: unknown) {
+      this.workspaceMessageTarget.textContent = isJinErrorDto(error) ? error.message : 'Could not open the workspace folder.';
+    }
+  }
+
+  private setWorkspaceBusy(busy: boolean): void {
+    this.workspaceCheckBtnTarget.disabled = busy;
+    this.workspaceRefreshBtnTarget.disabled = busy || this.workspaceStatusTarget.dataset.status !== 'ready';
+    this.workspaceOpenBtnTarget.disabled = busy;
+    if (busy) this.workspaceStatusTarget.textContent = 'Checking…';
+  }
+
+  private isWorkspacePaneActive(): boolean {
+    return this.workspaceStatusTarget.closest<HTMLElement>('[data-settings-pane-key="data-storage"]')?.hidden === false;
+  }
+
+  private renderWorkspaceStatus(status: WorkspaceStatusDto): void {
+    const ready = status.status === 'ready';
+    this.workspaceStatusTarget.textContent = ready ? 'Local files checked' : 'Needs attention';
+    this.workspaceStatusTarget.dataset.status = status.status;
+    this.workspaceCheckedAtTarget.textContent = new Date(status.checked_at).toLocaleString();
+    this.workspaceFileCountTarget.textContent = String(status.canonical_file_count);
+    this.workspaceModeTarget.textContent = status.portable ? 'Portable workspace' : 'Local workspace';
+    this.workspaceMessageTarget.textContent = status.message ?? (ready
+      ? status.canonical_file_count === 0 ? 'No records found on this device.' : ''
+      : 'Jin left every file unchanged.');
+    this.workspaceRefreshBtnTarget.disabled = !ready;
+    this.workspaceConflictsTarget.replaceChildren();
+    for (const conflict of status.conflicts) {
+      const item = document.createElement('li');
+      item.textContent = `${conflict.kind} ${conflict.id}: ${conflict.paths.join(' · ')}`;
+      this.workspaceConflictsTarget.appendChild(item);
+    }
+    this.workspaceConflictsTarget.hidden = status.conflicts.length === 0;
+    this.workspaceConflictGuidanceTarget.hidden = status.conflicts.length === 0;
+  }
+
+  private recordWorkspaceActivity(message: string): void {
+    if (!this.hasWorkspaceStatusTarget) return;
+    const item = document.createElement('li');
+    item.textContent = `${new Date().toLocaleTimeString()} · ${message}`;
+    this.workspaceActivityTarget.prepend(item);
+    this.workspaceActivitySectionTarget.hidden = false;
+    while (this.workspaceActivityTarget.children.length > 4) this.workspaceActivityTarget.lastElementChild?.remove();
   }
 
   // ── Store root (P1 sovereignty) ───────────────────────────────────────────
@@ -984,6 +1128,7 @@ export default class SettingsController extends Controller {
       exportFileCount: this.exportFileCountTarget,
       exportDestDisplay: this.exportDestDisplayTarget,
       exportAuditIncluded: this.exportAuditIncludedTarget,
+      exportVerified: this.exportVerifiedTarget,
       exportError: this.exportErrorTarget,
     };
   }

@@ -10,7 +10,7 @@ use crate::dto::{
     ListDto, NoteDto, TagDto, TaskDto, TodayProjectionDto,
 };
 use crate::index::{self, query, rebuild};
-use crate::store::fs;
+use crate::store::{fs, history};
 use crate::{Config, JinError, Result};
 
 pub fn list_capture_review(
@@ -49,6 +49,12 @@ pub(crate) fn recover_before_read(root: &Path) -> Result<()> {
         let cfg = Config::load(root)?;
         let mut conn = index::open(&cfg.index_path())?;
         rebuild::rebuild(&mut conn, root)?;
+    }
+    // File-sync providers change canonical bytes outside Jin's process. A
+    // metadata fingerprint avoids rehashing/rebuilding on ordinary reads and
+    // forces a strict scan before serving a changed shared workspace.
+    if history::shared_projection_changed(root)? {
+        refresh(root)?;
     }
     Ok(())
 }

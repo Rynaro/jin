@@ -31,6 +31,7 @@ pub(crate) static PASSPHRASE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::
 /// Mutex that serialises all tests that read, set, or remove
 /// `JIN_GOOGLE_CLIENT_ID` / `JIN_GOOGLE_CLIENT_SECRET`.
 pub(crate) static CREDENTIALS_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+pub(crate) static STATE_DIR_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// RAII guard: acquires a named mutex, saves the current env var value, then
 /// sets or removes it.  Restores the original value (or removes it if it was
