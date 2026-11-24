@@ -382,7 +382,13 @@ fn wait_for_code_with_timeout_and_cancel(
         stream
             .set_read_timeout(Some(remaining.min(LOOPBACK_POLL_INTERVAL)))
             .map_err(|e| JinError::Auth(format!("configure loopback read timeout: {e}")))?;
-        let read = match stream.read(&mut chunk) {
+        let read_result = stream.read(&mut chunk);
+        // Cancellation has precedence over every possible outcome of the
+        // blocking read. The browser can close or reset its socket while the
+        // Settings action cancels the attempt, and it can also finish sending
+        // data during that same interval.
+        attempt.ensure_active()?;
+        let read = match read_result {
             Ok(read) => read,
             Err(error)
                 if matches!(
@@ -943,7 +949,30 @@ mod tests {
         )
         .expect_err("cancelling a partial response must stop the wait");
         handle.join().unwrap();
-        assert!(error.to_string().contains("cancelled"));
+        assert!(error.to_string().contains("cancelled"), "{error}");
+    }
+
+    #[test]
+    fn incomplete_loopback_response_without_cancellation_reports_eof() {
+        use std::io::Write;
+        use std::net::TcpStream;
+        use std::thread;
+
+        let (port, listener) = bind_loopback().expect("bind loopback");
+        let handle = thread::spawn(move || {
+            let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).unwrap();
+            stream
+                .write_all(b"GET /?code=partial&state=state HTTP/1.1\r\n")
+                .unwrap();
+        });
+
+        let error = wait_for_code_with_timeout(listener, std::time::Duration::from_secs(1))
+            .expect_err("an incomplete uncancelled response must report EOF");
+        handle.join().unwrap();
+        assert!(
+            error.to_string().contains("ended before it was complete"),
+            "{error}"
+        );
     }
 
     #[test]
