@@ -1,0 +1,17 @@
+{
+  "esl_version": "1.1",
+  "change_id": "surface-discovered-google-calendars",
+  "status": "archived",
+  "tier": "lite",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    "GOOGLE-INBOUND-1",
+    "GOOGLE-INBOUND-2",
+    "GOOGLE-INBOUND-3"
+  ],
+  "spec_ref": ".spectra/changes/surface-discovered-google-calendars/spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-11-24-surface-discovered-google-calendars",
+  "has_code": true
+}

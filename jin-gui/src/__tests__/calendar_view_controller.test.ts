@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Application } from '@hotwired/stimulus';
+import { listen } from '@tauri-apps/api/event';
 import CalendarViewController, { eventIntersectsDate } from '../controllers/calendar_view_controller';
 import CalendarController from '../controllers/calendar_controller';
 import { initIcons } from '../lib/icons';
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../invoke', () => mocks);
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock('../lib/icons', () => ({ initIcons: vi.fn() }));
 
 function makeEvent(overrides: Partial<EventDto> = {}): EventDto {
@@ -212,6 +214,103 @@ describe('CalendarViewController safety and mode invariants', () => {
     controller.selectDate('2026-08-20');
     expect(document.querySelector('[data-event-id="imported-google-event"]')?.textContent)
       .toContain('Imported from Google');
+  });
+
+  it('shows newly discovered empty Google calendars without waiting for an event', async () => {
+    mocks.listGoogleAccounts.mockResolvedValue([]);
+    await controller.loadCalendar();
+    expect(document.querySelectorAll('.calendar-filter input[data-calendar-key^="google:"]')).toHaveLength(0);
+
+    window.dispatchEvent(new CustomEvent('jin:google-accounts-loaded', {
+      detail: [{
+        id: 'account-work', alias: 'Work', principal: null, state: 'connected', auth_generation: 1,
+        calendars: [{
+          account_id: 'account-work', calendar_id: 'team', name: 'Team', primary: false,
+          access_role: 'writer', writable: true, enabled: true, available: true, route_generation: 1,
+          allowed_conference_solution_types: [],
+        }],
+      }],
+    }));
+    await flush();
+
+    const key = googleCalendarKey('account-work', 'team');
+    const row = document.querySelector<HTMLInputElement>(`.calendar-filter input[data-calendar-key="${key}"]`);
+    expect(row?.checked).toBe(true);
+    expect(row?.parentElement?.textContent).toContain('Team · Work');
+  });
+
+  it('reloads once after the native initial Google import settles', async () => {
+    const callbacks: Array<(event: { payload: unknown }) => void> = [];
+    vi.mocked(listen).mockImplementation(async (_event, callback) => {
+      callbacks.push(callback as (event: { payload: unknown }) => void);
+      return () => {};
+    });
+    await (controller as unknown as { subscribeToGoogleInitialPulls(): Promise<void> }).subscribeToGoogleInitialPulls();
+    await flush();
+    const refresh = vi.spyOn(controller, 'loadCalendar');
+    mocks.listEvents.mockResolvedValue([makeEvent({ id: 'native-import', title: 'Native import' })]);
+
+    const callback = callbacks.at(-1)!;
+    callback({ payload: { attempt_id: 'attempt-work', account_id: 'account-work', status: 'ok' } });
+    callback({ payload: { attempt_id: 'attempt-home', account_id: 'account-home', status: 'partial' } });
+    await flush();
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+    controller.selectDate('2026-08-20');
+    expect(document.querySelector('[data-event-id="native-import"]')?.textContent).toContain('Native import');
+  });
+
+  it('keeps newer Google discovery when an older Calendar route read resolves late', async () => {
+    let resolveOldAccounts!: (accounts: any[]) => void;
+    const oldAccounts = new Promise<any[]>(resolve => { resolveOldAccounts = resolve; });
+    mocks.listGoogleAccounts.mockImplementationOnce(() => oldAccounts);
+    const loading = controller.loadCalendar();
+    await Promise.resolve();
+
+    window.dispatchEvent(new CustomEvent('jin:google-accounts-loaded', {
+      detail: [{
+        id: 'fresh', alias: 'Fresh', principal: null, state: 'connected', auth_generation: 1,
+        calendars: [{ account_id: 'fresh', calendar_id: 'current', name: 'Current', primary: false,
+          access_role: 'writer', writable: true, enabled: true, available: true, route_generation: 1,
+          allowed_conference_solution_types: [] }],
+      }],
+    }));
+    resolveOldAccounts([{ id: 'stale', alias: 'Stale', principal: null, state: 'connected', auth_generation: 1,
+      calendars: [{ account_id: 'stale', calendar_id: 'old', name: 'Old', primary: false,
+        access_role: 'writer', writable: true, enabled: true, available: true, route_generation: 1,
+        allowed_conference_solution_types: [] }],
+    }]);
+    await loading;
+
+    expect(document.querySelector('.calendar-filter')?.textContent).toContain('Current · Fresh');
+    expect(document.querySelector('.calendar-filter')?.textContent).not.toContain('Old · Stale');
+  });
+
+  it('unsubscribes when the Calendar route disconnects before the native listener resolves', async () => {
+    let resolveListen!: (unlisten: () => void) => void;
+    const unlisten = vi.fn();
+    vi.mocked(listen).mockImplementationOnce(() => new Promise(resolve => { resolveListen = resolve; }));
+    const subscribing = (controller as unknown as { subscribeToGoogleInitialPulls(): Promise<void> }).subscribeToGoogleInitialPulls();
+    controller.disconnect();
+    resolveListen(unlisten);
+    await subscribing;
+
+    expect(unlisten).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconciles an initial import when the Calendar route becomes active', async () => {
+    mocks.listEvents.mockResolvedValue([]);
+    await controller.loadCalendar();
+    mocks.listEvents.mockResolvedValue([
+      makeEvent({ id: 'initial-import', title: 'Imported on connect' }),
+    ]);
+
+    controller.activateSection();
+    await flush();
+    controller.selectDate('2026-08-20');
+
+    expect(document.querySelector('[data-event-id="initial-import"]')?.textContent)
+      .toContain('Imported on connect');
   });
 
   it('does not reload twice for mutations it already refreshes locally', async () => {

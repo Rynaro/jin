@@ -30,8 +30,19 @@ pub fn connect_new_account_cancellable(
     alias: Option<&str>,
     attempt: &crate::google::auth::GoogleAuthAttempt,
 ) -> crate::Result<()> {
+    connect_new_account_cancellable_with_id(root, alias, attempt).map(|_| ())
+}
+
+/// Same browser connection flow as [`connect_new_account_cancellable`], while
+/// returning the account that completed authentication. Native callers use the
+/// id to begin the first inbound event import after CalendarList discovery.
+pub fn connect_new_account_cancellable_with_id(
+    root: &Path,
+    alias: Option<&str>,
+    attempt: &crate::google::auth::GoogleAuthAttempt,
+) -> crate::Result<GoogleAccountId> {
     let account_id = prepare_new_account(root, alias)?;
-    login_account_cancellable(root, &account_id, attempt)
+    login_account_cancellable(root, &account_id, attempt).map(|_| account_id)
 }
 
 /// Validate credential readiness and create or reuse the one safe onboarding

@@ -29,6 +29,7 @@
  */
 
 import { Controller } from '@hotwired/stimulus';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
   listEvents, createEvent, createRoutedEvent, deleteEvent, syncCalendarEvent,
   listGoogleAccounts, listTasks, newOperationId,
@@ -147,6 +148,11 @@ interface CalendarMonth {
   weeks: CalendarDay[][];
 }
 
+interface GoogleCalendarInitialPullFinished {
+  account_id: string;
+  status: 'ok' | 'partial' | 'error';
+}
+
 export default class CalendarViewController extends Controller {
   static targets = [
     'workspace',
@@ -198,6 +204,12 @@ export default class CalendarViewController extends Controller {
   private connected = false;
   private visibilityMap: CalendarVisibilityMap = {};
   private filterAccounts: GoogleAccountDto[] = [];
+  /** Bumps whenever Settings receives newer Google calendar discovery. */
+  private filterAccountsRevision = 0;
+  private googleInitialPullUnlisten: UnlistenFn | null = null;
+  private googleInitialPullSubscriptionGeneration = 0;
+  private initialPullRefreshQueued = false;
+  private calendarLoadQueued = false;
   private filterSignature = '';
   private rangeProjection: CalendarRangeProjectionDto | null = null;
   private companion: EventCompanion | null = null;
@@ -223,6 +235,7 @@ export default class CalendarViewController extends Controller {
 
   connect(): void {
     this.connected = true;
+    this.googleInitialPullSubscriptionGeneration += 1;
     this.addButton = this.hasCreateEventBtnTarget ? this.createEventBtnTarget : null;
     const today = new Date();
     this.currentYear = today.getFullYear();
@@ -237,16 +250,24 @@ export default class CalendarViewController extends Controller {
     this.localizeCalendarShell();
     document.addEventListener('visibilitychange', this.handleVisibilityChange);
     window.addEventListener('jin:calendar-colors-changed', this.handleCalendarColorsChanged);
-    void this.loadCalendar();
+    window.addEventListener('jin:google-accounts-loaded', this.handleGoogleAccountsLoaded);
+    void this.subscribeToGoogleInitialPulls();
+    this.queueCalendarLoad();
   }
 
   disconnect(): void {
     this.connected = false;
+    this.googleInitialPullSubscriptionGeneration += 1;
     this.invalidateDetailRequest();
     this.cancelNowTimer();
     this.cancelPendingTimelineScroll();
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     window.removeEventListener('jin:calendar-colors-changed', this.handleCalendarColorsChanged);
+    window.removeEventListener('jin:google-accounts-loaded', this.handleGoogleAccountsLoaded);
+    this.googleInitialPullUnlisten?.();
+    this.googleInitialPullUnlisten = null;
+    this.initialPullRefreshQueued = false;
+    this.calendarLoadQueued = false;
     this.workspaceObserver?.disconnect();
     this.workspaceObserver = null;
     this.stopMonthGridMeasurement();
@@ -264,11 +285,65 @@ export default class CalendarViewController extends Controller {
     if (this.connected) void this.renderCurrentView();
   };
 
+  /**
+   * Calendar discovery is completed in Settings after Google OAuth. Update the
+   * source rail immediately, including for calendars that have no events yet.
+   * A pending route load cannot replace this newer account snapshot.
+   */
+  private readonly handleGoogleAccountsLoaded = (event: Event): void => {
+    const accounts = (event as CustomEvent<unknown>).detail;
+    if (!this.connected || !Array.isArray(accounts)) return;
+    this.filterAccountsRevision += 1;
+    this.filterAccounts = accounts as GoogleAccountDto[];
+    this.syncCalendarFilter();
+  };
+
+  /** Refresh imported events only after the native inbound pull has settled. */
+  private async subscribeToGoogleInitialPulls(): Promise<void> {
+    const generation = this.googleInitialPullSubscriptionGeneration;
+    let unlisten: UnlistenFn;
+    try {
+      unlisten = await listen<GoogleCalendarInitialPullFinished>(
+        'jin:google-calendar-initial-pull-finished',
+        () => this.queueInitialPullRefresh(),
+      );
+    } catch {
+      // The Vite fixture has no native event bridge. Calendar discovery still
+      // arrives through Settings' DOM event in that environment.
+      return;
+    }
+    if (!this.connected || generation !== this.googleInitialPullSubscriptionGeneration) {
+      unlisten();
+      return;
+    }
+    this.googleInitialPullUnlisten = unlisten;
+  }
+
+  private queueInitialPullRefresh(): void {
+    if (!this.connected || this.initialPullRefreshQueued) return;
+    this.initialPullRefreshQueued = true;
+    queueMicrotask(() => {
+      this.initialPullRefreshQueued = false;
+      this.queueCalendarLoad();
+    });
+  }
+
+  private queueCalendarLoad(): void {
+    if (!this.connected || this.calendarLoadQueued) return;
+    this.calendarLoadQueued = true;
+    queueMicrotask(() => {
+      this.calendarLoadQueued = false;
+      if (this.connected) void this.loadCalendar();
+    });
+  }
+
   // ── Public actions ────────────────────────────────────────────────────────
 
   activateSection(): void {
     queueMicrotask(() => this.applyPendingTimelineScroll());
     this.schedulePendingTimelineScrollFrame();
+    // A completed native import may have occurred while this route was hidden.
+    this.queueCalendarLoad();
   }
 
   openNotifications(): void {
@@ -284,10 +359,12 @@ export default class CalendarViewController extends Controller {
     try {
       this.allEvents = await listEvents();
       if (!this.connected || generation !== this.loadGeneration) return;
+      const accountsRevision = this.filterAccountsRevision;
       try {
-        this.filterAccounts = await listGoogleAccounts();
+        const accounts = await listGoogleAccounts();
+        if (accountsRevision === this.filterAccountsRevision) this.filterAccounts = accounts;
       } catch {
-        this.filterAccounts = [];
+        if (accountsRevision === this.filterAccountsRevision) this.filterAccounts = [];
       }
       if (!this.connected || generation !== this.loadGeneration) return;
       this.allTasks = await listTasks();

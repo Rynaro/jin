@@ -326,6 +326,31 @@ describe('settings pane navigation', () => {
 });
 
 describe('Google Calendar connection recovery', () => {
+  it('only shows initial-import progress for the current OAuth attempt', () => {
+    const controller = Object.create(SettingsController.prototype) as any;
+    const status = document.createElement('p');
+    const retry = document.createElement('button');
+    retry.className = 'hidden';
+    retry.hidden = true;
+    Object.assign(controller, {
+      googleInitialPullAttemptId: 'current-attempt',
+      googleInitialPullResult: null,
+      hasGoogleAccountsStatusTarget: true,
+      googleAccountsStatusTarget: status,
+      hasGoogleInitialSyncRetryBtnTarget: true,
+      googleInitialSyncRetryBtnTarget: retry,
+    });
+
+    controller.handleGoogleInitialPullFinished({ attempt_id: 'older-attempt', account_id: 'old', status: 'partial' });
+    expect(status.textContent).toBe('');
+    expect(retry.hidden).toBe(true);
+
+    controller.handleGoogleInitialPullFinished({ attempt_id: 'current-attempt', account_id: 'current', status: 'partial' });
+    expect(status.textContent).toContain('Use Sync Now to retry');
+    expect(retry.hidden).toBe(false);
+    expect(retry.classList.contains('hidden')).toBe(false);
+  });
+
   function makeGoogleConnectionController() {
     const controller = Object.create(SettingsController.prototype) as SettingsController & Record<string, unknown>;
     const button = document.createElement('button');
@@ -1376,6 +1401,27 @@ describe('runSync() — invoke args', () => {
       prefix: 'jin',
       bubbles: true,
     });
+  });
+
+  it('clears an initial-import retry warning after its explicit Sync Now succeeds', async () => {
+    mockInvoke.mockResolvedValue(makeSyncSummary());
+    const retry = document.createElement('button');
+    retry.hidden = false;
+    const status = document.createElement('p');
+    status.textContent = 'Some events could not be imported.';
+    const context = Object.assign(Object.create(SettingsController.prototype), {
+      dispatch: vi.fn(), loadGoogleAccounts: vi.fn().mockResolvedValue(undefined),
+      googleInitialPullResult: 'partial', googleInitialPullAttemptId: 'attempt-1',
+      hasGoogleInitialSyncRetryBtnTarget: true, googleInitialSyncRetryBtnTarget: retry,
+      hasGoogleAccountsStatusTarget: true, googleAccountsStatusTarget: status,
+    });
+    Object.defineProperty(context, 'syncElements', { get: () => makeSyncElements() });
+
+    await context.runSync();
+
+    expect(retry.hidden).toBe(true);
+    expect(status.textContent).toBe('');
+    expect((context as any).googleInitialPullResult).toBeNull();
   });
 
   it('does not dispatch an events mutation when sync fails', async () => {

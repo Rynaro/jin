@@ -3,6 +3,7 @@
 //! These are thin adapters over jin-core. OAuth credentials never cross IPC.
 
 use std::path::Path;
+use tauri::Emitter;
 use tauri_plugin_dialog::DialogExt;
 
 use jin_core::dto::GoogleAccountDto;
@@ -59,11 +60,17 @@ fn connect_google_account_cancellable_fn(
     root: &Path,
     account_id: &str,
     attempt: &jin_core::google::auth::GoogleAuthAttempt,
-) -> Result<Vec<GoogleAccountDto>, JinErrorDto> {
+) -> Result<
+    (
+        jin_core::google::account::GoogleAccountId,
+        Vec<GoogleAccountDto>,
+    ),
+    JinErrorDto,
+> {
     let account_id = parse_account_id(account_id)?;
     google_accounts::login_account_cancellable(root, &account_id, attempt)
         .map_err(JinErrorDto::from)?;
-    list_google_accounts_fn(root)
+    Ok((account_id, list_google_accounts_fn(root)?))
 }
 
 pub fn connect_new_google_account_fn(
@@ -78,10 +85,45 @@ fn connect_new_google_account_cancellable_fn(
     root: &Path,
     alias: Option<&str>,
     attempt: &jin_core::google::auth::GoogleAuthAttempt,
-) -> Result<Vec<GoogleAccountDto>, JinErrorDto> {
-    google_accounts::connect_new_account_cancellable(root, alias, attempt)
+) -> Result<
+    (
+        jin_core::google::account::GoogleAccountId,
+        Vec<GoogleAccountDto>,
+    ),
+    JinErrorDto,
+> {
+    let account_id = google_accounts::connect_new_account_cancellable_with_id(root, alias, attempt)
         .map_err(JinErrorDto::from)?;
-    list_google_accounts_fn(root)
+    Ok((account_id, list_google_accounts_fn(root)?))
+}
+
+#[derive(Clone, serde::Serialize)]
+struct InitialGoogleCalendarPullFinished {
+    account_id: String,
+    attempt_id: String,
+    status: String,
+}
+
+fn start_initial_google_calendar_pull<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    root: std::path::PathBuf,
+    account_id: jin_core::google::account::GoogleAccountId,
+    attempt_id: String,
+) {
+    tauri::async_runtime::spawn_blocking(move || {
+        let status = match jin_core::ops::sync::pull_account_inbound(&root, &account_id) {
+            Ok(summary) => summary.status,
+            Err(_) => "error".to_string(),
+        };
+        let _ = app.emit(
+            "jin:google-calendar-initial-pull-finished",
+            InitialGoogleCalendarPullFinished {
+                account_id: account_id.to_string(),
+                attempt_id,
+                status,
+            },
+        );
+    });
 }
 
 pub fn import_google_client_json_fn(root: &Path, path: &Path) -> Result<(), JinErrorDto> {
@@ -239,7 +281,8 @@ pub async fn rename_google_account(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn connect_google_account(
+pub async fn connect_google_account<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     state: tauri::State<'_, AppState>,
     account_id: String,
     attempt_id: String,
@@ -253,11 +296,14 @@ pub async fn connect_google_account(
     })
     .await;
     state.finish_google_connection(&attempt_id);
-    result
+    let (account_id, accounts) = result?;
+    start_initial_google_calendar_pull(app, state.root.clone(), account_id, attempt_id);
+    Ok(accounts)
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn connect_new_google_account(
+pub async fn connect_new_google_account<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     state: tauri::State<'_, AppState>,
     alias: Option<String>,
     attempt_id: String,
@@ -271,7 +317,9 @@ pub async fn connect_new_google_account(
     })
     .await;
     state.finish_google_connection(&attempt_id);
-    result
+    let (account_id, accounts) = result?;
+    start_initial_google_calendar_pull(app, state.root.clone(), account_id, attempt_id);
+    Ok(accounts)
 }
 
 /// Stop the one specific browser authorization attempt. The loopback listener
