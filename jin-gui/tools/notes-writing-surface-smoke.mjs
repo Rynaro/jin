@@ -83,7 +83,7 @@ async function navigateTo(page, name) {
 async function assertNoHorizontalOverflow(page, label) {
   const metrics = await page.evaluate(() => {
     const toolbar = document.querySelector('.notes-detail-pane .cm-toolbar');
-    const panel = document.querySelector('.cm-toolbar__more-panel');
+    const panel = document.querySelector('.cm-toolbar__more[open] .cm-toolbar__more-panel');
     return {
       documentClient: document.documentElement.clientWidth,
       documentScroll: document.documentElement.scrollWidth,
@@ -154,10 +154,71 @@ async function verifyEditorWorkflow(page) {
   await tags.waitFor({ state: 'hidden' });
   if (!(await tagsTrigger.evaluate((element) => element === document.activeElement))) throw new Error('Tags Escape did not restore focus to its trigger');
 
+  // Slash commands are a real keyboard flow, not only a completion-source unit test.
+  await editor.click();
+  await page.keyboard.press(`${modifier}+A`);
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type('/che');
+  const checklist = page.getByRole('option', { name: /Checklist/ }).first();
+  await checklist.waitFor({ state: 'visible' });
+  await page.keyboard.press('Enter');
+  if (await readDoc() !== '- [ ] ') throw new Error('Slash Checklist did not replace /che exactly once');
+  await page.keyboard.press(`${modifier}+z`);
+  if (await readDoc() !== '/che') throw new Error('Slash Checklist undo did not restore /che');
+  await page.keyboard.press('Escape');
+  if (await readDoc() !== '/che') throw new Error('Slash Escape changed literal Markdown');
+  await page.evaluate((source) => {
+    const body = document.querySelector('.notes-detail-pane .note-detail__body');
+    body?._cmHandle?.setDoc(source);
+  }, original);
+  await page.evaluate(() => document.querySelector('.notes-detail-pane .note-detail__body')?._cmHandle?.flush());
+
+  const writing = page.locator('.cm-footer__menu--writing');
+  await writing.locator('summary').click();
+  await writing.getByRole('button', { name: 'Sans serif', exact: true }).click();
+  if (await page.locator('.note-detail__body').getAttribute('data-writing-appearance') !== 'sans') throw new Error('Writing settings did not apply sans typeface');
+  await writing.getByRole('button', { name: 'Wide', exact: true }).click();
+  if (await page.locator('.note-detail__body').getAttribute('data-writing-width') !== 'wide') throw new Error('Writing settings did not apply wide line width');
+  await writing.getByRole('button', { name: 'Serif', exact: true }).click();
+  await writing.getByRole('button', { name: 'Comfortable', exact: true }).click();
+  await writing.locator('summary').click();
+
+  await page.evaluate(() => {
+    const body = document.querySelector('.notes-detail-pane .note-detail__body');
+    body?._cmHandle?.setDoc('# Repeat\n\n## Repeat');
+  });
+  const outline = page.locator('.cm-footer__menu--outline');
+  await outline.locator('summary').click();
+  await outline.getByRole('button', { name: 'Repeat', exact: true }).nth(1).click();
+  if (!(await editor.evaluate((element) => element === document.activeElement))) throw new Error('Edit Outline did not return focus to the editor');
+  await page.getByRole('button', { name: 'Switch to reading mode', exact: true }).click();
+  await page.getByRole('region', { name: 'Reading view', exact: true }).waitFor({ state: 'visible' });
+  await outline.locator('summary').click();
+  await outline.getByRole('button', { name: 'Repeat', exact: true }).nth(1).click();
+  const secondHeading = page.getByRole('region', { name: 'Reading view', exact: true }).locator('h2').first();
+  if (!(await secondHeading.evaluate((element) => element === document.activeElement))) throw new Error('Read Outline did not focus its selected heading');
+  if (await writing.getByRole('button', { name: 'Focus mode', exact: true }).isVisible()) throw new Error('Writing modes remained visible in Read mode');
+  await page.getByRole('button', { name: 'Switch to edit mode', exact: true }).click();
+  await page.evaluate((source) => {
+    const body = document.querySelector('.notes-detail-pane .note-detail__body');
+    body?._cmHandle?.setDoc(source);
+  }, original);
+  await writing.locator('summary').click();
+  await writing.getByRole('button', { name: 'Sans serif', exact: true }).click();
+  await writing.getByRole('button', { name: 'Wide', exact: true }).click();
+  await writing.locator('summary').click();
+
   await page.locator('.notes-detail-pane .browse-back-btn').click();
   await page.locator('.browse-row__inner[data-note-id="n1"]').waitFor({ state: 'visible' });
   await openFixtureNote(page);
   if (await readDoc() !== original) throw new Error('Undo-restored Markdown did not persist after closing and reopening the note');
+  const reopenedBody = page.locator('.note-detail__body');
+  if (await reopenedBody.getAttribute('data-writing-appearance') !== 'sans' || await reopenedBody.getAttribute('data-writing-width') !== 'wide') throw new Error('Writing preferences did not persist across the editor remount');
+  const reopenedWriting = page.locator('.cm-footer__menu--writing');
+  await reopenedWriting.locator('summary').click();
+  await reopenedWriting.getByRole('button', { name: 'Serif', exact: true }).click();
+  await reopenedWriting.getByRole('button', { name: 'Comfortable', exact: true }).click();
+  await reopenedWriting.locator('summary').click();
 }
 
 /** Simulate the native overlay contract while retaining real production layout. */
@@ -415,14 +476,63 @@ async function verifyCompactDisclosure(page, accessibility) {
       && rect.top >= -inset && rect.bottom <= window.innerHeight + inset;
   });
   await assertNoHorizontalOverflow(page, accessibility ? 'AX compact More' : 'compact More');
-  for (const name of ['Heading 1', 'Insert table', 'Inline code', 'Numbered list', 'Blockquote', 'Add image or attachment', 'Focus mode', 'Typewriter scrolling']) await panel.getByRole('button', { name, exact: true }).waitFor({ state: 'visible' });
-  const lastCommand = panel.getByRole('button', { name: 'Typewriter scrolling', exact: true });
+  for (const name of ['Heading 1', 'Insert table', 'Inline code', 'Numbered list', 'Blockquote', 'Add image or attachment']) await panel.getByRole('button', { name, exact: true }).waitFor({ state: 'visible' });
+  const lastCommand = panel.getByRole('button', { name: 'Add image or attachment', exact: true });
   await lastCommand.scrollIntoViewIfNeeded();
   const lastBox = await lastCommand.boundingBox();
   if (!lastBox || lastBox.y < -1 || lastBox.y + lastBox.height > (accessibility ? 844 : 844) + 1) throw new Error(`${accessibility ? 'AX ' : ''}More did not keep Typewriter reachable`);
   await more.focus(); await page.keyboard.press('Escape');
   await panel.waitFor({ state: 'hidden' });
   if (!(await more.evaluate((element) => element === document.activeElement))) throw new Error('Escape did not restore focus to More trigger');
+
+  const assertPopupBounds = async (popup, label) => {
+    await page.waitForFunction((selector) => {
+      const rect = document.querySelector(selector)?.getBoundingClientRect();
+      return Boolean(rect && rect.left >= -1 && rect.right <= window.innerWidth + 1 && rect.top >= -1 && rect.bottom <= window.innerHeight + 1);
+    }, popup);
+    await assertNoHorizontalOverflow(page, label);
+  };
+  const writing = page.locator('.cm-footer__menu--writing');
+  const writingTrigger = writing.locator('summary');
+  const footerActionGeometry = await page.locator('.cm-footer').evaluate((footer) => {
+    const footerRect = footer.getBoundingClientRect();
+    const actions = [...footer.querySelectorAll('.cm-footer__menu > summary')].map((summary) => {
+      const { left, right, top, bottom } = summary.getBoundingClientRect();
+      return { name: summary.getAttribute('aria-label'), left, right, top, bottom };
+    });
+    const outside = actions.some(({ left, right, top, bottom }) =>
+      left < footerRect.left - 1 || right > footerRect.right + 1 || top < footerRect.top - 1 || bottom > footerRect.bottom + 1);
+    return { footer: footerRect.toJSON(), actions, outside };
+  });
+  if (footerActionGeometry.outside) throw new Error(`${accessibility ? 'AX ' : ''}footer actions escaped the writing column: ${JSON.stringify(footerActionGeometry)}`);
+  await writingTrigger.click();
+  await assertPopupBounds('.cm-footer__menu--writing .cm-footer__menu-panel', `${accessibility ? 'AX ' : ''}compact Writing`);
+  const writingPanelBox = await writing.locator('.cm-footer__menu-panel').boundingBox();
+  if (!writingPanelBox || writingPanelBox.width < 220) throw new Error(`${accessibility ? 'AX ' : ''}Writing panel is too narrow to use: ${JSON.stringify(writingPanelBox)}`);
+  for (const name of ['Serif', 'Sans serif', 'Comfortable', 'Wide', 'Focus mode', 'Typewriter scrolling']) await writing.getByRole('button', { name, exact: true }).waitFor({ state: 'visible' });
+  const writingChoiceGeometry = await writing.evaluate((menu) => {
+    const choices = [...menu.querySelectorAll('.cm-footer__menu-panel > button')].map((button) => {
+      const { left, right, top, bottom } = button.getBoundingClientRect();
+      return { name: button.textContent?.trim(), left, right, top, bottom };
+    });
+    const overlaps = choices.some((choice, index) => choices.slice(index + 1).some((other) =>
+      choice.left < other.right && choice.right > other.left && choice.top < other.bottom && choice.bottom > other.top));
+    const outside = choices.some(({ left, right, top, bottom }) => left < -1 || right > window.innerWidth + 1 || top < -1 || bottom > window.innerHeight + 1);
+    return { overlaps, outside, choices };
+  });
+  if (writingChoiceGeometry.overlaps || writingChoiceGeometry.outside) throw new Error(`${accessibility ? 'AX ' : ''}Writing choices overlapped or escaped their viewport: ${JSON.stringify(writingChoiceGeometry)}`);
+  await writing.getByRole('button', { name: 'Typewriter scrolling', exact: true }).scrollIntoViewIfNeeded();
+  await writingTrigger.focus(); await page.keyboard.press('Escape');
+  if (!(await writingTrigger.evaluate((element) => element === document.activeElement))) throw new Error('Writing Escape did not restore focus');
+
+  const outline = page.locator('.cm-footer__menu--outline');
+  const outlineTrigger = outline.locator('summary');
+  await outlineTrigger.click();
+  await assertPopupBounds('.cm-footer__menu--outline .cm-outline', `${accessibility ? 'AX ' : ''}compact Outline`);
+  const outlinePanelBox = await outline.locator('.cm-outline').boundingBox();
+  if (!outlinePanelBox || outlinePanelBox.width < 220) throw new Error(`${accessibility ? 'AX ' : ''}Outline panel is too narrow to use: ${JSON.stringify(outlinePanelBox)}`);
+  await outlineTrigger.focus(); await page.keyboard.press('Escape');
+  if (!(await outlineTrigger.evaluate((element) => element === document.activeElement))) throw new Error('Outline Escape did not restore focus');
 }
 
 const browser = await chromium.launch({ executablePath: await findInstalledHeadlessShell() });
