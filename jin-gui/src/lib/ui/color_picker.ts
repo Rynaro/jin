@@ -312,7 +312,11 @@ export function createJinColorPicker(options: JinColorPickerOptions): JinColorPi
       const selected = isJinPaletteColor(value) ? swatch.dataset.color === value : swatch.dataset.color === 'custom';
       swatch.setAttribute('aria-pressed', String(selected));
       if (swatch.dataset.color === 'custom') {
-        if (!isJinPaletteColor(value)) swatch.style.setProperty('--custom-preview', value); else swatch.style.removeProperty('--custom-preview');
+        if (!isJinPaletteColor(value)) {
+          swatch.style.setProperty('--custom-preview', value);
+        } else {
+          swatch.style.removeProperty('--custom-preview');
+        }
       }
     });
   };
@@ -321,7 +325,7 @@ export function createJinColorPicker(options: JinColorPickerOptions): JinColorPi
     swatch.setAttribute('aria-label', `Color: ${color}`); swatch.addEventListener('click', () => { setValue(color); options.onPick(color); }); element.appendChild(swatch);
   }
   const custom = document.createElement('button'); custom.type = 'button'; custom.className = 'jin-color-swatch jin-color-swatch--custom tap-target'; custom.dataset.color = 'custom';
-  custom.setAttribute('aria-label', 'Choose a custom color'); custom.addEventListener('click', () => {
+  custom.setAttribute('aria-label', 'Choose a custom color'); custom.title = 'Choose a custom color'; custom.addEventListener('click', () => {
     chroma ??= new JinChromaDialog(); chroma.open(value, color => { setValue(color); options.onPick(color); });
   });
   element.appendChild(custom); setValue(value);

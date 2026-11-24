@@ -3681,16 +3681,6 @@ figure.code-block {
   display: none;
 }
 
-/* Smaller color-picker swatches (override tap-target's 44px min) */
-.lists-color-swatch {
-  width: 22px;
-  height: 22px;
-  min-width: 0;
-  min-inline-size: 0;
-  min-block-size: 0;
-  border-width: 1.5px;
-}
-
 /* Detail editor — compact fields (scoped so global .form-select is unaffected) */
 .task-detail__body {
   min-height: 76px;

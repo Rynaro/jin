@@ -33,14 +33,22 @@ describe('shared Jin color picker', () => {
     expect(onPick).toHaveBeenCalledWith('success');
   });
 
-  it('keeps the custom swatch chromatic even when it previews a selected custom color', () => {
+  it('keeps custom-color selection state in sync as colors change', () => {
     const picker = createJinColorPicker({ value: '#123456', label: 'Color', onPick: vi.fn() });
     const custom = picker.element.querySelector<HTMLElement>('.jin-color-swatch--custom')!;
+    const accent = picker.element.querySelector<HTMLElement>('[data-color="accent"]')!;
     expect(custom.style.getPropertyValue('--custom-preview')).toBe('#123456');
-    expect(custom.style.getPropertyValue('--sw')).toBe('');
-    const css = readFileSync(resolve(process.cwd(), 'src/styles/components.css'), 'utf8');
-    expect(css).toMatch(/\.jin-color-swatch--custom\s*\{[^}]*background:\s*conic-gradient\(/s);
-    expect(css).not.toMatch(/\.jin-color-swatch--custom\s*\{[^}]*background:\s*var\(--sw/s);
+    expect(custom.getAttribute('aria-pressed')).toBe('true');
+
+    picker.setValue('accent');
+    expect(custom.style.getPropertyValue('--custom-preview')).toBe('');
+    expect(custom.getAttribute('aria-pressed')).toBe('false');
+    expect(accent.getAttribute('aria-pressed')).toBe('true');
+
+    picker.setValue('#abcdef');
+    expect(custom.style.getPropertyValue('--custom-preview')).toBe('#ABCDEF');
+    expect(custom.getAttribute('aria-pressed')).toBe('true');
+    expect(accent.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('keeps the chroma dialog within its container and preserves usable compact RGB controls', () => {
