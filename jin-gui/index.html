@@ -87,7 +87,9 @@
         <section data-first-run-target="recovery" class="first-run__recovery" hidden>
           <h1 tabindex="-1" data-first-run-target="heading">Jin needs its storage folder.</h1>
           <p data-first-run-recovery-message></p>
+          <p class="jin-status-message" role="status" data-first-run-target="recoveryStatus" hidden></p>
           <div class="first-run__actions first-run__actions--recovery">
+            <button type="button" class="btn-secondary tap-target" data-first-run-target="openWorkspace" data-first-run-open data-action="click->first-run#openWorkspace">Open workspace folder</button>
             <button type="button" class="btn-primary tap-target" data-first-run-retry data-action="click->first-run#retry">Try again</button>
             <button type="button" class="btn-secondary tap-target" data-first-run-replace data-action="click->first-run#chooseReplacement">Choose a replacement folder…</button>
           </div>
@@ -116,6 +118,7 @@
       data-active-section="today"
       data-action="today:navigate->router#handleTodayNavigate jin:navigate->router#handleNavigate jin:open-promote->actions#openPromote jin:open-attach->actions#openAttach jin:open-link->actions#openLink jin:route-committed@window->sidebar#routeCommitted jin:sidebar-toggle@window->sidebar#toggle jin:sidebar-selection@window->sidebar#selectionCommitted"
     >
+      <p class="sr-only" role="status" aria-live="polite" data-capture-target="captureStatus"></p>
       <!-- ── Sidebar navigation ─────────────────────────────────────────── -->
       <aside
         class="jin-sidebar jin-navigation-rail jin-chrome"
@@ -187,6 +190,10 @@
             <i data-lucide="plus" aria-hidden="true"></i>
             <span>Capture</span>
           </button>
+          <button class="jin-review-captures-btn tap-target" type="button" data-action="click->capture#openReview" aria-label="Review captures">
+            <i data-lucide="inbox" aria-hidden="true"></i><span>Review captures</span><span class="jin-review-count" hidden data-capture-target="reviewCount">0</span><span class="sr-only" data-capture-target="reviewCountLabel"></span>
+          </button>
+          <p class="jin-capture-status" role="status" aria-live="polite" hidden data-capture-target="captureStatus"></p>
           <button type="button" class="jin-find-trigger tap-target" data-action="click->find#open"
             aria-label="Find in Jin" aria-keyshortcuts="Control+Shift+F Meta+Shift+F">
             <i data-lucide="search" aria-hidden="true"></i>
@@ -255,10 +262,18 @@
             </li>
           </ul>
         </nav>
+        <div hidden data-sidebar-target="contextSlot">
+          <button type="button" class="jin-page-context-trigger tap-target"
+                data-sidebar-target="contextReveal" data-action="click->sidebar#showContext"
+                aria-controls="jin-nav-routes" aria-expanded="false">
+                <span></span>
+                <i data-lucide="chevron-down" aria-hidden="true"></i>
+          </button>
+        </div>
       </aside>
 
       <div class="jin-sidebar-backdrop" data-sidebar-target="backdrop"
-        data-action="click->sidebar#hide" aria-hidden="true"></div>
+        data-action="click->sidebar#backdropClick" aria-hidden="true"></div>
 
       <!-- ── Main content area ────────────────────────────────────────────── -->
       <main
@@ -557,9 +572,12 @@
           <div id="notes-library" class="notes-list-pane jin-workspace-pane" data-notes-target="listPanel" data-sidebar-workspace>
             <div class="notes-list-pane__header jin-workspace-header">
               <div class="notes-explorer__toolbar">
+                <span class="notes-context-trigger-host" data-sidebar-context-anchor="notes-list"></span>
                 <div class="notes-explorer__identity">
                   <i data-lucide="file-text" aria-hidden="true"></i>
-                  <h1 class="notes-workspace-title" data-notes-target="scopeTitle" tabindex="-1">All Notes</h1>
+                  <div class="notes-workspace-title-row">
+                    <h1 class="notes-workspace-title" data-notes-target="scopeTitle" tabindex="-1">All Notes</h1>
+                  </div>
                   <span class="notes-explorer__count" data-notes-target="resultCount" role="status" aria-live="polite">Loading…</span>
                 </div>
                 <div class="notes-explorer__controls">
@@ -637,6 +655,7 @@
             -->
             <div class="notes-detail-pane__header jin-toolbar-strip jin-chrome">
               <span class="notes-detail-pane__drag" data-tauri-drag-region aria-hidden="true"></span>
+              <span class="notes-detail-context-trigger-host" data-sidebar-context-anchor="notes-detail"></span>
                 <button
                 type="button"
                 class="browse-back-btn jin-control tap-target"
@@ -1379,9 +1398,12 @@
           <div data-tasks-target="listPanel">
             <div class="jin-workspace-header jin-workspace-header--paired">
               <span class="tasks-workspace-drag" data-tauri-drag-region aria-hidden="true"></span>
+              <span class="tasks-context-trigger-host" data-sidebar-context-anchor="tasks-list"></span>
               <header class="tasks-workspace-header jin-workspace-header__identity">
-                <h1 class="tasks-workspace-title" data-tasks-target="workspaceTitle">Inbox</h1>
-                <span class="tasks-workspace-count" data-tasks-target="workspaceCount" aria-live="polite"></span>
+                <div class="tasks-workspace-title-row">
+                  <h1 class="tasks-workspace-title" data-tasks-target="workspaceTitle">Inbox</h1>
+                  <span class="tasks-workspace-count" data-tasks-target="workspaceCount" aria-live="polite"></span>
+                </div>
               </header>
               <!-- Filter bar — selects are passed through to invoke list_tasks -->
               <div class="tasks-filter-bar jin-workspace-header__controls" role="group" aria-label="Filter tasks">
@@ -1667,7 +1689,7 @@
           <aside class="calendar-context-rail jin-context-rail jin-navigation-rail" data-sidebar-context="events" aria-label="Calendar navigation">
             <div data-calendar-view-target="filterHost"></div>
             <nav class="calendar-context-actions jin-navigation-list" aria-label="Calendar actions">
-              <button type="button" class="jin-navigation-row tap-target" data-calendar-view-target="manageCalendarsLink" data-action="click->calendar-view#openCalendarSettings"><i data-lucide="settings" class="jin-navigation-row__icon" aria-hidden="true"></i><span class="jin-navigation-row__label">Calendars &amp; Sync</span></button>
+              <button type="button" class="jin-navigation-row tap-target" data-calendar-view-target="manageCalendarsLink" data-action="click->calendar-view#openCalendarSettings"><i data-lucide="settings" class="jin-navigation-row__icon" aria-hidden="true"></i><span class="jin-navigation-row__label">Calendar connections</span></button>
             </nav>
           </aside>
           <div class="calendar-route-toolbar">
@@ -1697,6 +1719,7 @@
 
           <!-- Calendar cards and linked objects share the event detail pane. -->
           <div data-events-target="detailPanel" class="events-detail-pane hidden" data-sidebar-workspace>
+            <span class="calendar-detail-context-trigger-host" data-sidebar-context-anchor="events-detail"></span>
             <button type="button" class="calendar-back-btn tap-target" data-action="click->events#showList">
               <i data-lucide="arrow-left" aria-hidden="true"></i><span>Calendar</span>
             </button>
@@ -1819,7 +1842,7 @@
                   data-settings-target="settingsNavItem"
                   data-settings-pane-key="calendars"
                   data-action="click->settings#selectPane"
-                ><span class="jin-navigation-row__label">Calendars &amp; Sync</span></button>
+                ><span class="jin-navigation-row__label">Calendar connections</span></button>
                 <button
                   type="button"
                   class="settings-nav__item jin-nav-item jin-navigation-row tap-target"
@@ -1835,7 +1858,7 @@
                   data-settings-target="settingsNavItem"
                   data-settings-pane-key="data-storage"
                   data-action="click->settings#selectPane"
-                ><span class="jin-navigation-row__label">Data &amp; Storage</span></button>
+                ><span class="jin-navigation-row__label">Files &amp; backups</span></button>
               </nav>
             </div>
 
@@ -1849,8 +1872,8 @@
                 hidden
               >
                 <header class="settings-pane__header">
-                  <h2 id="settings-pane-calendars-title" class="settings-pane__title">Calendars &amp; Sync</h2>
-                  <p class="settings-pane__description">Connect calendars, review paused changes, and control synchronization.</p>
+                  <div class="settings-pane__title-row"><span class="settings-context-trigger-host" data-sidebar-context-anchor="settings"></span><h2 id="settings-pane-calendars-title" class="settings-pane__title">Calendar connections</h2></div>
+                  <p class="settings-pane__description">Connect calendar accounts and review paused calendar changes.</p>
                 </header>
 
             <section class="settings-section" aria-label="Google calendar accounts">
@@ -2044,7 +2067,7 @@
                 hidden
               >
                 <header class="settings-pane__header">
-                  <h2 id="settings-pane-notifications-title" class="settings-pane__title">Notifications</h2>
+                  <div class="settings-pane__title-row"><span class="settings-context-trigger-host" data-sidebar-context-anchor="settings"></span><h2 id="settings-pane-notifications-title" class="settings-pane__title">Notifications</h2></div>
                   <p class="settings-pane__description">Manage system permission and verify that reminders can reach you.</p>
                 </header>
             <section class="settings-section notification-settings" aria-label="Notifications">
@@ -2076,7 +2099,7 @@
 
               </section>
 
-              <!-- ── Data & Storage ─────────────────────────────────────────── -->
+              <!-- ── Files & backups ────────────────────────────────────────── -->
               <section
                 id="settings-pane-data-storage"
                 class="settings-pane"
@@ -2086,9 +2109,35 @@
                 hidden
               >
                 <header class="settings-pane__header">
-                  <h2 id="settings-pane-data-storage-title" class="settings-pane__title">Data &amp; Storage</h2>
-                  <p class="settings-pane__description">Choose where Jin stores data, export a portable copy, and inspect diagnostics.</p>
+                  <div class="settings-pane__title-row"><span class="settings-context-trigger-host" data-sidebar-context-anchor="settings"></span><h2 id="settings-pane-data-storage-title" class="settings-pane__title">Files &amp; backups</h2></div>
+                  <p class="settings-pane__description">Check your workspace and create a verified portable copy when you need one.</p>
                 </header>
+
+            <section class="settings-section" aria-label="Workspace sync">
+              <h3 class="settings-section__heading">Workspace sync</h3>
+              <p class="settings-workspace-scope">Jin checks files on this device. Your sync provider controls upload and download progress.</p>
+              <div class="workspace-status-row">
+                <span class="workspace-status-pill"><i data-lucide="folder" aria-hidden="true"></i><span class="workspace-status-value" data-settings-target="workspaceStatus" data-status="unknown" aria-live="polite">Not checked</span></span>
+                <span class="color-secondary text-footnote">Last checked <span data-settings-target="workspaceCheckedAt">—</span></span>
+              </div>
+              <div class="workspace-facts">
+                <span><strong data-settings-target="workspaceFileCount">—</strong> workspace files read</span>
+                <span data-settings-target="workspaceMode">—</span>
+                <span>Recovery snapshots stay on this device</span>
+              </div>
+              <p class="settings-workspace-message" data-settings-target="workspaceMessage" aria-live="polite">Check your workspace after a provider finishes syncing.</p>
+              <ul class="settings-conflict-list" data-settings-target="workspaceConflicts" hidden aria-label="Files needing review"></ul>
+              <p class="color-secondary text-footnote" data-settings-target="workspaceConflictGuidance" hidden>When two files share one identity, keep both versions. Move a copy outside the scanned workspace folders, then check again. Jin will not choose or delete a version for you.</p>
+              <div class="settings-section__actions">
+                <button type="button" class="btn-primary tap-target" data-settings-target="workspaceCheckBtn" data-action="click->settings#checkWorkspace">Check now</button>
+                <button type="button" class="btn-secondary tap-target" data-settings-target="workspaceRefreshBtn" data-action="click->settings#refreshWorkspaceProjection">Refresh local view</button>
+                <button type="button" class="btn-secondary tap-target" data-settings-target="workspaceOpenBtn" data-action="click->settings#openWorkspaceFolder">Open workspace folder</button>
+              </div>
+              <div class="settings-workspace-activity" data-settings-target="workspaceActivitySection" aria-label="This session's workspace activity" hidden>
+                <span class="settings-field__label">This session</span>
+                <ul data-settings-target="workspaceActivity"></ul>
+              </div>
+            </section>
 
             <section class="settings-section" aria-label="Storage location">
               <h3 class="settings-section__heading">Storage</h3>
@@ -2121,9 +2170,7 @@
               <h3 class="settings-section__heading">Export</h3>
 
               <p class="text-callout color-secondary">
-                Export notes, tasks, and events to a destination directory.
-                Excludes index, sync state, and tokens.
-                An audit log is included in the export.
+                Export a verified portable copy of your canonical data. It excludes device-local indexes, recovery snapshots, sync state, and tokens. The export includes an audit log when one exists.
               </p>
 
               <!-- Dest path input + force toggle -->
@@ -2138,7 +2185,9 @@
                     aria-required="true"
                     aria-label="Export destination directory path"
                     data-settings-target="exportDestInput"
+                    data-action="input->settings#resetExportOverwriteConsent"
                   />
+                  <button type="button" class="btn-secondary tap-target" data-action="click->settings#chooseExportDestination">Choose folder</button>
                   <button
                     type="button"
                     class="btn-primary tap-target"
@@ -2217,6 +2266,10 @@
                     aria-label="Audit log included in export"
                   >Audit log included</span>
                 </div>
+                <div class="export-summary__row">
+                  <span class="export-summary__label">Verification</span>
+                  <span data-settings-target="exportVerified" class="export-summary__verified jin-badge hidden" aria-label="Export manifest verification">Manifest verified</span>
+                </div>
               </div>
             </section>
 
@@ -2265,7 +2318,7 @@
                 data-settings-pane-key="general"
               >
                 <header class="settings-pane__header">
-                  <h2 id="settings-pane-general-title" class="settings-pane__title">General</h2>
+                  <div class="settings-pane__title-row"><span class="settings-context-trigger-host" data-sidebar-context-anchor="settings"></span><h2 id="settings-pane-general-title" class="settings-pane__title">General</h2></div>
                   <p class="settings-pane__description">Personalize Jin's appearance, language, motion, and readability.</p>
                 </header>
             <section class="settings-section" aria-label="Appearance">
@@ -2992,24 +3045,30 @@
                 rows="3"
                 placeholder="Type a note or task…"
                 aria-required="true"
+                aria-keyshortcuts="Control+Enter Meta+Enter"
+                data-action="keydown->capture#captureKeydown"
                 data-capture-target="captureText"
               ></textarea>
             </div>
 
             <div class="capture-meta-row">
-            <div class="form-group">
+            <div class="form-group" data-capture-target="captureKindOptions">
               <label class="form-label jin-checkbox">
                 <input
                   type="checkbox"
                   data-capture-target="captureAsTask"
+                  data-action="change->capture#captureTypeChanged"
                   aria-label="Create as task instead of note"
                 />
                 <span class="jin-checkbox__mark" aria-hidden="true"></span>
                 <span>Save as task</span>
               </label>
             </div>
+            <div class="form-group" data-capture-target="captureNoteOptions">
+              <label class="form-label jin-checkbox"><input type="checkbox" data-capture-target="captureReviewEnabled" /><span class="jin-checkbox__mark" aria-hidden="true"></span><span>Review this later</span></label>
+            </div>
 
-            <div class="form-group">
+            <div class="form-group" data-capture-target="captureTaskOptions">
               <label class="form-label" for="capture-list">List</label>
               <!-- S6: id-valued select (populated by CaptureController#populateCaptureListSelects).
                    Static Inbox option is the safe fallback if the API call has not resolved yet. -->
@@ -3296,6 +3355,10 @@
             ></div>
           </div>
         </div>
+      </dialog>
+
+      <dialog class="action-dialog capture-review-dialog" aria-label="Review captures" aria-modal="true" data-capture-target="reviewDialog" data-action="cancel->capture#closeReview">
+        <div class="action-dialog__inner"><div class="action-dialog__header"><h2 class="action-dialog__title">Review captures</h2><button type="button" class="modal-close-btn tap-target" aria-label="Close" data-action="click->capture#closeReview"><i data-lucide="x" aria-hidden="true"></i></button></div><div class="action-dialog__body"><p class="form-error hidden" aria-live="polite" data-capture-target="reviewError"></p><p class="capture-review__status" role="status" aria-live="polite" hidden data-capture-target="reviewStatus"></p><ul class="capture-review__list" data-capture-target="reviewList"></ul></div></div>
       </dialog>
 
       <!--

@@ -326,6 +326,37 @@ describe('CalendarController (Stimulus)', () => {
     expect(getFocusedIso()).toBe('2026-06-14');
   });
 
+  it('keeps keyboard focus within a session minimum date', async () => {
+    await mount('2026-06-15');
+    const controller = getCalCtrl(app);
+    controller.setDateContext({ min: '2026-06-15', today: '2026-06-15' });
+    controller.setInitial(null);
+    const el = document.querySelector<HTMLElement>('[data-controller="calendar"]')!;
+    const grid = document.querySelector<HTMLElement>('.calendar-widget__grid')!;
+
+    fireKey(el, grid, 'ArrowLeft');
+
+    expect(getFocusedIso()).toBe('2026-06-15');
+    expect(grid.querySelector<HTMLButtonElement>('button[data-iso="2026-06-14"]')?.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('does not select a programmatically focused disabled date', async () => {
+    await mount('2026-06-15');
+    const controller = getCalCtrl(app);
+    controller.setDateContext({ min: '2026-06-15', today: '2026-06-15' });
+    controller.setInitial(null);
+    const el = document.querySelector<HTMLElement>('[data-controller="calendar"]')!;
+    const grid = document.querySelector<HTMLElement>('.calendar-widget__grid')!;
+    const selected = vi.fn();
+    el.addEventListener('calendar:selected', selected);
+    grid.querySelector<HTMLButtonElement>('button[data-iso="2026-06-14"]')!.focus();
+
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+
+    expect(selected).not.toHaveBeenCalled();
+    expect(controller.currentIso).toBe('');
+  });
+
   it('ArrowDown moves focus +1 week', async () => {
     await mount('2026-06-15');
     const el = document.querySelector<HTMLElement>('[data-controller="calendar"]')!;

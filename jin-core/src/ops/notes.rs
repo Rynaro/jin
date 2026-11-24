@@ -4,6 +4,7 @@ use chrono::Local;
 use std::path::Path;
 
 use crate::id::new_ulid;
+use crate::model::CaptureReview;
 use crate::model::{validate_property_key, Note, NoteFrontmatter, NoteStatus, PropertyValue};
 use crate::store::fs;
 use crate::{JinError, Result};
@@ -39,6 +40,15 @@ pub struct EditNoteParams {
 /// Create a new Note, write it to disk, return the Note.
 /// Wave 2A: writes into the specified folder (D-UI-NEWNOTE, AC-S5.1).
 pub fn create_note(notes_dir: &Path, params: CreateNoteParams) -> Result<Note> {
+    create_note_with_capture_review(notes_dir, params, None)
+}
+
+/// Creates a note and its optional review marker in the same canonical write.
+pub fn create_note_with_capture_review(
+    notes_dir: &Path,
+    params: CreateNoteParams,
+    capture_review: Option<CaptureReview>,
+) -> Result<Note> {
     fs::validate_folder_path(&params.folder)?;
     let now = Local::now().fixed_offset();
     let id = new_ulid();
@@ -52,6 +62,7 @@ pub fn create_note(notes_dir: &Path, params: CreateNoteParams) -> Result<Note> {
         deleted_at: None,
         tags: params.tags,
         links: vec![],
+        capture_review,
         properties: BTreeMap::new(),
         revision: 1,
         extra: BTreeMap::new(),
@@ -100,7 +111,7 @@ pub(crate) fn with_note_write_lock<T>(
 ) -> Result<T> {
     match notes_dir
         .parent()
-        .filter(|root| root.join(".jin/config.toml").is_file())
+        .filter(|root| crate::Config::load(root).is_ok())
     {
         Some(root) => super::recoverable_operations::with_canonical_read_lock(root, false, write),
         None => write(),
@@ -194,9 +205,22 @@ fn move_note_locked(notes_dir: &Path, id: &str, dest_folder: &str) -> Result<Not
             id
         )));
     }
-    let new_path = fs::write_note_in(notes_dir, dest_folder, &note)?;
+    let new_path = notes_dir
+        .join(dest_folder)
+        .join(fs::note_filename(id, &note.frontmatter.title));
     if new_path != old_path {
-        std::fs::remove_file(&old_path)?;
+        if new_path.exists() {
+            return Err(JinError::AlreadyExists(new_path.display().to_string()));
+        }
+        if crate::workspace::is_shared(notes_dir.parent().unwrap_or(notes_dir)) {
+            crate::store::canonical_scan::scan_identities(notes_dir.parent().unwrap_or(notes_dir))?;
+        }
+        if let Some(parent) = new_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        // Same-filesystem rename keeps the exact user bytes intact and avoids
+        // a provider observing a write-new/remove-old intermediate state.
+        std::fs::rename(&old_path, &new_path)?;
     }
     Ok(note)
 }
@@ -221,6 +245,7 @@ pub fn rename_folder(notes_dir: &Path, old_path: &str, new_path: &str) -> Result
             "cannot rename the root folder".to_string(),
         ));
     }
+    fs::validate_folder_path(old_path)?;
     fs::validate_folder_path(new_path)?;
     if new_path.is_empty() {
         return Err(JinError::InvalidInput(
@@ -245,54 +270,16 @@ pub fn rename_folder(notes_dir: &Path, old_path: &str, new_path: &str) -> Result
         ));
     }
 
-    // Snapshot BEFORE mutation: (id, current_folder) for every note in old subtree.
-    let all_paths = fs::list_note_paths(notes_dir)?;
-    let mut notes_snapshot: Vec<(String, String)> = Vec::new();
-    for path in &all_paths {
-        let folder = fs::folder_path_of(notes_dir, path);
-        if folder == old_path || folder.starts_with(&descendant_prefix) {
-            let note = fs::read_note(path)?;
-            notes_snapshot.push((note.frontmatter.id.clone(), folder));
-        }
-    }
-
-    // Snapshot all subdirs under old_path (for D-RENAME-EMPTY-SUBDIRS).
-    let all_folders = fs::list_note_folders(notes_dir)?;
-    let subdirs: Vec<String> = all_folders
-        .into_iter()
-        .filter(|d| d == old_path || d.starts_with(&descendant_prefix))
-        .collect();
-
-    // Move each note to the new prefix.
-    // suffix = "" for exact match (Work→Job), "/Sub" for nested (Work/Sub→Job/Sub).
-    for (id, folder) in &notes_snapshot {
-        let suffix = &folder[old_path.len()..];
-        let dest = format!("{}{}", new_path, suffix);
-        move_note(notes_dir, id, &dest)?;
-    }
-
-    // Recreate empty descendant subdirs under new prefix (D-RENAME-EMPTY-SUBDIRS).
-    for d in &subdirs {
-        let suffix = &d[old_path.len()..];
-        let new_dir = notes_dir.join(format!("{}{}", new_path, suffix));
-        std::fs::create_dir_all(&new_dir)?;
-    }
-
-    // R-ORPHAN-DIR guard: scan old subtree for remaining .md files before removing.
     let old_dir = notes_dir.join(old_path);
-    if old_dir.exists() {
-        let remaining = fs::list_note_paths(&old_dir)?;
-        if !remaining.is_empty() {
-            return Err(JinError::Integrity(format!(
-                "rename_folder: {} note(s) remain under '{}' after move — \
-                 aborting removal to prevent data loss (R-ORPHAN-DIR)",
-                remaining.len(),
-                old_path
-            )));
-        }
-        std::fs::remove_dir_all(&old_dir)?;
+    if !old_dir.is_dir() {
+        return Err(JinError::NotFound(format!("folder/{old_path}")));
     }
-
+    if let Some(parent) = notes_dir.join(new_path).parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    // A directory rename is atomic on the workspace filesystem and preserves
+    // provider conflict copies and arbitrary future canonical files.
+    std::fs::rename(old_dir, notes_dir.join(new_path))?;
     Ok(())
 }
 
@@ -341,10 +328,28 @@ pub fn delete_folder(notes_dir: &Path, path: &str) -> Result<usize> {
                 path
             )));
         }
-        std::fs::remove_dir_all(&path_dir)?;
+        // Remove only directories proved empty. An externally-created file is
+        // preserved for explicit inspection instead of being recursively lost.
+        remove_empty_dirs_bottom_up(&path_dir)?;
     }
 
     Ok(ids.len())
+}
+
+fn remove_empty_dirs_bottom_up(dir: &Path) -> Result<()> {
+    let mut children = std::fs::read_dir(dir)?
+        .filter_map(|entry| entry.ok())
+        .collect::<Vec<_>>();
+    children.sort_by_key(|entry| entry.path());
+    for child in children {
+        if child.file_type()?.is_dir() {
+            remove_empty_dirs_bottom_up(&child.path())?;
+        }
+    }
+    if std::fs::read_dir(dir)?.next().is_none() {
+        std::fs::remove_dir(dir)?;
+    }
+    Ok(())
 }
 
 /// Soft-delete a note (status → deleted, deleted_at set).
@@ -500,6 +505,21 @@ mod tests {
         assert!(
             notes.join("Job/Empty").is_dir(),
             "notes/Job/Empty must exist after rename (D-RENAME-EMPTY-SUBDIRS)"
+        );
+    }
+
+    #[test]
+    fn delete_folder_preserves_unexpected_external_file() {
+        let tmp = make_notes_dir();
+        let notes = tmp.path();
+        seed_note(notes, "Work", "Work Note");
+        std::fs::write(notes.join("Work/provider-conflict.bin"), b"keep").unwrap();
+
+        delete_folder(notes, "Work").unwrap();
+
+        assert_eq!(
+            std::fs::read(notes.join("Work/provider-conflict.bin")).unwrap(),
+            b"keep"
         );
     }
 

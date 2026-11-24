@@ -3,6 +3,7 @@ pub mod api;
 pub mod assets;
 pub mod attach;
 pub mod calendar_projection;
+pub mod capture_review;
 pub mod collections;
 pub mod event_mutation;
 pub mod events;
@@ -23,7 +24,7 @@ pub mod tags;
 pub mod tasks;
 pub mod workflows;
 
-pub use init::init;
+pub use init::{init, init_portable_workspace};
 pub use promote::{promote, promote_with_operation_id, PromoteParams};
 pub use remove_time_block::{
     remove_time_block, remove_time_block_with_operation_id, RemoveTimeBlockResult,

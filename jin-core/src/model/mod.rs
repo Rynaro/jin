@@ -3,6 +3,7 @@ pub mod edge;
 pub mod event;
 pub mod list;
 pub mod note;
+pub mod review;
 pub mod tag;
 pub mod task;
 
@@ -17,6 +18,7 @@ pub use note::{
     find_unlinked_mentions, format_canonical_link, parse_canonical_links, validate_property_key,
     CanonicalLink, Note, NoteFrontmatter, NoteStatus, PropertyValue, UnlinkedMention,
 };
+pub use review::{CaptureReview, CaptureReviewState};
 pub use tag::{Tag, TagFrontmatter};
 pub use task::{
     next_recurrence_date, AgendaBucket, DueDate, Priority, RecurrenceEnd, RecurrenceFrequency,

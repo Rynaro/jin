@@ -4,6 +4,7 @@ use chrono::{DateTime, FixedOffset, NaiveDate};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::edge::LinkEntry;
+use super::review::CaptureReview;
 use crate::{JinError, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -146,6 +147,9 @@ pub struct NoteFrontmatter {
     pub tags: Vec<String>,
     #[serde(default)]
     pub links: Vec<LinkEntry>,
+    /// Optional capture follow-up. Missing means this ordinary note is not in review.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capture_review: Option<CaptureReview>,
     /// Strict, portable user properties. `jin.*` keys are refused by mutation
     /// APIs; the `jin.revision` metadata field below is Jin-owned.
     #[serde(default)]

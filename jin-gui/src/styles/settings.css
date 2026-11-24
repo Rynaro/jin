@@ -63,6 +63,19 @@
   margin-inline: auto;
 }
 
+/* Settings normally inherits the generic content-body gutter in addition to
+ * its own workspace measure. Once its rail is compacted that outer gutter is
+ * redundant, so use the same single workspace inset as the other routes. */
+.jin-shell[data-nav-presentation='desktop'][data-nav-visible='false'] [data-section-name='settings'].jin-content-body {
+  padding: 0;
+}
+.jin-shell[data-nav-presentation='desktop'][data-nav-visible='false'] .settings-pane {
+  margin-inline: 0 auto;
+}
+.jin-shell[data-nav-presentation='desktop'][data-nav-visible='false'] .settings-workspace {
+  padding-block-start: var(--compact-context-block-start);
+}
+
 .settings-pane[hidden] {
   display: none;
 }
@@ -123,6 +136,88 @@
 }
 
 .settings-section > .text-callout { margin-block: 0; }
+
+.workspace-status-row,
+.workspace-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.settings-workspace-scope {
+  margin: 0;
+  color: var(--label-secondary);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+}
+
+.workspace-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+  background: var(--fill-secondary);
+  color: var(--label-secondary);
+  font-size: var(--text-callout-size);
+  line-height: var(--text-callout-line);
+  font-weight: 600;
+  border-inline-start: 2px solid var(--separator);
+}
+
+.workspace-status-pill [data-lucide] {
+  inline-size: 1em;
+  block-size: 1em;
+  flex: 0 0 auto;
+}
+
+.workspace-status-pill:has(.workspace-status-value[data-status='ready']) {
+  color: var(--label);
+  background: color-mix(in srgb, var(--system-green) 9%, var(--fill-secondary));
+  border-inline-start-color: color-mix(in srgb, var(--system-green) 60%, var(--separator));
+}
+
+.workspace-status-pill:has(.workspace-status-value[data-status='attention']) {
+  color: var(--label);
+  background: color-mix(in srgb, var(--system-orange) 10%, var(--fill-secondary));
+  border-inline-start-color: var(--system-orange);
+}
+
+.workspace-facts,
+.settings-workspace-message,
+.settings-workspace-activity {
+  color: var(--label-secondary);
+  font-size: var(--text-footnote-size);
+  line-height: var(--text-footnote-line);
+}
+
+.settings-workspace-message { margin: 0; }
+.settings-workspace-message:empty { display: none; }
+
+.settings-conflict-list,
+.settings-workspace-activity ul {
+  margin: 0;
+  padding-inline-start: var(--space-3);
+  display: grid;
+  gap: var(--space-half);
+  overflow-wrap: anywhere;
+}
+
+.settings-conflict-list {
+  border-inline-start: 2px solid var(--system-orange);
+  padding: var(--space-1) 0 var(--space-1) var(--space-2);
+  color: var(--label);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption1-size);
+  background: color-mix(in srgb, var(--system-orange) 6%, transparent);
+}
+
+.settings-workspace-activity[hidden],
+.settings-conflict-list[hidden],
+[data-settings-target='workspaceConflictGuidance'][hidden] {
+  display: none;
+}
 
 /* ── Read-only info field ─────────────────────────────────────────────────── */
 

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::index::query::{BacklinkRow, TaskRow};
 use crate::model::task::{Reminder, Task, TaskCompletion, TaskRecurrence};
+use crate::model::CaptureReview;
 
 /// DTO projection of a Reminder (mirrors `model::task::Reminder`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +61,8 @@ pub struct TaskDto {
     pub recurrence_exception: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recurrence_effect: Option<RecurrenceEffectDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capture_review: Option<CaptureReview>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +155,7 @@ impl TaskDto {
             recurrence_instance: task.frontmatter.recurrence_instance.clone(),
             recurrence_exception: task.frontmatter.recurrence_exception,
             recurrence_effect: None,
+            capture_review: task.frontmatter.capture_review.clone(),
         }
     }
 
@@ -190,6 +194,7 @@ impl TaskDto {
             recurrence_instance: serde_json::from_str(&row.recurrence_instance).unwrap_or(None),
             recurrence_exception: row.recurrence_exception,
             recurrence_effect: None,
+            capture_review: None,
         }
     }
 

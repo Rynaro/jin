@@ -710,6 +710,7 @@ mod tests {
                 completed_at: None,
                 deleted_at: None,
                 links: vec![],
+                capture_review: None,
                 section_id: None,
                 board_column_id: None,
                 tags: vec![],

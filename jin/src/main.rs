@@ -38,6 +38,9 @@ enum Commands {
         /// Target directory (defaults to current dir).
         #[arg(long)]
         root: Option<PathBuf>,
+        /// Create a portable workspace suitable for a synchronized folder.
+        #[arg(long)]
+        portable: bool,
     },
 
     /// Manage notes.
@@ -123,6 +126,17 @@ enum Commands {
         force: bool,
     },
 
+    /// Rebuild the local derived index from complete canonical files.
+    Refresh,
+
+    /// List device-local immutable copies of an object's canonical content.
+    /// This command never replaces the current workspace file.
+    History {
+        #[arg(value_parser = ["note", "task", "event", "list", "tag", "collection", "assets"])]
+        kind: String,
+        id: String,
+    },
+
     /// Manage vault-managed content-addressed attachment assets.
     Asset {
         #[command(subcommand)]
@@ -142,6 +156,15 @@ enum Commands {
         task: bool,
         #[arg(long)]
         list: Option<String>,
+        #[arg(long)]
+        review: bool,
+        #[arg(long, requires = "review")]
+        return_on: Option<String>,
+    },
+    /// Review captured work that still needs a decision.
+    Review {
+        #[command(subcommand)]
+        action: ReviewAction,
     },
 
     /// Diagnostic: list dangling edges and index health.
@@ -157,6 +180,43 @@ enum Commands {
     Google {
         #[command(subcommand)]
         action: GoogleAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ReviewAction {
+    List,
+    Process {
+        kind: String,
+        id: String,
+    },
+    Defer {
+        kind: String,
+        id: String,
+        #[arg(long)]
+        return_on: String,
+    },
+    CreateTask {
+        note_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        title: String,
+        #[arg(long)]
+        excerpt: String,
+        #[arg(long)]
+        list: Option<String>,
+        #[arg(long)]
+        operation_id: String,
+    },
+    AttachEvent {
+        note_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        event_id: String,
+        #[arg(long)]
+        operation_id: String,
     },
 }
 
@@ -477,11 +537,11 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
     let root_override = cli.root.clone();
 
     match cli.command {
-        Commands::Init { root } => {
+        Commands::Init { root, portable } => {
             let root = root
                 .or(root_override)
                 .unwrap_or_else(|| std::env::current_dir().expect("cwd"));
-            cmd_init(&root, json)?;
+            cmd_init(&root, portable, json)?;
         }
 
         Commands::Note { action } => {
@@ -763,6 +823,44 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
         } => {
             cmd_import(&source, &dest, force, json)?;
         }
+        Commands::Refresh => {
+            let root = resolve_root(root_override)?;
+            let diagnostics = api::refresh(&root)?;
+            if json {
+                let diagnostics = diagnostics
+                    .into_iter()
+                    .map(|diagnostic| diagnostic.to_string())
+                    .collect::<Vec<_>>();
+                output::print_json(&Envelope::ok(
+                    "refresh",
+                    serde_json::json!({ "diagnostics": diagnostics }),
+                ));
+            } else if diagnostics.is_empty() {
+                println!("Workspace refreshed.");
+            } else {
+                println!(
+                    "Workspace refreshed with {} diagnostic(s).",
+                    diagnostics.len()
+                );
+                for diagnostic in diagnostics {
+                    println!("  {diagnostic}");
+                }
+            }
+        }
+        Commands::History { kind, id } => {
+            let root = resolve_root(root_override)?;
+            let versions = jin_core::store::history::list(&root, &kind, &id)?;
+            if json {
+                output::print_json(&Envelope::ok(
+                    "history",
+                    serde_json::json!({ "kind": kind, "id": id, "versions": versions }),
+                ));
+            } else {
+                for version in versions {
+                    println!("{}", version.display());
+                }
+            }
+        }
 
         Commands::Asset { action } => {
             let root = resolve_root(root_override)?;
@@ -784,9 +882,19 @@ fn dispatch(cli: Cli) -> anyhow::Result<()> {
             }
         }
 
-        Commands::Capture { text, task, list } => {
+        Commands::Capture {
+            text,
+            task,
+            list,
+            review,
+            return_on,
+        } => {
             let root = resolve_root(root_override)?;
-            cmd_capture(&root, text, task, list, json)?;
+            cmd_capture(&root, text, task, list, review, return_on, json)?;
+        }
+        Commands::Review { action } => {
+            let root = resolve_root(root_override)?;
+            cmd_review(&root, action, json)?;
         }
 
         Commands::Doctor => {
@@ -896,7 +1004,13 @@ fn cmd_google(root: &std::path::Path, action: GoogleAction, json: bool) -> anyho
 // ──────────────────────────────────────────────────────────────
 
 fn resolve_root(override_root: Option<PathBuf>) -> anyhow::Result<PathBuf> {
-    Ok(override_root.unwrap_or_else(|| std::env::current_dir().expect("cwd")))
+    let root = override_root.unwrap_or_else(|| std::env::current_dir().expect("cwd"));
+    // A copied portable workspace intentionally has no shared runtime config.
+    // Bootstrap its local derived state before command dispatch.
+    if jin_core::Config::is_portable_workspace(&root) {
+        jin_core::ops::init(&root).context("initialize portable workspace")?;
+    }
+    Ok(root)
 }
 
 /// Resolve positional and named title flags into a required `String`.
@@ -913,8 +1027,12 @@ fn resolve_title(flag: Option<String>, pos: Option<String>) -> anyhow::Result<St
 // Command implementations
 // ──────────────────────────────────────────────────────────────
 
-fn cmd_init(root: &std::path::Path, json: bool) -> anyhow::Result<()> {
-    jin_core::ops::init(root).context("init failed")?;
+fn cmd_init(root: &std::path::Path, portable: bool, json: bool) -> anyhow::Result<()> {
+    if portable {
+        jin_core::ops::init_portable_workspace(root).context("init failed")?;
+    } else {
+        jin_core::ops::init(root).context("init failed")?;
+    }
     if json {
         let env = Envelope::ok(
             "result",
@@ -1840,6 +1958,8 @@ fn cmd_export(
                 "notes": summary.notes,
                 "tasks": summary.tasks,
                 "events": summary.events,
+                "lists": summary.lists,
+                "tags": summary.tags,
                 "attachments": summary.attachments,
                 "collections": summary.collections,
                 "audit_included": summary.audit_included,
@@ -1852,6 +1972,8 @@ fn cmd_export(
         println!("  {} notes", summary.notes);
         println!("  {} tasks", summary.tasks);
         println!("  {} events", summary.events);
+        println!("  {} lists", summary.lists);
+        println!("  {} tags", summary.tags);
         println!("  {} attachments", summary.attachments);
         println!("  {} collections", summary.collections);
         if summary.audit_included {
@@ -1877,6 +1999,10 @@ fn cmd_import(
                 "dest": dest.display().to_string(),
                 "files_imported": summary.imported_files,
                 "notes": summary.notes,
+                "tasks": summary.tasks,
+                "events": summary.events,
+                "lists": summary.lists,
+                "tags": summary.tags,
                 "attachments": summary.attachments,
                 "collections": summary.collections,
             }),
@@ -1989,16 +2115,29 @@ fn cmd_capture(
     text: String,
     as_task: bool,
     list: Option<String>,
+    review: bool,
+    return_on: Option<String>,
     json: bool,
 ) -> anyhow::Result<()> {
     let cfg = Config::load(root)?;
+    let return_date = return_on
+        .as_deref()
+        .map(|value| chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d"))
+        .transpose()
+        .context("--return-on must use YYYY-MM-DD")?;
+    let (title, body) = jin_core::ops::capture_review::split_capture_text(&text)?;
+    let capture_review = jin_core::ops::capture_review::initial_capture_review(
+        review,
+        return_date,
+        &cfg.display_tz,
+    )?;
     if as_task {
-        let task = jin_core::ops::workflows::create_task(
+        let task = jin_core::ops::workflows::create_task_with_capture_review(
             root,
             jin_core::ops::tasks::CreateTaskParams {
                 recurrence_upcoming_count: None,
-                title: text,
-                body: String::new(),
+                title,
+                body,
                 priority: None,
                 due: None,
                 list,
@@ -2008,6 +2147,7 @@ fn cmd_capture(
                 recurrence: None,
             },
             None,
+            capture_review,
         )?;
         api::refresh(root)?;
         if json {
@@ -2018,14 +2158,15 @@ fn cmd_capture(
             println!("{}", task.id());
         }
     } else {
-        let note = jin_core::ops::notes::create_note(
+        let note = jin_core::ops::notes::create_note_with_capture_review(
             &cfg.notes_dir(),
             jin_core::ops::notes::CreateNoteParams {
-                title: text,
-                body: String::new(),
+                title,
+                body,
                 tags: vec![],
                 folder: String::new(),
             },
+            capture_review,
         )?;
         api::refresh(root)?;
         if json {
@@ -2034,6 +2175,115 @@ fn cmd_capture(
             output::print_json(&env);
         } else {
             println!("{}", note.id());
+        }
+    }
+    Ok(())
+}
+
+fn cmd_review(root: &std::path::Path, action: ReviewAction, json: bool) -> anyhow::Result<()> {
+    use jin_core::model::CaptureReviewState;
+    use jin_core::ops::{api, capture_review, linked_creation};
+    match action {
+        ReviewAction::List => {
+            let items = api::list_capture_review(root)?;
+            if json {
+                output::print_json(&Envelope::ok("list", serde_json::to_value(items)?));
+            } else {
+                for item in items {
+                    println!("{} {} — {}", item.kind, item.id, item.title);
+                }
+            }
+        }
+        ReviewAction::Process { kind, id } => {
+            api::set_capture_review(
+                root,
+                capture_review::SetCaptureReviewInput {
+                    kind: kind.clone(),
+                    id: id.clone(),
+                    state: CaptureReviewState::Processed,
+                    return_on: None,
+                },
+            )?;
+            if json {
+                output::print_json(&Envelope::ok(
+                    "result",
+                    serde_json::json!({"ok": true, "kind": kind, "id": id, "state": "processed"}),
+                ));
+            } else {
+                println!("Processed {kind} {id}.");
+            }
+        }
+        ReviewAction::Defer {
+            kind,
+            id,
+            return_on,
+        } => {
+            let date = chrono::NaiveDate::parse_from_str(&return_on, "%Y-%m-%d")
+                .context("--return-on must use YYYY-MM-DD")?;
+            api::set_capture_review(
+                root,
+                capture_review::SetCaptureReviewInput {
+                    kind: kind.clone(),
+                    id: id.clone(),
+                    state: CaptureReviewState::Deferred,
+                    return_on: Some(date),
+                },
+            )?;
+            if json {
+                output::print_json(&Envelope::ok(
+                    "result",
+                    serde_json::json!({"ok": true, "kind": kind, "id": id, "state": "deferred", "return_on": date}),
+                ));
+            } else {
+                println!("Deferred {kind} {id} until {date}.");
+            }
+        }
+        ReviewAction::CreateTask {
+            note_id,
+            expected_revision,
+            title,
+            excerpt,
+            list,
+            operation_id,
+        } => {
+            let (task, note) = linked_creation::review_capture_create_task(
+                root,
+                linked_creation::ReviewTaskFromNoteInput {
+                    operation_id,
+                    note_id,
+                    expected_revision,
+                    title,
+                    excerpt,
+                    list,
+                },
+            )?;
+            api::refresh(root)?;
+            if json {
+                output::print_json(&Envelope::ok(
+                    "result",
+                    serde_json::json!({"task": task.id(), "note": note.id()}),
+                ));
+            }
+        }
+        ReviewAction::AttachEvent {
+            note_id,
+            expected_revision,
+            event_id,
+            operation_id,
+        } => {
+            let note = linked_creation::review_capture_attach_event(
+                root,
+                linked_creation::ReviewAttachNoteInput {
+                    operation_id,
+                    note_id,
+                    expected_revision,
+                    event_id,
+                },
+            )?;
+            api::refresh(root)?;
+            if json {
+                output::print_json(&Envelope::ok("note", serde_json::json!({"id": note.id()})));
+            }
         }
     }
     Ok(())

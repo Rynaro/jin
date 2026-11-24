@@ -49,6 +49,27 @@
     return { schema_version: 1, status: 'in_progress', step: 'welcome', selected_root: null };
   }
   function saveFirstRunState(state) { fixtureStorageSet('jin.fixture.firstRunState', JSON.stringify(state)); }
+  // Workspace controls deliberately model Jin's view of the local folder. The
+  // fixture does not claim to know whether a third-party provider has uploaded
+  // anything. Set jin.fixture.workspaceScenario to `attention`, `error`, or
+  // `stale` before loading the page to exercise owner-facing recovery states.
+  function workspaceStatus() {
+    var scenario = fixtureStorageGet('jin.fixture.workspaceScenario') || 'ready';
+    if (scenario === 'error') {
+      throw { code: 1, kind: 'other', message: 'Jin could not read the workspace. Check the folder permissions and try again.', retriable: true };
+    }
+    var attention = scenario === 'attention';
+    return {
+      status: attention ? 'attention' : 'ready',
+      portable: true,
+      root_path: '/Users/fixture/Jin shared folder',
+      recovery_path: '/Users/fixture/Library/Application Support/Jin/history',
+      checked_at: scenario === 'stale' ? '2026-06-29T10:00:00Z' : '2026-07-01T10:00:00Z',
+      canonical_file_count: attention ? 16 : 14,
+      conflicts: attention ? [{ kind: 'note', id: '01JINFIXTURECONFLICT', paths: ['notes/Travel plans.md', 'notes/Travel plans (conflicted copy).md'] }] : [],
+      message: attention ? 'Jin found two files with the same identity. Both versions are preserved. Review the listed files in your workspace, then check again.' : null
+    };
+  }
   var lists = [
     { id: 'inbox', name: 'Inbox', color: 'accent', icon: 'inbox', position: 'V', parent_id: null, view: 'list', sort_mode: 'manual', workflow_kind: 'checklist', columns: [], initial_column_id: null, is_default: true, task_count: 4, sections: [] },
     { id: 'work', name: 'Work', color: 'blue', icon: 'briefcase', position: 'W', parent_id: null, view: 'list', sort_mode: 'manual', workflow_kind: null, columns: [], initial_column_id: null, is_default: false, task_count: 3, sections: [
@@ -69,7 +90,7 @@
     { slug: 'email', name: 'email', color: 'blue', task_count: 2 },
     { slug: 'urgent', name: 'urgent', color: 'red', task_count: 1 }
   ];
-  var taskBase = { status: 'todo', priority: 'none', due: null, list: 'inbox', board_column_id: null, completed_at: null, deleted_at: null, created: NOW, updated: NOW, backlinks: [], body: '', section_id: null, parent: null, tags: [], position: 'V', reminders: [], agenda_bucket: null };
+  var taskBase = { status: 'todo', priority: 'none', due: null, list: 'inbox', board_column_id: null, completed_at: null, deleted_at: null, created: NOW, updated: NOW, backlinks: [], body: '', section_id: null, parent: null, tags: [], position: 'V', reminders: [], agenda_bucket: null, capture_review: null };
   function task(fields) { return Object.assign({}, taskBase, fields); }
   var tasks = [
     task({ id: 't1', title: 'Reply to the design review email with the complete workspace rationale', body: 'Document the continuous workspace rationale and verify the interaction details.', list: 'work', section_id: 's1', priority: 'high', due: '2026-08-19', tags: ['email', 'urgent'], position: 'V' }),
@@ -89,7 +110,7 @@
     { path: 'Studio', name: 'Studio', note_count: 2 },
     { path: 'Empty', name: 'Empty', note_count: 0 }
   ];
-  var noteBase = { status: 'active', created: NOW, updated: NOW, deleted_at: null, links: [], backlinks: [], revision: 1, body_markdown: '' };
+  var noteBase = { status: 'active', created: NOW, updated: NOW, deleted_at: null, links: [], backlinks: [], revision: 1, body_markdown: '', capture_review: null };
   var notes = [
     Object.assign({}, noteBase, { id: 'n1', title: 'A current moving through glass', tags: ['jin', 'visual'], excerpt: 'Liquid depth, brush restraint, and a bright flash of betta red.', folder_path: 'Field Notes' }),
     Object.assign({}, noteBase, { id: 'n2', title: 'Margins with their own tide', tags: ['layout'], excerpt: 'The page breathes differently when every edge refuses symmetry.', folder_path: 'Field Notes' }),
@@ -99,6 +120,7 @@
   var nextNoteSequence = 5;
   var createdNoteIds = {};
   var linkedCreationOperations = {};
+  var captureReviewOperations = {};
   var collections = [];
   var eventBase = { description: null, location: null, is_all_day: false, start_tzid: 'UTC', end_tzid: 'UTC', floating: false, status: 'confirmed', source: 'jin', authority: 'jin', ical_uid: null, derived_from: null, recurrence: [], recurring_event_id: null, original_start: null, master_id: null, recurrence_unexpanded: false, sequence: 0, organizer: null, attendees: null, attendees_omitted: null, conference_data: null, hangout_link: null, reminders: null, created: NOW, updated: NOW, backlinks: [], sync_context: null };
   function event(fields) {
@@ -301,8 +323,8 @@
       { id: 'e8', title: 'Partner review', start: '2026-08-20T11:00:00', end: '2026-08-20T12:00:00', is_all_day: false, start_tzid: null, floating: false, status: 'confirmed', source: 'google', authority: 'google', ical_uid: 'fixture-work-e8@google', derived_from: null, recurrence_unexpanded: false, created: NOW, updated: NOW, display_start: '11:00', originating_task: null, prep_notes: [], sync_context: syncContext('acct-work', 'work-primary') }
     ] },
     auth_status: { state: 'disconnected', account: null, expires_at: null, backend: 'none' },
-    app_config: { root_path: '/tmp', display_tz: 'UTC', calendar_id: null, schema_version: 3 },
-    get_config: { root_path: '/tmp', display_tz: 'UTC', calendar_id: null, schema_version: 3 }
+    app_config: { root_path: '/Users/fixture/Jin shared folder', display_tz: 'UTC', calendar_id: null, schema_version: 3 },
+    get_config: { root_path: '/Users/fixture/Jin shared folder', display_tz: 'UTC', calendar_id: null, schema_version: 3 }
   };
   function todayTask(id, title, due, bucket) {
     return { id: id, title: title, status: 'todo', priority: 'high', due: due, list: 'Work', position: id, parent: null, agenda_bucket: bucket || null };
@@ -790,8 +812,44 @@
         fixtureStorageRemove('jin.fixture.rootUnavailable');
         return Promise.resolve();
       }
+      if (cmd === 'workspace_status' || cmd === 'refresh_workspace_projection') {
+        try {
+          return Promise.resolve(clone(workspaceStatus()));
+        } catch (error) {
+          return Promise.reject(error);
+        }
+      }
+      if (cmd === 'open_workspace_folder') {
+        window.__JIN_WORKSPACE_OPEN_CALLS__ = window.__JIN_WORKSPACE_OPEN_CALLS__ || [];
+        window.__JIN_WORKSPACE_OPEN_CALLS__.push('/Users/fixture/Jin shared folder');
+        return fixtureStorageGet('jin.fixture.workspaceOpenError') === 'true'
+          ? Promise.reject({ code: 1, kind: 'other', message: 'Fixture could not open the workspace folder.', retriable: true })
+          : Promise.resolve();
+      }
+      if (cmd === 'export_files') {
+        var exportMode = fixtureStorageGet('jin.fixture.exportMode');
+        if (exportMode === 'collision') {
+          return Promise.reject({ code: 2, kind: 'usage', message: 'destination already exists', retriable: false });
+        }
+        if (exportMode === 'error') {
+          return Promise.reject({ code: 1, kind: 'other', message: 'Fixture export failed before a verified manifest was written.', retriable: true });
+        }
+        return Promise.resolve({
+          dest: String(options.dest || '/Users/fixture/Jin export'),
+          file_count: 14,
+          included_audit: true,
+          files: ['notes/Travel plans.md', 'tasks/Pack.md', 'jin-export-manifest.json'],
+          verified: true
+        });
+      }
       if (cmd === 'plugin:dialog|open') {
         var dialogOptions = options.options || {};
+        if (dialogOptions.directory === true && dialogOptions.multiple !== true) {
+          var exportPicker = fixtureStorageGet('jin.fixture.exportPicker');
+          if (exportPicker === 'cancel') return Promise.resolve(null);
+          if (exportPicker === 'error') return Promise.reject({ code: 1, kind: 'other', message: 'Fixture export folder picker failed.', retriable: true });
+          return Promise.resolve('/Users/fixture/Jin export');
+        }
         if (dialogOptions.multiple === true || dialogOptions.directory === true) {
           return Promise.reject(new Error('Jin fixture only supports one image file'));
         }
@@ -1083,6 +1141,49 @@
           return true;
         });
         return Promise.resolve(clone(matchingNotes));
+      }
+      if (cmd === 'list_capture_review') {
+        var reviewItems = [];
+        var today = NOW.slice(0, 10);
+        tasks.forEach(function (item) { if (item.status !== 'done' && item.status !== 'cancelled' && item.parent === null && (item.list === 'inbox' || item.capture_review) && (!item.capture_review || (item.capture_review.state !== 'processed' && (!item.capture_review.return_on || item.capture_review.return_on <= today)))) reviewItems.push({ kind: 'task', id: item.id, title: item.title, created: item.created, return_on: item.capture_review && item.capture_review.return_on || null, state: item.capture_review && item.capture_review.state || 'pending' }); });
+        notes.forEach(function (item) { if (item.capture_review && item.capture_review.state !== 'processed' && (!item.capture_review.return_on || item.capture_review.return_on <= today)) reviewItems.push({ kind: 'note', id: item.id, title: item.title, created: item.created, return_on: item.capture_review.return_on || null, state: item.capture_review.state }); });
+        return Promise.resolve(clone(reviewItems));
+      }
+      if (cmd === 'set_capture_review') {
+        var reviewInput = options.input || {}; var reviewItemsSource = reviewInput.kind === 'note' ? notes : tasks;
+        var reviewed = reviewItemsSource.find(function (item) { return item.id === reviewInput.id; });
+        if (!reviewed) return Promise.reject({ code: 3, message: 'Capture not found' });
+        reviewed.capture_review = { state: reviewInput.state, return_on: reviewInput.return_on || null, processed_at: reviewInput.state === 'processed' ? NOW : null };
+        return Promise.resolve();
+      }
+      if (cmd === 'capture') {
+        var captureOptions = options || {}; var captureText = String(captureOptions.text || '').trim();
+        if (!captureText) return Promise.reject({ code: 2, message: 'Text is required' });
+        var captureLines = captureText.split(/\r?\n/);
+        var captureTitle = captureLines.shift().trim();
+        var captureBody = captureLines.join('\n');
+        var captureReview = captureOptions.review ? { state: 'pending', return_on: captureOptions.return_on || null, processed_at: null } : null;
+        if (captureOptions.as_task) { var capturedTask = task({ id: 'fixture-task-' + String(nextTaskSequence++).padStart(3, '0'), title: captureTitle, body: captureBody, list: captureOptions.list || 'inbox', capture_review: captureReview }); tasks.push(capturedTask); return Promise.resolve({ kind: 'task', id: capturedTask.id, data: clone(capturedTask) }); }
+        var capturedNote = Object.assign({}, noteBase, { id: 'fixture-note-' + String(nextNoteSequence++), title: captureTitle, body_markdown: captureBody, excerpt: noteExcerpt(captureBody), tags: [], folder_path: '', capture_review: captureReview }); notes.push(capturedNote); return Promise.resolve({ kind: 'note', id: capturedNote.id, data: clone(capturedNote) });
+      }
+      if (cmd === 'review_capture_create_task') {
+        var createReviewInput = options.input || {}; var reviewNote = notes.find(function (item) { return item.id === createReviewInput.note_id; });
+        var createKey = String(createReviewInput.operation_id || '');
+        if (captureReviewOperations[createKey]) return Promise.resolve(clone(captureReviewOperations[createKey]));
+        if (!reviewNote || reviewNote.revision !== createReviewInput.expected_revision) return Promise.reject({ code: 4, message: 'Note changed. Refresh and try again.' });
+        var createdReviewTask = task({ id: 'fixture-task-' + String(nextTaskSequence++).padStart(3, '0'), title: createReviewInput.title, body: createReviewInput.excerpt, list: createReviewInput.list || 'inbox' });
+        tasks.push(createdReviewTask); reviewNote.links = reviewNote.links.concat([{ edge_type: 'references', target: createdReviewTask.id }]); reviewNote.capture_review = { state: 'processed', return_on: null, processed_at: NOW }; reviewNote.revision += 1;
+        var createResult = { task: clone(createdReviewTask), note: clone(reviewNote) }; captureReviewOperations[createKey] = createResult;
+        return Promise.resolve(clone(createResult));
+      }
+      if (cmd === 'review_capture_attach_event') {
+        var attachReviewInput = options.input || {}; var attachedReviewNote = notes.find(function (item) { return item.id === attachReviewInput.note_id; }); var attachedReviewEvent = events.find(function (item) { return item.id === attachReviewInput.event_id; });
+        var attachKey = String(attachReviewInput.operation_id || '');
+        if (captureReviewOperations[attachKey]) return Promise.resolve(clone(captureReviewOperations[attachKey]));
+        if (!attachedReviewNote || !attachedReviewEvent || attachedReviewNote.revision !== attachReviewInput.expected_revision) return Promise.reject({ code: 4, message: 'Capture changed. Refresh and try again.' });
+        attachedReviewNote.links = attachedReviewNote.links.concat([{ edge_type: 'prep-for', target: attachedReviewEvent.id }]); attachedReviewNote.capture_review = { state: 'processed', return_on: null, processed_at: NOW }; attachedReviewNote.revision += 1;
+        var attachResult = clone(attachedReviewNote); captureReviewOperations[attachKey] = attachResult;
+        return Promise.resolve(clone(attachResult));
       }
       if (cmd === 'create_task_from_note' || cmd === 'create_event_prep_note') {
         var linkedInput = options.input || {};

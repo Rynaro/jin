@@ -89,7 +89,7 @@ function mockProjectionFromListEvents(): void {
 function fixture(): string {
   return `
     <section data-controller="calendar-view" data-action="jin:events-mutated@window->calendar-view#handleMutation" aria-label="Calendar">
-      <aside data-sidebar-context="events"><div data-calendar-view-target="filterHost"></div><button data-calendar-view-target="notificationsLink"><span>Notifications</span></button><button data-calendar-view-target="manageCalendarsLink"><span>Calendars &amp; Sync</span></button></aside>
+      <aside data-sidebar-context="events"><div data-calendar-view-target="filterHost"></div><button data-calendar-view-target="notificationsLink"><span>Notifications</span></button><button data-calendar-view-target="manageCalendarsLink"><span>Calendar connections</span></button></aside>
       <div data-calendar-view-target="workspace" class="calendar-workspace">
         <div data-calendar-view-target="field" class="calendar-field">
           <div data-calendar-view-target="monthView"><div data-calendar-view-target="monthViewContent"></div></div>
@@ -600,6 +600,19 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(localStorage.getItem('jin:calendar-view')).toBe('day');
     expect(document.querySelector('[data-calendar-view-target="monthView"]')?.classList.contains('hidden')).toBe(true);
     expect(document.querySelector('[data-calendar-view-target="dayView"]')?.classList.contains('hidden')).toBe(false);
+  });
+
+  it('keeps a localized Day date with its persistent picker and sidebar context', () => {
+    localStorage.setItem('jin:event-locale', 'pt-BR');
+    controller.localeChanged();
+    controller.selectDate('2026-11-22');
+
+    const header = document.querySelector('[data-calendar-view-target="dayView"] .calendar-month-header')!;
+    expect(header.querySelector('.calendar-workspace-title')).toBeNull();
+    expect(header.querySelector<HTMLElement>('.calendar-context-trigger-host')?.dataset.sidebarContextAnchor).toBe('events');
+    expect(header.querySelector('.calendar-view-controls .calendar-view-switch')).not.toBeNull();
+    expect(header.querySelector('.calendar-back-btn')).toBeNull();
+    expect(header.querySelector('.calendar-month-label')?.textContent).toBe('domingo, 22 de novembro de 2026');
   });
 
   it('keeps month event chips on the companion preview path', async () => {

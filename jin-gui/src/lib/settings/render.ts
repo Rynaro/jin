@@ -288,6 +288,8 @@ export interface SettingsExportElements {
   exportDestDisplay: HTMLElement;
   /** Audit-included indicator (shown/hidden). */
   exportAuditIncluded: HTMLElement;
+  /** Manifest verification receipt, shown only after every byte is checked. */
+  exportVerified: HTMLElement;
   /** Error display (including dest-collision message). */
   exportError: HTMLElement;
 }
@@ -332,6 +334,8 @@ export function renderExportResult(
   } else {
     el.exportAuditIncluded.classList.add('hidden');
   }
+  el.exportVerified.classList.toggle('hidden', !view.verified);
+  if (view.verified) el.exportVerified.textContent = 'Manifest verified';
 
   el.exportResultDisplay.classList.remove('hidden');
   el.exportError.classList.add('hidden');

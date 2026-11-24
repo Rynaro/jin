@@ -733,6 +733,16 @@ fn s8_json_parity() {
         1,
         "--json must report 1 event"
     );
+    assert!(d["lists"].is_u64(), "--json must report list count");
+    assert!(d["tags"].is_u64(), "--json must report tag count");
+    assert!(
+        d["attachments"].is_u64(),
+        "--json must report attachment count"
+    );
+    assert!(
+        d["collections"].is_u64(),
+        "--json must report collection count"
+    );
 
     // audit_included must be boolean.
     assert!(
@@ -744,6 +754,10 @@ fn s8_json_parity() {
     let expected_total = d["notes"].as_u64().unwrap()
         + d["tasks"].as_u64().unwrap()
         + d["events"].as_u64().unwrap()
+        + d["lists"].as_u64().unwrap()
+        + d["tags"].as_u64().unwrap()
+        + d["attachments"].as_u64().unwrap()
+        + d["collections"].as_u64().unwrap()
         + if d["audit_included"].as_bool().unwrap() {
             1
         } else {
@@ -752,7 +766,7 @@ fn s8_json_parity() {
     assert_eq!(
         d["files_exported"].as_u64().unwrap(),
         expected_total,
-        "files_exported must equal notes+tasks+events+audit"
+        "files_exported must equal every exported owner-data category plus audit"
     );
 
     // dest must be present and non-empty.
@@ -776,6 +790,9 @@ fn s8_json_parity() {
             s.starts_with("notes/")
                 || s.starts_with("tasks/")
                 || s.starts_with("events/")
+                || s.starts_with("lists/")
+                || s.starts_with("tags/")
+                || s.starts_with("collections/")
                 || s.starts_with(".jin/"),
             "file path '{}' must be under notes/, tasks/, events/, or .jin/",
             s

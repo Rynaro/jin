@@ -543,6 +543,12 @@
   flex: 0 0 auto;
 }
 
+.calendar-dialog[data-temporal-editor-presentation='review'] .action-dialog__footer .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .calendar-dialog__body {
   padding: var(--space-2) var(--space-3) 0;
   display: flex;
@@ -562,7 +568,7 @@
 
 /* The recurrence cutoff is a civil date, never a timed due instant. The
  * component's own presentation state wins over this row's flex layout. */
-.calendar-dialog[data-temporal-editor-presentation='recurrence'] .calendar-dialog__time-row {
+.calendar-dialog:is([data-temporal-editor-presentation='recurrence'], [data-temporal-editor-presentation='review']) .calendar-dialog__time-row {
   display: none;
 }
 
@@ -1787,6 +1793,7 @@ button.task-due-chip {
   text-align: start;
   overflow-wrap: anywhere;
 }
+.calendar-month-controls--day .calendar-month-label { text-wrap: balance; }
 .calendar-month-controls {
   position: relative;
   display: grid;
@@ -1806,9 +1813,33 @@ button.task-due-chip {
   overflow-wrap: anywhere;
 }
 .calendar-month-leading,
-.calendar-month-nav { display: flex; align-items: center; gap: var(--space-1); min-inline-size: 0; }
+.calendar-month-nav,
+.calendar-view-controls { display: flex; align-items: center; gap: var(--space-1); min-inline-size: 0; }
 .calendar-month-leading { flex-wrap: nowrap; }
 .calendar-month-nav { justify-content: flex-end; flex-wrap: wrap; gap: var(--space-half); }
+
+/* Day carries a full localized date. Give that identity the principal track
+ * before placing view and date navigation on their own, stable control row. */
+@container (min-width: 941px) and (max-width: 1320px) {
+  .calendar-month-controls--day {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: var(--space-2);
+  }
+  .calendar-month-controls--day .calendar-month-leading { grid-column: 1; grid-row: 1; }
+  .calendar-month-controls--day .calendar-global-add { grid-column: 2; grid-row: 1; justify-self: end; }
+  .calendar-month-controls--day .calendar-view-controls { grid-column: 1; grid-row: 2; justify-self: start; }
+  .calendar-month-controls--day .calendar-month-nav { grid-column: 2; grid-row: 2; justify-self: end; }
+}
+
+/* Calendar's header keeps its larger composition, while its compact route
+ * control shares the same in-flow 36px baseline as the other workspaces. */
+.jin-shell[data-nav-presentation='desktop'][data-nav-visible='false'] .calendar-context-trigger-host:not(:empty) {
+  align-self: flex-start;
+  margin-block-start: calc(var(--compact-context-block-start) - var(--space-3));
+}
+.jin-shell[data-nav-presentation='desktop'][data-nav-visible='false'] .calendar-month-leading {
+  align-self: flex-start;
+}
 .calendar-view-switch__button {
   padding: 0 var(--space-2);
   font: 500 var(--text-footnote-size)/1 var(--font-text);
@@ -1959,7 +1990,9 @@ button.task-due-chip {
   .calendar-global-add__label { display: none; }
   .calendar-month-leading { grid-column: 1; grid-row: 1; }
   .calendar-month-nav { grid-column: 1; grid-row: 2; justify-self: end; }
-  .calendar-view-switch { grid-column: 1; grid-row: 3; justify-self: center; }
+  .calendar-view-controls { grid-column: 1; grid-row: 3; justify-self: center; }
+  .calendar-month-controls--day .calendar-view-controls { grid-column: 1; grid-row: 2; justify-self: start; }
+  .calendar-month-controls--day .calendar-month-nav { grid-column: 1; grid-row: 3; justify-self: end; }
   .calendar-month-identity { padding: 0; }
   .calendar-month-label { font-size: var(--text-title2-size); line-height: var(--text-title2-line); }
   .calendar-day-cell { min-block-size: 4.5rem; align-items: center; padding: var(--space-half) 0; }
@@ -1990,7 +2023,7 @@ button.task-due-chip {
 :root[data-text-scale="accessibility"] .calendar-month-controls { grid-template-columns: minmax(0, 1fr); }
 :root[data-text-scale="accessibility"] .calendar-month-leading { grid-column: 1; grid-row: 1; }
 :root[data-text-scale="accessibility"] .calendar-month-nav { grid-column: 1; grid-row: 2; flex-wrap: wrap; }
-:root[data-text-scale="accessibility"] .calendar-view-switch { grid-column: 1; grid-row: 3; }
+:root[data-text-scale="accessibility"] .calendar-view-controls { grid-column: 1; grid-row: 3; }
 :root[data-text-scale="accessibility"] .calendar-global-add { grid-column: 1; grid-row: 4; justify-self: start; }
 :root[data-text-scale="accessibility"] .calendar-global-add__label { display: none; }
 
@@ -2082,9 +2115,13 @@ button.task-due-chip {
     overflow-wrap: anywhere;
   }
 
-  :root[data-text-scale="accessibility"] .calendar-view-switch {
+  :root[data-text-scale="accessibility"] .calendar-view-controls {
     grid-column: 1;
     grid-row: 3;
+    inline-size: 100%;
+  }
+
+  :root[data-text-scale="accessibility"] .calendar-view-switch {
     flex-direction: column;
     align-items: stretch;
     inline-size: 100%;
@@ -2325,11 +2362,18 @@ button.task-due-chip {
   .calendar-month-controls { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--space-2); }
   .calendar-month-leading { grid-column: 1; grid-row: 1; }
   .calendar-global-add { grid-column: 2; grid-row: 1; justify-self: end; }
-  .calendar-view-switch { grid-column: 1; grid-row: 2; justify-self: start; }
+  .calendar-view-controls { grid-column: 1; grid-row: 2; justify-self: start; }
   .calendar-month-nav { grid-column: 2; grid-row: 2; justify-self: end; }
 }
+/* A Day heading in languages with long date names needs the full working
+ * measure. The route menu stays in its established first position, then the
+ * date takes its own intentional row instead of leaving an orphaned year. */
+@container (max-width: 700px) {
+  .calendar-month-leading { flex-wrap: wrap; }
+  .calendar-month-leading > .calendar-month-identity { flex: 1 1 100%; }
+}
 @container (max-width: 360px) {
-  .calendar-view-switch { grid-column: 1 / -1; grid-row: 2; }
+  .calendar-view-controls { grid-column: 1 / -1; grid-row: 2; }
   .calendar-month-nav { grid-column: 1 / -1; grid-row: 3; justify-self: start; }
 }
 

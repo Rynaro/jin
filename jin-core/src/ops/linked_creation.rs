@@ -9,7 +9,9 @@ use sha2::{Digest, Sha256};
 
 use crate::model::edge::{EdgeType, LinkEntry};
 use crate::model::list::WorkflowKind;
-use crate::model::{Note, NoteFrontmatter, NoteStatus, Task, TaskStatus};
+use crate::model::{
+    CaptureReview, CaptureReviewState, Note, NoteFrontmatter, NoteStatus, Task, TaskStatus,
+};
 use crate::store::{frontmatter, fs};
 use crate::{Config, JinError, Result};
 
@@ -24,6 +26,22 @@ pub struct TaskFromNoteInput {
     pub title: String,
     pub excerpt: String,
     pub list: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewTaskFromNoteInput {
+    pub operation_id: String,
+    pub note_id: String,
+    pub expected_revision: u64,
+    pub title: String,
+    pub excerpt: String,
+    pub list: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewAttachNoteInput {
+    pub operation_id: String,
+    pub note_id: String,
+    pub expected_revision: u64,
+    pub event_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,13 +75,34 @@ fn validate_text(title: &str, body: &str) -> Result<()> {
 }
 
 pub fn create_task_from_note(root: &Path, input: TaskFromNoteInput) -> Result<(Task, Note)> {
-    create_task_from_note_inner(root, input, None)
+    create_task_from_note_inner(root, input, None, false, "task_from_note")
+}
+pub fn review_capture_create_task(
+    root: &Path,
+    input: ReviewTaskFromNoteInput,
+) -> Result<(Task, Note)> {
+    create_task_from_note_inner(
+        root,
+        TaskFromNoteInput {
+            operation_id: input.operation_id,
+            note_id: input.note_id,
+            expected_revision: input.expected_revision,
+            title: input.title,
+            excerpt: input.excerpt,
+            list: input.list,
+        },
+        None,
+        true,
+        "review_capture_task_from_note",
+    )
 }
 
 fn create_task_from_note_inner(
     root: &Path,
     input: TaskFromNoteInput,
     failpoint: Option<recoverable_operations::OperationFailpoint>,
+    process_review: bool,
+    operation_prefix: &str,
 ) -> Result<(Task, Note)> {
     validate_text(&input.title, &input.excerpt)?;
     if input.excerpt.trim().is_empty() {
@@ -73,7 +112,7 @@ fn create_task_from_note_inner(
     }
     let cfg = Config::load(root)?;
     lists::ensure_default_list_for_root(root)?;
-    let kind = operation_kind("task_from_note", &input)?;
+    let kind = operation_kind(operation_prefix, &input)?;
     let build = || {
         let note_path = fs::find_note_path(&cfg.notes_dir(), &input.note_id)?;
         let before = std::fs::read(&note_path)?;
@@ -90,6 +129,17 @@ fn create_task_from_note_inner(
                 expected_revision: input.expected_revision,
                 current_revision: note.frontmatter.revision,
             });
+        }
+        if process_review
+            && !note
+                .frontmatter
+                .capture_review
+                .as_ref()
+                .is_some_and(CaptureReview::is_open)
+        {
+            return Err(JinError::InvalidInput(
+                "this capture is no longer awaiting review".into(),
+            ));
         }
         let list_id = input.list.clone().unwrap_or_else(|| "inbox".into());
         let list_path = fs::find_list_path(&cfg.lists_dir(), &list_id)?;
@@ -116,6 +166,13 @@ fn create_task_from_note_inner(
             edge_type: EdgeType::References,
             target: task.id().to_string(),
         });
+        if process_review {
+            note.frontmatter.capture_review = Some(CaptureReview {
+                state: CaptureReviewState::Processed,
+                return_on: None,
+                processed_at: Some(Local::now().fixed_offset()),
+            });
+        }
         note.frontmatter.revision = note.frontmatter.revision.saturating_add(1);
         note.frontmatter.updated = Local::now().fixed_offset();
         Ok((
@@ -147,6 +204,72 @@ fn create_task_from_note_inner(
     ))
 }
 
+pub fn review_capture_attach_event(root: &Path, input: ReviewAttachNoteInput) -> Result<Note> {
+    let cfg = Config::load(root)?;
+    let kind = operation_kind("review_capture_attach_event", &input)?;
+    let outcome =
+        recoverable_operations::execute_task_operation(root, &input.operation_id, &kind, || {
+            let path = fs::find_note_path(&cfg.notes_dir(), &input.note_id)?;
+            let before = std::fs::read(&path)?;
+            let mut note = fs::read_note(&path)?;
+            let event = events::get_event(&cfg.events_dir(), &input.event_id)?;
+            if note.is_deleted() {
+                return Err(JinError::NotFound(format!(
+                    "note/{} is deleted",
+                    input.note_id
+                )));
+            }
+            if note.frontmatter.revision != input.expected_revision {
+                return Err(JinError::StaleNote {
+                    note_id: input.note_id.clone(),
+                    expected_revision: input.expected_revision,
+                    current_revision: note.frontmatter.revision,
+                });
+            }
+            if !note
+                .frontmatter
+                .capture_review
+                .as_ref()
+                .is_some_and(CaptureReview::is_open)
+            {
+                return Err(JinError::InvalidInput(
+                    "this capture is no longer awaiting review".into(),
+                ));
+            }
+            if event.is_deleted() {
+                return Err(JinError::NotFound(format!("event/{}", input.event_id)));
+            }
+            recovery::snapshot_before_write(root, &note, &before)?;
+            if !note
+                .frontmatter
+                .links
+                .iter()
+                .any(|link| link.target == event.id() && link.edge_type == EdgeType::PrepFor)
+            {
+                note.frontmatter.links.push(LinkEntry {
+                    edge_type: EdgeType::PrepFor,
+                    target: event.id().into(),
+                });
+            }
+            note.frontmatter.capture_review = Some(CaptureReview {
+                state: CaptureReviewState::Processed,
+                return_on: None,
+                processed_at: Some(Local::now().fixed_offset()),
+            });
+            note.frontmatter.updated = Local::now().fixed_offset();
+            note.frontmatter.revision = note.frontmatter.revision.saturating_add(1);
+            Ok((
+                note.id().into(),
+                vec![TargetPlan {
+                    canonical_path: path,
+                    before: Some(before),
+                    post: Some(frontmatter::render(&note.frontmatter, &note.body)?.into_bytes()),
+                }],
+            ))
+        })?;
+    notes::get_note(&cfg.notes_dir(), &outcome.result_event_id)
+}
+
 pub fn create_event_prep_note(root: &Path, input: EventPrepNoteInput) -> Result<Note> {
     validate_text(&input.title, &input.body)?;
     let cfg = Config::load(root)?;
@@ -175,6 +298,7 @@ pub fn create_event_prep_note(root: &Path, input: EventPrepNoteInput) -> Result<
                         edge_type: EdgeType::PrepFor,
                         target: event.id().to_string(),
                     }],
+                    capture_review: None,
                     properties: BTreeMap::new(),
                     revision: 1,
                     extra: BTreeMap::new(),
@@ -311,7 +435,9 @@ mod tests {
         assert!(create_task_from_note_inner(
             root.path(),
             input.clone(),
-            Some(recoverable_operations::OperationFailpoint::FinalRenameBeforeConvergenceRecord)
+            Some(recoverable_operations::OperationFailpoint::FinalRenameBeforeConvergenceRecord),
+            false,
+            "task_from_note",
         )
         .is_err());
         let (task, updated) = create_task_from_note(root.path(), input.clone()).unwrap();
@@ -386,6 +512,135 @@ mod tests {
             create_event_prep_note(root.path(), changed),
             Err(JinError::OperationConflict { .. })
         ));
+    }
+
+    #[test]
+    fn review_capture_task_is_atomic_and_replay_safe() {
+        let root = TempDir::new().unwrap();
+        crate::ops::init(root.path()).unwrap();
+        let note = notes::create_note_with_capture_review(
+            &root.path().join("notes"),
+            notes::CreateNoteParams {
+                title: "Captured thought".into(),
+                body: "Keep this context intact.".into(),
+                tags: vec![],
+                folder: "projects/one".into(),
+            },
+            Some(CaptureReview::default()),
+        )
+        .unwrap();
+        let input = ReviewTaskFromNoteInput {
+            operation_id: "review-capture-task-1".into(),
+            note_id: note.id().into(),
+            expected_revision: note.frontmatter.revision,
+            title: "Follow up".into(),
+            excerpt: "Keep this context intact.".into(),
+            list: None,
+        };
+        let (task, updated) = review_capture_create_task(root.path(), input.clone()).unwrap();
+        assert_eq!(updated.body, note.body);
+        assert!(matches!(
+            updated.frontmatter.capture_review.unwrap().state,
+            CaptureReviewState::Processed
+        ));
+        assert_eq!(updated.frontmatter.links.len(), 1);
+        assert_eq!(
+            review_capture_create_task(root.path(), input)
+                .unwrap()
+                .0
+                .id(),
+            task.id()
+        );
+        assert_eq!(
+            tasks::list_tasks(&root.path().join("tasks"), None, None, false)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn review_capture_rejects_stale_processed_click() {
+        let root = TempDir::new().unwrap();
+        crate::ops::init(root.path()).unwrap();
+        let note = notes::create_note_with_capture_review(
+            &root.path().join("notes"),
+            notes::CreateNoteParams {
+                title: "Captured thought".into(),
+                body: "Context".into(),
+                tags: vec![],
+                folder: String::new(),
+            },
+            Some(CaptureReview::default()),
+        )
+        .unwrap();
+        let input = ReviewTaskFromNoteInput {
+            operation_id: "review-capture-first".into(),
+            note_id: note.id().into(),
+            expected_revision: note.frontmatter.revision,
+            title: "Follow up".into(),
+            excerpt: "Context".into(),
+            list: None,
+        };
+        review_capture_create_task(root.path(), input).unwrap();
+        assert!(matches!(
+            review_capture_create_task(
+                root.path(),
+                ReviewTaskFromNoteInput {
+                    operation_id: "review-capture-stale".into(),
+                    note_id: note.id().into(),
+                    expected_revision: 2,
+                    title: "Duplicate".into(),
+                    excerpt: "Context".into(),
+                    list: None,
+                }
+            ),
+            Err(JinError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn review_capture_attach_event_marks_note_once_and_replays() {
+        let root = TempDir::new().unwrap();
+        crate::ops::init(root.path()).unwrap();
+        let note = notes::create_note_with_capture_review(
+            &root.path().join("notes"),
+            notes::CreateNoteParams {
+                title: "Meeting thought".into(),
+                body: "Bring the decision log.".into(),
+                tags: vec![],
+                folder: String::new(),
+            },
+            Some(CaptureReview::default()),
+        )
+        .unwrap();
+        let event = seed_event(root.path());
+        let input = ReviewAttachNoteInput {
+            operation_id: "review-attach-event-1".into(),
+            note_id: note.id().into(),
+            expected_revision: note.frontmatter.revision,
+            event_id: event.id().into(),
+        };
+        let updated = review_capture_attach_event(root.path(), input.clone()).unwrap();
+        assert!(matches!(
+            updated.frontmatter.capture_review.unwrap().state,
+            CaptureReviewState::Processed
+        ));
+        assert_eq!(updated.frontmatter.links.len(), 1);
+        assert_eq!(
+            review_capture_attach_event(root.path(), input)
+                .unwrap()
+                .frontmatter
+                .links
+                .len(),
+            1
+        );
+        assert_eq!(
+            recovery::list_revisions(root.path(), note.id())
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]

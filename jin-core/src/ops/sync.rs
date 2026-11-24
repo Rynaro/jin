@@ -172,8 +172,7 @@ pub(crate) fn acquire_refresh_lock(
     root: &Path,
     account_id: &crate::google::account::GoogleAccountId,
 ) -> crate::Result<RefreshLock> {
-    let dir = root
-        .join(".jin")
+    let dir = Config::state_dir(root)?
         .join("sync")
         .join("accounts")
         .join(account_id.as_str());
@@ -246,6 +245,7 @@ pub(crate) fn acquire_destination_pull_lock(
     let file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
+        .truncate(false)
         .open(&path)
         .map_err(JinError::Io)?;
     file.try_lock().map_err(|_| {

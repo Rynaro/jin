@@ -72,6 +72,10 @@ your workspace. Capture a note or task, then open Today to see what is ahead.
   library** to return to your notes.
 - Open **Find in Jin** or press **⌘⇧F** on Mac or **Ctrl+Shift+F** on Windows
   and Linux to search notes, tasks, and calendar events.
+- Use **Capture** to save a thought without leaving your current work. Capture
+  a note for later review, or save a task directly to Inbox. In **Review
+  captures**, keep a note as reference, make a linked task, attach it to an
+  exact calendar event, or choose a day for it to return.
 - In a calendar event, choose **New meeting note** to create an editable
   preparation note linked to that event.
 - Select text in a note and choose **Create task from selection**. Review the
@@ -88,10 +92,64 @@ $ jin --root ~/jin-store init
 $ jin --root ~/jin-store note add "Roadmap review notes"
 $ jin --root ~/jin-store task add "Draft quarterly roadmap"
 $ jin --root ~/jin-store today
+$ jin --root ~/jin-store review list
 ```
 
 Run `jin --help` to explore commands and `jin <command> --help` for options.
 The CLI also supports JSON output for scripts.
+
+### Use a sync folder safely
+
+For a folder managed by Google Drive, ownCloud or Nextcloud, OneDrive, iCloud,
+or another file synchronizer, create a dedicated portable workspace:
+
+```console
+$ jin --root ~/Jin-Sync init --portable
+```
+
+Keep that folder available offline on every device and keep Jin up to date on
+each device. Sync the complete workspace, including the hidden `.jin` marker
+and attachments. Each device rebuilds its own index and keeps its own local
+history, Google settings, and credentials.
+
+When another device's changes arrive, refresh before continuing:
+
+```console
+$ jin --root ~/Jin-Sync refresh
+```
+
+Jin reports malformed files and conflicting copies before choosing an index
+entry. Keep every reported variant, including the original Markdown. Copy a
+variant outside the canonical folders while you reconcile it, then run
+`refresh` again. Do not delete a copy until you have confirmed which content is
+safe to retain. `jin --root ~/Jin-Sync history note <id>` lists the immutable
+local versions Jin has observed. A provider overwrite that Jin never observed
+cannot be recovered by Jin.
+
+For a verified backup or migration, export to a new empty folder and import
+only after verification:
+
+```console
+$ jin --root ~/Jin-Local export ~/Jin-Backup
+$ jin import ~/Jin-Backup ~/Jin-Restored
+```
+
+Exports include notes, tasks, events, lists, tags, collections, and attachments.
+Local recovery history stays on the device and both it and separate backups use
+device disk space. To move an existing legacy workspace into portable mode,
+export it first, initialize a fresh empty folder, and force-import only into
+that newly initialized empty portable root:
+
+```console
+$ jin --root ~/Jin-Local export ~/Jin-Backup
+$ jin --root ~/Jin-Sync init --portable
+$ jin import ~/Jin-Backup ~/Jin-Sync --force
+```
+
+Before a large restore or migration, close Jin on other devices and pause the
+folder synchronizer. File replacements are atomic, but a multi-directory
+restore is not externally atomic. Resume sync only after opening Jin and
+confirming the restored contents.
 
 ## Your data and integrations
 
@@ -102,8 +160,15 @@ Calendar** on first install; when building from source, configure your own
 Google Desktop OAuth client. See the [setup guide](docs/google-smoke-test.md).
 Reminders are local to the desktop app and do not sync between devices.
 
+Portable workspaces use generic file synchronizers and do not require provider
+APIs. Their reliability depends on the provider keeping the dedicated folder
+available offline and preserving complete files. The desktop app's first-run
+flow initializes this same portable layout when you choose a new empty storage
+folder. The automated coverage validates the filesystem contract; it does not
+validate real Google Drive, OneDrive, iCloud, or other provider accounts.
+
 Jin is actively developed. Real-account OAuth validation, recurring-event
-editing, multi-device sync, and mobile capture remain work in progress.
+editing, and mobile capture remain work in progress.
 Automated GUI checks cover logic; native appearance and installer behavior
 need platform testing.
 

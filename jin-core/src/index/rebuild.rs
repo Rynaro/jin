@@ -5,14 +5,26 @@ use std::path::Path;
 use rusqlite::{params, Connection};
 
 use crate::model::event::{render_temporal, TemporalValue};
-use crate::model::{parse_canonical_links, PropertyValue};
-use crate::store::fs;
+use crate::model::{parse_canonical_links, CaptureReview, CaptureReviewState, PropertyValue};
+use crate::store::{canonical_scan, fs};
 use crate::{JinError, Result};
 
 use super::schema;
 
 /// Rebuild the entire index from `root`. Wipes and repopulates all tables.
 pub fn rebuild(conn: &mut Connection, root: &Path) -> Result<Vec<JinError>> {
+    // Run before the destructive rebuild transaction. A cloud conflict copy
+    // retains the embedded id, and must never be hidden by INSERT OR REPLACE.
+    // Legacy local roots retain their established best-effort diagnostic
+    // behavior. A portable shared root must fail closed because an external
+    // provider can otherwise hide a second writer's version.
+    let shared_scan = if crate::workspace::is_shared(root) {
+        let fingerprint = crate::store::history::current_fingerprint(root)?;
+        let files = canonical_scan::scan_identities(root)?;
+        Some((fingerprint, files))
+    } else {
+        None
+    };
     let notes_dir = root.join("notes");
     let tasks_dir = root.join("tasks");
     let events_dir = root.join("events");
@@ -119,10 +131,13 @@ pub fn rebuild(conn: &mut Connection, root: &Path) -> Result<Vec<JinError>> {
         let excerpt = derive_excerpt(&note.body);
         // Wave 2A: derive folder_path from the file's location under notes_dir.
         let folder_path = fs::folder_path_of(&notes_dir, path);
+        let (capture_review_state, capture_review_return_on) =
+            capture_review_index_fields(note.frontmatter.capture_review.as_ref());
         tx.execute(
                 "INSERT OR REPLACE INTO notes
-                 (id, title, status, created, updated, deleted_at, tags, file_path, excerpt, folder_path)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                 (id, title, status, created, updated, deleted_at, tags, file_path, excerpt, folder_path,
+                  capture_review_state, capture_review_return_on)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     note.frontmatter.id,
                     note.frontmatter.title,
@@ -134,6 +149,8 @@ pub fn rebuild(conn: &mut Connection, root: &Path) -> Result<Vec<JinError>> {
                     path.to_string_lossy().as_ref(),
                     excerpt,
                     folder_path,
+                    capture_review_state,
+                    capture_review_return_on,
                 ],
         )
         .map_err(JinError::Index)?;
@@ -181,12 +198,15 @@ pub fn rebuild(conn: &mut Connection, root: &Path) -> Result<Vec<JinError>> {
                 serde_json::to_string(&task.frontmatter.tags).unwrap_or_else(|_| "[]".to_string());
             let reminders_json = serde_json::to_string(&task.frontmatter.reminders)
                 .unwrap_or_else(|_| "[]".to_string());
+            let (capture_review_state, capture_review_return_on) =
+                capture_review_index_fields(task.frontmatter.capture_review.as_ref());
             tx.execute(
                 "INSERT OR REPLACE INTO tasks
                  (id, title, status, priority, due, list_name, completed_at, deleted_at,
                   created, updated, file_path, section_id, tags, position, reminders, parent,
-                  agenda_bucket, board_column_id, recurrence, completion_history, recurrence_series, recurrence_instance, recurrence_exception)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+                  agenda_bucket, board_column_id, recurrence, completion_history, recurrence_series, recurrence_instance, recurrence_exception,
+                  capture_review_state, capture_review_return_on)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
                 params![
                     task.frontmatter.id,
                     task.frontmatter.title,
@@ -211,6 +231,8 @@ pub fn rebuild(conn: &mut Connection, root: &Path) -> Result<Vec<JinError>> {
                     serde_json::to_string(&task.frontmatter.recurrence_series).unwrap_or_else(|_| "null".to_string()),
                     serde_json::to_string(&task.frontmatter.recurrence_instance).unwrap_or_else(|_| "null".to_string()),
                     task.frontmatter.recurrence_exception as i32,
+                    capture_review_state,
+                    capture_review_return_on,
                 ],
             )
             .map_err(JinError::Index)?;
@@ -466,6 +488,25 @@ pub fn rebuild(conn: &mut Connection, root: &Path) -> Result<Vec<JinError>> {
         }
     }
 
+    // The provider may replace a file while it is being parsed. Re-check the
+    // complete canonical metadata fingerprint before making this projection
+    // visible. Dropping `tx` on mismatch keeps the previous index intact.
+    if let Some((before, files)) = shared_scan {
+        // Persist observations before the matching fingerprint becomes current.
+        // If a provider races this rebuild, this device still retains every
+        // complete version it observed while parsing.
+        crate::store::history::archive_observations(root, &files)?;
+        if crate::store::history::current_fingerprint(root)? != before {
+            return Err(JinError::SyncConflict(
+                "canonical files changed while Jin rebuilt the local index; retry after the sync provider becomes idle".to_string(),
+            ));
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('canonical_fingerprint', ?1)",
+            params![before],
+        )
+        .map_err(JinError::Index)?;
+    }
     tx.commit().map_err(JinError::Index)?;
 
     Ok(diagnostics)
@@ -478,6 +519,23 @@ fn value_type_str(vt: &crate::model::event::ValueType) -> &'static str {
         crate::model::event::ValueType::DateTime => "date-time",
         crate::model::event::ValueType::Date => "date",
     }
+}
+
+fn capture_review_index_fields(
+    review: Option<&CaptureReview>,
+) -> (Option<&'static str>, Option<String>) {
+    let Some(review) = review else {
+        return (None, None);
+    };
+    let state = match review.state {
+        CaptureReviewState::Pending => "pending",
+        CaptureReviewState::Deferred => "deferred",
+        CaptureReviewState::Processed => "processed",
+    };
+    (
+        Some(state),
+        review.return_on.map(|return_on| return_on.to_string()),
+    )
 }
 
 /// Derive a short plain-text excerpt from a note body (D2).
@@ -586,6 +644,7 @@ mod tests {
             completed_at: None,
             deleted_at: None,
             links: vec![],
+            capture_review: None,
             section_id,
             board_column_id: None,
             tags,
@@ -626,6 +685,7 @@ mod tests {
             completed_at: None,
             deleted_at: None,
             links: vec![],
+            capture_review: None,
             section_id: None,
             board_column_id: None,
             tags: vec![],

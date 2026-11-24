@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::index::query::{BacklinkRow, NoteRow};
 use crate::model::note::{find_unlinked_mentions, parse_canonical_links, Note, PropertyValue};
+use crate::model::CaptureReview;
 
 /// DTO projection of a Note — never a raw DB row.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +42,8 @@ pub struct NoteDto {
     pub canonical_links: Vec<CanonicalLinkDto>,
     /// Non-mutating suggestions for whole-title mentions not yet linked.
     pub unlinked_mentions: Vec<UnlinkedMentionDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capture_review: Option<CaptureReview>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,6 +125,7 @@ impl NoteDto {
                 })
                 .collect(),
             unlinked_mentions: vec![],
+            capture_review: note.frontmatter.capture_review.clone(),
         }
     }
 
@@ -146,6 +150,7 @@ impl NoteDto {
             revision: None,
             canonical_links: vec![],
             unlinked_mentions: vec![],
+            capture_review: None,
         }
     }
 
@@ -182,6 +187,7 @@ impl NoteDto {
         candidates: impl IntoIterator<Item = (String, String)>,
     ) -> Self {
         self.properties = Some(note.frontmatter.properties.clone());
+        self.capture_review = note.frontmatter.capture_review.clone();
         self.links = note
             .frontmatter
             .links
@@ -250,6 +256,7 @@ mod tests {
             deleted_at: None,
             tags: vec![],
             links: vec![],
+            capture_review: None,
             properties: Default::default(),
             revision: 1,
             extra: Default::default(),
@@ -319,6 +326,7 @@ mod tests {
             deleted_at: None,
             tags: vec![],
             links: vec![],
+            capture_review: None,
             properties: Default::default(),
             revision: 1,
             extra: Default::default(),

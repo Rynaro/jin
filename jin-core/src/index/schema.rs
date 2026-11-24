@@ -14,7 +14,7 @@ static APPLY_LOCK: Mutex<()> = Mutex::new(());
 /// wave3-tasks-v1: adds lists/sections/tags/task_tags tables + 4 new tasks columns (P2).
 /// wave3-tasks-v2: S6 — adds the `parent` column to `tasks` (subtasks).
 /// calendar-m1-v1: adds explicit flexible agenda placement to tasks.
-pub(crate) const SCHEMA_VERSION: &str = "persistent-task-recurrence-v3";
+pub(crate) const SCHEMA_VERSION: &str = "capture-review-v1";
 
 pub const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -32,7 +32,9 @@ CREATE TABLE IF NOT EXISTS notes (
     tags        TEXT NOT NULL DEFAULT '[]',  -- JSON array
     file_path   TEXT NOT NULL,
     excerpt     TEXT NOT NULL DEFAULT '',
-    folder_path TEXT NOT NULL DEFAULT ''    -- Wave 2A: relative folder path (/ separated)
+    folder_path TEXT NOT NULL DEFAULT '',   -- Wave 2A: relative folder path (/ separated)
+    capture_review_state TEXT,
+    capture_review_return_on TEXT
 );
 
 -- Strict portable properties, derived solely from Note frontmatter.
@@ -75,7 +77,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     recurrence_series TEXT NOT NULL DEFAULT 'null',
     recurrence_instance TEXT NOT NULL DEFAULT 'null',
     recurrence_exception INTEGER NOT NULL DEFAULT 0,
-    completion_history TEXT NOT NULL DEFAULT '[]'
+    completion_history TEXT NOT NULL DEFAULT '[]',
+    capture_review_state TEXT,
+    capture_review_return_on TEXT
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -297,6 +301,24 @@ pub fn apply(conn: &Connection) -> SqlResult<()> {
         if !has_column(conn, "lists", "initial_column_id")? {
             conn.execute_batch("ALTER TABLE lists ADD COLUMN initial_column_id TEXT")?;
         }
+        for (table, column) in [
+            ("notes", "capture_review_state"),
+            ("notes", "capture_review_return_on"),
+            ("tasks", "capture_review_state"),
+            ("tasks", "capture_review_return_on"),
+        ] {
+            if !has_column(conn, table, column)? {
+                conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} TEXT"))?;
+            }
+        }
+        // These must be created after the guarded ALTERs. Existing databases
+        // otherwise fail before the migration has supplied the indexed columns.
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_notes_capture_review
+                 ON notes(capture_review_state, capture_review_return_on, created);
+             CREATE INDEX IF NOT EXISTS idx_tasks_capture_review
+                 ON tasks(capture_review_state, capture_review_return_on, created);",
+        )?;
         Ok(())
     })();
     match result {
@@ -398,6 +420,8 @@ mod tests {
         let migrated = Connection::open(path).unwrap();
         assert!(has_column(&migrated, "tasks", "board_column_id").unwrap());
         assert!(has_column(&migrated, "lists", "initial_column_id").unwrap());
+        assert!(has_column(&migrated, "tasks", "capture_review_state").unwrap());
+        assert!(has_column(&migrated, "tasks", "capture_review_return_on").unwrap());
         let count: i64 = migrated.query_row(
             "SELECT count(*) FROM tasks WHERE id = 'existing-task' AND title = 'Keep this task'",
             [], |row| row.get(0),

@@ -13,7 +13,8 @@
  *   - Scroll region (flex:1; overflow-y:auto) containing the CM6 editor canvas and
  *     reading-view wrapper; callers prepend meta and append links/actions to it via
  *     the '.cm-scroll-region' element inside parent
- *   - Stats footer (flex-shrink:0) showing live word/char counts + save status
+ *   - Compact writing footer (flex-shrink:0) showing the live word count,
+ *     on-demand document details, writing tools, and save status
  *
  * Reading-view toggle (S2): button inside the formatting toolbar switches the scroll region
  * between the CM6 editor and a read-only rendered view via renderMarkdownFragment (the
@@ -28,7 +29,7 @@
  * imports markdown-it or dompurify directly (enforced by G-CHOKEPOINT).
  */
 
-import { EditorState, Compartment, Transaction } from '@codemirror/state';
+import { EditorState, Compartment, Prec, Transaction } from '@codemirror/state';
 import { EditorView, keymap, placeholder as placeholderExt, type ViewUpdate } from '@codemirror/view';
 import {
   history,
@@ -45,16 +46,17 @@ import {
   deleteMarkupBackward,
 } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
-import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
+import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, completionStatus } from '@codemirror/autocomplete';
 import { tags } from '@lezer/highlight';
 import type { SyntaxNode } from '@lezer/common';
-import { renderMarkdownFragment, hydrateManagedImages } from './markdown';
+import { renderMarkdownFragment, hydrateManagedImages, markdownHeadings, type MarkdownHeading } from './markdown';
 import { resolveImageAttachment } from '../../invoke';
 import { jinLivePreview, jinCodeBlockBackground, jinTablePreview, jinManagedImagePreview, taskCheckboxClickHandler } from './livePreview';
 import { jinFocusMode } from './focusMode';
 import { typewriterExtender } from './typewriter';
 import { initIcons } from '../icons';
 import { confirmExternalLink, normalizeExternalUrl } from '../ui/externalLinks';
+import { dismissSlashCommands, noteSlashCompletions, slashCommandDismissal } from './slashCommands';
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -108,6 +110,34 @@ export interface MountCompactEditorOptions {
   doc?: string;
   placeholder?: string;
   onChange?: (doc: string) => void;
+}
+
+export type NoteOutlineItem = MarkdownHeading;
+export const noteOutline = markdownHeadings;
+
+type WritingPreferences = {
+  typeface: 'serif' | 'sans';
+  width: 'comfortable' | 'wide';
+  focus: boolean;
+  typewriter: boolean;
+};
+const WRITING_PREFERENCES_KEY = 'jin.notes.writing-preferences.v1';
+const DEFAULT_WRITING_PREFERENCES: WritingPreferences = { typeface: 'serif', width: 'comfortable', focus: false, typewriter: false };
+
+function loadWritingPreferences(): WritingPreferences {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(WRITING_PREFERENCES_KEY) ?? '{}') as Partial<WritingPreferences>;
+    return {
+      typeface: parsed.typeface === 'sans' ? 'sans' : 'serif',
+      width: parsed.width === 'wide' ? 'wide' : 'comfortable',
+      focus: parsed.focus === true,
+      typewriter: parsed.typewriter === true,
+    };
+  } catch { return { ...DEFAULT_WRITING_PREFERENCES }; }
+}
+
+function saveWritingPreferences(preferences: WritingPreferences): void {
+  try { localStorage.setItem(WRITING_PREFERENCES_KEY, JSON.stringify(preferences)); } catch { /* Storage can be unavailable in private contexts. */ }
 }
 
 // ── Code language descriptors (lazy-loaded grammars via @codemirror/language-data) ─
@@ -725,11 +755,62 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   const attachmentBtn = mkBtn('paperclip', 'Add image or attachment', 'Attach');
   attachmentBtn.dataset.tooltip = 'Add Attachment';
 
-  // Mode toggles (right cluster — focus + typewriter; before Read toggle — D-TOGGLE)
+  // Writing options live in one quiet footer popover, leaving formatting focused.
   const focusBtn = mkBtn('focus', 'Focus mode', 'Focus');
   focusBtn.setAttribute('aria-pressed', 'false');
   const typewriterBtn = mkBtn('align-center-vertical', 'Typewriter scrolling', 'Typewriter');
   typewriterBtn.setAttribute('aria-pressed', 'false');
+
+  const makeFooterTrigger = (iconName: string, label: string): DocumentFragment => {
+    const icon = document.createElement('i');
+    icon.setAttribute('data-lucide', iconName);
+    icon.setAttribute('aria-hidden', 'true');
+    const text = document.createElement('span');
+    text.className = 'cm-footer__tool-label';
+    text.textContent = label;
+    const fragment = document.createDocumentFragment();
+    fragment.append(icon, text);
+    return fragment;
+  };
+
+  const outlineMenu = document.createElement('details');
+  outlineMenu.className = 'cm-footer__menu cm-footer__menu--outline';
+  const outlineBtn = document.createElement('summary');
+  outlineBtn.append(makeFooterTrigger('list', 'Outline'));
+  outlineBtn.setAttribute('aria-label', 'Document outline');
+  outlineBtn.title = 'Document outline';
+  const outline = document.createElement('nav');
+  outline.className = 'cm-outline';
+  outline.setAttribute('aria-label', 'Document outline');
+  outlineMenu.append(outlineBtn, outline);
+
+  const appearance = document.createElement('details');
+  appearance.className = 'cm-footer__menu cm-footer__menu--writing';
+  const appearanceSummary = document.createElement('summary');
+  appearanceSummary.append(makeFooterTrigger('sliders-horizontal', 'Writing'));
+  appearanceSummary.setAttribute('aria-label', 'Writing settings');
+  appearanceSummary.title = 'Writing settings';
+  const appearancePanel = document.createElement('div');
+  appearancePanel.className = 'cm-footer__menu-panel';
+  const appearanceLabel = document.createElement('span');
+  appearanceLabel.className = 'cm-footer__menu-label';
+  appearanceLabel.textContent = 'Typeface';
+  const serifChoice = document.createElement('button');
+  serifChoice.type = 'button'; serifChoice.textContent = 'Serif';
+  const sansChoice = document.createElement('button');
+  sansChoice.type = 'button'; sansChoice.textContent = 'Sans serif';
+  const widthLabel = document.createElement('span');
+  widthLabel.className = 'cm-footer__menu-label';
+  widthLabel.textContent = 'Line width';
+  const comfortableWidth = document.createElement('button');
+  comfortableWidth.type = 'button'; comfortableWidth.textContent = 'Comfortable';
+  const wideWidth = document.createElement('button');
+  wideWidth.type = 'button'; wideWidth.textContent = 'Wide';
+  const modesLabel = document.createElement('span');
+  modesLabel.className = 'cm-footer__menu-label';
+  modesLabel.textContent = 'Writing modes';
+  appearancePanel.append(appearanceLabel, serifChoice, sansChoice, widthLabel, comfortableWidth, wideWidth, modesLabel, focusBtn, typewriterBtn);
+  appearance.append(appearanceSummary, appearancePanel);
 
   // Reading-view toggle (right-aligned; class preserved for test compat)
   const toggleBtn = document.createElement('button');
@@ -760,7 +841,6 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
     mkGroup('Lists', [numberedBtn]),
     mkGroup('Blocks', [quoteBtn, openSelectedLinkBtn]),
     mkGroup('Media', [attachmentBtn]),
-    mkGroup('Writing modes', [focusBtn, typewriterBtn]),
   );
   more.append(moreSummary, morePanel);
   more.addEventListener('keydown', (event) => {
@@ -804,14 +884,32 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   const footer = document.createElement('div');
   footer.className = 'cm-footer';
 
-  const footerStatsEl = document.createElement('span');
+  const footerStatsEl = document.createElement('details');
   footerStatsEl.className = 'cm-footer__stats';
+  const footerStatsSummary = document.createElement('summary');
+  footerStatsSummary.setAttribute('aria-label', 'Document statistics');
+  footerStatsSummary.title = 'Document statistics';
+  const footerStatsText = document.createElement('span');
+  footerStatsText.className = 'cm-footer__stats-label';
+  const footerStatsChevron = document.createElement('i');
+  footerStatsChevron.setAttribute('data-lucide', 'chevron-down');
+  footerStatsChevron.setAttribute('aria-hidden', 'true');
+  footerStatsSummary.append(footerStatsText, footerStatsChevron);
+  const footerStatsPanel = document.createElement('div');
+  footerStatsPanel.className = 'cm-footer__stats-panel';
+  const footerCharCountEl = document.createElement('span');
+  footerCharCountEl.className = 'cm-footer__char-count';
+  const footerReadTimeEl = document.createElement('span');
+  footerReadTimeEl.className = 'cm-footer__read-time';
+  footerStatsPanel.append(footerCharCountEl, footerReadTimeEl);
+  footerStatsEl.append(footerStatsSummary, footerStatsPanel);
 
   const footerRight = document.createElement('div');
   footerRight.className = 'cm-footer__right';
 
-  const footerReadTimeEl = document.createElement('span');
-  footerReadTimeEl.className = 'cm-footer__read-time';
+  const footerTools = document.createElement('div');
+  footerTools.className = 'cm-footer__tools';
+  footerTools.append(outlineMenu, appearance);
 
   // Save status — class .cm-toolbar__status PRESERVED for test compat
   const statusEl = document.createElement('span');
@@ -819,8 +917,9 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   statusEl.setAttribute('aria-live', 'polite');
   statusEl.setAttribute('aria-atomic', 'true');
 
-  footerRight.appendChild(footerReadTimeEl);
-  footerRight.appendChild(statusEl);
+  // Keeping save state before the tools preserves their right-edge position as
+  // status copy changes from saving to error recovery.
+  footerRight.append(statusEl, footerTools);
   footer.appendChild(footerStatsEl);
   footer.appendChild(footerRight);
 
@@ -828,6 +927,7 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   parent.appendChild(toolbar);
   parent.appendChild(scrollRegion);
   parent.appendChild(footer);
+  initIcons(parent);
 
   // ── Internal save wrapper (manages status indicator text) ─────────────────
   const setSaveStatus = (state: 'saving' | 'saved' | 'failed' | 'paused', text: string): void => {
@@ -884,6 +984,7 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   // ── Stats recompute (late-binding: reassigned after view is created) ───────
   // Initially a no-op; replaced with the real implementation once `view` exists.
   let recomputeStats: () => void = () => {};
+  let refreshOutline: () => void = () => {};
 
   // ── Compartments (live-preview fast-follow: reconfigure without format change) ─
   const languageCompartment = new Compartment();
@@ -929,6 +1030,30 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
           markdown({ base: markdownLanguage, codeLanguages: NOTE_CODE_LANGUAGES }),
           indentUnit.of('  '),
         ]),
+        // Keep structured Markdown discoverable without adding another toolbar row.
+        ...(!readOnly ? [
+          autocompletion({
+            override: [noteSlashCompletions],
+            activateOnTypingDelay: 0,
+            interactionDelay: 0,
+            defaultKeymap: false,
+            icons: false,
+            tooltipClass: () => 'notes-slash-menu',
+          }),
+          // Completion acceptance must win over the Markdown Enter continuation key.
+          slashCommandDismissal,
+          Prec.highest(keymap.of([
+            {
+              key: 'Escape',
+              run(view) {
+                if (completionStatus(view.state) !== 'active') return false;
+                view.dispatch({ effects: dismissSlashCommands.of(true) });
+                return false;
+              },
+            },
+            ...completionKeymap,
+          ])),
+        ] : []),
         // Syntax highlighting (compartmented)
         highlightCompartment.of(syntaxHighlighting(jinHighlightStyle)),
         // Live-preview: hide/reveal markdown markers on inactive lines (default-on)
@@ -951,8 +1076,10 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
         closeBrackets(),
         // Soft line wrapping so long lines don't overflow
         EditorView.lineWrapping,
+        // The title is a separate field, so give the editing surface its own stable name.
+        EditorView.contentAttributes.of({ 'aria-label': 'Note body' }),
         // Empty-doc placeholder
-        placeholderExt('Start writing…'),
+        placeholderExt('Start writing… Type / for blocks.'),
         // Read-only guard
         ...(readOnly ? [EditorState.readOnly.of(true)] : []),
         // Keymap: jin keys FIRST so they override defaults
@@ -981,6 +1108,7 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
               scheduleSave();
             }
             recomputeStats();
+            refreshOutline();
           }
         }),
         // Blur → flush (caret-safe; no re-render)
@@ -1260,18 +1388,15 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
   });
   attachmentBtn.addEventListener('click', () => { onAddAttachment?.(); closeMore(); });
 
-  // Focus mode toggle (COZY-1) — reconfigure compartment; no remount, caret-safe
-  focusBtn.addEventListener('click', () => {
-    focusOn = !focusOn;
+  const preferences = loadWritingPreferences();
+  const setFocusMode = (enabled: boolean): void => {
+    focusOn = enabled;
     view.dispatch({ effects: focusCompartment.reconfigure(focusOn ? jinFocusMode() : []) });
     focusBtn.setAttribute('aria-pressed', String(focusOn));
-    closeMore();
-    view.focus();
-  });
+  };
 
-  // Typewriter scrolling toggle (COZY-2) — reconfigure compartment; no remount, caret-safe
-  typewriterBtn.addEventListener('click', () => {
-    typewriterOn = !typewriterOn;
+  const setTypewriterMode = (enabled: boolean): void => {
+    typewriterOn = enabled;
     view.dispatch({
       effects: typewriterCompartment.reconfigure(
         typewriterOn
@@ -1280,21 +1405,108 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
       ),
     });
     typewriterBtn.setAttribute('aria-pressed', String(typewriterOn));
-    closeMore();
-    view.focus();
-  });
+  };
+
+  const updateWritingPreferences = (next: Partial<WritingPreferences>): void => {
+    Object.assign(preferences, next);
+    parent.dataset.writingAppearance = preferences.typeface;
+    parent.dataset.writingWidth = preferences.width;
+    serifChoice.setAttribute('aria-pressed', String(preferences.typeface === 'serif'));
+    sansChoice.setAttribute('aria-pressed', String(preferences.typeface === 'sans'));
+    comfortableWidth.setAttribute('aria-pressed', String(preferences.width === 'comfortable'));
+    wideWidth.setAttribute('aria-pressed', String(preferences.width === 'wide'));
+    setFocusMode(preferences.focus);
+    setTypewriterMode(preferences.typewriter);
+    saveWritingPreferences(preferences);
+  };
+  updateWritingPreferences(preferences);
+  serifChoice.addEventListener('click', () => updateWritingPreferences({ typeface: 'serif' }));
+  sansChoice.addEventListener('click', () => updateWritingPreferences({ typeface: 'sans' }));
+  comfortableWidth.addEventListener('click', () => updateWritingPreferences({ width: 'comfortable' }));
+  wideWidth.addEventListener('click', () => updateWritingPreferences({ width: 'wide' }));
+  focusBtn.addEventListener('click', () => updateWritingPreferences({ focus: !preferences.focus }));
+  typewriterBtn.addEventListener('click', () => updateWritingPreferences({ typewriter: !preferences.typewriter }));
 
   // ── Real stats implementation (view is now available; replaces the no-op) ──
   recomputeStats = (): void => {
     const text = view.state.doc.toString();
     const words = text.trim() === '' ? 0 : text.trim().split(/\s+/).length;
     const chars = view.state.doc.length;
-    footerStatsEl.textContent = `${words} words · ${chars} chars`;
+    footerStatsText.textContent = `${words} ${words === 1 ? 'word' : 'words'}`;
+    footerStatsSummary.setAttribute('aria-label', `Document statistics, ${words} ${words === 1 ? 'word' : 'words'}`);
+    footerCharCountEl.textContent = `${chars} ${chars === 1 ? 'char' : 'chars'}`;
     footerReadTimeEl.textContent = `~${Math.max(1, Math.round(words / 200))} min read`;
   };
 
   // Initial stats paint (after view is built with the initial doc)
   recomputeStats();
+
+  const closeFooterMenu = (menu: HTMLDetailsElement, trigger: HTMLElement, restoreFocus = false): void => {
+    menu.open = false;
+    if (restoreFocus) trigger.focus();
+  };
+  const jumpToOutlineItem = (item: NoteOutlineItem, index: number): void => {
+    if (isReadingView) {
+      const heading = readingWrapper.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')[index];
+      if (heading) {
+        heading.tabIndex = -1;
+        heading.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+        heading.focus({ preventScroll: true });
+      }
+      return;
+    }
+    view.dispatch({ selection: { anchor: item.position }, scrollIntoView: true });
+    view.focus();
+  };
+
+  refreshOutline = (): void => {
+    if (!outlineMenu.open) return;
+    const items = noteOutline(view.state.doc.toString());
+    outline.replaceChildren();
+    if (items.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'cm-outline__empty';
+      empty.textContent = 'Add a heading to see it here.';
+      outline.appendChild(empty);
+      return;
+    }
+    const list = document.createElement('ol');
+    list.className = 'cm-outline__list';
+    items.forEach((item, index) => {
+      const entry = document.createElement('li');
+      entry.className = 'cm-outline__item';
+      entry.style.setProperty('--outline-depth', String(Math.max(0, item.level - 1)));
+      const button = document.createElement('button');
+      button.type = 'button';
+      const label = item.text || 'Untitled heading';
+      button.textContent = label;
+      button.title = label;
+      button.addEventListener('click', () => {
+        closeFooterMenu(outlineMenu, outlineBtn);
+        jumpToOutlineItem(item, index);
+      });
+      entry.appendChild(button);
+      list.appendChild(entry);
+    });
+    outline.appendChild(list);
+  };
+  outlineMenu.addEventListener('toggle', () => {
+    if (outlineMenu.open) { appearance.open = false; footerStatsEl.open = false; refreshOutline(); }
+  });
+  appearance.addEventListener('toggle', () => { if (appearance.open) { outlineMenu.open = false; footerStatsEl.open = false; } });
+  footerStatsEl.addEventListener('toggle', () => { if (footerStatsEl.open) { outlineMenu.open = false; appearance.open = false; } });
+  for (const [menu, trigger] of [[outlineMenu, outlineBtn], [appearance, appearanceSummary], [footerStatsEl, footerStatsSummary]] as const) {
+    menu.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && menu.open) { event.preventDefault(); closeFooterMenu(menu, trigger, true); }
+    });
+  }
+  const dismissFooterMenus = (event: PointerEvent): void => {
+    if (!(event.target instanceof Node)) return;
+    if (outlineMenu.open && !outlineMenu.contains(event.target)) outlineMenu.open = false;
+    if (appearance.open && !appearance.contains(event.target)) appearance.open = false;
+    if (footerStatsEl.open && !footerStatsEl.contains(event.target)) footerStatsEl.open = false;
+  };
+  document.addEventListener('pointerdown', dismissFooterMenus);
 
   // ── Reading-view toggle handler (S2) ──────────────────────────────────────
   // Toggles between the CM6 editor surface and a read-only rendered view.
@@ -1321,6 +1533,8 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
         toggleBtn.textContent = 'Edit';
         toggleBtn.setAttribute('aria-label', 'Switch to edit mode');
         toggleBtn.title = 'Switch to edit mode';
+        focusBtn.hidden = true;
+        typewriterBtn.hidden = true;
       } else {
         // → edit view: restore CM6 surface
         isReadingView = false;
@@ -1333,6 +1547,8 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
         toggleBtn.textContent = 'Read';
         toggleBtn.setAttribute('aria-label', 'Switch to reading mode');
         toggleBtn.title = 'Switch to reading mode';
+        focusBtn.hidden = false;
+        typewriterBtn.hidden = false;
         view.focus();
       }
     })();
@@ -1405,6 +1621,7 @@ export function mountEditor(parent: HTMLElement, opts: MountEditorOptions): Edit
       revokeReadingMedia?.();
       revokeReadingMedia = null;
       document.removeEventListener('pointerdown', dismissMore);
+      document.removeEventListener('pointerdown', dismissFooterMenus);
       window.removeEventListener('resize', keepMoreInViewport);
       linkDialog.remove();
     },

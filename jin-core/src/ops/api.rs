@@ -10,8 +10,24 @@ use crate::dto::{
     ListDto, NoteDto, TagDto, TaskDto, TodayProjectionDto,
 };
 use crate::index::{self, query, rebuild};
-use crate::store::fs;
+use crate::store::{fs, history};
 use crate::{Config, JinError, Result};
+
+pub fn list_capture_review(
+    root: &Path,
+) -> Result<Vec<super::capture_review::CaptureReviewItemDto>> {
+    recover_before_read(root)?;
+    super::capture_review::list(root)
+}
+
+pub fn set_capture_review(
+    root: &Path,
+    input: super::capture_review::SetCaptureReviewInput,
+) -> Result<()> {
+    super::capture_review::set(root, input)?;
+    refresh(root)?;
+    Ok(())
+}
 
 // ── Read operations ────────────────────────────────────────────────────────────
 
@@ -33,6 +49,12 @@ pub(crate) fn recover_before_read(root: &Path) -> Result<()> {
         let cfg = Config::load(root)?;
         let mut conn = index::open(&cfg.index_path())?;
         rebuild::rebuild(&mut conn, root)?;
+    }
+    // File-sync providers change canonical bytes outside Jin's process. A
+    // metadata fingerprint avoids rehashing/rebuilding on ordinary reads and
+    // forces a strict scan before serving a changed shared workspace.
+    if history::shared_projection_changed(root)? {
+        refresh(root)?;
     }
     Ok(())
 }
@@ -180,10 +202,12 @@ pub fn get_task(root: &Path, id: &str) -> Result<TaskDto> {
         .ok_or_else(|| JinError::NotFound(format!("task/{}", id)))?;
     // D3: read body fresh from disk (never from the index — body is not stored there).
     let task_on_disk = fs::read_task(std::path::Path::new(&row.file_path))?;
+    let capture_review = task_on_disk.frontmatter.capture_review.clone();
     let backlinks = query::get_backlinks(&conn, &row.id).map_err(JinError::Index)?;
     let mut dto = TaskDto::from_row(&row)
         .with_backlinks(&backlinks)
         .with_body(task_on_disk.body);
+    dto.capture_review = capture_review;
     for backlink in &mut dto.backlinks {
         let title = match backlink.source_kind.as_str() {
             "note" => query::get_note(&conn, &backlink.source_id)

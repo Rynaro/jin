@@ -143,7 +143,7 @@ fn acquire_lock_for_read(root: &Path) -> Result<OperationLock> {
 
 fn acquire_lock_with_mode(root: &Path, wait: bool) -> Result<OperationLock> {
     ensure_jin_dir(root)?;
-    let path = root.join(".jin").join(LOCK_FILE);
+    let path = runtime_jin_dir(root)?.join(LOCK_FILE);
     if matches!(std::fs::symlink_metadata(&path), Ok(metadata) if metadata.file_type().is_symlink())
     {
         return Err(JinError::Integrity(format!(
@@ -219,9 +219,13 @@ fn ensure_real_directory(path: &Path) -> Result<()> {
 }
 
 fn ensure_jin_dir(root: &Path) -> Result<PathBuf> {
-    let path = root.join(".jin");
+    let path = runtime_jin_dir(root)?;
     ensure_real_directory(&path)?;
     Ok(path)
+}
+
+fn runtime_jin_dir(root: &Path) -> Result<PathBuf> {
+    crate::Config::state_dir(root)
 }
 
 fn ensure_operations_dir(root: &Path, create: bool) -> Result<Option<PathBuf>> {
@@ -299,6 +303,27 @@ fn relative(root: &Path, path: &Path) -> Result<String> {
     let value = value.to_string_lossy().replace('\\', "/");
     confined_relative(root, &value)?;
     Ok(value)
+}
+
+fn relative_runtime(root: &Path, path: &Path) -> Result<String> {
+    let runtime = runtime_jin_dir(root)?;
+    let value = path.strip_prefix(&runtime).map_err(|_| {
+        JinError::Integrity(format!(
+            "operation image escaped local runtime: {}",
+            path.display()
+        ))
+    })?;
+    let value = value.to_string_lossy().replace('\\', "/");
+    confined_relative(&runtime, &value)?;
+    Ok(value)
+}
+
+fn relative_image(root: &Path, path: &Path) -> Result<String> {
+    if crate::Config::is_portable_workspace(root) {
+        relative_runtime(root, path)
+    } else {
+        relative(root, path)
+    }
 }
 
 fn persist_record(root: &Path, record: &OperationRecord) -> Result<()> {
@@ -387,7 +412,7 @@ fn staged_image(
     ensure_operation_dir(root, operation_id, false)?;
     Ok(StagedImage {
         exists: bytes.is_some(),
-        path: relative(root, &path)?,
+        path: relative_image(root, &path)?,
         sha256: sha256(content),
     })
 }
@@ -440,7 +465,12 @@ fn image_matches(image: &StagedImage, canonical: &Path) -> Result<bool> {
 }
 
 fn verified_image_bytes(root: &Path, image: &StagedImage) -> Result<Vec<u8>> {
-    let path = confined_relative(root, &image.path)?;
+    let image_root = if crate::Config::is_portable_workspace(root) {
+        runtime_jin_dir(root)?
+    } else {
+        root.to_path_buf()
+    };
+    let path = confined_relative(&image_root, &image.path)?;
     let metadata = std::fs::symlink_metadata(&path)?;
     if metadata.file_type().is_symlink() || !metadata.is_file() {
         return Err(JinError::Integrity(format!(
@@ -449,7 +479,7 @@ fn verified_image_bytes(root: &Path, image: &StagedImage) -> Result<Vec<u8>> {
         )));
     }
     let bytes = std::fs::read(&path)?;
-    let after_path = confined_relative(root, &image.path)?;
+    let after_path = confined_relative(&image_root, &image.path)?;
     let after = std::fs::symlink_metadata(after_path)?;
     if after.file_type().is_symlink() || !after.is_file() || after.len() != metadata.len() {
         return Err(JinError::Integrity(format!(
@@ -470,11 +500,19 @@ fn validate_record(root: &Path, record: &OperationRecord) -> Result<()> {
     validate_operation_id(&record.operation_id)?;
     for (index, target) in record.targets.iter().enumerate() {
         confined_relative(root, &target.canonical_path)?;
+        let prefix = if crate::Config::is_portable_workspace(root) {
+            ""
+        } else {
+            ".jin/"
+        };
         let expected_before = format!(
-            ".jin/{OPERATIONS_DIR}/{}/{index}.before",
+            "{prefix}{OPERATIONS_DIR}/{}/{index}.before",
             record.operation_id
         );
-        let expected_post = format!(".jin/{OPERATIONS_DIR}/{}/{index}.post", record.operation_id);
+        let expected_post = format!(
+            "{prefix}{OPERATIONS_DIR}/{}/{index}.post",
+            record.operation_id
+        );
         if target.before.path != expected_before || target.post.path != expected_post {
             return Err(JinError::Integrity(format!(
                 "operation image path mismatch for target {index}"
@@ -488,7 +526,9 @@ fn validate_record(root: &Path, record: &OperationRecord) -> Result<()> {
 
 fn apply_image(root: &Path, image: &StagedImage, canonical: &Path) -> Result<()> {
     if image.exists {
-        fs::atomic_write(canonical, &verified_image_bytes(root, image)?)
+        let bytes = verified_image_bytes(root, image)?;
+        crate::store::history::prepare_compound_replacement(root, canonical, &bytes)?;
+        fs::atomic_write(canonical, &bytes)
     } else if canonical.exists() {
         std::fs::remove_file(canonical).map_err(JinError::Io)
     } else {
@@ -881,6 +921,9 @@ where
 {
     validate_operation_id(operation_id)?;
     let _lock = acquire_lock(root)?;
+    if crate::workspace::is_shared(root) {
+        crate::store::canonical_scan::scan_identities(root)?;
+    }
     let recovered = recover_locked(root)?;
     if recovered.blocked > 0 {
         return Err(JinError::OperationBlocked {

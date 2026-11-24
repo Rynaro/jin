@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 
 use crate::id::new_ulid;
 use crate::model::list::{BoardColumn, BoardColumnType, List, WorkflowKind};
-use crate::model::{Task, TaskStatus};
+use crate::model::{CaptureReview, Task, TaskStatus};
 use crate::store::fs;
 use crate::{Config, JinError, Result};
 
@@ -189,10 +189,15 @@ fn target_for_task(cfg: &Config, task: &Task) -> Result<TargetPlan> {
 
 /// Create with a validated owning workflow. A new Board task starts in Queue
 /// unless a concrete column is requested; checklist tasks never gain a column.
-pub fn create_task(
+pub fn create_task(root: &Path, params: CreateTaskParams, column_id: Option<&str>) -> Result<Task> {
+    create_task_with_capture_review(root, params, column_id, None)
+}
+
+pub fn create_task_with_capture_review(
     root: &Path,
     mut params: CreateTaskParams,
     column_id: Option<&str>,
+    capture_review: Option<CaptureReview>,
 ) -> Result<Task> {
     super::lists::ensure_default_list_for_root(root)?;
     let cfg = Config::load(root)?;
@@ -244,6 +249,7 @@ pub fn create_task(
             let mut task =
                 tasks::prepare_new_task(&cfg.tasks_dir(), params, column, initial_status)?;
             task.frontmatter.id = id.clone();
+            task.frontmatter.capture_review = capture_review.clone();
             super::recurrence::initialize_created(&mut task, upcoming_count)?;
             let path = cfg.tasks_dir().join(fs::task_filename(&id));
             let plans = super::recurrence::plan(

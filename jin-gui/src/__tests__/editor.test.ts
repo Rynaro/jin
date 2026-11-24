@@ -24,6 +24,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   mountEditor,
+  noteOutline,
   toggleInlineWrap,
   toggleLink,
   toggleLinePrefix,
@@ -116,6 +117,18 @@ describe('G-EDITOR-SMOKE — CM6 mounts in jsdom and renders text', () => {
     handle.destroy();
     // After destroy, the CM6 editor DOM is removed
     expect(container.querySelector('.cm-editor')).toBeNull();
+  });
+});
+
+describe('G-NOTE-OUTLINE — Markdown-faithful document navigation', () => {
+  it('includes ATX and Setext headings, preserves source order, and ignores fenced examples', () => {
+    const outline = noteOutline('# Opening\n\nA second title\n---\n\n```md\n# Example only\n```\n\n### *Closing*');
+    expect(outline.map(({ level, text }) => [level, text])).toEqual([
+      [1, 'Opening'],
+      [2, 'A second title'],
+      [3, 'Closing'],
+    ]);
+    expect(outline.map(item => item.position)).toEqual([0, 11, 57]);
   });
 });
 
@@ -1022,7 +1035,7 @@ describe('G-TOOLBAR-STRUCTURE — toolbar and footer DOM structure is present', 
     const container = makeContainer();
     const handle = mountEditor(container, { doc: '', onSave: async () => {} });
 
-    for (const label of ['Structure', 'Inline formatting', 'Lists', 'Blocks', 'Writing modes']) {
+    for (const label of ['Structure', 'Inline formatting', 'Lists', 'Blocks', 'Media']) {
       expect(container.querySelector(`[role="group"][aria-label="${label}"]`)).not.toBeNull();
     }
     expect(container.querySelector('[aria-label="Heading 1"]')).not.toBeNull();
@@ -1035,7 +1048,7 @@ describe('G-TOOLBAR-STRUCTURE — toolbar and footer DOM structure is present', 
     handle.destroy();
   });
 
-  it('keeps secondary commands reachable through More and restores its trigger on Escape', () => {
+  it('keeps secondary formatting in More and writing settings in the footer', () => {
     const container = makeContainer();
     const handle = mountEditor(container, { doc: '', onSave: async () => {} });
     const more = container.querySelector<HTMLDetailsElement>('.cm-toolbar__more')!;
@@ -1044,12 +1057,18 @@ describe('G-TOOLBAR-STRUCTURE — toolbar and footer DOM structure is present', 
     expect(more.open).toBe(false);
     expect(more.querySelector('[aria-label="Heading 1"]')).not.toBeNull();
     expect(more.querySelector('[aria-label="Add image or attachment"]')).not.toBeNull();
-    expect(more.querySelector('[aria-label="Typewriter scrolling"]')).not.toBeNull();
+    expect(container.querySelector('.cm-footer__menu--writing [aria-label="Typewriter scrolling"]')).not.toBeNull();
 
     more.open = true;
     more.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(more.open).toBe(false);
     expect(document.activeElement).toBe(trigger);
+    const writing = container.querySelector<HTMLDetailsElement>('.cm-footer__menu--writing')!;
+    const writingTrigger = writing.querySelector<HTMLElement>('summary')!;
+    writing.open = true;
+    writing.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(writing.open).toBe(false);
+    expect(document.activeElement).toBe(writingTrigger);
     handle.destroy();
   });
 
@@ -1118,8 +1137,8 @@ describe('G-FOOTER-STATS — footer shows live word and char counts', () => {
     expect(statsEl, '.cm-footer__stats must exist').not.toBeNull();
 
     // "hello world" = 2 words, 11 chars
-    expect(statsEl?.textContent).toContain('2 words');
-    expect(statsEl?.textContent).toContain('11 chars');
+    expect(statsEl?.querySelector('summary')?.textContent).toContain('2 words');
+    expect(statsEl?.querySelector('.cm-footer__char-count')?.textContent).toContain('11 chars');
 
     handle.destroy();
   });
@@ -1138,8 +1157,8 @@ describe('G-FOOTER-STATS — footer shows live word and char counts', () => {
     });
 
     // "one two three" = 3 words, 13 chars
-    expect(statsEl?.textContent, 'stats must update after doc change').toContain('3 words');
-    expect(statsEl?.textContent).toContain('13 chars');
+    expect(statsEl?.querySelector('summary')?.textContent, 'stats must update after doc change').toContain('3 words');
+    expect(statsEl?.querySelector('.cm-footer__char-count')?.textContent).toContain('13 chars');
 
     handle.destroy();
   });
@@ -1149,8 +1168,8 @@ describe('G-FOOTER-STATS — footer shows live word and char counts', () => {
     const handle = mountEditor(container, { doc: '', onSave: async () => {} });
 
     const statsEl = container.querySelector('.cm-footer__stats');
-    expect(statsEl?.textContent).toContain('0 words');
-    expect(statsEl?.textContent).toContain('0 chars');
+    expect(statsEl?.querySelector('summary')?.textContent).toContain('0 words');
+    expect(statsEl?.querySelector('.cm-footer__char-count')?.textContent).toContain('0 chars');
 
     handle.destroy();
   });

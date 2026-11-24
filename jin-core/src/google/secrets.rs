@@ -44,12 +44,12 @@ fn account_keyring_user(account_id: &GoogleAccountId) -> String {
     format!("google/{}", account_id.as_str())
 }
 
-fn account_token_path(root: &Path, account_id: &GoogleAccountId) -> PathBuf {
-    root.join(".jin")
+fn account_token_path(root: &Path, account_id: &GoogleAccountId) -> crate::Result<PathBuf> {
+    Ok(crate::Config::state_dir(root)?
         .join("sync")
         .join("accounts")
         .join(account_id.as_str())
-        .join("tokens.enc")
+        .join("tokens.enc"))
 }
 
 // ── TokenSet ──────────────────────────────────────────────────────────────────
@@ -205,7 +205,7 @@ impl EncryptedFileStore {
             ));
         }
 
-        let sync_dir = root.join(".jin").join("sync");
+        let sync_dir = crate::Config::state_dir(root)?.join("sync");
         std::fs::create_dir_all(&sync_dir)?;
 
         Ok(Self {
@@ -226,7 +226,7 @@ impl EncryptedFileStore {
                     .to_string(),
             ));
         }
-        let sync_dir = root.join(".jin").join("sync");
+        let sync_dir = crate::Config::state_dir(root)?.join("sync");
         std::fs::create_dir_all(&sync_dir)?;
         Ok(Self {
             path: sync_dir.join("tokens.enc"),
@@ -245,7 +245,7 @@ impl EncryptedFileStore {
                     .to_string(),
             ));
         }
-        let path = account_token_path(root, account_id);
+        let path = account_token_path(root, account_id)?;
         let parent = path
             .parent()
             .ok_or_else(|| JinError::Integrity("account token path has no parent".to_string()))?;
@@ -464,7 +464,9 @@ pub fn load_tokens_with_passphrase(
 /// Returns `true` if the file existed and was removed, `false` if there was
 /// nothing to remove.
 fn delete_token_file_direct(root: &Path) -> crate::Result<bool> {
-    let path = root.join(".jin").join("sync").join("tokens.enc");
+    let path = crate::Config::state_dir(root)?
+        .join("sync")
+        .join("tokens.enc");
     if path.exists() {
         std::fs::remove_file(&path)?;
         Ok(true)
@@ -581,7 +583,7 @@ pub fn delete_tokens_for_account(
         .ok()
         .and_then(|entry| entry.delete_credential().ok())
         .is_some();
-    let path = account_token_path(root, account_id);
+    let path = account_token_path(root, account_id)?;
     let file_deleted = if path.exists() {
         std::fs::remove_file(path)?;
         true
@@ -606,7 +608,8 @@ pub fn copy_legacy_file_tokens_for_account(
         || verified.refresh_token != tokens.refresh_token
         || verified.client_id != tokens.client_id
     {
-        let _ = std::fs::remove_file(account_token_path(root, account_id));
+        let _ = account_token_path(root, account_id)
+            .and_then(|path| std::fs::remove_file(path).map_err(JinError::Io));
         return Err(JinError::Integrity(
             "account token copy verification failed; legacy token retained".to_string(),
         ));

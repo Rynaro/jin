@@ -43,11 +43,19 @@ const ASSET_REFERENCE_RE = /^jin-asset:\/\/sha256\/[a-f0-9]{64}$/;
 // The real Token/StateCore are structurally richer, so they remain assignable here.
 interface MdToken {
   type: string;
+  tag?: string;
+  map?: [number, number] | null;
   level: number;
   content: string;
   children: MdToken[] | null;
   attrGet(name: string): string | null;
   attrJoin(name: string, value: string): void;
+}
+
+export interface MarkdownHeading {
+  level: number;
+  text: string;
+  position: number;
 }
 interface MdStateCore {
   tokens: MdToken[];
@@ -164,6 +172,33 @@ const md = new MarkdownIt({
     return '';
   },
 });
+
+/**
+ * Return headings exactly as markdown-it understands the source.  The editor
+ * uses this for navigation, keeping Setext headings and fenced examples in
+ * lockstep with Reading view without a second Markdown parser.
+ */
+export function markdownHeadings(source: string): MarkdownHeading[] {
+  const lineOffsets = [0];
+  for (let index = 0; index < source.length; index += 1) if (source[index] === '\n') lineOffsets.push(index + 1);
+  const headings: MarkdownHeading[] = [];
+  const tokens = md.parse(source, {}) as unknown as MdToken[];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const opening = tokens[index];
+    const inline = tokens[index + 1];
+    if (opening.type !== 'heading_open' || !opening.map || inline?.type !== 'inline') continue;
+    const text = (inline.children ?? [])
+      .filter(token => token.type === 'text' || token.type === 'code_inline' || token.type === 'image' || token.type === 'softbreak' || token.type === 'hardbreak')
+      .map(token => token.type === 'softbreak' || token.type === 'hardbreak' ? ' ' : token.content)
+      .join('').trim();
+    headings.push({
+      level: Number(opening.tag?.slice(1)) || 1,
+      text,
+      position: lineOffsets[opening.map[0]] ?? 0,
+    });
+  }
+  return headings;
+}
 // markdown-it's DEFAULT validateLink (blocks javascript:/vbscript:/file:/data:) is KEPT — do NOT override.
 // The one narrow extension is Jin's content-addressed attachment scheme. It
 // is converted into an inert placeholder after sanitization below; it never

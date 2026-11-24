@@ -24,6 +24,7 @@ import type {
   AppConfigDto,
   AuthStatusDto,
   CaptureResultDto,
+  CaptureReviewItemDto,
   CollectionDto,
   CollectionQueryDto,
   EventDetailDto,
@@ -56,6 +57,7 @@ import type {
   TagDto,
   TaskDto,
   TestNotificationResultDto,
+  WorkspaceStatusDto,
   FirstRunStateDto,
   LaunchStateDto,
 } from './types/dto';
@@ -131,6 +133,18 @@ export function createTaskFromNote(input: {
   list?: string;
 }): Promise<{ task: TaskDto; note: NoteDto }> {
   return invoke('create_task_from_note', { input });
+}
+
+export function reviewCaptureCreateTask(input: {
+  operation_id: string; note_id: string; expected_revision: number; title: string; excerpt: string; list?: string;
+}): Promise<{ task: TaskDto; note: NoteDto }> {
+  return invoke('review_capture_create_task', { input });
+}
+
+export function reviewCaptureAttachEvent(input: {
+  operation_id: string; note_id: string; expected_revision: number; event_id: string;
+}): Promise<NoteDto> {
+  return invoke<NoteDto>('review_capture_attach_event', { input });
 }
 
 /** Create a local prep note attached to this persisted event identity. */
@@ -799,14 +813,27 @@ export function linkObjects(
 
 export function capture(
   text: string,
-  options?: { as_task?: boolean; list?: string }
+  options?: { as_task?: boolean; list?: string; review?: boolean; return_on?: string }
 ): Promise<CaptureResultDto> {
   return invoke<CaptureResultDto>('capture', {
     text,
     as_task: options?.as_task,
     list: options?.list,
+    review: options?.review,
+    return_on: options?.return_on,
   });
 }
+
+export function listCaptureReview(): Promise<CaptureReviewItemDto[]> {
+  return invoke<CaptureReviewItemDto[]>('list_capture_review', {});
+}
+
+export function setCaptureReview(input: {
+  kind: 'note' | 'task'; id: string; state: 'pending' | 'deferred' | 'processed'; return_on?: string;
+}): Promise<void> {
+  return invoke<void>('set_capture_review', { input });
+}
+
 
 // ── Sync / auth / export ───────────────────────────────────────────────────────
 
@@ -908,6 +935,20 @@ export function exportFiles(dest: string, force?: boolean): Promise<ExportResult
 
 export function appConfig(): Promise<AppConfigDto> {
   return invoke<AppConfigDto>('app_config', {});
+}
+
+/** Checks Jin's local view of canonical files. External providers remain opaque. */
+export function workspaceStatus(): Promise<WorkspaceStatusDto> {
+  return invoke<WorkspaceStatusDto>('workspace_status', {});
+}
+
+/** Rebuild the local search/index projection after a clean workspace check. */
+export function refreshWorkspaceProjection(): Promise<WorkspaceStatusDto> {
+  return invoke<WorkspaceStatusDto>('refresh_workspace_projection', {});
+}
+
+export function openWorkspaceFolder(): Promise<void> {
+  return invoke<void>('open_workspace_folder', {});
 }
 
 export function notificationStatus(): Promise<NotificationStatusDto> {

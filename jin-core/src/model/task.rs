@@ -2,6 +2,7 @@ use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate};
 use serde::{Deserialize, Serialize};
 
 use super::edge::LinkEntry;
+use super::review::CaptureReview;
 
 /// A reminder stored inline in a Task file's frontmatter.
 ///
@@ -416,6 +417,10 @@ pub struct TaskFrontmatter {
     pub deleted_at: Option<DateTime<FixedOffset>>,
     #[serde(default)]
     pub links: Vec<LinkEntry>,
+    /// Optional capture follow-up. Legacy tasks without it remain eligible when
+    /// they are open, top-level Inbox tasks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capture_review: Option<CaptureReview>,
     /// Which section within the task's list this task belongs to (nullable = "No Section").
     #[serde(default)]
     pub section_id: Option<String>,

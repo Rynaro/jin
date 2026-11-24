@@ -126,6 +126,13 @@ pub fn write_note_in(notes_dir: &Path, folder: &str, note: &Note) -> Result<Path
     let filename = note_filename(&note.frontmatter.id, &note.frontmatter.title);
     let path = dir.join(&filename);
     let content = frontmatter::render(&note.frontmatter, &note.body)?;
+    super::history::prepare_replacement(
+        notes_dir,
+        "note",
+        &note.frontmatter.id,
+        &path,
+        content.as_bytes(),
+    )?;
     atomic_write(&path, content.as_bytes())?;
     Ok(path)
 }
@@ -352,6 +359,13 @@ pub fn task_filename(id: &str) -> String {
 pub fn write_task(tasks_dir: &Path, task: &Task) -> Result<PathBuf> {
     let path = tasks_dir.join(task_filename(&task.frontmatter.id));
     let content = frontmatter::render(&task.frontmatter, &task.body)?;
+    super::history::prepare_replacement(
+        tasks_dir,
+        "task",
+        &task.frontmatter.id,
+        &path,
+        content.as_bytes(),
+    )?;
     atomic_write(&path, content.as_bytes())?;
     Ok(path)
 }
@@ -407,6 +421,13 @@ pub fn event_filename(id: &str) -> String {
 pub fn write_event(events_dir: &Path, event: &Event) -> Result<PathBuf> {
     let path = events_dir.join(event_filename(&event.frontmatter.id));
     let content = frontmatter::render(&event.frontmatter, &event.body)?;
+    super::history::prepare_replacement(
+        events_dir,
+        "event",
+        &event.frontmatter.id,
+        &path,
+        content.as_bytes(),
+    )?;
     atomic_write(&path, content.as_bytes())?;
     Ok(path)
 }
@@ -470,7 +491,14 @@ pub fn write_list(lists_dir: &Path, list: &List) -> Result<PathBuf> {
     std::fs::create_dir_all(lists_dir)?;
     let path = lists_dir.join(list_filename(&list.frontmatter.id));
     let content = frontmatter::render(&list.frontmatter, &list.body)?;
-    std::fs::write(&path, content)?;
+    super::history::prepare_replacement(
+        lists_dir,
+        "list",
+        &list.frontmatter.id,
+        &path,
+        content.as_bytes(),
+    )?;
+    atomic_write(&path, content.as_bytes())?;
     Ok(path)
 }
 
@@ -526,7 +554,14 @@ pub fn write_tag(tags_dir: &Path, tag: &Tag) -> Result<PathBuf> {
     std::fs::create_dir_all(tags_dir)?;
     let path = tags_dir.join(tag_filename(&tag.frontmatter.slug));
     let content = frontmatter::render(&tag.frontmatter, &tag.body)?;
-    std::fs::write(&path, content)?;
+    super::history::prepare_replacement(
+        tags_dir,
+        "tag",
+        &tag.frontmatter.slug,
+        &path,
+        content.as_bytes(),
+    )?;
+    atomic_write(&path, content.as_bytes())?;
     Ok(path)
 }
 
@@ -662,6 +697,7 @@ mod tests {
             deleted_at: None,
             tags: vec![],
             links: vec![],
+            capture_review: None,
             properties: Default::default(),
             revision: 1,
             extra: Default::default(),

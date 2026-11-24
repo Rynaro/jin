@@ -56,7 +56,7 @@ import {
 } from '../lib/capture/render';
 import { isJinErrorDto } from '../types/error';
 import {
-  capture, createNote, createTask, createEvent, createRoutedEvent,
+  capture, createNote, createTask, createEvent, createRoutedEvent, listCaptureReview, setCaptureReview, getNoteById, listEvents, reviewCaptureAttachEvent, reviewCaptureCreateTask, appConfig,
   listGoogleAccounts, listLists, newOperationId, getEventDetailById,
 } from '../invoke';
 import {
@@ -75,6 +75,26 @@ import { initIcons } from '../lib/icons';
 import { mountCompactEditor, type CompactEditorHandle } from '../lib/notes/editor';
 import { JinSelectField } from '../lib/ui/select';
 import { TagInput } from '../lib/ui/tag_input';
+import { renderCaptureReview, type CaptureReviewActions } from '../lib/capture/review';
+
+function currentDateInTimezone(timeZone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const field = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value;
+    const year = field('year');
+    const month = field('month');
+    const day = field('day');
+    if (year && month && day) return `${year}-${month}-${day}`;
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default class CaptureController extends Controller {
   // ── Targets ───────────────────────────────────────────────────────────────
@@ -85,6 +105,8 @@ export default class CaptureController extends Controller {
     'captureText',
     'captureAsTask',
     'captureList',
+    'captureReviewEnabled',
+    'captureKindOptions', 'captureNoteOptions', 'captureTaskOptions',
     'captureError',
     'captureSubmit',
     'noteEditor',
@@ -119,6 +141,7 @@ export default class CaptureController extends Controller {
     'formEvent',
     // P8: due date picker
     'dueDateDialog',
+    'reviewDialog', 'reviewList', 'reviewError', 'reviewStatus', 'reviewCount', 'reviewCountLabel', 'captureStatus',
   ];
 
   declare modalTarget: HTMLDialogElement;
@@ -128,6 +151,10 @@ export default class CaptureController extends Controller {
   declare captureAsTaskTarget: HTMLInputElement;
   // S6: converted from HTMLInputElement (free text) to HTMLSelectElement (id-valued).
   declare captureListTarget: HTMLSelectElement;
+  declare captureReviewEnabledTarget: HTMLInputElement;
+  declare captureKindOptionsTarget: HTMLElement;
+  declare captureNoteOptionsTarget: HTMLElement;
+  declare captureTaskOptionsTarget: HTMLElement;
   declare captureErrorTarget: HTMLElement;
   declare captureSubmitTarget: HTMLButtonElement;
   declare noteEditorTarget: HTMLElement;
@@ -148,6 +175,26 @@ export default class CaptureController extends Controller {
   // P8: due date picker
   declare dueDateDialogTarget: HTMLDialogElement;
   declare hasDueDateDialogTarget: boolean;
+  declare reviewDialogTarget: HTMLDialogElement;
+  declare reviewListTarget: HTMLElement;
+  declare reviewErrorTarget: HTMLElement;
+  declare reviewStatusTarget: HTMLElement;
+  declare reviewCountTarget: HTMLElement;
+  declare hasReviewCountTarget: boolean;
+  declare reviewCountLabelTarget: HTMLElement;
+  declare hasReviewCountLabelTarget: boolean;
+  declare captureStatusTarget: HTMLElement;
+  declare hasCaptureStatusTarget: boolean;
+  private reviewReturnFocus: HTMLElement | null = null;
+  private reviewOperationPayload = new Map<string, Record<string, unknown>>();
+  private reviewRequest = 0;
+  private expandedReviewId: string | null = null;
+  private reviewEvents: import('../types/dto').EventDto[] | null = null;
+  private selectedReviewEventId: string | null = null;
+  private reviewBusyKeys = new Set<string>();
+  private readonly handleReviewVisibility = (): void => {
+    if (!document.hidden) void this.refreshReviewCount();
+  };
   declare eventTitleTarget: HTMLInputElement;
   declare eventWhenTarget: HTMLInputElement;
   declare eventWhenTriggerTarget: HTMLButtonElement;
@@ -214,10 +261,13 @@ export default class CaptureController extends Controller {
     this.eventDestinationTarget.addEventListener('change', this.handleEventDestinationChange);
     // S6: populate the list selects with id-valued options on connect.
     void this.populateCaptureListSelects();
+    void this.refreshReviewCount();
+    document.addEventListener('visibilitychange', this.handleReviewVisibility);
     if (this.hasEventDestinationTarget) void this.populateEventDestinations();
   }
 
   disconnect(): void {
+    document.removeEventListener('visibilitychange', this.handleReviewVisibility);
     this.modalTarget.removeEventListener('click', this.handleModalClick);
     this.modalTarget.removeEventListener('cancel', this.handleModalCancel);
     this.noteEditor?.destroy();
@@ -267,6 +317,7 @@ export default class CaptureController extends Controller {
     if (!this.eventWhenTarget.dataset.start) this.setDefaultEventWhen();
     this.modalTarget.showModal();
     this.captureTextTarget.focus();
+    this.syncCaptureOptions();
     initIcons();
   }
 
@@ -326,6 +377,16 @@ export default class CaptureController extends Controller {
   }
 
   selectCapture(): void { this.switchTab('capture'); this.captureTextTarget.focus(); }
+  captureKeydown(event: KeyboardEvent): void { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); void this.submitCapture(); } }
+  captureTypeChanged(): void { this.syncCaptureOptions(); }
+  private syncCaptureOptions(): void {
+    const asTask = this.captureAsTaskTarget.checked;
+    this.captureNoteOptionsTarget.hidden = asTask;
+    this.captureTaskOptionsTarget.hidden = !asTask;
+    this.captureReviewEnabledTarget.disabled = asTask;
+    this.captureListTarget.disabled = !asTask;
+    if (asTask) this.captureReviewEnabledTarget.checked = false;
+  }
   selectNote(): void { this.switchTab('note'); this.noteEditor?.focus(); }
   selectTask(): void { this.switchTab('task'); this.taskTitleTarget.focus(); }
   selectEvent(): void { this.switchTab('event'); this.eventTitleTarget.focus(); }
@@ -352,6 +413,7 @@ export default class CaptureController extends Controller {
       text: this.captureTextTarget.value,
       asTask: this.captureAsTaskTarget.checked,
       list: this.captureListTarget.value,
+      review: this.captureReviewEnabledTarget.checked,
     };
     const validation = validateCaptureForm(state);
     if (!validation.valid) {
@@ -367,11 +429,12 @@ export default class CaptureController extends Controller {
       const result = await capture(payload.text, {
         as_task: payload.as_task,
         list: payload.list,
+        review: payload.review,
       });
       if (!this.isCurrentSession(session)) return;
-      this.close();
-      // Re-fetch the new item by navigating to it (post-mutation refresh via core)
-      this.navigateAfterCreate(result.kind === 'note' ? 'notes' : 'tasks', result.id);
+      this.forceClose();
+      this.announce(result.kind === 'task' ? 'Task captured.' : 'Note captured.');
+      void this.refreshReviewCount();
     } catch (err: unknown) {
       if (!this.isCurrentSession(session)) return;
       if (isJinErrorDto(err)) {
@@ -382,6 +445,213 @@ export default class CaptureController extends Controller {
     } finally {
       this.finishSubmit('capture', session, this.captureSubmitTarget);
     }
+  }
+
+  openReview(): void {
+    this.reviewReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    this.reviewDialogTarget.showModal();
+    this.expandedReviewId = null;
+    this.reviewEvents = null;
+    this.selectedReviewEventId = null;
+    void this.loadReview({ initialFocus: true });
+  }
+
+  closeReview(): void {
+    this.reviewDialogTarget.close();
+    this.reviewReturnFocus?.focus();
+    this.reviewReturnFocus = null;
+  }
+
+  async loadReview({ focusId, initialFocus = false }: { focusId?: string; initialFocus?: boolean } = {}): Promise<void> {
+    const request = ++this.reviewRequest;
+    this.reviewDialogTarget.setAttribute('aria-busy', 'true');
+    clearFormError(this.reviewErrorTarget);
+    try {
+      const items = await listCaptureReview();
+      if (request !== this.reviewRequest || !this.reviewDialogTarget.open) return;
+      this.reviewItems = items;
+      const first = renderCaptureReview(this.reviewListTarget, items, this.reviewEvents, this.expandedReviewId, this.selectedReviewEventId, this.reviewActions());
+      initIcons(this.reviewListTarget);
+      this.applyReviewCount(items.length);
+      this.reviewStatusTarget.hidden = items.length > 0;
+      this.reviewStatusTarget.textContent = items.length ? '' : 'Nothing needs a decision right now.';
+      if (initialFocus) first?.focus();
+      else if (focusId) {
+        const target = this.reviewListTarget.querySelector<HTMLButtonElement>(`[data-review-id="${CSS.escape(focusId)}"]`);
+        (target ?? first)?.focus();
+      }
+    } catch (error) { renderFormError(this.reviewErrorTarget, isJinErrorDto(error) ? error.message : 'Could not load captures. Try again.'); }
+    finally { this.reviewDialogTarget.removeAttribute('aria-busy'); }
+  }
+
+  private renderReview(): void {
+    renderCaptureReview(this.reviewListTarget, this.reviewItems, this.reviewEvents, this.expandedReviewId, this.selectedReviewEventId, this.reviewActions());
+    initIcons(this.reviewListTarget);
+  }
+
+  private reviewActions(): CaptureReviewActions {
+    return {
+      toggle: item => {
+        this.expandedReviewId = this.expandedReviewId === item.id ? null : item.id;
+        this.selectedReviewEventId = null;
+        this.renderReview();
+        this.reviewListTarget.querySelector<HTMLButtonElement>(`[data-review-id="${CSS.escape(item.id)}"]`)?.focus();
+      },
+      open: item => {
+        this.closeReview();
+        this.navigateAfterCreate(item.kind === 'note' ? 'notes' : 'tasks', item.id);
+      },
+      process: item => void this.setReview(item.kind, item.id, 'processed'),
+      pickCheckback: (item, trigger) => this.openReviewCheckbackPicker(item, trigger),
+      task: item => void this.createReviewTask(item.id),
+      loadEvents: item => void this.loadReviewEvents(item.id),
+      selectEvent: (_item, eventId) => {
+        this.selectedReviewEventId = eventId || null;
+        this.renderReview();
+      },
+      attach: (item, eventId) => void this.attachReviewEvent(item.id, eventId),
+    };
+  }
+
+  private reviewItems: import('../types/dto').CaptureReviewItemDto[] = [];
+
+  private async openReviewCheckbackPicker(
+    item: import('../types/dto').CaptureReviewItemDto,
+    trigger: HTMLButtonElement,
+  ): Promise<void> {
+    if (!this.hasDueDateDialogTarget) return;
+    const editor = this.application.getControllerForElementAndIdentifier(
+      this.dueDateDialogTarget,
+      'temporal-editor',
+    ) as TemporalEditorController | null;
+    if (!editor) return;
+    let displayTz = 'UTC';
+    try {
+      displayTz = (await appConfig()).display_tz || displayTz;
+    } catch {
+      renderFormError(this.reviewErrorTarget, 'Could not determine today for this workspace. Try again.');
+      return;
+    }
+    if (!trigger.isConnected || !this.reviewDialogTarget.open) return;
+    editor.open({
+      initialDue: item.return_on,
+      presentation: 'review',
+      requireDate: true,
+      reviewToday: currentDateInTimezone(displayTz),
+      restoreFocusTo: trigger,
+      onCommit: result => {
+        if (result.kind === 'set') void this.setReview(item.kind, item.id, 'deferred', result.date);
+      },
+    });
+  }
+
+  private async loadReviewEvents(focusId: string): Promise<void> {
+    if (this.reviewEvents !== null) {
+      this.renderReview();
+      return;
+    }
+    try {
+      this.reviewEvents = (await listEvents()).filter(event => event.status !== 'cancelled');
+      this.renderReview();
+      this.reviewListTarget.querySelector<HTMLButtonElement>(`[data-review-id="${CSS.escape(focusId)}"]`)?.focus();
+    } catch (error) {
+      renderFormError(this.reviewErrorTarget, isJinErrorDto(error) ? error.message : 'Could not load calendar events. Try again.');
+    }
+  }
+
+  private async refreshReviewCount(): Promise<void> {
+    if (!this.hasReviewCountTarget || !this.hasReviewCountLabelTarget) return;
+    try {
+      this.applyReviewCount((await listCaptureReview()).length);
+    } catch {
+      this.reviewCountTarget.hidden = true;
+      this.reviewCountLabelTarget.textContent = '';
+    }
+  }
+
+  private applyReviewCount(count: number): void {
+    if (!this.hasReviewCountTarget || !this.hasReviewCountLabelTarget) return;
+    this.reviewCountTarget.textContent = String(count);
+    this.reviewCountTarget.hidden = count === 0;
+    this.reviewCountLabelTarget.textContent = count ? `${count} captures need review` : '';
+  }
+
+
+  private async setReview(kind: 'note' | 'task', id: string, state: 'deferred' | 'processed', returnOn?: string): Promise<void> {
+    const key = `${kind}:${id}`;
+    if (this.reviewBusyKeys.has(key)) return;
+    this.reviewBusyKeys.add(key);
+    try {
+      await setCaptureReview({ kind, id, state, return_on: returnOn });
+      this.announce(state === 'processed' ? 'Capture filed.' : 'Capture will return on the selected date.');
+      await this.loadReview({ focusId: id });
+      void this.refreshReviewCount();
+    } catch (error) {
+      renderFormError(this.reviewErrorTarget, isJinErrorDto(error) ? error.message : 'Could not update capture. Try again.');
+    } finally {
+      this.reviewBusyKeys.delete(key);
+    }
+  }
+
+  private async createReviewTask(noteId: string): Promise<void> {
+    const key = `note:${noteId}`;
+    if (this.reviewBusyKeys.has(key)) return;
+    this.reviewBusyKeys.add(key);
+    try {
+      let payload = this.reviewOperationPayload.get(key);
+      if (!payload) {
+        const note = await getNoteById(noteId);
+        payload = {
+          operation_id: newOperationId('capture-review-task'),
+          note_id: note.id,
+          expected_revision: note.revision ?? 0,
+          title: note.title,
+          excerpt: (note.body_markdown ?? '').trim() || note.title,
+        };
+        this.reviewOperationPayload.set(key, payload);
+      }
+      await reviewCaptureCreateTask(payload as Parameters<typeof reviewCaptureCreateTask>[0]);
+      this.reviewOperationPayload.delete(key);
+      this.announce('Linked task created.');
+      await this.loadReview();
+    } catch (error) {
+      renderFormError(this.reviewErrorTarget, isJinErrorDto(error) ? error.message : 'Could not create linked task. Try again.');
+    } finally {
+      this.reviewBusyKeys.delete(key);
+    }
+  }
+
+  private async attachReviewEvent(noteId: string, eventId: string): Promise<void> {
+    const key = `note:${noteId}`;
+    if (this.reviewBusyKeys.has(key)) return;
+    this.reviewBusyKeys.add(key);
+    try {
+      let payload = this.reviewOperationPayload.get(key);
+      if (!payload) {
+        const note = await getNoteById(noteId);
+        payload = {
+          operation_id: newOperationId('capture-review-attach'),
+          note_id: note.id,
+          expected_revision: note.revision ?? 0,
+          event_id: eventId,
+        };
+        this.reviewOperationPayload.set(key, payload);
+      }
+      await reviewCaptureAttachEvent(payload as Parameters<typeof reviewCaptureAttachEvent>[0]);
+      this.reviewOperationPayload.delete(key);
+      this.announce('Note attached to the selected event.');
+      await this.loadReview();
+      void this.refreshReviewCount();
+    } catch (error) {
+      renderFormError(this.reviewErrorTarget, isJinErrorDto(error) ? error.message : 'Could not attach this note. Try again.');
+    } finally {
+      this.reviewBusyKeys.delete(key);
+    }
+  }
+
+  private announce(message: string): void {
+    if (this.hasCaptureStatusTarget) this.captureStatusTarget.textContent = message;
+    if (this.hasCaptureStatusTarget) this.captureStatusTarget.hidden = false;
   }
 
   // ── Submit: create note ───────────────────────────────────────────────────
@@ -836,6 +1106,7 @@ export default class CaptureController extends Controller {
     // Quick capture
     this.captureTextTarget.value = '';
     this.captureAsTaskTarget.checked = false;
+    this.captureReviewEnabledTarget.checked = false;
     // S6: reset to 'inbox' (the id) so the select stays valid after a submit.
     this.captureListSelect?.setValue('inbox');
     clearFormError(this.captureErrorTarget);

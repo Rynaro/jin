@@ -539,6 +539,7 @@ export default class CalendarViewController extends Controller {
     // Render header with navigation
     const header = this.createMonthHeader();
     this.monthViewContentTarget.appendChild(header);
+    window.dispatchEvent(new Event('jin:calendar-header-rendered'));
 
     if (this.isFilterFullyHidden()) {
       this.monthViewContentTarget.appendChild(this.createFilterEmptyState());
@@ -653,6 +654,7 @@ export default class CalendarViewController extends Controller {
     this.monthViewContentTarget.innerHTML = '';
     const header = this.createMonthHeader();
     this.monthViewContentTarget.appendChild(header);
+    window.dispatchEvent(new Event('jin:calendar-header-rendered'));
     if (this.isFilterFullyHidden()) {
       this.monthViewContentTarget.appendChild(this.createFilterEmptyState());
       return;
@@ -674,6 +676,7 @@ export default class CalendarViewController extends Controller {
     this.dayViewContentTarget.innerHTML = '';
 
     this.dayViewContentTarget.appendChild(this.createMonthHeader());
+    window.dispatchEvent(new Event('jin:calendar-header-rendered'));
 
     if (this.isFilterFullyHidden()) {
       this.dayViewContentTarget.appendChild(this.createFilterEmptyState());
@@ -1121,18 +1124,29 @@ export default class CalendarViewController extends Controller {
 
     const controls = document.createElement('div');
     controls.className = 'calendar-month-controls';
+    if (this.viewMode === 'day') controls.classList.add('calendar-month-controls--day');
     const dragRegion = document.createElement('span');
     dragRegion.className = 'calendar-workspace-drag';
     dragRegion.setAttribute('data-tauri-drag-region', '');
     dragRegion.setAttribute('aria-hidden', 'true');
     const leading = document.createElement('div');
     leading.className = 'calendar-month-leading';
-    const title = document.createElement('span');
-    title.className = 'calendar-workspace-title';
-    title.textContent = eventMessage('calendar');
-    identity.append(title, monthYearLabel);
+    const contextHost = document.createElement('span');
+    contextHost.className = 'calendar-context-trigger-host';
+    contextHost.dataset.sidebarContextAnchor = 'events';
+    leading.append(contextHost);
+    const viewControls = document.createElement('div');
+    viewControls.className = 'calendar-view-controls';
+    if (this.viewMode !== 'day') {
+      const title = document.createElement('span');
+      title.className = 'calendar-workspace-title';
+      title.textContent = eventMessage('calendar');
+      identity.append(title);
+    }
+    identity.append(monthYearLabel);
     leading.append(identity);
-    controls.append(dragRegion, leading, this.createViewSwitch(), navContainer);
+    viewControls.append(this.createViewSwitch());
+    controls.append(dragRegion, leading, viewControls, navContainer);
     if (this.addButton) controls.appendChild(this.addButton);
     header.append(controls);
     return header;

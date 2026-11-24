@@ -2018,7 +2018,7 @@ dependencies = [
 
 [[package]]
 name = "jin"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2030,13 +2030,14 @@ dependencies = [
 
 [[package]]
 name = "jin-core"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "argon2",
  "base64 0.22.1",
  "chacha20poly1305",
  "chrono",
  "chrono-tz",
+ "dirs 5.0.1",
  "keyring",
  "rand 0.8.6",
  "reqwest 0.12.28",
@@ -2054,7 +2055,7 @@ dependencies = [
 
 [[package]]
 name = "jin-gui"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "block2",
  "chrono",

@@ -615,6 +615,7 @@ function makeExportResultDto(
     file_count: 42,
     included_audit: true,
     files: ['notes/', 'tasks/', 'events/', 'calendar.ics'],
+    verified: true,
     ...overrides,
   };
 }
@@ -705,6 +706,8 @@ function makeExportElements(): SettingsExportElements {
   const exportDestDisplay = document.createElement('span');
   const exportAuditIncluded = document.createElement('span');
   exportAuditIncluded.classList.add('hidden');
+  const exportVerified = document.createElement('span');
+  exportVerified.classList.add('hidden');
   const exportError = document.createElement('p');
   exportError.classList.add('hidden');
 
@@ -717,6 +720,7 @@ function makeExportElements(): SettingsExportElements {
     exportFileCount,
     exportDestDisplay,
     exportAuditIncluded,
+    exportVerified,
     exportError,
   };
 }
@@ -1553,8 +1557,12 @@ describe('formatExportError', () => {
 });
 
 describe('isExportDestCollision', () => {
-  it('returns true for code:2', () => {
-    expect(isExportDestCollision(makeJinErrorDto({ code: 2 }))).toBe(true);
+  it('returns true only for a non-empty export destination', () => {
+    expect(isExportDestCollision(makeJinErrorDto({ code: 2, message: "export destination '/tmp/copy' is not empty" }))).toBe(true);
+  });
+
+  it('returns false for another usage error', () => {
+    expect(isExportDestCollision(makeJinErrorDto({ code: 2, message: 'invalid input: export overlaps source' }))).toBe(false);
   });
 
   it('returns false for code:1', () => {

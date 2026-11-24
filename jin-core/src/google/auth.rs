@@ -73,6 +73,12 @@ impl GoogleAuthAttempt {
     }
 }
 
+impl Default for GoogleAuthAttempt {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn cancelled_error() -> JinError {
     JinError::Auth(
         "Google sign-in was cancelled. You can connect an account again whenever you are ready."
