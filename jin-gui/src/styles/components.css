@@ -539,24 +539,59 @@
 .jin-color-picker {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1);
+  gap: 0.375rem;
 }
 
 .jin-color-swatch {
   --sw: var(--accent);
-  inline-size: 1.75rem;
-  block-size: 1.75rem;
-  min-inline-size: 1.75rem;
-  min-block-size: 1.75rem;
+  position: relative;
+  inline-size: 1.875rem;
+  block-size: 1.875rem;
+  overflow: hidden;
   padding: 0;
-  border: 2px solid var(--workspace, var(--workspace-canvas));
-  border-radius: 50%;
-  background: var(--sw, var(--accent));
-  box-shadow: 0 0 0 1px var(--separator);
+  border: 1px solid color-mix(in srgb, var(--sw) 28%, var(--separator));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--sw) 13%, var(--workspace-canvas));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-on-accent) 32%, transparent), 0 1px 2px color-mix(in srgb, var(--ink-primary) 10%, transparent);
+  transition: transform var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard);
+}
+
+.jin-color-swatch::before {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  block-size: 0.4375rem;
+  background: var(--sw);
+  content: '';
+  forced-color-adjust: none;
+}
+
+.jin-color-swatch:hover {
+  transform: translateY(-1px);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-on-accent) 34%, transparent), 0 2px 4px color-mix(in srgb, var(--ink-primary) 16%, transparent);
 }
 
 .jin-color-swatch[aria-pressed='true'] {
-  box-shadow: 0 0 0 2px var(--workspace, var(--workspace-canvas)), 0 0 0 4px var(--ink-stroke);
+  border-color: var(--label);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-on-accent) 30%, transparent), 0 1px 2px color-mix(in srgb, var(--ink-primary) 16%, transparent);
+}
+
+.jin-color-swatch[aria-pressed='true']::after {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--label);
+  content: '✓';
+  font-size: 0.875rem;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: 0 1px 0 color-mix(in srgb, var(--workspace-canvas) 82%, transparent);
+}
+
+.jin-color-swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .jin-color-swatch[data-color='accent'] { --sw: var(--accent); }
@@ -569,20 +604,27 @@
 .jin-color-swatch[data-color='orange'] { --sw: var(--system-orange); }
 
 .jin-color-swatch--custom {
-  position: relative;
-  background: conic-gradient(
-    var(--chroma-red), var(--chroma-yellow), var(--chroma-green), var(--chroma-cyan),
-    var(--chroma-blue), var(--chroma-magenta), var(--chroma-red)
-  );
+  --sw: var(--custom-preview, var(--accent));
 }
 
-.jin-color-swatch--custom[aria-pressed='true']::after {
-  position: absolute;
-  inset: 25%;
-  border: 1px solid var(--workspace, var(--workspace-canvas));
-  border-radius: 50%;
-  background: var(--custom-preview, transparent);
-  content: '';
+.jin-color-swatch--custom[aria-pressed='false'] {
+  background: var(--fill-secondary);
+  color: var(--label-secondary);
+}
+
+.jin-color-swatch--custom[aria-pressed='false']::before {
+  display: grid;
+  place-items: center;
+  inset: 0;
+  block-size: auto;
+  border-radius: inherit;
+  background: transparent;
+  color: currentcolor;
+  content: '+';
+  font-size: 1.25rem;
+  font-weight: 400;
+  line-height: 1;
+  forced-color-adjust: auto;
 }
 
 .jin-chroma-dialog {
