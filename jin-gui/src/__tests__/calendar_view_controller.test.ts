@@ -464,21 +464,100 @@ describe('CalendarViewController safety and mode invariants', () => {
     await flush();
 
     const day = scroller.querySelector<HTMLElement>('.calendar-timegrid__day[data-date="2026-08-20"]')!;
-    const pointer = (type: string): Event => {
+    const pointer = (type: string, clientY = 120): Event => {
       const event = new Event(type, { bubbles: true, cancelable: true });
       Object.defineProperties(event, {
         pointerType: { value: 'mouse' },
-        clientY: { value: 120 },
+        clientY: { value: clientY },
+        button: { value: 0 },
       });
       return event;
     };
     day.dispatchEvent(pointer('pointerdown'));
-    window.dispatchEvent(pointer('pointerup'));
+    window.dispatchEvent(pointer('pointermove', 180));
+    window.dispatchEvent(pointer('pointerup', 180));
     await flush();
     expect(document.querySelector<HTMLInputElement>('#event-composer-title')?.value).toBe('Unsaved title');
     expect(document.querySelector('.event-companion__discard.hidden')).toBeNull();
     expect(mocks.createEvent).not.toHaveBeenCalled();
   });
+
+  it.each(['day', 'week'] as const)('keeps a %s drag range when the browser dispatches its compatibility click', async mode => {
+    if (mode === 'day') controller.selectDate('2026-08-20');
+    else (controller as unknown as { setViewMode(value: 'week'): void }).setViewMode('week');
+    await flush();
+    const day = document.querySelector<HTMLElement>('.calendar-timegrid__day[data-date="2026-08-20"]')!;
+    vi.spyOn(day, 'getBoundingClientRect').mockReturnValue({ top: 0, height: 1_296 } as DOMRect);
+    const pointer = (type: string, clientY: number): Event => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        pointerType: { value: 'mouse' },
+        clientY: { value: clientY },
+        button: { value: 0 },
+      });
+      return event;
+    };
+
+    // The projected 10:00–11:00 range becomes a selected one-hour draft.
+    day.dispatchEvent(pointer('pointerdown', 540));
+    window.dispatchEvent(pointer('pointermove', 594));
+    window.dispatchEvent(pointer('pointerup', 594));
+    day.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientY: 594 }));
+    await flush();
+    await flush();
+
+    const companion = (controller as unknown as {
+      companion: { getDraft(): { temporal: { start_time: string; end_time: string } } | null };
+    }).companion;
+    expect(companion.getDraft()?.temporal).toMatchObject({ start_time: '10:00', end_time: '11:00' });
+  });
+
+  it('keeps an ordinary empty-slot click available after a pointer press without movement', async () => {
+    controller.selectDate('2026-08-20');
+    await flush();
+    const day = document.querySelector<HTMLElement>('.calendar-timegrid__day[data-date="2026-08-20"]')!;
+    vi.spyOn(day, 'getBoundingClientRect').mockReturnValue({ top: 0, height: 1_296 } as DOMRect);
+    const pointer = (type: string): Event => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, { pointerType: { value: 'mouse' }, clientY: { value: 540 }, button: { value: 0 } });
+      return event;
+    };
+
+    day.dispatchEvent(pointer('pointerdown'));
+    window.dispatchEvent(pointer('pointerup'));
+    day.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientY: 540 }));
+    await flush();
+    await flush();
+
+    const companion = (controller as unknown as {
+      companion: { getDraft(): { temporal: { start_time: string; end_time: string } } | null };
+    }).companion;
+    expect(companion.getDraft()?.temporal).toMatchObject({ start_time: '10:00', end_time: '11:00' });
+  });
+
+  it('does not let a cancelled drag swallow the next unrelated click', async () => {
+    controller.selectDate('2026-08-20');
+    await flush();
+    const day = document.querySelector<HTMLElement>('.calendar-timegrid__day[data-date="2026-08-20"]')!;
+    vi.spyOn(day, 'getBoundingClientRect').mockReturnValue({ top: 0, height: 1_296 } as DOMRect);
+    const pointer = (type: string, clientY: number): Event => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, { pointerType: { value: 'mouse' }, clientY: { value: clientY }, button: { value: 0 } });
+      return event;
+    };
+
+    day.dispatchEvent(pointer('pointerdown', 540));
+    window.dispatchEvent(pointer('pointermove', 594));
+    window.dispatchEvent(pointer('pointercancel', 594));
+    const unrelated = document.createElement('button');
+    const click = vi.fn();
+    unrelated.addEventListener('click', click);
+    document.body.appendChild(unrelated);
+    unrelated.click();
+
+    expect(click).toHaveBeenCalledTimes(1);
+  });
+
 
 
 
@@ -674,12 +753,15 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(document.querySelector('.calendar-timegrid--day')).not.toBeNull();
     expect(document.querySelectorAll('.calendar-timegrid--day .calendar-timegrid__day')).toHaveLength(1);
     expect(document.querySelectorAll('.calendar-timegrid--day .calendar-timegrid__gutter')).toHaveLength(1);
+    expect(document.querySelector('.calendar-timegrid--day .calendar-timegrid__night-toggle')).toBeNull();
+    expect(document.querySelector('.calendar-timegrid--day .calendar-back-btn')).toBeNull();
     expect(document.querySelector('.calendar-events-list')).toBeNull();
 
     document.querySelectorAll<HTMLButtonElement>('.calendar-view-switch__button')
       .forEach(button => { if (button.textContent === 'Week') button.click(); });
     expect(document.querySelectorAll('.calendar-timegrid--week .calendar-timegrid__day')).toHaveLength(7);
     expect(document.querySelectorAll('.calendar-timegrid--week .calendar-timegrid__gutter')).toHaveLength(1);
+    expect(document.querySelectorAll('.calendar-timegrid--week .calendar-timegrid__night-toggle')).toHaveLength(2);
   });
 
   it('keeps chronological controls focusable and routes activation to companion preview', async () => {
@@ -818,8 +900,11 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(document.activeElement?.getAttribute('data-event-id')).toBe(event.dataset.eventId);
   });
 
-  it('keeps active-view-local nighttime choices across rerender and resets them on identity change', () => {
-    controller.selectDate('2026-08-20');
+  it('keeps Week nighttime choices across rerender and resets them on identity change', async () => {
+    mocks.listEvents.mockResolvedValue([]);
+    await controller.loadCalendar();
+    document.querySelectorAll<HTMLButtonElement>('.calendar-view-switch__button')
+      .forEach(button => { if (button.textContent === 'Week') button.click(); });
     const early = document.querySelector<HTMLButtonElement>('.calendar-timegrid__night-toggle[data-band="early"]')!;
     expect(early.getAttribute('aria-expanded')).toBe('false');
     early.click();
@@ -828,7 +913,10 @@ describe('CalendarViewController safety and mode invariants', () => {
     expect(document.querySelector('.calendar-timegrid__night-toggle[data-band="early"]')?.getAttribute('aria-expanded')).toBe('true');
     controller.restoreActiveView();
     expect(document.querySelector('.calendar-timegrid__night-toggle[data-band="early"]')?.getAttribute('aria-expanded')).toBe('true');
-    controller.selectDate('2026-08-24');
+    (controller as unknown as { selectedDate: string }).selectedDate = '2026-08-24';
+    controller.restoreActiveView();
+    await flush();
+    await flush();
     expect(document.querySelector('.calendar-timegrid__night-toggle[data-band="early"]')?.getAttribute('aria-expanded')).toBe('false');
   });
 
@@ -920,7 +1008,7 @@ describe('CalendarViewController safety and mode invariants', () => {
 
       controller.selectDate('2026-08-24');
       await vi.advanceTimersByTimeAsync(20);
-      expect(document.querySelector<HTMLElement>('.calendar-timegrid__scroller')?.scrollTop).toBeCloseTo(156.6);
+      expect(document.querySelector<HTMLElement>('.calendar-timegrid__scroller')?.scrollTop).toBeCloseTo(432);
 
       route.classList.add('hidden');
       controller.selectDate('2026-08-25');

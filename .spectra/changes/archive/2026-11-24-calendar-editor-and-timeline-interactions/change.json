@@ -1,0 +1,18 @@
+{
+  "esl_version": "1.1",
+  "change_id": "calendar-editor-and-timeline-interactions",
+  "status": "archived",
+  "tier": "lite",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    "CAL-UX-1",
+    "CAL-UX-2",
+    "CAL-UX-3",
+    "CAL-UX-4"
+  ],
+  "spec_ref": ".spectra/changes/calendar-editor-and-timeline-interactions/spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-11-24-calendar-editor-and-timeline-interactions",
+  "has_code": true
+}

@@ -149,17 +149,27 @@
 
 .event-preview__title {
   margin: 0;
-  font-family: var(--font-text);
-  font-size: var(--text-title-2, 1.25rem);
-  font-weight: 600;
+  /* Preview and editor share one compact title metric. The former fallback
+   * token had no matching line-height, which made the selected input look like
+   * a different title treatment. */
+  font: 600 var(--text-title3-size)/var(--text-title3-line) var(--font-text);
   color: var(--ink-primary);
-  padding-inline-end: 2rem;
+  /* Margin changes the actual title box, keeping focus and selection geometry
+   * out of the companion-close hit target as well as keeping text clear. */
+  margin-inline-end: calc(max(var(--hit-target), 1.75rem) + var(--space-2));
 }
 
 .event-preview__actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
+}
+.event-preview__join {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--control-height-prominent);
+  text-decoration: none;
 }
 .event-preview__open-full { align-self: flex-start; }
 .event-preview__guest-list,
@@ -186,7 +196,11 @@
   border-block-end: 1px solid var(--calendar-rule);
   background: var(--calendar-inspector);
 }
-.event-composer__header > .event-composer__field:first-child { padding-inline-end: 2rem; }
+/* The companion close control occupies the top end corner. Keep the editable
+ * title clear of both its hit target and its focus outline at every text size. */
+.event-composer__header > .event-composer__field:first-child {
+  margin-inline-end: calc(max(var(--hit-target), 1.75rem) + var(--space-2));
+}
 .event-composer__header > .event-composer__field:first-child > .form-label {
   position: absolute;
   inline-size: 1px;
@@ -207,16 +221,19 @@
 .event-composer__field { display: grid; gap: var(--space-half); min-inline-size: 0; }
 .event-composer__calendar-row {
   display: grid;
-  grid-template-columns: 4.5rem minmax(0, 1fr);
+  grid-template-columns: 4.5rem 12px minmax(0, 1fr);
   align-items: center;
   gap: var(--space-1);
   min-block-size: 2rem;
   color: var(--label-secondary);
 }
 .event-composer__calendar-row > .form-label { grid-column: 1; grid-row: 1; font-weight: 500; }
-.event-composer__calendar-row > .event-composer__color { grid-column: 2; grid-row: 1; z-index: 1; margin-inline-start: var(--space-1); }
-.event-composer__calendar-row > .event-composer__destination-select { grid-column: 2; grid-row: 1; padding-inline-start: 1.5rem; }
-.event-composer .event-composer__destination-select { padding-inline-start: 1.5rem; }
+/* A native select does not reliably honor leading padding in every WebKit
+ * control style. Give the source swatch its own grid track instead of layering
+ * it over the selected calendar name. */
+.event-composer__calendar-row > .event-composer__color { grid-column: 2; grid-row: 1; margin: 0; }
+.event-composer__calendar-row > .event-composer__destination-select { grid-column: 3; grid-row: 1; padding-inline-start: var(--space-1); }
+.event-composer .event-composer__destination-select { padding-inline-start: var(--space-1); }
 .event-composer__calendar-row > .event-composer__color[hidden] { display: none; }
 .event-composer__destination { display: flex; align-items: center; gap: var(--space-1); min-inline-size: 0; }
 .event-composer__destination > div { min-inline-size: 0; overflow-wrap: anywhere; }
@@ -318,10 +335,10 @@
 }
 :root[data-text-scale='accessibility'] .event-companion__chrome { inset-block-start: 8px; inset-inline-end: 8px; }
 :root[data-text-scale='accessibility'] .event-composer__header > .event-composer__field:first-child { padding-inline-end: 52px; }
-:root[data-text-scale='accessibility'] .event-composer__calendar-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-:root[data-text-scale='accessibility'] .event-composer__calendar-row > .form-label { grid-column: 1; grid-row: 1; }
-:root[data-text-scale='accessibility'] .event-composer__calendar-row > .event-composer__destination,
-:root[data-text-scale='accessibility'] .event-composer__calendar-row > .event-composer__destination-select,
+:root[data-text-scale='accessibility'] .event-composer__calendar-row { grid-template-columns: 12px minmax(0, 1fr); gap: var(--space-1); }
+:root[data-text-scale='accessibility'] .event-composer__calendar-row > .form-label { grid-column: 1 / -1; grid-row: 1; }
+:root[data-text-scale='accessibility'] .event-composer__calendar-row > .event-composer__destination { grid-column: 1 / -1; grid-row: 2; }
+:root[data-text-scale='accessibility'] .event-composer__calendar-row > .event-composer__destination-select { grid-column: 2; grid-row: 2; }
 :root[data-text-scale='accessibility'] .event-composer__calendar-row > .event-composer__color { grid-column: 1; grid-row: 2; }
 :root[data-text-scale='accessibility'] .event-composer__footer > button { min-block-size: 44px; padding-block: 8px; }
 
@@ -706,7 +723,10 @@
 
 .event-detail__join-link {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: fit-content;
+  min-block-size: var(--control-height-prominent);
   margin-bottom: var(--space-1);
   text-decoration: none;
 }

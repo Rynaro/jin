@@ -191,7 +191,6 @@ export default class CalendarViewController extends Controller {
   private allTasks: TaskDto[] = [];
   private selectedDate: string | null = null;
   private viewMode: 'month' | 'week' | 'day' = 'month';
-  private previousBrowseMode: 'month' | 'week' = 'month';
   private timeline: RenderedTimeGrid | null = null;
   private timelineIdentity: string | null = null;
   private nightManual: Partial<Record<NightBand, boolean>> = {};
@@ -413,7 +412,6 @@ export default class CalendarViewController extends Controller {
   }
 
   selectDate(dateStr: string): void {
-    if (this.viewMode === 'month' || this.viewMode === 'week') this.previousBrowseMode = this.viewMode;
     this.invalidateDetailRequest();
     this.selectedDate = dateStr;
     this.viewMode = 'day';
@@ -427,13 +425,6 @@ export default class CalendarViewController extends Controller {
       if (this.projectionFingerprint() === before && this.timeline) return;
       this.paintCurrentView();
     });
-  }
-
-  backToMonthView(): void {
-    this.resetTimelineIdentity();
-    this.viewMode = this.previousBrowseMode;
-    localStorage.setItem('jin:calendar-view', this.viewMode);
-    void this.renderCurrentView();
   }
 
   restoreActiveView(event?: Event): void {
@@ -606,9 +597,6 @@ export default class CalendarViewController extends Controller {
   private setViewMode(mode: 'month' | 'week' | 'day'): void {
     this.invalidateDetailRequest();
     if (mode !== this.viewMode) this.resetTimelineIdentity();
-    if (mode === 'day' && (this.viewMode === 'month' || this.viewMode === 'week')) {
-      this.previousBrowseMode = this.viewMode;
-    }
     this.viewMode = mode;
     localStorage.setItem('jin:calendar-view', mode);
     this.paintCurrentView();
@@ -738,12 +726,16 @@ export default class CalendarViewController extends Controller {
       const slot = displaySlots.get(date)?.find(item => item.minute === minute);
       return slot ? slot.selectable : true;
     };
-    const derived = deriveNightExpansion(model, todayDate, nowMinute);
-    this.nightMonotonic = {
-      early: this.nightMonotonic.early || derived.early,
-      late: this.nightMonotonic.late || derived.late,
-    };
-    const expansion = this.effectiveNightExpansion();
+    if (mode === 'week') {
+      const derived = deriveNightExpansion(model, todayDate, nowMinute);
+      this.nightMonotonic = {
+        early: this.nightMonotonic.early || derived.early,
+        late: this.nightMonotonic.late || derived.late,
+      };
+    }
+    const expansion: NightExpansion = mode === 'day'
+      ? { early: true, late: true }
+      : this.effectiveNightExpansion();
     const rendered = renderTimeGrid({
       model,
       dates,
@@ -752,6 +744,10 @@ export default class CalendarViewController extends Controller {
       todayDate,
       nowMinute,
       expansion,
+      // Day is a direct alternative selected in the persistent view picker.
+      // Keep its complete 24-hour chronology visible instead of placing compact
+      // night controls beside the source rail.
+      nightControls: mode === 'week',
       displaySlots,
       cursor: this.temporalCursor,
       onEvent: (id, control) => {
@@ -797,6 +793,7 @@ export default class CalendarViewController extends Controller {
   }
 
   private effectiveNightExpansion(): NightExpansion {
+    if (this.viewMode === 'day') return { early: true, late: true };
     return {
       early: this.nightManual.early ?? this.nightMonotonic.early,
       late: this.nightManual.late ?? this.nightMonotonic.late,
@@ -870,6 +867,10 @@ export default class CalendarViewController extends Controller {
     const now = new Date();
     const todayDate = this.toISODate(now);
     const nowMinute = now.getHours() * 60 + now.getMinutes();
+    if (this.viewMode === 'day') {
+      this.timeline.updateNowMarker(todayDate, nowMinute);
+      return;
+    }
     const derived = deriveNightExpansion(this.timeline.model, todayDate, nowMinute);
     let expansionChanged = false;
     (['early', 'late'] as const).forEach(band => {
@@ -1125,15 +1126,6 @@ export default class CalendarViewController extends Controller {
     dragRegion.setAttribute('aria-hidden', 'true');
     const leading = document.createElement('div');
     leading.className = 'calendar-month-leading';
-    if (this.viewMode === 'day') {
-      const back = document.createElement('button');
-      back.type = 'button';
-      back.className = 'calendar-back-btn tap-target';
-      back.setAttribute('aria-label', `${eventMessage('back')} ${eventMessage('calendar')}`);
-      back.addEventListener('click', () => this.backToMonthView());
-      back.innerHTML = '<i data-lucide="arrow-left" aria-hidden="true"></i>';
-      leading.append(back);
-    }
     const title = document.createElement('span');
     title.className = 'calendar-workspace-title';
     title.textContent = eventMessage('calendar');
@@ -2000,7 +1992,6 @@ export default class CalendarViewController extends Controller {
       occupancy,
       isSelectable: selectable,
     };
-
     rendered.scroller.addEventListener('keydown', event => {
       const key = event.key as CursorMoveKey;
       if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter', 'Escape'].includes(key)) {
@@ -2043,6 +2034,7 @@ export default class CalendarViewController extends Controller {
 
     // Fine-pointer drag on empty time — never install custom touch drag.
     rendered.scroller.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
       if (event.pointerType === 'touch' || event.pointerType === 'pen') return;
       if (pointerCreatePolicy('fine') !== 'tap-and-drag') return;
       const target = event.target as HTMLElement;
@@ -2070,8 +2062,13 @@ export default class CalendarViewController extends Controller {
       this.pointerLayer = beginTimedDrag(date, bestMinute);
       rendered.setGhostSelection(date, bestMinute, bestMinute + 15);
       let releaseSelection: (() => void) | null = null;
+      let didDrag = false;
       const onMove = (move: PointerEvent): void => {
         if (!this.pointerLayer || this.pointerLayer.kind !== 'timed-range') return;
+        // Ignore incidental pointer jitter so a normal click retains the
+        // renderer's standard one-hour draft behavior.
+        if (!didDrag && Math.abs(move.clientY - event.clientY) < 4) return;
+        didDrag = true;
         if (!releaseSelection) releaseSelection = beginMovementSelection(rendered.scroller);
         const moveY = move.clientY - rect.top;
         let minute = bestMinute;
@@ -2102,8 +2099,25 @@ export default class CalendarViewController extends Controller {
           this.pointerLayer = null;
           return;
         }
-        const slot = finalizeTimedDrag(this.pointerLayer, displayTz);
+        const timedDrag = this.pointerLayer;
         this.pointerLayer = null;
+        if (!didDrag) {
+          // A press without movement is an ordinary click. Let the renderer's
+          // empty-slot click handler create its standard one-hour draft.
+          return;
+        }
+        const slot = finalizeTimedDrag(timedDrag, displayTz);
+        // Register before opening the companion. Its document-level outside-click
+        // guard would otherwise see the compatibility click after pointerup and
+        // immediately dismiss the range draft we just opened.
+        const suppressPostDragClick = (click: MouseEvent): void => {
+          click.preventDefault();
+          click.stopImmediatePropagation();
+        };
+        document.addEventListener('click', suppressPostDragClick, { capture: true, once: true });
+        // Browser normally emits the compatibility click in this task. If it
+        // does not, remove the one-shot listener before a later UI action.
+        window.setTimeout(() => document.removeEventListener('click', suppressPostDragClick, true), 0);
         this.openCompanionCreate(slot);
       };
       const cancel = (ev: PointerEvent): void => finish(ev);

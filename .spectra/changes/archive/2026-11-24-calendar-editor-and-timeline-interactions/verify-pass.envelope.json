@@ -1,0 +1,21 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "INFORM",
+  "objective": "Verify calendar preview, composer and Day/Week timeline interactions",
+  "context_delta": {
+    "evidence": [
+      "Measured preview/edit title clearance and Meet glyph alignment in Chromium and WebKit",
+      "Portuguese source swatch/select checked at desktop dimensions; Day checked beside visible sidebar and Week retained its night controls",
+      "Real forward Week drag and reverse Day drag produced visible 13:00–15:00 forms in Chromium and WebKit"
+    ],
+    "fresh_context": false,
+    "limits": "Browser fixtures used for interactions; native feel remains an owner check.",
+    "transcript_access": "inherited"
+  }
+}
