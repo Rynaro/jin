@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0](https://github.com/Rynaro/jin/compare/v1.0.1...v1.1.0) (2026-11-24)
+
+
+### Features
+
+* protect portable workspaces and add verified backup controls ([#41](https://github.com/Rynaro/jin/issues/41)) ([18a1c09](https://github.com/Rynaro/jin/commit/18a1c09bece0cadcf4a1ed6b795c640071f70ade))
+* **tasks:** add persistent recurring routines ([#29](https://github.com/Rynaro/jin/issues/29)) ([5ef96d3](https://github.com/Rynaro/jin/commit/5ef96d366804d9a510e0b56e7151c02dd2fa37a4))
+
+
+### Bug Fixes
+
+* reject unrestorable backups before replacement ([#44](https://github.com/Rynaro/jin/issues/44)) ([f3b1cd9](https://github.com/Rynaro/jin/commit/f3b1cd9de03365e4571ed8b35995a6362e681640))
+
 ## [1.0.1](https://github.com/Rynaro/jin/compare/v1.0.0...v1.0.1) (2026-09-29)
 
 
