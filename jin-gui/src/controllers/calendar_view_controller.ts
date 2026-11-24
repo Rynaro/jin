@@ -149,6 +149,7 @@ interface CalendarMonth {
 }
 
 interface GoogleCalendarInitialPullFinished {
+  attempt_id: string;
   account_id: string;
   status: 'ok' | 'partial' | 'error';
 }
