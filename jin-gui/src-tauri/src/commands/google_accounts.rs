@@ -55,11 +55,32 @@ pub fn connect_google_account_fn(
     list_google_accounts_fn(root)
 }
 
+fn connect_google_account_cancellable_fn(
+    root: &Path,
+    account_id: &str,
+    attempt: &jin_core::google::auth::GoogleAuthAttempt,
+) -> Result<Vec<GoogleAccountDto>, JinErrorDto> {
+    let account_id = parse_account_id(account_id)?;
+    google_accounts::login_account_cancellable(root, &account_id, attempt)
+        .map_err(JinErrorDto::from)?;
+    list_google_accounts_fn(root)
+}
+
 pub fn connect_new_google_account_fn(
     root: &Path,
     alias: Option<&str>,
 ) -> Result<Vec<GoogleAccountDto>, JinErrorDto> {
     google_accounts::connect_new_account(root, alias).map_err(JinErrorDto::from)?;
+    list_google_accounts_fn(root)
+}
+
+fn connect_new_google_account_cancellable_fn(
+    root: &Path,
+    alias: Option<&str>,
+    attempt: &jin_core::google::auth::GoogleAuthAttempt,
+) -> Result<Vec<GoogleAccountDto>, JinErrorDto> {
+    google_accounts::connect_new_account_cancellable(root, alias, attempt)
+        .map_err(JinErrorDto::from)?;
     list_google_accounts_fn(root)
 }
 
@@ -221,24 +242,53 @@ pub async fn rename_google_account(
 pub async fn connect_google_account(
     state: tauri::State<'_, AppState>,
     account_id: String,
+    attempt_id: String,
 ) -> Result<Vec<GoogleAccountDto>, JinErrorDto> {
     let root = state.root.clone();
-    super::blocking::run("Google account connection", move || {
-        connect_google_account_fn(&root, &account_id)
+    let cancelled = state
+        .begin_google_connection(attempt_id.clone())
+        .map_err(|message| JinErrorDto::from(jin_core::JinError::Auth(message)))?;
+    let result = super::blocking::run("Google account connection", move || {
+        connect_google_account_cancellable_fn(&root, &account_id, &cancelled)
     })
-    .await
+    .await;
+    state.finish_google_connection(&attempt_id);
+    result
 }
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn connect_new_google_account(
     state: tauri::State<'_, AppState>,
     alias: Option<String>,
+    attempt_id: String,
 ) -> Result<Vec<GoogleAccountDto>, JinErrorDto> {
     let root = state.root.clone();
-    super::blocking::run("Google Calendar connection", move || {
-        connect_new_google_account_fn(&root, alias.as_deref())
+    let cancelled = state
+        .begin_google_connection(attempt_id.clone())
+        .map_err(|message| JinErrorDto::from(jin_core::JinError::Auth(message)))?;
+    let result = super::blocking::run("Google Calendar connection", move || {
+        connect_new_google_account_cancellable_fn(&root, alias.as_deref(), &cancelled)
     })
-    .await
+    .await;
+    state.finish_google_connection(&attempt_id);
+    result
+}
+
+/// Stop the one specific browser authorization attempt. The loopback listener
+/// sees this within one poll interval and drops before a stale callback can be
+/// accepted by a later retry.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn cancel_google_connection(
+    state: tauri::State<'_, AppState>,
+    attempt_id: String,
+) -> Result<bool, JinErrorDto> {
+    let cancelled = state.cancel_google_connection(&attempt_id);
+    if cancelled {
+        state
+            .wait_for_google_connection_to_finish(&attempt_id)
+            .await;
+    }
+    Ok(cancelled)
 }
 
 /// Pick and import a Desktop OAuth client JSON file entirely in the native

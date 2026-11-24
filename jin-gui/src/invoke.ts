@@ -828,8 +828,8 @@ export function addGoogleAccount(alias: string): Promise<GoogleAccountDto> {
   return invoke<GoogleAccountDto>('add_google_account', { alias });
 }
 
-export function connectNewGoogleAccount(alias?: string): Promise<GoogleAccountDto[]> {
-  return invoke<GoogleAccountDto[]>('connect_new_google_account', { alias });
+export function connectNewGoogleAccount(alias: string | undefined, attemptId: string): Promise<GoogleAccountDto[]> {
+  return invoke<GoogleAccountDto[]>('connect_new_google_account', { alias, attempt_id: attemptId });
 }
 
 /** Opens the native picker. The selected path and OAuth secret stay in Rust. */
@@ -841,8 +841,13 @@ export function googleClientConfigured(): Promise<boolean> {
   return invoke<boolean>('google_client_configured', {});
 }
 
-export function connectGoogleAccount(accountId: string): Promise<GoogleAccountDto[]> {
-  return invoke<GoogleAccountDto[]>('connect_google_account', { account_id: accountId });
+export function connectGoogleAccount(accountId: string, attemptId: string): Promise<GoogleAccountDto[]> {
+  return invoke<GoogleAccountDto[]>('connect_google_account', { account_id: accountId, attempt_id: attemptId });
+}
+
+/** Stop one pending browser OAuth attempt without touching any connected account. */
+export function cancelGoogleConnection(attemptId: string): Promise<boolean> {
+  return invoke<boolean>('cancel_google_connection', { attempt_id: attemptId });
 }
 
 export function renameGoogleAccount(accountId: string, alias: string): Promise<GoogleAccountDto[]> {

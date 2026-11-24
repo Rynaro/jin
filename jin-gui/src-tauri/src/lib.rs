@@ -188,6 +188,7 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
             commands::google_accounts::list_google_accounts,
             commands::google_accounts::add_google_account,
             commands::google_accounts::connect_new_google_account,
+            commands::google_accounts::cancel_google_connection,
             commands::google_accounts::import_google_client_json,
             commands::google_accounts::google_client_configured,
             commands::google_accounts::connect_google_account,

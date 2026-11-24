@@ -20,8 +20,18 @@ pub fn add_account(root: &Path, alias: &str) -> crate::Result<GoogleAccountId> {
 /// existing PKCE account flow. A browser cancellation leaves that one pending
 /// account available for the ordinary retry control.
 pub fn connect_new_account(root: &Path, alias: Option<&str>) -> crate::Result<()> {
+    connect_new_account_cancellable(root, alias, &crate::google::auth::GoogleAuthAttempt::new())
+}
+
+/// Connect a new account while allowing a native UI to abandon its browser
+/// attempt without leaving a worker holding the loopback listener.
+pub fn connect_new_account_cancellable(
+    root: &Path,
+    alias: Option<&str>,
+    attempt: &crate::google::auth::GoogleAuthAttempt,
+) -> crate::Result<()> {
     let account_id = prepare_new_account(root, alias)?;
-    login_account(root, &account_id)
+    login_account_cancellable(root, &account_id, attempt)
 }
 
 /// Validate credential readiness and create or reuse the one safe onboarding
@@ -107,11 +117,26 @@ fn is_generated_onboarding_alias(alias: &str) -> bool {
 }
 
 pub fn login_account(root: &Path, account_id: &GoogleAccountId) -> crate::Result<()> {
+    login_account_cancellable(
+        root,
+        account_id,
+        &crate::google::auth::GoogleAuthAttempt::new(),
+    )
+}
+
+/// Complete an account login only while the owning browser attempt remains
+/// active. A cancelled attempt never writes tokens or binds an account.
+pub fn login_account_cancellable(
+    root: &Path,
+    account_id: &GoogleAccountId,
+    attempt: &crate::google::auth::GoogleAuthAttempt,
+) -> crate::Result<()> {
     let config = Config::load(root)?;
     config.google_registry.account(account_id)?;
     let credentials = crate::google::config::GoogleCredentials::load(&config)?;
     let (tokens, subject, principal) =
-        crate::google::auth::run_account_auth_flow(&credentials, account_id)?;
+        crate::google::auth::run_account_auth_flow_cancellable(&credentials, account_id, attempt)?;
+    attempt.ensure_active()?;
     {
         let _account_guard = crate::ops::sync::acquire_refresh_lock(root, account_id)?;
 
@@ -119,6 +144,7 @@ pub fn login_account(root: &Path, account_id: &GoogleAccountId) -> crate::Result
         // an independent config change made while the browser was open is not
         // overwritten with the stale pre-auth snapshot.
         let mut next = Config::load(root)?;
+        attempt.ensure_active()?;
         // Identity must be accepted before any credential replacement occurs.
         if next.google_registry.accounts.iter().any(|account| {
             &account.id != account_id
@@ -134,6 +160,7 @@ pub fn login_account(root: &Path, account_id: &GoogleAccountId) -> crate::Result
             subject,
             Some(principal),
         )?;
+        attempt.claim_completion()?;
         crate::google::secrets::save_tokens_for_account(root, &next, account_id, &tokens)?;
         next.save()?;
     }

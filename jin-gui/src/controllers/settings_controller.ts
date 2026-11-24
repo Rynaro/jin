@@ -42,7 +42,7 @@ import { Controller } from '@hotwired/stimulus';
 import {
   runSync, exportFiles, appConfig, setStoreRoot, openExternalUrl,
   listGoogleAccounts, addGoogleAccount, connectNewGoogleAccount, importGoogleClientJson, googleClientConfigured, renameGoogleAccount,
-  connectGoogleAccount, disconnectGoogleAccount, refreshGoogleCalendars, setGoogleCalendarEnabled,
+  connectGoogleAccount, cancelGoogleConnection, disconnectGoogleAccount, refreshGoogleCalendars, setGoogleCalendarEnabled,
   listQuarantinedSyncOperations, reviewQuarantinedSyncOperation, syncCalendarEvent,
   notificationStatus, requestNotificationPermission,
   openNotificationSettings, sendTestNotification,
@@ -148,6 +148,7 @@ export default class SettingsController extends Controller {
     'googleAccountsList',
     'googleAccountAliasInput',
     'connectGoogleCalendarBtn',
+    'cancelGoogleConnectionBtn',
     'googleAccountsStatus',
     'googleSetupDetails',
     'googleAccountsError',
@@ -215,6 +216,8 @@ export default class SettingsController extends Controller {
   declare readonly hasGoogleAccountAliasInputTarget: boolean;
   declare connectGoogleCalendarBtnTarget: HTMLButtonElement;
   declare readonly hasConnectGoogleCalendarBtnTarget: boolean;
+  declare cancelGoogleConnectionBtnTarget: HTMLButtonElement;
+  declare readonly hasCancelGoogleConnectionBtnTarget: boolean;
   declare googleAccountsStatusTarget: HTMLElement;
   declare readonly hasGoogleAccountsStatusTarget: boolean;
   declare googleSetupDetailsTarget: HTMLDetailsElement;
@@ -240,6 +243,10 @@ export default class SettingsController extends Controller {
   private notificationActiveOperations = 0;
   private googleConnectionBusy = false;
   private pendingGoogleReconnectId: string | null = null;
+  private googleConnectionAttemptId: string | null = null;
+  private googleConnectionGeneration = 0;
+  private googleConnectionCancelling = false;
+  private googleConnectionBrowserStarted = false;
   private notificationRefreshQueued = false;
   private hasSuccessfulNotificationStatus = false;
   private notificationFocusTarget: HTMLButtonElement | null = null;
@@ -588,20 +595,26 @@ export default class SettingsController extends Controller {
   }
 
   async connectNewGoogleAccount(): Promise<void> {
-    if (this.googleConnectionBusy) return;
+    if (this.googleConnectionBusy || this.googleConnectionCancelling) return;
     const alias = this.hasGoogleAccountAliasInputTarget ? this.googleAccountAliasInputTarget.value.trim() : '';
     await this.beginGoogleConnection(alias || undefined, null);
   }
 
   private async beginGoogleConnection(alias: string | undefined, accountId: string | null): Promise<void> {
-    if (this.googleConnectionBusy) return;
+    if (this.googleConnectionBusy || this.googleConnectionCancelling) return;
+    const generation = ++this.googleConnectionGeneration;
+    const attemptId = crypto.randomUUID();
     this.googleConnectionBusy = true;
+    this.googleConnectionAttemptId = attemptId;
+    this.googleConnectionBrowserStarted = false;
     this.pendingGoogleReconnectId = accountId;
     this.setGoogleConnectionBusy(true);
     this.showGoogleAccountsError('');
     this.showGoogleAccountsStatus('');
     try {
-      if (!await googleClientConfigured()) {
+      const configured = await googleClientConfigured();
+      if (!this.isCurrentGoogleConnection(generation, attemptId)) return;
+      if (!configured) {
         if (this.hasGoogleSetupDetailsTarget) {
           this.googleSetupDetailsTarget.open = true;
           this.googleSetupDetailsTarget.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true });
@@ -612,36 +625,93 @@ export default class SettingsController extends Controller {
         return;
       }
       this.showGoogleAccountsStatus('Complete Google sign-in in your system browser. Jin will finish connecting when you return.');
+      this.googleConnectionBrowserStarted = true;
       const accounts = accountId
-        ? await connectGoogleAccount(accountId)
-        : await connectNewGoogleAccount(alias);
+        ? await connectGoogleAccount(accountId, attemptId)
+        : await connectNewGoogleAccount(alias, attemptId);
+      if (!this.isCurrentGoogleConnection(generation, attemptId)) return;
       this.renderGoogleAccounts(accounts);
       if (this.hasGoogleAccountAliasInputTarget) this.googleAccountAliasInputTarget.value = '';
       if (this.hasGoogleSetupDetailsTarget) this.googleSetupDetailsTarget.hidden = true;
       this.showGoogleAccountsStatus('Google Calendar connected.');
       this.pendingGoogleReconnectId = null;
     } catch (error: unknown) {
+      if (!this.isCurrentGoogleConnection(generation, attemptId)) return;
       await this.loadGoogleAccounts();
+      if (!this.isCurrentGoogleConnection(generation, attemptId)) return;
       this.showGoogleAccountsStatus('');
       this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not connect Google Calendar.').message);
     } finally {
+      if (!this.isCurrentGoogleConnection(generation, attemptId)) return;
       this.googleConnectionBusy = false;
+      this.googleConnectionAttemptId = null;
+      this.googleConnectionBrowserStarted = false;
       this.setGoogleConnectionBusy(false);
     }
   }
 
+  async cancelGoogleConnection(): Promise<void> {
+    const attemptId = this.googleConnectionAttemptId;
+    if (!attemptId || !this.googleConnectionBusy) return;
+
+    if (!this.googleConnectionBrowserStarted) {
+      this.finishGoogleConnectionCancellation();
+      return;
+    }
+
+    this.googleConnectionCancelling = true;
+    this.showGoogleAccountsError('');
+    this.setGoogleConnectionBusy(true);
+
+    try {
+      const cancelled = await cancelGoogleConnection(attemptId);
+      if (cancelled) {
+        this.finishGoogleConnectionCancellation();
+        await this.loadGoogleAccounts();
+        return;
+      }
+      // The attempt may have timed out, committed, or be completing discovery.
+      // Its original promise remains authoritative in every one of those cases.
+      return;
+    } catch (error: unknown) {
+      this.showGoogleAccountsError(isJinErrorDto(error)
+        ? error.message
+        : toSyntheticErrorDto(error, 'Could not cancel Google sign-in. The browser sign-in is still active.').message);
+    } finally {
+      this.googleConnectionCancelling = false;
+      this.setGoogleConnectionBusy(this.googleConnectionBusy);
+    }
+  }
+
+  private finishGoogleConnectionCancellation(): void {
+    ++this.googleConnectionGeneration;
+    this.googleConnectionBusy = false;
+    this.googleConnectionAttemptId = null;
+    this.googleConnectionBrowserStarted = false;
+    this.pendingGoogleReconnectId = null;
+    this.setGoogleConnectionBusy(false);
+    this.showGoogleAccountsError('');
+    this.showGoogleAccountsStatus('Google sign-in cancelled. You can connect an account whenever you are ready.');
+  }
+
+  private isCurrentGoogleConnection(generation: number, attemptId: string): boolean {
+    return this.googleConnectionGeneration === generation && this.googleConnectionAttemptId === attemptId;
+  }
+
   async importGoogleClientJson(): Promise<void> {
-    if (this.googleConnectionBusy) return;
+    if (this.googleConnectionBusy || this.googleConnectionCancelling) return;
     this.googleConnectionBusy = true;
     this.setGoogleConnectionBusy(true);
     this.showGoogleAccountsError('');
     this.showGoogleAccountsStatus('');
+    let handingOffToGoogleConnection = false;
     try {
       const imported = await importGoogleClientJson();
       if (imported) {
         if (this.hasGoogleSetupDetailsTarget) this.googleSetupDetailsTarget.open = false;
         this.googleConnectionBusy = false;
         this.setGoogleConnectionBusy(false);
+        handingOffToGoogleConnection = true;
         await this.beginGoogleConnection(
           this.hasGoogleAccountAliasInputTarget ? this.googleAccountAliasInputTarget.value.trim() || undefined : undefined,
           this.pendingGoogleReconnectId,
@@ -653,15 +723,34 @@ export default class SettingsController extends Controller {
       this.showGoogleAccountsStatus('');
       this.showGoogleAccountsError(isJinErrorDto(error) ? error.message : toSyntheticErrorDto(error, 'Could not import the Google OAuth client JSON.').message);
     } finally {
-      this.googleConnectionBusy = false;
-      this.setGoogleConnectionBusy(false);
+      if (!handingOffToGoogleConnection) {
+        this.googleConnectionBusy = false;
+        this.setGoogleConnectionBusy(false);
+      }
     }
   }
 
   private setGoogleConnectionBusy(busy: boolean): void {
-    if (!this.hasConnectGoogleCalendarBtnTarget) return;
-    this.connectGoogleCalendarBtnTarget.disabled = busy;
-    this.connectGoogleCalendarBtnTarget.textContent = busy ? 'Opening Google sign-in…' : 'Connect Google Calendar';
+    if (this.hasConnectGoogleCalendarBtnTarget) {
+      this.connectGoogleCalendarBtnTarget.disabled = busy || this.googleConnectionCancelling;
+      this.connectGoogleCalendarBtnTarget.textContent = this.googleConnectionCancelling
+        ? 'Cancelling Google sign-in…'
+        : busy
+          ? 'Opening Google sign-in…'
+          : 'Connect Google Calendar';
+    }
+    if (this.hasCancelGoogleConnectionBtnTarget) {
+      const canCancel = busy && this.googleConnectionAttemptId !== null;
+      this.cancelGoogleConnectionBtnTarget.hidden = !canCancel;
+      this.cancelGoogleConnectionBtnTarget.classList.toggle('hidden', !canCancel);
+      this.cancelGoogleConnectionBtnTarget.disabled = this.googleConnectionCancelling;
+    }
+    if (this.hasGoogleAccountsListTarget) {
+      const disabled = busy || this.googleConnectionCancelling;
+      this.googleAccountsListTarget
+        .querySelectorAll<HTMLButtonElement>('button[data-google-account-connect]')
+        .forEach(button => { button.disabled = disabled; });
+    }
   }
 
   async openGoogleCalendarApi(): Promise<void> {
@@ -795,6 +884,8 @@ export default class SettingsController extends Controller {
         : account.state === 'connected' || account.state === 'needs_reauth'
           ? 'Reconnect'
           : 'Connect';
+      connect.dataset.googleAccountConnect = account.id;
+      connect.disabled = this.googleConnectionBusy || this.googleConnectionCancelling;
       connect.addEventListener('click', () => void this.connectGoogleAccount(account.id));
       const disconnect = document.createElement('button');
       disconnect.type = 'button';
@@ -836,7 +927,7 @@ export default class SettingsController extends Controller {
   }
 
   private async connectGoogleAccount(accountId: string): Promise<void> {
-    if (this.googleConnectionBusy) return;
+    if (this.googleConnectionBusy || this.googleConnectionCancelling) return;
     await this.beginGoogleConnection(undefined, accountId);
   }
 

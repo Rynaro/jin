@@ -1,0 +1,19 @@
+{
+  "esl_version": "1.1",
+  "change_id": "cancel-abandoned-calendar-sign-in",
+  "status": "archived",
+  "tier": "lite",
+  "maker": "vivi",
+  "checker": "vigil",
+  "acceptance_checks": [
+    "CANCEL-OAUTH-1",
+    "CANCEL-OAUTH-2",
+    "CANCEL-OAUTH-3",
+    "CANCEL-OAUTH-4",
+    "CANCEL-OAUTH-5"
+  ],
+  "spec_ref": ".spectra/changes/cancel-abandoned-calendar-sign-in/spec.md",
+  "drift_checked": true,
+  "archive_path": "archive/2026-11-24-cancel-abandoned-calendar-sign-in",
+  "has_code": true
+}

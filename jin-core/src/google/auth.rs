@@ -12,6 +12,7 @@
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use sha2::{Digest, Sha256};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use super::config::GoogleCredentials;
 use super::secrets::TokenSet;
@@ -28,6 +29,56 @@ pub const ACCOUNT_CALENDAR_SCOPES: &str = "openid email https://www.googleapis.c
 const LOOPBACK_AUTH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 const LOOPBACK_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(20);
 const MAX_LOOPBACK_HEADERS: usize = 16 * 1024;
+
+/// One native-owned Google browser authorization attempt.
+///
+/// `cancel` may win only while the browser result is still non-durable. Once
+/// `claim_completion` succeeds, the caller owns an atomic commit boundary.
+pub struct GoogleAuthAttempt {
+    state: AtomicU8,
+}
+
+impl GoogleAuthAttempt {
+    pub fn new() -> Self {
+        Self {
+            state: AtomicU8::new(0),
+        }
+    }
+
+    pub fn cancel(&self) -> bool {
+        self.state
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    pub fn ensure_active(&self) -> crate::Result<()> {
+        if self.state.load(Ordering::Acquire) == 1 {
+            Err(cancelled_error())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn claim_completion(&self) -> crate::Result<()> {
+        match self
+            .state
+            .compare_exchange(0, 2, Ordering::AcqRel, Ordering::Acquire)
+        {
+            Ok(_) => Ok(()),
+            Err(1) => Err(cancelled_error()),
+            Err(_) => Err(JinError::Integrity(
+                "Google sign-in attempt entered an invalid completion state".to_string(),
+            )),
+        }
+    }
+}
+
+fn cancelled_error() -> JinError {
+    JinError::Auth(
+        "Google sign-in was cancelled. You can connect an account again whenever you are ready."
+            .to_string(),
+    )
+}
 
 // ── HTTP abstraction (injectable for offline testing) ────────────────────────
 
@@ -273,6 +324,14 @@ fn wait_for_code_with_timeout(
     listener: std::net::TcpListener,
     timeout: std::time::Duration,
 ) -> crate::Result<(String, Option<String>)> {
+    wait_for_code_with_timeout_and_cancel(listener, timeout, &GoogleAuthAttempt::new())
+}
+
+fn wait_for_code_with_timeout_and_cancel(
+    listener: std::net::TcpListener,
+    timeout: std::time::Duration,
+    attempt: &GoogleAuthAttempt,
+) -> crate::Result<(String, Option<String>)> {
     use std::io::Read;
     use std::time::Instant;
 
@@ -281,6 +340,7 @@ fn wait_for_code_with_timeout(
         .set_nonblocking(true)
         .map_err(|e| JinError::Auth(format!("configure loopback listener: {e}")))?;
     let (mut stream, _) = loop {
+        attempt.ensure_active()?;
         match listener.accept() {
             Ok(connection) => break connection,
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -298,6 +358,7 @@ fn wait_for_code_with_timeout(
     let mut headers = Vec::new();
     let mut chunk = [0_u8; 1024];
     while !headers_complete(&headers) {
+        attempt.ensure_active()?;
         if headers.len() >= MAX_LOOPBACK_HEADERS {
             write_loopback_response(
                 &mut stream,
@@ -313,9 +374,20 @@ fn wait_for_code_with_timeout(
             return Err(loopback_timeout());
         }
         stream
-            .set_read_timeout(Some(remaining))
+            .set_read_timeout(Some(remaining.min(LOOPBACK_POLL_INTERVAL)))
             .map_err(|e| JinError::Auth(format!("configure loopback read timeout: {e}")))?;
-        let read = stream.read(&mut chunk).map_err(loopback_read_error)?;
+        let read = match stream.read(&mut chunk) {
+            Ok(read) => read,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) =>
+            {
+                continue
+            }
+            Err(error) => return Err(loopback_read_error(error)),
+        };
         if read == 0 {
             return Err(JinError::Auth(
                 "Google authorization response ended before it was complete. Return to Jin and try again."
@@ -505,6 +577,16 @@ pub fn run_account_auth_flow(
     creds: &GoogleCredentials,
     account_id: &GoogleAccountId,
 ) -> crate::Result<(TokenSet, String, String)> {
+    run_account_auth_flow_cancellable(creds, account_id, &GoogleAuthAttempt::new())
+}
+
+/// Run account authorization while checking a native cancellation flag between
+/// loopback polls and before every durable OAuth result is returned.
+pub fn run_account_auth_flow_cancellable(
+    creds: &GoogleCredentials,
+    account_id: &GoogleAccountId,
+    attempt: &GoogleAuthAttempt,
+) -> crate::Result<(TokenSet, String, String)> {
     let pkce = generate_pkce();
     let state = generate_account_state(account_id);
     let (port, listener) = bind_loopback()?;
@@ -518,8 +600,10 @@ pub fn run_account_auth_flow(
              Check the system browser configuration, then try Connect Google Calendar again."
         ))
     })?;
-    let (code, returned_state) = wait_for_code(listener)?;
+    let (code, returned_state) =
+        wait_for_code_with_timeout_and_cancel(listener, LOOPBACK_AUTH_TIMEOUT, attempt)?;
     validate_account_state(account_id, &state, returned_state.as_deref())?;
+    attempt.ensure_active()?;
     let mut tokens = exchange_code(
         creds,
         &code,
@@ -529,6 +613,7 @@ pub fn run_account_auth_flow(
         &ReqwestPost,
     )?;
     let (subject, email) = fetch_google_identity(&tokens.access_token)?;
+    attempt.ensure_active()?;
     tokens.account = Some(email.clone());
     Ok((tokens, subject, email))
 }
@@ -813,6 +898,46 @@ mod tests {
             .expect_err("a missing callback must time out");
         assert!(matches!(error, crate::JinError::Auth(_)));
         assert!(error.to_string().contains("timed out"), "{error}");
+    }
+
+    #[test]
+    fn cancelled_loopback_wait_returns_before_a_callback_can_be_accepted() {
+        let attempt = GoogleAuthAttempt::new();
+        assert!(attempt.cancel());
+        let error = attempt
+            .ensure_active()
+            .expect_err("a cancelled browser attempt must stop waiting");
+
+        assert!(error.to_string().contains("cancelled"));
+    }
+
+    #[test]
+    fn cancellation_interrupts_a_partially_sent_loopback_response() {
+        use std::io::Write;
+        use std::net::TcpStream;
+        use std::sync::Arc;
+        use std::thread;
+
+        let (port, listener) = bind_loopback().expect("bind loopback");
+        let attempt = Arc::new(GoogleAuthAttempt::new());
+        let browser_attempt = Arc::clone(&attempt);
+        let handle = thread::spawn(move || {
+            let mut stream = TcpStream::connect(format!("127.0.0.1:{port}")).unwrap();
+            stream
+                .write_all(b"GET /?code=partial&state=state HTTP/1.1\r\n")
+                .unwrap();
+            thread::sleep(std::time::Duration::from_millis(30));
+            assert!(browser_attempt.cancel());
+        });
+
+        let error = wait_for_code_with_timeout_and_cancel(
+            listener,
+            std::time::Duration::from_secs(1),
+            &attempt,
+        )
+        .expect_err("cancelling a partial response must stop the wait");
+        handle.join().unwrap();
+        assert!(error.to_string().contains("cancelled"));
     }
 
     #[test]

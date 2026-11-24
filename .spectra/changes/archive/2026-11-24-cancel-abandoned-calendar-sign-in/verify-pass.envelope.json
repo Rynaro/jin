@@ -1,0 +1,21 @@
+{
+  "envelope_version": "1.0",
+  "from": {
+    "eidolon": "vigil"
+  },
+  "to": {
+    "eidolon": "vivi"
+  },
+  "performative": "INFORM",
+  "objective": "verify_pass: abandoned Calendar authorization can be cancelled and retried",
+  "context_delta": {
+    "evidence": [
+      "Rendered Cancel button visible during unresolved authorization; alias and calendar color stayed usable; cancellation restored Connect and matched the active attempt ID",
+      "Local partial callback cancellation and callback handling tested",
+      "All 2277 frontend tests passed; pilot package signed ad hoc and relaunched with the same vault"
+    ],
+    "fresh_context": false,
+    "limits": "No live consent or account-token exchange performed.",
+    "transcript_access": "inherited"
+  }
+}

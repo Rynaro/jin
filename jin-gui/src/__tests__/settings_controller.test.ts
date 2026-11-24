@@ -329,6 +329,8 @@ describe('Google Calendar connection recovery', () => {
   function makeGoogleConnectionController() {
     const controller = Object.create(SettingsController.prototype) as SettingsController & Record<string, unknown>;
     const button = document.createElement('button');
+    const cancel = document.createElement('button');
+    cancel.className = 'hidden';
     const alias = document.createElement('input');
     const setup = document.createElement('details');
     const status = document.createElement('p');
@@ -336,9 +338,15 @@ describe('Google Calendar connection recovery', () => {
     const rendered: GoogleAccountDto[][] = [];
     Object.assign(controller, {
       googleConnectionBusy: false,
+      googleConnectionCancelling: false,
+      googleConnectionAttemptId: null,
+      googleConnectionGeneration: 0,
+      googleConnectionBrowserStarted: false,
       pendingGoogleReconnectId: null,
       hasConnectGoogleCalendarBtnTarget: true,
       connectGoogleCalendarBtnTarget: button,
+      hasCancelGoogleConnectionBtnTarget: true,
+      cancelGoogleConnectionBtnTarget: cancel,
       hasGoogleAccountAliasInputTarget: true,
       googleAccountAliasInputTarget: alias,
       hasGoogleSetupDetailsTarget: true,
@@ -350,7 +358,7 @@ describe('Google Calendar connection recovery', () => {
       renderGoogleAccounts: (accounts: GoogleAccountDto[]) => rendered.push(accounts),
       loadGoogleAccounts: vi.fn().mockResolvedValue(undefined),
     });
-    return { controller, button, alias, setup, status, error, rendered };
+    return { controller, button, cancel, alias, setup, status, error, rendered };
   }
 
   it('opens setup before creating a new account when credentials are unavailable', async () => {
@@ -374,7 +382,8 @@ describe('Google Calendar connection recovery', () => {
       if (command === 'import_google_client_json') return Promise.resolve(true);
       if (command === 'google_client_configured') return Promise.resolve(true);
       if (command === 'connect_google_account') {
-        expect(input).toEqual({ account_id: 'acct-work' });
+        expect(input).toMatchObject({ account_id: 'acct-work' });
+        expect(input.attempt_id).toEqual(expect.any(String));
         return Promise.resolve([account]);
       }
       throw new Error(`unexpected ${command}`);
@@ -399,6 +408,150 @@ describe('Google Calendar connection recovery', () => {
     expect(status.textContent).toContain('cancelled');
     expect(mockInvoke).not.toHaveBeenCalledWith('connect_new_google_account', expect.anything());
     expect(mockInvoke).not.toHaveBeenCalledWith('connect_google_account', expect.anything());
+  });
+
+  it('cancels an abandoned browser attempt, keeps settings inputs usable, and ignores a late result', async () => {
+    const { controller, button, cancel, alias, status, rendered } = makeGoogleConnectionController();
+    alias.value = 'Personal';
+    const account: GoogleAccountDto = { id: 'late', alias: 'Late', principal: 'late@example.com', state: 'connected', auth_generation: 1, calendars: [] };
+    let resolveConnect!: (accounts: GoogleAccountDto[]) => void;
+    const pendingConnect = new Promise<GoogleAccountDto[]>(resolve => { resolveConnect = resolve; });
+    mockInvoke.mockImplementation((command: string, input: Record<string, unknown>) => {
+      if (command === 'google_client_configured') return Promise.resolve(true);
+      if (command === 'connect_new_google_account') return pendingConnect;
+      if (command === 'cancel_google_connection') {
+        expect(input.attempt_id).toEqual(expect.any(String));
+        return Promise.resolve(true);
+      }
+      throw new Error(`unexpected ${command}`);
+    });
+
+    void (controller as any).connectNewGoogleAccount();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(button.disabled).toBe(true);
+    expect(cancel.hidden).toBe(false);
+    expect(cancel.classList.contains('hidden')).toBe(false);
+    expect(alias.disabled).toBe(false);
+
+    await (controller as any).cancelGoogleConnection();
+
+    expect(status.textContent).toContain('cancelled');
+    expect(button.disabled).toBe(false);
+    expect(cancel.hidden).toBe(true);
+    expect(cancel.classList.contains('hidden')).toBe(true);
+    resolveConnect([account]);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(rendered).toEqual([]);
+  });
+
+  it('does not open a browser when cancelled while credential readiness is still pending', async () => {
+    const { controller, cancel, status } = makeGoogleConnectionController();
+    let resolveConfigured!: (configured: boolean) => void;
+    const configured = new Promise<boolean>(resolve => { resolveConfigured = resolve; });
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'google_client_configured') return configured;
+      if (command === 'cancel_google_connection') return Promise.resolve(false);
+      throw new Error(`unexpected ${command}`);
+    });
+
+    void (controller as any).connectNewGoogleAccount();
+    await Promise.resolve();
+    expect(cancel.hidden).toBe(false);
+
+    await (controller as any).cancelGoogleConnection();
+    resolveConfigured(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(status.textContent).toContain('cancelled');
+    expect(mockInvoke).not.toHaveBeenCalledWith('connect_new_google_account', expect.anything());
+  });
+
+  it('keeps the original attempt authoritative when cancellation loses the completion race', async () => {
+    const { controller, status, rendered } = makeGoogleConnectionController();
+    const committed: GoogleAccountDto = { id: 'committed', alias: 'Committed', principal: 'done@example.com', state: 'connected', auth_generation: 1, calendars: [] };
+    let resolveConnect!: (accounts: GoogleAccountDto[]) => void;
+    const pendingConnect = new Promise<GoogleAccountDto[]>(resolve => { resolveConnect = resolve; });
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'google_client_configured') return Promise.resolve(true);
+      if (command === 'connect_new_google_account') return pendingConnect;
+      if (command === 'cancel_google_connection') return Promise.resolve(false);
+      throw new Error(`unexpected ${command}`);
+    });
+
+    void (controller as any).connectNewGoogleAccount();
+    await Promise.resolve();
+    await Promise.resolve();
+    await (controller as any).cancelGoogleConnection();
+
+    expect((controller as any).googleConnectionBusy).toBe(true);
+    expect(rendered).toEqual([]);
+    resolveConnect([committed]);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(status.textContent).toContain('connected');
+    expect(rendered).toEqual([[committed]]);
+  });
+
+  it('surfaces the original sign-in error when cancellation is already too late', async () => {
+    const { controller, error } = makeGoogleConnectionController();
+    let rejectConnect!: (error: Error) => void;
+    const pendingConnect = new Promise<GoogleAccountDto[]>((_resolve, reject) => { rejectConnect = reject; });
+    mockInvoke.mockImplementation((command: string) => {
+      if (command === 'google_client_configured') return Promise.resolve(true);
+      if (command === 'connect_new_google_account') return pendingConnect;
+      if (command === 'cancel_google_connection') return Promise.resolve(false);
+      throw new Error(`unexpected ${command}`);
+    });
+
+    void (controller as any).connectNewGoogleAccount();
+    await Promise.resolve();
+    await Promise.resolve();
+    await (controller as any).cancelGoogleConnection();
+    rejectConnect(new Error('Google sign-in timed out.'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(error.textContent).toContain('Google sign-in timed out.');
+  });
+
+  it('starts a fresh retry after cancellation and ignores the earlier completion', async () => {
+    const { controller, rendered } = makeGoogleConnectionController();
+    const oldAccount: GoogleAccountDto = { id: 'old', alias: 'Old', principal: 'old@example.com', state: 'connected', auth_generation: 1, calendars: [] };
+    const newAccount: GoogleAccountDto = { id: 'new', alias: 'New', principal: 'new@example.com', state: 'connected', auth_generation: 1, calendars: [] };
+    let resolveFirst!: (accounts: GoogleAccountDto[]) => void;
+    let resolveSecond!: (accounts: GoogleAccountDto[]) => void;
+    const first = new Promise<GoogleAccountDto[]>(resolve => { resolveFirst = resolve; });
+    const second = new Promise<GoogleAccountDto[]>(resolve => { resolveSecond = resolve; });
+    const attemptIds: string[] = [];
+    mockInvoke.mockImplementation((command: string, input: Record<string, unknown>) => {
+      if (command === 'google_client_configured') return Promise.resolve(true);
+      if (command === 'connect_new_google_account') {
+        attemptIds.push(input.attempt_id as string);
+        return attemptIds.length === 1 ? first : second;
+      }
+      if (command === 'cancel_google_connection') return Promise.resolve(true);
+      throw new Error(`unexpected ${command}`);
+    });
+
+    void (controller as any).connectNewGoogleAccount();
+    await Promise.resolve();
+    await Promise.resolve();
+    await (controller as any).cancelGoogleConnection();
+    void (controller as any).connectNewGoogleAccount();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(attemptIds).toHaveLength(2);
+    expect(attemptIds[1]).not.toBe(attemptIds[0]);
+    resolveFirst([oldAccount]);
+    resolveSecond([newAccount]);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(rendered).toEqual([[newAccount]]);
   });
 });
 
