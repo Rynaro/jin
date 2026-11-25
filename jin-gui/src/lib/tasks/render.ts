@@ -1020,6 +1020,7 @@ function appendBoardFamily(
   const panel = document.createElement('section');
   panel.className = 'task-board-family';
   if (allChildren.length) panel.classList.add('task-board-family--has-children');
+  if (visibleChildren.length) panel.classList.add('task-board-family--visible-children');
   panel.id = `board-subtasks-${parent.id}`;
   panel.setAttribute('aria-label', `Subtasks for ${parent.title}`);
   card.appendChild(panel);
@@ -1064,7 +1065,13 @@ function appendBoardFamily(
     const list = document.createElement('ul');
     list.className = 'task-board-family__list';
     list.setAttribute('role', 'list');
-    for (const child of visibleChildren) list.appendChild(buildBoardSubtaskRow(parent, child, columns, onNavigate, callbacks));
+    for (const [index, child] of visibleChildren.entries()) {
+      const row = buildBoardSubtaskRow(parent, child, columns, onNavigate, callbacks);
+      // Preserve the paper order even while sheets receive focus: the parent
+      // face covers child one, then each preceding sheet covers the next.
+      row.style.zIndex = String(visibleChildren.length - index);
+      list.appendChild(row);
+    }
     contents.appendChild(list);
   } else if (allChildren.length) {
     const filtered = document.createElement('p');

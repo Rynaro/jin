@@ -2523,6 +2523,7 @@ figure.code-block {
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   transition: box-shadow 120ms ease;
+  z-index: 2;
 }
 .task-item--family-deck .task-item__family-face:hover,
 .task-item--family-deck .task-item__family-face:focus-within { box-shadow: var(--elevation-shadow-subtle); }
@@ -2602,17 +2603,26 @@ figure.code-block {
   grid-template-rows: minmax(0, 1fr);
   position: relative;
   margin-block-start: var(--space-1);
+  z-index: 1;
   padding: var(--space-half) 0 0 var(--space-1);
   transition: grid-template-rows var(--duration-base) var(--ease-standard),
     padding var(--duration-base) var(--ease-standard),
     margin var(--duration-base) var(--ease-standard);
 }
 
+.task-board-family--visible-children {
+  margin-block-start: calc((var(--space-1) + var(--space-half)) * -1);
+  padding-block: 0;
+  padding-inline: var(--space-half);
+  isolation: isolate;
+}
+.task-board-family--visible-children .task-board-family__contents { padding-block: 0; }
+
 .task-board-family__contents {
   display: grid;
   gap: var(--space-half);
   min-block-size: 0;
-  overflow: clip;
+  overflow: visible;
   overflow-clip-margin: 3px;
   padding: 2px 0;
   opacity: 1;
@@ -2627,9 +2637,12 @@ figure.code-block {
   padding-block-start: 0;
 }
 
+.task-board-family--visible-children[aria-hidden='true'] { margin-block-start: 0; }
+
 .task-board-family:not(.task-board-family--has-children)[aria-hidden='true'] { display: none; }
 
 .task-board-family[aria-hidden='true'] .task-board-family__contents {
+  overflow: clip;
   opacity: 0;
   transform: translateY(-4px);
 }
@@ -2642,22 +2655,27 @@ figure.code-block {
 
 .task-board-family__list {
   display: grid;
-  gap: 6px;
+  gap: 0;
   margin: 0;
   padding: 0;
   list-style: none;
-  transition: gap var(--duration-base) var(--ease-standard);
 }
-
-.task-board-family[aria-hidden='true'] .task-board-family__list { gap: 0; }
 
 .task-board-family__row {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   min-block-size: 0;
-  overflow: clip;
-  overflow-clip-margin: 3px;
-  transition: grid-template-rows var(--duration-base) var(--ease-standard);
+  margin-block-start: 0;
+  overflow: visible;
+  position: relative;
+  transition: grid-template-rows var(--duration-base) var(--ease-standard),
+    margin-block-start var(--duration-base) var(--ease-standard);
+}
+
+/* Each sheet begins beneath the lower edge above it. The painted face remains
+   deliberately in front, creating one continuous downward deck with no gaps. */
+.task-board-family[aria-hidden='false'] .task-board-family__row + .task-board-family__row {
+  margin-block-start: calc((var(--space-1) + var(--space-half)) * -1);
 }
 
 .task-board-family__sheet {
@@ -2666,7 +2684,7 @@ figure.code-block {
   align-items: center;
   gap: var(--space-half);
   min-block-size: 32px;
-  padding: var(--space-half) var(--space-1);
+  padding: calc(var(--space-1) + var(--space-half) + var(--space-half)) var(--space-1) var(--space-half);
   border: 0.5px solid var(--separator);
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
@@ -2677,6 +2695,10 @@ figure.code-block {
     transform var(--duration-base) var(--ease-standard);
   cursor: pointer;
 }
+
+.task-board-family__row:nth-child(2) .task-board-family__sheet { margin-inline: 2px; }
+.task-board-family__row:nth-child(3) .task-board-family__sheet { margin-inline: 4px; }
+.task-board-family__row:nth-child(n + 4) .task-board-family__sheet { margin-inline: 6px; }
 
 .task-board-family__row,
 .task-board-family__sheet { transition-delay: var(--family-sheet-delay, 0ms); }
@@ -2689,6 +2711,7 @@ figure.code-block {
 
 .task-board-family[aria-hidden='true'] .task-board-family__row {
   grid-template-rows: minmax(0, 0fr);
+  overflow: clip;
 }
 .task-board-family[aria-hidden='true'] .task-board-family__sheet {
   opacity: 0;
