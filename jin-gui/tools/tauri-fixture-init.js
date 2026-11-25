@@ -36,6 +36,16 @@
   function fixtureStorageRemove(key) {
     try { if (window.localStorage) window.localStorage.removeItem(key); } catch (_) { /* fixture still works without storage */ }
   }
+  var JIN_PALETTE = ['accent', 'sky', 'danger', 'warning', 'success', 'purple', 'pink', 'orange'];
+  function normalizeJinColor(value) {
+    var raw = String(value || '').trim();
+    var token = raw.toLowerCase();
+    if (JIN_PALETTE.indexOf(token) !== -1) return token;
+    var hex = raw.charAt(0) === '#' ? raw.slice(1) : '';
+    if (!/^[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(hex)) throw new Error('Color must be a Jin palette token or a 3 or 6 digit HEX value');
+    if (hex.length === 3) hex = hex.split('').map(function expand(character) { return character + character; }).join('');
+    return '#' + hex.toUpperCase();
+  }
   function noteExcerpt(body) {
     var collapsed = String(body).split(/\p{White_Space}+/u).filter(Boolean).join(' ');
     return Array.from(collapsed).slice(0, 200).join('');
@@ -930,10 +940,11 @@
         });
         return Promise.resolve(clone(applyList));
       }
-      if (cmd === 'create_board_column' || cmd === 'rename_board_column' || cmd === 'reorder_board_column' || cmd === 'change_board_column_type' || cmd === 'delete_board_column' || cmd === 'set_initial_board_column') {
+      if (cmd === 'create_board_column' || cmd === 'rename_board_column' || cmd === 'reorder_board_column' || cmd === 'change_board_column_type' || cmd === 'set_board_column_color' || cmd === 'delete_board_column' || cmd === 'set_initial_board_column') {
         var boardList = lists.find(function findBoard(item) { return item.id === options.id; });
         if (!boardList || boardList.workflow_kind !== 'board') return Promise.reject(new Error('Board not found'));
         var boardColumn = boardList.columns.find(function findColumn(item) { return item.id === options.column_id; });
+        if (cmd !== 'create_board_column' && !boardColumn) return Promise.reject(new Error('Column not found'));
         if (cmd === 'set_initial_board_column') {
           if (!boardColumn || (boardColumn.type !== 'queue' && boardColumn.type !== 'none')) return Promise.reject(new Error('Initial column must be Queue or No status change'));
           boardList.initial_column_id = boardColumn.id;
@@ -946,6 +957,13 @@
           if (boardList.initial_column_id === boardColumn.id && options.column_type !== 'queue' && options.column_type !== 'none') return Promise.reject(new Error('Initial column must be Queue or No status change'));
           if (boardColumn.type === 'done' && options.column_type !== 'done' && boardList.columns.filter(function done(item) { return item.type === 'done'; }).length === 1) return Promise.reject(new Error('Keep at least one Done column'));
           boardColumn.type = options.column_type;
+        }
+        if (cmd === 'set_board_column_color' && boardColumn) {
+          if (options.color === null || options.color === undefined) delete boardColumn.color;
+          else {
+            try { boardColumn.color = normalizeJinColor(options.color); }
+            catch (error) { return Promise.reject(error); }
+          }
         }
         if (cmd === 'delete_board_column' && boardColumn) {
           var occupied = tasks.filter(function inColumn(item) { return item.board_column_id === boardColumn.id; });

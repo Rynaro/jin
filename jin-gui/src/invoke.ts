@@ -459,6 +459,9 @@ export function reorderBoardColumn(id: string, columnId: string, position: strin
 export function changeBoardColumnType(id: string, columnId: string, columnType: BoardColumnType): Promise<ListDto> {
   return invoke<ListDto>('change_board_column_type', { id, column_id: columnId, column_type: columnType });
 }
+export function setBoardColumnColor(id: string, columnId: string, color: string | null): Promise<ListDto> {
+  return invoke<ListDto>('set_board_column_color', { id, column_id: columnId, color });
+}
 export function deleteBoardColumn(id: string, columnId: string, replacementId?: string): Promise<ListDto> {
   return invoke<ListDto>('delete_board_column', { id, column_id: columnId, replacement_id: replacementId ?? null });
 }

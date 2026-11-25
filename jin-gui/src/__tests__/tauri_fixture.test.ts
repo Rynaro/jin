@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { JSDOM } from 'jsdom';
-import type { TaskDto, TaskRecurrence } from '../types/dto';
+import type { ListDto, TaskDto, TaskRecurrence } from '../types/dto';
 import { formatEventDate, formatEventTime } from '../lib/events/transform';
 
 interface FixtureBridge {
@@ -713,6 +713,24 @@ describe('persistent recurring task fixture contract', () => {
   });
 });
 
+
+describe('board column color fixture', () => {
+  it('normalizes, persists, and clears a column color while retaining it through rename and reorder', async () => {
+    const bridge = loadFixture();
+    const colored = await bridge.invoke('set_board_column_color', {
+      id: 'project', column_id: 'project-review', color: '#a3f',
+    }) as ListDto;
+    expect(colored.columns.find(column => column.id === 'project-review')?.color).toBe('#AA33FF');
+    await bridge.invoke('rename_board_column', { id: 'project', column_id: 'project-review', name: 'Ready for review' });
+    const reordered = await bridge.invoke('reorder_board_column', { id: 'project', column_id: 'project-review', position: 'A' }) as ListDto;
+    expect(reordered.columns.find(column => column.id === 'project-review')).toMatchObject({ color: '#AA33FF', name: 'Ready for review', position: 'A' });
+    await expect(bridge.invoke('set_board_column_color', { id: 'project', column_id: 'project-review', color: 'unknown' })).rejects.toThrow('Color must be a Jin palette token');
+    const retained = await bridge.invoke('list_lists') as ListDto[];
+    expect(retained.find(list => list.id === 'project')?.columns.find(column => column.id === 'project-review')?.color).toBe('#AA33FF');
+    const reset = await bridge.invoke('set_board_column_color', { id: 'project', column_id: 'project-review', color: null }) as ListDto;
+    expect(reset.columns.find(column => column.id === 'project-review')?.color).toBeUndefined();
+  });
+});
 
 describe('contextual creation fixture', () => {
   it('creates one linked task with a canonical source backlink across retries', async () => {

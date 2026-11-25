@@ -52,6 +52,10 @@ pub struct BoardColumn {
     pub position: String,
     #[serde(rename = "type")]
     pub column_type: BoardColumnType,
+    /// Optional Jin swatch token or custom HEX value. Missing lets the UI use
+    /// its automatic presentation for the column's workflow type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 /// YAML frontmatter for a List file.
