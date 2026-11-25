@@ -999,6 +999,8 @@ function appendBoardFamily(
 
   const saved = callbacks?.isBoardSubtasksExpanded?.(parent.id);
   let expanded = saved ?? (parent.status !== 'done' && parent.status !== 'cancelled' && allChildren.length > 0 && allChildren.length <= 3);
+  if (allChildren.length) card.classList.add('task-item--family-deck');
+  if (allChildren.length > 1) card.classList.add('task-item--family-deck-many');
   const previous = meta.querySelector<HTMLElement>('.task-item__family-control');
   const disclosure = document.createElement('button');
   disclosure.type = 'button';
@@ -1011,39 +1013,40 @@ function appendBoardFamily(
 
   const panel = document.createElement('section');
   panel.className = 'task-board-family';
+  if (allChildren.length) panel.classList.add('task-board-family--has-children');
   panel.id = `board-subtasks-${parent.id}`;
   panel.setAttribute('aria-label', `Subtasks for ${parent.title}`);
   card.appendChild(panel);
+  const contents = document.createElement('div');
+  contents.className = 'task-board-family__contents';
+  const chevron = document.createElement('i');
+  chevron.className = 'task-item__family-chevron';
+  chevron.setAttribute('data-lucide', allChildren.length ? 'chevron-down' : 'plus');
+  chevron.setAttribute('aria-hidden', 'true');
+  const label = document.createElement('span');
+  disclosure.append(chevron, label);
 
   const updateDisclosure = (): void => {
     const done = allChildren.filter((child) => child.status === 'done').length;
     const count = `${done}/${allChildren.length}`;
-    disclosure.replaceChildren();
-    // This stays a small text glyph rather than a new data-lucide element:
-    // board updates hydrate Lucide once, while this disclosure changes in
-    // place afterwards.
-    const chevron = document.createElement('span');
-    chevron.className = 'task-item__family-chevron';
-    chevron.textContent = allChildren.length ? '⌄' : '+';
-    chevron.setAttribute('aria-hidden', 'true');
-    const label = document.createElement('span');
     label.textContent = allChildren.length ? `Subtasks ${count}` : 'Add subtask';
-    disclosure.append(chevron, label);
     disclosure.setAttribute('aria-label', allChildren.length
       ? `${expanded ? 'Hide' : 'Show'} subtasks for ${parent.title}, ${count} complete`
       : `Add subtask to ${parent.title}`);
     disclosure.classList.toggle('task-item__family-disclosure--expanded', expanded);
   };
-  const setExpanded = (next: boolean): void => {
+  const applyExpandedState = (next: boolean, persist: boolean): void => {
     expanded = next;
-    callbacks?.onSetBoardSubtasksExpanded?.(parent.id, next);
-    panel.hidden = !next;
+    if (persist) callbacks?.onSetBoardSubtasksExpanded?.(parent.id, next);
+    panel.inert = !next;
+    panel.setAttribute('aria-hidden', String(!next));
+    card.classList.toggle('task-item--family-deck-tucked', !next && allChildren.length > 0);
     disclosure.setAttribute('aria-expanded', String(next));
     updateDisclosure();
   };
   disclosure.addEventListener('click', (event) => {
     event.stopPropagation();
-    setExpanded(!expanded);
+    applyExpandedState(!expanded, true);
     if (expanded && allChildren.length === 0) {
       panel.querySelector<HTMLButtonElement>('.task-board-family__add-trigger')?.click();
     } else if (expanded) {
@@ -1056,17 +1059,16 @@ function appendBoardFamily(
     list.className = 'task-board-family__list';
     list.setAttribute('role', 'list');
     for (const child of visibleChildren) list.appendChild(buildBoardSubtaskRow(parent, child, columns, onNavigate, callbacks));
-    panel.appendChild(list);
+    contents.appendChild(list);
   } else if (allChildren.length) {
     const filtered = document.createElement('p');
     filtered.className = 'task-board-family__filtered text-caption2';
     filtered.textContent = 'Subtasks are hidden by the current filters.';
-    panel.appendChild(filtered);
+    contents.appendChild(filtered);
   }
-  if (canAdd && callbacks) panel.appendChild(buildBoardSubtaskComposer(parent, callbacks));
-  panel.hidden = !expanded;
-  disclosure.setAttribute('aria-expanded', String(expanded));
-  updateDisclosure();
+  if (canAdd && callbacks) contents.appendChild(buildBoardSubtaskComposer(parent, callbacks));
+  panel.appendChild(contents);
+  applyExpandedState(expanded, false);
 }
 
 function buildBoardSubtaskRow(

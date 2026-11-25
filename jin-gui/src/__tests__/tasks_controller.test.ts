@@ -3813,9 +3813,18 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     // own inspector without changing the board or treating it as a full card.
     const disclosure = parentCard.querySelector<HTMLButtonElement>('[data-board-subtask-disclosure="kyoto-plan"]')!;
     disclosure.click();
-    expect(parentCard.querySelector<HTMLElement>('.task-board-family')?.hidden).toBe(true);
+    const familyPanel = parentCard.querySelector<HTMLElement>('.task-board-family')!;
+    expect(familyPanel.getAttribute('aria-hidden')).toBe('true');
+    expect(familyPanel.inert).toBe(true);
+    expect(disclosure.getAttribute('aria-controls')).toBe(familyPanel.id);
     disclosure.click();
-    expect(parentCard.querySelector<HTMLElement>('.task-board-family')?.hidden).toBe(false);
+    expect(familyPanel.getAttribute('aria-hidden')).toBe('false');
+    expect(familyPanel.inert).toBe(false);
+    // A quick reversal must retain one mounted family surface rather than
+    // duplicating cards or replaying an old transition after refresh.
+    disclosure.click(); disclosure.click();
+    expect(parentCard.querySelectorAll('.task-board-family')).toHaveLength(1);
+    expect(familyPanel.getAttribute('aria-hidden')).toBe('false');
     parentCard.querySelector<HTMLButtonElement>('.task-board-family__title')!.click();
     await flushStimulusAsync();
     expect(document.querySelector('.browse-detail__title')?.textContent).toBe('Find a quiet tea house');
