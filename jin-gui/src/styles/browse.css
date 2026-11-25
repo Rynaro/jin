@@ -2684,7 +2684,10 @@ figure.code-block {
   align-items: center;
   gap: var(--space-half);
   min-block-size: 32px;
-  padding: calc(var(--space-1) + var(--space-half) + var(--space-half)) var(--space-1) var(--space-half);
+  margin-inline: var(--task-board-family-sheet-taper, 0px);
+  /* Surface edges taper, while live controls stay on one shared rail. */
+  padding: calc(var(--space-1) + var(--space-half) + var(--space-half))
+    calc(var(--space-1) + var(--space-half) - var(--task-board-family-sheet-taper, 0px)) var(--space-half);
   border: 0.5px solid var(--separator);
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
@@ -2696,9 +2699,9 @@ figure.code-block {
   cursor: pointer;
 }
 
-.task-board-family__row:nth-child(2) .task-board-family__sheet { margin-inline: 2px; }
-.task-board-family__row:nth-child(3) .task-board-family__sheet { margin-inline: 4px; }
-.task-board-family__row:nth-child(n + 4) .task-board-family__sheet { margin-inline: 6px; }
+.task-board-family__row:nth-child(2) .task-board-family__sheet { --task-board-family-sheet-taper: 2px; }
+.task-board-family__row:nth-child(3) .task-board-family__sheet { --task-board-family-sheet-taper: 4px; }
+.task-board-family__row:nth-child(n + 4) .task-board-family__sheet { --task-board-family-sheet-taper: 6px; }
 
 .task-board-family__row,
 .task-board-family__sheet { transition-delay: var(--family-sheet-delay, 0ms); }
