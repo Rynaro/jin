@@ -1241,12 +1241,24 @@
                   </button>
                 </div>
                 <div class="action-dialog__body">
-                  <fieldset class="tasks-workflow-choice">
+                  <fieldset class="tasks-workflow-choices tasks-workflow-choices--create">
                     <legend class="form-label">Workflow</legend>
-                    <label><input type="radio" name="lists-create-kind" value="checklist" checked />
-                      <span><strong>List</strong><small>Check off reminders as you finish them.</small></span></label>
-                    <label><input type="radio" name="lists-create-kind" value="board" />
-                      <span><strong>Board</strong><small>Move work through your own columns.</small></span></label>
+                    <div class="tasks-workflow-create-switch">
+                      <label class="tasks-workflow-create-choice">
+                        <input type="radio" name="lists-create-kind" value="checklist" aria-describedby="lists-create-kind-checklist-desc" checked />
+                        <span class="tasks-workflow-create-choice__glyph"><i data-lucide="list-todo" aria-hidden="true"></i></span>
+                        <strong>List</strong>
+                      </label>
+                      <label class="tasks-workflow-create-choice">
+                        <input type="radio" name="lists-create-kind" value="board" aria-describedby="lists-create-kind-board-desc" />
+                        <span class="tasks-workflow-create-choice__glyph"><i data-lucide="columns-3" aria-hidden="true"></i></span>
+                        <strong>Board</strong>
+                      </label>
+                    </div>
+                    <p class="tasks-workflow-create-description">
+                      <span id="lists-create-kind-checklist-desc" class="tasks-workflow-create-description--checklist">Check off reminders as you finish them.</span>
+                      <span id="lists-create-kind-board-desc" class="tasks-workflow-create-description--board">Move work through your own columns.</span>
+                    </p>
                   </fieldset>
                   <div class="form-group">
                     <label class="form-label" for="lists-create-name">Name</label>
