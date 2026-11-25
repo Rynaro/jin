@@ -61,6 +61,7 @@ import {
 import { between } from '../lib/tasks/rank';
 import { listNameById } from '../lib/lists/transform';
 import { applyScope, groupFlexibleTasks } from '../lib/tasks/scopes';
+import { createTaskDragPreview } from '../lib/tasks/item';
 
 // ── S1 controller-level harness (AC-S1-06 / AC-S1-08) ────────────────────────
 //
@@ -3805,6 +3806,7 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     expect(document.querySelector('.browse-detail__title')?.textContent).toBe('Plan the Kyoto weekend');
 
     const parentCard = document.querySelector<HTMLElement>('li[data-task-id="kyoto-plan"]')!;
+    expect(parentCard.querySelector('.task-item__family-face')).not.toBeNull();
     expect(document.querySelector('.task-item--card[data-task-id="tea-house"]')).toBeNull();
     expect(parentCard.querySelector('[data-task-id="tea-house"]')).not.toBeNull();
     expect(parentCard.querySelector<HTMLSelectElement>('[data-board-subtask-move="tea-house"]')?.value).toBe('doing');
@@ -3825,7 +3827,13 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     disclosure.click(); disclosure.click();
     expect(parentCard.querySelectorAll('.task-board-family')).toHaveLength(1);
     expect(familyPanel.getAttribute('aria-hidden')).toBe('false');
-    parentCard.querySelector<HTMLButtonElement>('.task-board-family__title')!.click();
+    const preview = createTaskDragPreview(parentCard);
+    expect(preview.querySelector('.task-board-family')).toBeNull();
+    expect(parentCard.querySelector('.task-board-family')).not.toBeNull();
+    // Quiet sheet padding has the same open behavior as a regular card body;
+    // native controls retain their own handlers above.
+    parentCard.querySelector<HTMLElement>('.task-board-family__row')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await flushStimulusAsync();
     expect(document.querySelector('.browse-detail__title')?.textContent).toBe('Find a quiet tea house');
     expect(document.querySelector('.tasks-board')).not.toBeNull();

@@ -999,7 +999,13 @@ function appendBoardFamily(
 
   const saved = callbacks?.isBoardSubtasksExpanded?.(parent.id);
   let expanded = saved ?? (parent.status !== 'done' && parent.status !== 'cancelled' && allChildren.length > 0 && allChildren.length <= 3);
-  if (allChildren.length) card.classList.add('task-item--family-deck');
+  if (allChildren.length) {
+    card.classList.add('task-item--family-deck');
+    const face = document.createElement('div');
+    face.className = 'task-item__family-face';
+    while (card.firstChild) face.appendChild(card.firstChild);
+    card.appendChild(face);
+  }
   if (allChildren.length > 1) card.classList.add('task-item--family-deck-many');
   const previous = meta.querySelector<HTMLElement>('.task-item__family-control');
   const disclosure = document.createElement('button');
@@ -1082,6 +1088,14 @@ function buildBoardSubtaskRow(
   row.className = 'task-board-family__row';
   row.dataset.taskId = child.id;
   row.dataset.taskStatus = child.status;
+  row.addEventListener('click', (event) => {
+    const target = event.target as Element;
+    if (target.closest('button, select, input, textarea, a')) return;
+    if (callbacks?.onSelectBoardSubtask) callbacks.onSelectBoardSubtask(parent.id, child.id);
+    else onNavigate('tasks', child.id);
+  });
+  const sheet = document.createElement('div');
+  sheet.className = 'task-board-family__sheet';
 
   const completion = document.createElement('button');
   completion.dataset.boardSubtaskToggle = child.id;
@@ -1099,7 +1113,7 @@ function buildBoardSubtaskRow(
     if (callbacks?.onSelectBoardSubtask) callbacks.onSelectBoardSubtask(parent.id, child.id);
     else onNavigate('tasks', child.id);
   });
-  row.append(completion, title);
+  sheet.append(completion, title);
 
   if (columns?.length) {
     const stage = document.createElement('select');
@@ -1115,7 +1129,7 @@ function buildBoardSubtaskRow(
     const activeColumn = columns.find((column) => column.id === original);
     if (activeColumn) stage.dataset.columnType = activeColumn.type;
     const stageColor = (activeColumn as (typeof activeColumn & { color?: string | null }) | undefined)?.color;
-    if (stageColor) applyJinColor(stage, stageColor, '--task-board-family-stage-color');
+    if (stageColor) applyJinColor(stage, stageColor, '--tasks-board-stage-color');
     stage.addEventListener('change', (event) => {
       event.stopPropagation();
       const target = stage.value;
@@ -1126,14 +1140,15 @@ function buildBoardSubtaskRow(
         stage.disabled = false;
       }).catch(() => { stage.value = originalPlacementIsValid ? original : ''; stage.disabled = false; });
     });
-    row.appendChild(stage);
+    sheet.appendChild(stage);
   } else {
     const stage = document.createElement('span');
     stage.className = 'task-board-family__stage-label text-caption2';
     stage.textContent = taskStatusLabel(child.status);
     stage.setAttribute('aria-label', `Current stage ${taskStatusLabel(child.status)}`);
-    row.appendChild(stage);
+    sheet.appendChild(stage);
   }
+  row.appendChild(sheet);
   return row;
 }
 

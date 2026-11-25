@@ -252,6 +252,9 @@ export function createTaskDragPreview(source: HTMLElement): HTMLElement {
     if (attribute.name.startsWith('data-')) content.removeAttribute(attribute.name);
   }
   content.querySelectorAll('.task-item__actions, .task-item__collapse-toggle').forEach((node) => node.remove());
+  // A board family is one draggable parent. Its released child sheets remain
+  // interactive in-place, but would make a misleading oversized drag ghost.
+  content.querySelectorAll('.task-board-family').forEach((node) => node.remove());
   content.querySelectorAll<HTMLElement>('*').forEach((node) => {
     node.removeAttribute('id');
     for (const attribute of Array.from(node.attributes)) {
