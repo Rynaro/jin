@@ -53,7 +53,7 @@ import { buildTaskItem, createTaskDragPreview, wirePointerDrag, type TaskRowCall
 import { configureTaskCompletion } from './completion';
 import { guardNativeDrag } from '../ui/movement';
 import { createCompactNumberStepper } from '../ui/number_stepper';
-import { between } from './rank';
+import { between, compareRank } from './rank';
 import type { FlexibleTaskGroup } from './scopes';
 import type { ListDto } from '../../types/dto';
 
@@ -649,7 +649,7 @@ export function renderBoardView(
 
   const columnEls: HTMLElement[] = [];
   const columns = typedColumns?.length
-    ? [...typedColumns].sort((a, b) => a.position.localeCompare(b.position))
+    ? [...typedColumns].sort((a, b) => compareRank(a.position, b.position) || a.id.localeCompare(b.id))
     : BOARD_STATUS_COLUMNS.map((status) => ({ id: status, name: taskStatusLabel(status), type: status, position: status }));
   for (const column of columns) {
     const colTasks = typedColumns?.length
@@ -827,12 +827,24 @@ function buildStatusColumn(
   col.className = 'tasks-board__column';
   col.dataset.columnStatus = status;
   if (typedColumn) col.dataset.boardColumnId = typedColumn.id;
+  if (typedColumn) {
+    const color = (typedColumn as typeof typedColumn & { color?: string | null }).color;
+    if (color) applyJinColor(col, color, '--tasks-board-stage-color');
+    col.dataset.columnType = typedColumn.type;
+  }
   col.setAttribute('role', 'listitem');
   col.setAttribute('aria-disabled', 'false');
 
   // ── Column header: name + live count ──────────────────────────────────
   const header = document.createElement('div');
   header.className = 'tasks-board__column-header';
+
+  if (typedColumn) {
+    const marker = document.createElement('span');
+    marker.className = 'tasks-board__column-marker';
+    marker.setAttribute('aria-hidden', 'true');
+    header.appendChild(marker);
+  }
 
   const label = specialLabel ?? typedColumn?.name ?? taskStatusLabel(status);
 
@@ -847,17 +859,39 @@ function buildStatusColumn(
   countEl.setAttribute('aria-label', `${colTasks.length} tasks`);
   header.appendChild(countEl);
 
+  if (typedColumn && taskCallbacks?.onEditBoardColumn) {
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'tasks-board__column-edit jin-control jin-control--icon';
+    const icon = document.createElement('i');
+    icon.setAttribute('data-lucide', 'pencil');
+    icon.setAttribute('aria-hidden', 'true');
+    edit.append(icon);
+    edit.setAttribute('aria-label', `Edit ${label} column`);
+    edit.addEventListener('click', (event) => {
+      event.stopPropagation();
+      taskCallbacks.onEditBoardColumn?.(typedColumn.id);
+    });
+    header.appendChild(edit);
+  }
+
   if (typedColumn) {
-    const descriptor = document.createElement('small');
-    descriptor.className = 'tasks-board__column-type';
-    descriptor.textContent = typedColumn.type === 'in_progress' ? 'In Progress' : typedColumn.type === 'done' ? 'Done' : typedColumn.type === 'none' ? 'No status change' : 'Queue';
-    header.appendChild(descriptor);
+    const typeLabel = typedColumn.type === 'in_progress' ? 'In Progress' : typedColumn.type === 'done' ? 'Done' : typedColumn.type === 'none' ? 'No status change' : 'Queue';
+    const metadata = document.createElement('span');
+    metadata.className = 'tasks-board__column-meta';
+    if (label.trim().toLocaleLowerCase() !== typeLabel.toLocaleLowerCase()) {
+      const descriptor = document.createElement('small');
+      descriptor.className = 'tasks-board__column-type';
+      descriptor.textContent = typeLabel;
+      metadata.appendChild(descriptor);
+    }
     if (isInitial) {
       const initial = document.createElement('small');
       initial.className = 'tasks-board__column-initial';
       initial.textContent = 'New tasks';
-      header.appendChild(initial);
+      metadata.appendChild(initial);
     }
+    if (metadata.childElementCount) header.appendChild(metadata);
   }
 
   col.appendChild(header);
@@ -2392,7 +2426,7 @@ function buildDetailFields(task: TaskDto, cbs: TaskDetailCallbacks): HTMLElement
       prompt.selected = true;
       sel.add(prompt);
     }
-    for (const column of [...cbs.owningList.columns].sort((a, b) => a.position.localeCompare(b.position))) {
+    for (const column of [...cbs.owningList.columns].sort((a, b) => compareRank(a.position, b.position) || a.id.localeCompare(b.id))) {
       const option = new Option(`${column.name} · ${column.type === 'in_progress' ? 'In Progress' : column.type === 'done' ? 'Done' : column.type === 'none' ? 'No status change' : 'Queue'}`, column.id);
       option.selected = validCurrent && column.id === task.board_column_id;
       sel.add(option);

@@ -296,6 +296,8 @@ export interface TaskRowCallbacks {
   /** Typed board column placement, independent of its status type. */
   onColumnDrop?: (taskId: string, columnId: string) => void;
   onColumnCreate?: (columnId: string, title: string, due?: string) => void;
+  /** Open the editor for a typed board stage from its own heading. */
+  onEditBoardColumn?: (columnId: string) => void;
   /** Called when the status circle is clicked. Controller decides the next status. */
   onStatusToggle?: (taskId: string, currentStatus: string) => void;
   /** True while this task's optimistic completion mutation is in flight. */

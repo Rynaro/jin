@@ -69,20 +69,17 @@ import {
   reorderSection,
   setTagColor,
   moveTask,
-  createBoardColumn,
-  setInitialBoardColumn,
-  renameBoardColumn,
-  reorderBoardColumn,
-  changeBoardColumnType,
-  deleteBoardColumn,
   reseedPositions,
 } from '../invoke';
 import { ConfirmDialog } from '../lib/ui/confirm_dialog';
 import { JinModal } from '../lib/ui/modal';
 import { TagColorDialog } from '../lib/ui/tag_color_dialog';
 import { JinSelect, JinSelectField } from '../lib/ui/select';
+import { applyJinColor } from '../lib/ui/color_picker';
+import { listGlyph } from '../lib/lists/identity';
 import { installNavigationGuard } from '../lib/ui/navigation_guard';
-import { between } from '../lib/tasks/rank';
+import { between, compareRank } from '../lib/tasks/rank';
+import { createBoardColumnsManager } from '../lib/tasks/columns_manager';
 import { isJinErrorDto, toSyntheticErrorDto } from '../types/error';
 import {
   filterTasksList,
@@ -158,6 +155,7 @@ export default class TasksController extends Controller {
     'main',
     'listPanel',
     'workspaceTitle',
+    'workspaceIcon',
     'workspaceCount',
     'list',
     'emptyState',
@@ -195,6 +193,8 @@ export default class TasksController extends Controller {
   declare hasListPanelTarget: boolean;
   declare workspaceTitleTarget: HTMLElement;
   declare hasWorkspaceTitleTarget: boolean;
+  declare workspaceIconTarget: HTMLElement;
+  declare hasWorkspaceIconTarget: boolean;
   declare workspaceCountTarget: HTMLElement;
   declare hasWorkspaceCountTarget: boolean;
   declare listTarget: HTMLElement;
@@ -241,6 +241,7 @@ export default class TasksController extends Controller {
   /** Lazily-initialized tag color picker modal, reused across every chip. */
   private _tagColorModal: TagColorDialog | null = null;
   private _columnsModal: JinModal | null = null;
+  private _columnsManagerDestroy: (() => void) | null = null;
   private _moveConfirmModal: ConfirmDialog | null = null;
   /** The tag slug the currently-open color picker is choosing a color for. */
   private _pendingTagColorSlug: string | null = null;
@@ -312,6 +313,9 @@ export default class TasksController extends Controller {
   private currentView: 'list' | 'board' = 'list';
   /** Sort mode for the currently active list. */
   private currentSortMode: string = 'manual';
+  /** Destination column to acknowledge after a successful card move. */
+  private boardMoveCueTaskId: string | null = null;
+  private boardMoveCueTimer: number | null = null;
   // Filters begin as a single compact disclosure. The active-count remains
   // visible beside List/Board and the controls expand in place on request.
   private filtersExpanded = false;
@@ -354,8 +358,9 @@ export default class TasksController extends Controller {
   private updateWorkspaceTitle(): void {
     if (!this.hasWorkspaceTitleTarget) return;
     if (this.currentScope.kind === 'list') {
-      this.workspaceTitleTarget.textContent =
-        this.currentLists.find((list) => list.id === this.currentScope.id)?.name ?? this.currentScope.id;
+      const list = this.currentLists.find((item) => item.id === this.currentScope.id);
+      this.workspaceTitleTarget.textContent = list?.name ?? this.currentScope.id;
+      this.updateWorkspaceIdentity(list?.icon ?? 'list', list?.color ?? 'accent');
       return;
     }
     const names: Record<Extract<TaskScope, { kind: 'smart' }>['id'], string> = {
@@ -366,6 +371,25 @@ export default class TasksController extends Controller {
       completed: 'Completed',
     };
     this.workspaceTitleTarget.textContent = names[this.currentScope.id];
+    const identities: Record<Extract<TaskScope, { kind: 'smart' }>['id'], [string, string]> = {
+      inbox: ['inbox', 'accent'], today: ['sun', 'warning'], upcoming: ['calendar-days', 'accent'],
+      flexible: ['list-todo', 'sky'], completed: ['check-circle', 'success'],
+    };
+    this.updateWorkspaceIdentity(...identities[this.currentScope.id]);
+  }
+
+  private updateWorkspaceIdentity(icon: string, color: string): void {
+    if (!this.hasWorkspaceIconTarget) return;
+    const glyph = this.currentScope.kind === 'list'
+      ? listGlyph(icon, this.activeWorkflow?.workflow_kind ?? null)
+      : icon;
+    applyJinColor(this.workspaceIconTarget, color);
+    this.workspaceIconTarget.replaceChildren();
+    const element = document.createElement('i');
+    element.setAttribute('data-lucide', glyph);
+    element.setAttribute('aria-hidden', 'true');
+    this.workspaceIconTarget.appendChild(element);
+    initIcons(this.workspaceIconTarget);
   }
 
   // ── S1: Approach §8 — the mutation chokepoint ─────────────────────────────
@@ -563,6 +587,8 @@ export default class TasksController extends Controller {
     this._deleteSectionModal = null;
     this._tagColorModal?.destroy();
     this._tagColorModal = null;
+    this._columnsManagerDestroy?.();
+    this._columnsManagerDestroy = null;
     this._columnsModal?.destroy();
     this._columnsModal = null;
     this._moveConfirmModal?.destroy();
@@ -708,6 +734,14 @@ export default class TasksController extends Controller {
       this.updateWorkspaceTitle();
       void this.loadList(this.currentFilter);
     })();
+  }
+
+  /** Apply a saved list identity without reloading tasks or changing scope. */
+  handleListUpdated(event: Event): void {
+    const updated = (event as CustomEvent<{ list?: ListDto }>).detail?.list;
+    if (!updated) return;
+    this.currentLists = this.currentLists.map(list => list.id === updated.id ? updated : list);
+    if (this.currentScope.kind === 'list' && this.currentScope.id === updated.id) this.updateWorkspaceTitle();
   }
 
   /** Refresh the authoritative task projection whenever the router returns to Tasks. */
@@ -1320,6 +1354,7 @@ export default class TasksController extends Controller {
         void this.handleStatusDrop(taskId, targetStatus);
       },
       onColumnDrop: (taskId, columnId) => { void this.handleColumnDrop(taskId, columnId); },
+      onEditBoardColumn: (columnId) => { void this.manageColumns(columnId); },
       onColumnCreate: (columnId, title, due) => { void this.handleCreateTask(title, due, columnId); },
     };
 
@@ -1459,6 +1494,17 @@ export default class TasksController extends Controller {
     // not apply here: the bulk panel never reads/writes a task's `body`).
     if (this.selectedTaskIds.size >= 2) {
       this.updateBulkPanel();
+    }
+
+    if (this.boardMoveCueTaskId) {
+      const arrived = el.list.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(this.boardMoveCueTaskId)}"]`);
+      arrived?.classList.add('task-item--board-arrived');
+      if (this.boardMoveCueTimer !== null) window.clearTimeout(this.boardMoveCueTimer);
+      this.boardMoveCueTimer = window.setTimeout(() => {
+        el.list.querySelectorAll('.task-item--board-arrived').forEach((card) => card.classList.remove('task-item--board-arrived'));
+        this.boardMoveCueTimer = null;
+      }, 700);
+      this.boardMoveCueTaskId = null;
     }
 
     initIcons();
@@ -2057,7 +2103,7 @@ export default class TasksController extends Controller {
   private quickAddInput(): HTMLInputElement | null {
     const workflow = this.activeWorkflow;
     if (workflow?.workflow_kind === 'board') {
-      const columns = [...workflow.columns].sort((a, b) => a.position.localeCompare(b.position) || a.id.localeCompare(b.id));
+      const columns = [...workflow.columns].sort((a, b) => compareRank(a.position, b.position) || a.id.localeCompare(b.id));
       const initialId = workflow.initial_column_id
         ?? columns.find((column) => column.type === 'queue')?.id
         ?? columns.find((column) => column.type === 'none')?.id;
@@ -2495,14 +2541,17 @@ export default class TasksController extends Controller {
     const task = this.currentTasks.find((item) => item.id === taskId);
     if (!task) return;
     const peers = this.currentTasks.filter((item) => item.board_column_id === columnId && item.id !== taskId);
-    const last = peers.sort((a, b) => (a.position ?? '').localeCompare(b.position ?? '')).at(-1);
+    const last = peers.sort((a, b) => compareRank(a.position ?? '', b.position ?? '') || a.id.localeCompare(b.id)).at(-1);
     const result = await this.mutate(() => moveTask(taskId, {
       listId: list.id,
       sectionId: task.section_id ?? null,
       boardColumnId: columnId,
       position: between(last?.position ?? null, null),
     }), 'handleColumnDrop');
-    if (result !== undefined) void this.loadList(this.currentFilter);
+    if (result !== undefined) {
+      this.boardMoveCueTaskId = taskId;
+      void this.loadList(this.currentFilter, true);
+    }
   }
 
   focusNewTask(): void {
@@ -2513,123 +2562,39 @@ export default class TasksController extends Controller {
     window.dispatchEvent(new CustomEvent('jin:open-task-container'));
   }
 
-  async manageColumns(): Promise<void> {
+  async manageColumns(editColumnId?: string): Promise<void> {
     const list = this.activeWorkflow;
     if (!list || list.workflow_kind !== 'board') return;
-    const loadedMembers = await this.guarded(() => listTasks({ list: list.id }), 'manageColumns:listTasks');
-    if (loadedMembers === undefined) return;
-    let members: TaskDto[] = loadedMembers;
+    const members = await this.guarded(() => listTasks({ list: list.id }), 'manageColumns:listTasks');
+    if (members === undefined) return;
+
+    this._columnsManagerDestroy?.();
+    this._columnsManagerDestroy = null;
     this._columnsModal?.destroy();
     const modal = new JinModal({ title: `${list.name} columns`, ariaLabel: 'Manage board columns' });
     this._columnsModal = modal;
-    const body = document.createElement('div');
-    body.className = 'tasks-column-manager';
-    const feedback = document.createElement('p');
-    feedback.className = 'form-error'; feedback.setAttribute('role', 'alert');
-    const kindLabels: Record<string, string> = { queue: 'Queue', none: 'No status change', in_progress: 'In Progress', done: 'Done' };
-    let busy = false;
-    const run = async (operation: () => Promise<ListDto>, onError?: () => void) => {
-      if (busy) return;
-      busy = true; feedback.textContent = '';
-      try {
-        const updated = await operation();
-        members = await listTasks({ list: updated.id });
+    const manager = createBoardColumnsManager({
+      list,
+      members,
+      editColumnId,
+      onUpdated: async (updated) => {
         this.currentLists = this.currentLists.map((item) => item.id === updated.id ? updated : item);
-        draw(updated);
-        void this.loadList(this.currentFilter);
-      } catch (cause) {
-        feedback.textContent = isJinErrorDto(cause) ? cause.message
-          : toSyntheticErrorDto(cause, 'Could not change this column.').message;
-        onError?.();
-      } finally { busy = false; }
-    };
-    const draw = (current: ListDto) => {
-      body.replaceChildren();
-      const description = document.createElement('p');
-      description.textContent = 'Names describe your stages. Queue is unchecked, In Progress is underway, Done is complete, and No status change keeps open work as it is.';
-      body.append(description);
-      const columns = [...current.columns].sort((a, b) => a.position.localeCompare(b.position));
-      for (const [index, column] of columns.entries()) {
-        const row = document.createElement('div'); row.className = 'tasks-column-manager__row';
-        const identity = document.createElement('div'); identity.className = 'tasks-column-manager__identity';
-        const nameLabel = document.createElement('label'); nameLabel.textContent = 'Name';
-        const name = document.createElement('input'); name.className = 'form-input'; name.value = column.name; name.setAttribute('aria-label', `Column name: ${column.name}`);
-        nameLabel.append(name);
-        const saveName = () => { if (name.value.trim() && name.value.trim() !== column.name) void run(() => renameBoardColumn(current.id, column.id, name.value.trim())); };
-        name.addEventListener('change', saveName);
-        name.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); saveName(); } });
-        const typeLabel = document.createElement('label'); typeLabel.textContent = 'Type';
-        const type = document.createElement('select'); type.className = 'form-select'; type.setAttribute('aria-label', `${column.name} type`);
-        for (const [value, label] of Object.entries(kindLabels)) {
-          const option = new Option(label, value); type.add(option);
-        }
-        type.value = column.type;
-        type.addEventListener('change', () => void run(() => changeBoardColumnType(current.id, column.id, type.value as 'queue' | 'none' | 'in_progress' | 'done')));
-        typeLabel.append(type); identity.append(nameLabel, typeLabel);
-        const actions = document.createElement('div'); actions.className = 'tasks-column-manager__actions';
-        const resolvedInitial = current.initial_column_id
-          ?? columns.find((item) => item.type === 'queue')?.id
-          ?? columns.find((item) => item.type === 'none')?.id;
-        if (resolvedInitial === column.id) {
-          const marker = document.createElement('span'); marker.className = 'tasks-column-manager__initial'; marker.textContent = 'New tasks';
-          identity.append(marker);
-        } else if (column.type === 'queue' || column.type === 'none') {
-          const makeInitial = document.createElement('button'); makeInitial.type = 'button';
-          makeInitial.className = 'jin-control jin-control--secondary'; makeInitial.textContent = 'Use for new tasks';
-          makeInitial.setAttribute('aria-label', `Use ${column.name} for new tasks`);
-          makeInitial.addEventListener('click', () => void run(() => setInitialBoardColumn(current.id, column.id)));
-          actions.append(makeInitial);
-        }
-        const up = document.createElement('button'); up.type = 'button'; up.textContent = '←'; up.setAttribute('aria-label', `Move ${column.name} left`); up.className = 'jin-control jin-control--secondary jin-control--icon'; up.disabled = index === 0;
-        up.addEventListener('click', () => void run(() => reorderBoardColumn(current.id, column.id, between(columns[index - 2]?.position ?? null, columns[index - 1]?.position ?? null))));
-        const down = document.createElement('button'); down.type = 'button'; down.textContent = '→'; down.setAttribute('aria-label', `Move ${column.name} right`); down.className = 'jin-control jin-control--secondary jin-control--icon'; down.disabled = index === columns.length - 1;
-        down.addEventListener('click', () => void run(() => reorderBoardColumn(current.id, column.id, between(columns[index + 1]?.position ?? null, columns[index + 2]?.position ?? null))));
-        const replacement = document.createElement('select'); replacement.className = 'form-select'; replacement.setAttribute('aria-label', `Move ${column.name} tasks to`); replacement.hidden = true;
-        replacement.add(new Option('Choose destination', ''));
-        const assigned = members.filter((task) => task.board_column_id === column.id && task.deleted_at === null);
-        const candidates = columns.filter((peer) => peer.id !== column.id
-          && (resolvedInitial !== column.id || peer.type === 'queue' || peer.type === 'none')
-          && assigned.every((task) => task.status === 'todo'
-            ? peer.type === 'queue' || peer.type === 'none'
-            : task.status === 'doing' ? peer.type === 'in_progress' || peer.type === 'none'
-              : task.status === 'done' && peer.type === 'done'));
-        for (const peer of candidates) replacement.add(new Option(`${peer.name} · ${kindLabels[peer.type]}`, peer.id));
-        const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Delete'; remove.setAttribute('aria-label', `Delete ${column.name}`); remove.className = 'jin-control jin-control--secondary';
-        if (column.type === 'done' && columns.filter((item) => item.type === 'done').length === 1) {
-          remove.disabled = true;
-          remove.title = 'Keep at least one Done column';
-        } else if ((assigned.length > 0 || resolvedInitial === column.id) && candidates.length === 0) {
-          remove.disabled = true;
-          remove.title = 'Move tasks or choose another eligible initial column first';
-        }
-        remove.addEventListener('click', () => {
-          if ((assigned.length > 0 || resolvedInitial === column.id) && replacement.hidden) {
-            replacement.hidden = false; replacement.focus(); return;
-          }
-          if (!replacement.hidden && !replacement.value) { replacement.focus(); return; }
-          void run(() => deleteBoardColumn(current.id, column.id, replacement.value || undefined), () => {
-            if (candidates.length) { replacement.hidden = false; replacement.focus(); }
-          });
-        });
-        actions.append(up, down, remove);
-        row.append(identity, actions, replacement); body.append(row);
-      }
-      const add = document.createElement('div'); add.className = 'tasks-column-manager__add';
-      const newNameLabel = document.createElement('label'); newNameLabel.textContent = 'New column';
-      const newName = document.createElement('input'); newName.className = 'form-input'; newName.placeholder = 'Name'; newName.setAttribute('aria-label', 'New column name');
-      newNameLabel.append(newName);
-      const newTypeLabel = document.createElement('label'); newTypeLabel.textContent = 'Type';
-      const newType = document.createElement('select'); newType.className = 'form-select'; newType.setAttribute('aria-label', 'New column type');
-      for (const [value, label] of Object.entries(kindLabels)) newType.add(new Option(label, value));
-      newTypeLabel.append(newType);
-      const addButton = document.createElement('button'); addButton.type = 'button'; addButton.textContent = 'Add column'; addButton.className = 'jin-control jin-control--primary';
-      addButton.addEventListener('click', () => { if (newName.value.trim()) void run(() => createBoardColumn(current.id, newName.value.trim(), newType.value as 'queue' | 'none' | 'in_progress' | 'done')); });
-      add.append(newNameLabel, newTypeLabel, addButton); body.append(add, feedback);
-    };
-    draw(list); modal.setBody(body);
-    const footer = document.createElement('button'); footer.type = 'button'; footer.textContent = 'Done'; footer.className = 'jin-control jin-control--primary';
-    footer.addEventListener('click', () => modal.close()); modal.setFooter(footer);
+        await this.loadList(this.currentFilter, true);
+      },
+    });
+    this._columnsManagerDestroy = manager.destroy;
+    modal.setBody(manager.element);
+    const disposeManager = () => manager.destroy();
+    manager.element.closest('dialog')?.addEventListener('close', disposeManager, { once: true });
+
+    const footer = document.createElement('button');
+    footer.type = 'button';
+    footer.textContent = 'Done';
+    footer.className = 'jin-control jin-control--primary';
+    footer.addEventListener('click', () => modal.close());
+    modal.setFooter(footer);
     modal.open();
+    manager.focusInitial();
   }
 
   // ── P1 S1.3 — Delete task (S2: now uses ConfirmDialog) ───────────────────

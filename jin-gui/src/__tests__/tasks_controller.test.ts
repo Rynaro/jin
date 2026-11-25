@@ -1220,6 +1220,22 @@ describe('VG-P6 / S4 — renderBoardView (Kanban by TaskStatus)', () => {
     expect(todoCount?.textContent).toBe('2');
     expect(doingCount?.textContent).toBe('1');
   });
+
+  it('renders a pencil edit affordance for typed columns without repeating the stage type', () => {
+    const onEditBoardColumn = vi.fn();
+    const columns = [
+      { id: 'queue', name: 'Queue', position: 'Z', type: 'queue' as const },
+      { id: 'backlog', name: 'Backlog', position: 'a', type: 'queue' as const },
+    ];
+    renderBoardView(container, templates, [], 'manual', () => {}, { onEditBoardColumn }, null, undefined, undefined, columns, 'queue');
+    const headers = Array.from(container.querySelectorAll<HTMLElement>('.tasks-board__column[data-board-column-id]'));
+    expect(headers.map((column) => column.dataset.boardColumnId)).toEqual(['queue', 'backlog']);
+    const queueHeader = headers[0].querySelector('.tasks-board__column-header')!;
+    expect(queueHeader.querySelector('.tasks-board__column-edit [data-lucide="pencil"]')).not.toBeNull();
+    expect(queueHeader.querySelector('.tasks-board__column-type')).toBeNull();
+    queueHeader.querySelector<HTMLButtonElement>('.tasks-board__column-edit')!.click();
+    expect(onEditBoardColumn).toHaveBeenCalledWith('queue');
+  });
 });
 
 // ── VG-P9: DnD drag-handle + callback wiring ────────────────────────────────
@@ -4451,7 +4467,10 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     ) as TasksController;
     await controller.manageColumns();
     const dialog = document.querySelector<HTMLDialogElement>('#jin-modal-root dialog[open]')!;
-    dialog.querySelector<HTMLInputElement>('.tasks-column-manager__add input')!.value = 'Backlog';
+    dialog.querySelector<HTMLButtonElement>('.tasks-column-manager > button[aria-expanded="false"]')!.click();
+    const name = dialog.querySelector<HTMLInputElement>('.tasks-column-manager__add input')!;
+    name.value = 'Backlog';
+    name.dispatchEvent(new Event('input'));
     dialog.querySelector<HTMLSelectElement>('.tasks-column-manager__add select')!.value = 'none';
     dialog.querySelector<HTMLButtonElement>('.tasks-column-manager__add button')!.click();
     await flushStimulusAsync();
@@ -4459,6 +4478,82 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     expect(create).toHaveBeenCalledWith('project', 'Backlog', 'none');
     expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('missing required key `columnType`');
     expect(dialog.open).toBe(true);
+  });
+
+  it('opens one focused editor from the stage overview and restores rejected status changes', async () => {
+    const board = makeDefaultListDto({
+      id: 'project', name: 'Project', is_default: true, workflow_kind: 'board',
+      initial_column_id: 'queue-col', columns: [
+        { id: 'queue-col', name: 'Queue', position: 'A', type: 'queue' },
+        { id: 'doing-col', name: 'Doing', position: 'B', type: 'in_progress' },
+        { id: 'done-col', name: 'Done', position: 'C', type: 'done' },
+      ],
+    });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([board]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([]);
+    vi.spyOn(InvokeModule, 'changeBoardColumnType').mockRejectedValue({
+      code: 2, kind: 'usage', message: 'Could not change stage', retriable: false,
+    });
+
+    startS3App();
+    await flushStimulusAsync();
+    const controller = s3App.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="tasks"]')!, 'tasks',
+    ) as TasksController;
+    await controller.manageColumns('doing-col');
+    const dialog = document.querySelector<HTMLDialogElement>('#jin-modal-root dialog[open]')!;
+    expect(dialog.querySelectorAll('[data-board-column-editor]').length).toBe(1);
+    const status = dialog.querySelector<HTMLSelectElement>('[data-column-field="type"]')!;
+    status.value = 'done';
+    status.dispatchEvent(new Event('change'));
+    await flushStimulusAsync();
+
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toBe('Could not change stage');
+    expect(dialog.querySelectorAll('[data-board-column-editor]').length).toBe(1);
+    expect(dialog.querySelector<HTMLSelectElement>('[data-column-field="type"]')?.value).toBe('in_progress');
+    expect(dialog.querySelector('[data-board-column-editor="queue-col"]')).toBeNull();
+  });
+
+  it('restores semantic color and Automatic, preserving last-Done and boundary guards', async () => {
+    const board = makeDefaultListDto({
+      id: 'project', name: 'Project', is_default: true, workflow_kind: 'board',
+      initial_column_id: 'queue-col', columns: [
+        { id: 'queue-col', name: 'Queue', position: 'A', type: 'queue' },
+        { id: 'doing-col', name: 'Doing', position: 'B', type: 'in_progress' },
+        { id: 'done-col', name: 'Done', position: 'C', type: 'done' },
+      ],
+    });
+    const purpleBoard = { ...board, columns: board.columns.map((column) => column.id === 'queue-col' ? { ...column, color: 'purple' } : column) };
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([board]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([]);
+    const setColor = vi.spyOn(InvokeModule, 'setBoardColumnColor')
+      .mockResolvedValueOnce(purpleBoard)
+      .mockResolvedValueOnce(board);
+
+    startS3App();
+    await flushStimulusAsync();
+    const controller = s3App.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="tasks"]')!, 'tasks',
+    ) as TasksController;
+    await controller.manageColumns('queue-col');
+    const dialog = document.querySelector<HTMLDialogElement>('#jin-modal-root dialog[open]')!;
+    dialog.querySelector<HTMLButtonElement>('.jin-color-swatch[data-color="purple"]')!.click();
+    await flushStimulusAsync();
+    expect(setColor).toHaveBeenNthCalledWith(1, 'project', 'queue-col', 'purple');
+    expect(dialog.querySelector('[data-board-column-editor="queue-col"]')?.getAttribute('data-color')).toBe('purple');
+
+    dialog.querySelector<HTMLButtonElement>('.tasks-column-manager__automatic')!.click();
+    await flushStimulusAsync();
+    expect(setColor).toHaveBeenNthCalledWith(2, 'project', 'queue-col', null);
+    const queueEditor = dialog.querySelector<HTMLElement>('[data-board-column-editor="queue-col"]')!;
+    expect(queueEditor.hasAttribute('data-color')).toBe(false);
+    expect(queueEditor.querySelector<HTMLButtonElement>('.tasks-column-manager__automatic')?.getAttribute('aria-pressed')).toBe('true');
+    expect(queueEditor.querySelector('.jin-color-swatch[aria-pressed="true"]')).toBeNull();
+    expect(queueEditor.querySelector<HTMLButtonElement>('[aria-label="Move Queue left"]')?.disabled).toBe(true);
+
+    dialog.querySelector<HTMLButtonElement>('[data-column-id="queue-col"][data-column-field="edit"]')!.click();
+    dialog.querySelector<HTMLButtonElement>('[data-column-id="done-col"][data-column-field="edit"]')!.click();
+    expect(dialog.querySelector<HTMLButtonElement>('[aria-label="Delete Done"]')?.disabled).toBe(true);
   });
 });
 

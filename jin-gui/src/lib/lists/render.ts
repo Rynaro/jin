@@ -14,6 +14,7 @@ import type { TaskScope } from '../tasks/scopes';
 import type { SidebarCounts } from './counts';
 import { applyJinColor } from '../ui/color_picker';
 import { guardNativeDrag } from '../ui/movement';
+import { listGlyph } from './identity';
 
 let draggedListId: string | null = null;
 
@@ -255,14 +256,18 @@ function buildListRow(list: ListDto, options?: ListsRailRenderOptions): HTMLElem
     li.removeAttribute('aria-current');
   }
 
-  // The colour dot is the single leading identity cue for a user list. When
-  // manual ordering is available, that same 28px target is the drag/keyboard
-  // handle; a separate grip would make the narrow rail look like a toolbox.
+  // The persisted glyph and colour share one compact leading identity tile.
+  // When manual ordering is available, that same target remains the drag and
+  // keyboard handle, keeping the narrow rail calm.
   let dragGrip: HTMLButtonElement | null = null;
   const swatch = document.createElement('span');
   swatch.className = 'lists-rail__swatch';
   applyJinColor(swatch, list.color);
   swatch.setAttribute('aria-hidden', 'true');
+  const glyph = document.createElement('i');
+  glyph.setAttribute('data-lucide', listGlyph(list.icon, list.workflow_kind));
+  glyph.setAttribute('aria-hidden', 'true');
+  swatch.appendChild(glyph);
   if (!list.is_default && options?.onReorder) {
     li.classList.add('lists-rail__row--reorderable');
     dragGrip = document.createElement('button');
