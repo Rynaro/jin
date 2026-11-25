@@ -69,12 +69,13 @@ import { Controller } from '@hotwired/stimulus';
 import { listLists, listTasks, createList, editList, deleteList, reorderList, previewWorkflowSetup, applyWorkflowSetup, type WorkflowSetupPreview } from '../invoke';
 import { isJinErrorDto, toSyntheticErrorDto } from '../types/error';
 import { renderListsSidebar, renderSmartViews } from '../lib/lists/render';
+import { defaultListIcon, isListIdentityIcon, LIST_IDENTITY_ICONS, listGlyph } from '../lib/lists/identity';
 import { computeSidebarCounts, type SidebarCounts } from '../lib/lists/counts';
 import type { TaskScope } from '../lib/tasks/scopes';
 import { initIcons } from '../lib/icons';
 import type { ListDto } from '../types/dto';
 import { JinModal } from '../lib/ui/modal';
-import { createJinColorPicker, type JinColorPicker } from '../lib/ui/color_picker';
+import { applyJinColor, createJinColorPicker, type JinColorPicker } from '../lib/ui/color_picker';
 
 const EMPTY_COUNTS: SidebarCounts = { smartViews: { inbox: 0, today: 0, upcoming: 0, flexible: 0 }, lists: {} };
 
@@ -86,10 +87,12 @@ export default class ListsController extends Controller {
     'createDialog',
     'createNameInput',
     'createColorPicker',
+    'createIconPicker',
     'createError',
     'editDialog',
     'editNameInput',
     'editColorPicker',
+    'editIconPicker',
     'editError',
     'deleteDialog',
     'deleteMessage',
@@ -103,11 +106,13 @@ export default class ListsController extends Controller {
   declare hasCreateDialogTarget: boolean;
   declare createNameInputTarget: HTMLInputElement;
   declare createColorPickerTarget: HTMLElement;
+  declare createIconPickerTarget: HTMLElement;
   declare createErrorTarget: HTMLElement;
   declare editDialogTarget: HTMLDialogElement;
   declare hasEditDialogTarget: boolean;
   declare editNameInputTarget: HTMLInputElement;
   declare editColorPickerTarget: HTMLElement;
+  declare editIconPickerTarget: HTMLElement;
   declare editErrorTarget: HTMLElement;
   declare deleteDialogTarget: HTMLDialogElement;
   declare hasDeleteDialogTarget: boolean;
@@ -116,10 +121,13 @@ export default class ListsController extends Controller {
   // ── State ─────────────────────────────────────────────────────────────────
   private pendingEditId: string | null = null;
   private pendingEditColor: string = 'accent';
+  private pendingEditIcon = 'list';
   private pendingDeleteId: string | null = null;
   private pendingDeleteDoing = 0;
   private pendingDeleteReady = false;
   private pendingCreateColor: string = 'accent';
+  private pendingCreateIcon = 'list';
+  private createIconTouched = false;
   private createSession = 0;
   private createSavingSession: number | null = null;
 
@@ -142,6 +150,7 @@ export default class ListsController extends Controller {
     dialog: HTMLDialogElement;
     name: HTMLInputElement;
     colors: HTMLElement;
+    icons: HTMLElement;
     error: HTMLElement;
   } | null = null;
   /** JinModal wrapper for the Edit List dialog. */
@@ -166,6 +175,7 @@ export default class ListsController extends Controller {
         dialog,
         name: this.createNameInputTarget,
         colors: this.createColorPickerTarget,
+        icons: this.createIconPickerTarget,
         error: this.createErrorTarget,
       };
       this._createModal = JinModal.fromElement(dialog, {
@@ -442,15 +452,27 @@ export default class ListsController extends Controller {
     // S4: use _createModal instead of createDialogTarget.showModal()
     if (!this._createModal || !this.createElements) return;
     ++this.createSession;
-    const { dialog, name, colors, error } = this.createElements;
+    const { dialog, name, colors, icons, error } = this.createElements;
     this.pendingCreateColor = 'accent';
+    this.pendingCreateIcon = defaultListIcon('checklist');
+    this.createIconTouched = false;
     name.value = '';
     dialog.querySelector<HTMLInputElement>('input[name="lists-create-kind"][value="checklist"]')!.checked = true;
     error.textContent = '';
     error.classList.add('hidden');
     this.renderColorPicker(colors, this.pendingCreateColor, (color) => {
       this.pendingCreateColor = color;
+      this.renderIconPicker(icons, this.pendingCreateIcon, color, 'checklist', icon => {
+        this.pendingCreateIcon = icon;
+        this.createIconTouched = true;
+      });
     });
+    this.renderIconPicker(icons, this.pendingCreateIcon, this.pendingCreateColor, 'checklist', icon => {
+      this.pendingCreateIcon = icon;
+      this.createIconTouched = true;
+    });
+    dialog.removeEventListener('change', this.handleCreateWorkflowChange);
+    dialog.addEventListener('change', this.handleCreateWorkflowChange);
     this._createModal.open();
   }
 
@@ -477,13 +499,8 @@ export default class ListsController extends Controller {
     if (createButton) createButton.disabled = true;
 
     try {
-      // Bridge contract requires both color AND icon (CreateListInput has no
-      // #[serde(default)] — see src-tauri/src/commands/lists.rs). 'list' is
-      // the canonical non-default list icon: lib/lists/render.ts already
-      // draws every non-inbox list with it, and jin-core's own tests
-      // (ops/lists.rs) use the same literal.
       const kind = dialog.querySelector<HTMLInputElement>('input[name="lists-create-kind"]:checked')?.value === 'board' ? 'board' : 'checklist';
-      const created = await createList({ name, color: this.pendingCreateColor, icon: kind === 'board' ? 'layout-grid' : 'list', workflow_kind: kind });
+      const created = await createList({ name, color: this.pendingCreateColor, icon: this.pendingCreateIcon, workflow_kind: kind });
       const stillCurrent = this.createSession === session && dialog.open;
       if (stillCurrent) this.closeCreate();
       await this.loadLists();
@@ -512,11 +529,18 @@ export default class ListsController extends Controller {
     if (!this._editModalInstance) return;
     this.pendingEditId = list.id;
     this.pendingEditColor = list.color;
+    this.pendingEditIcon = list.icon;
     this.editNameInputTarget.value = list.name;
     this.editErrorTarget.textContent = '';
     this.editErrorTarget.classList.add('hidden');
     this.renderColorPicker(this.editColorPickerTarget, list.color, (color) => {
       this.pendingEditColor = color;
+      this.renderIconPicker(this.editIconPickerTarget, this.pendingEditIcon, color, list.workflow_kind, icon => {
+        this.pendingEditIcon = icon;
+      });
+    });
+    this.renderIconPicker(this.editIconPickerTarget, list.icon, list.color, list.workflow_kind, icon => {
+      this.pendingEditIcon = icon;
     });
     this._editModalInstance.open();
   }
@@ -539,9 +563,10 @@ export default class ListsController extends Controller {
 
     const id = this.pendingEditId;
     try {
-      await editList(id, { name, color: this.pendingEditColor });
+      const updated = await editList(id, { name, color: this.pendingEditColor, icon: this.pendingEditIcon });
       this.closeEdit();
-      void this.loadLists();
+      await this.loadLists();
+      this.dispatch('list-updated', { detail: { list: updated }, prefix: 'jin', bubbles: true });
     } catch (err: unknown) {
       // Inline form error (JinErrorDto) beats a generic toast — the user is
       // mid-form. The non-JinErrorDto branch still must not swallow silently.
@@ -612,5 +637,71 @@ export default class ListsController extends Controller {
     this._colorPickers.set(container, picker);
     container.className = 'lists-color-picker';
     container.replaceChildren(picker.element);
+  }
+
+  private readonly handleCreateWorkflowChange = (event: Event): void => {
+    const input = event.target as HTMLInputElement;
+    if (input.name !== 'lists-create-kind' || !input.checked || this.createIconTouched) return;
+    const kind = input.value === 'board' ? 'board' : 'checklist';
+    this.pendingCreateIcon = defaultListIcon(kind);
+    if (!this.createElements) return;
+    this.renderIconPicker(this.createElements.icons, this.pendingCreateIcon, this.pendingCreateColor, kind, icon => {
+      this.pendingCreateIcon = icon;
+      this.createIconTouched = true;
+    });
+  };
+
+  /** A concise, named Lucide set keeps a list recognisable without turning its identity into decoration. */
+  private renderIconPicker(
+    container: HTMLElement,
+    activeIcon: string,
+    color: string,
+    workflow: ListDto['workflow_kind'],
+    onPick: (icon: string) => void,
+  ): void {
+    const picker = document.createElement('div');
+    picker.className = 'lists-icon-picker';
+    applyJinColor(picker, color);
+    picker.setAttribute('role', 'group');
+    picker.setAttribute('aria-label', 'Choose a list symbol');
+
+    const choices = isListIdentityIcon(activeIcon)
+      ? LIST_IDENTITY_ICONS
+      : [{ name: activeIcon, label: 'Current symbol' } as const, ...LIST_IDENTITY_ICONS];
+    const buttons: Array<{ choice: typeof choices[number]; button: HTMLButtonElement }> = [];
+    for (const choice of choices) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'lists-icon-picker__choice';
+      button.setAttribute('aria-label', choice.label);
+      button.setAttribute('aria-pressed', String(choice.name === activeIcon));
+      button.dataset.icon = choice.name;
+      const glyph = document.createElement('i');
+      glyph.setAttribute('data-lucide', listGlyph(choice.name, workflow));
+      glyph.setAttribute('aria-hidden', 'true');
+      button.appendChild(glyph);
+      picker.appendChild(button);
+      buttons.push({ choice, button });
+    }
+    const preview = document.createElement('span');
+    preview.className = 'lists-icon-picker__preview';
+    preview.setAttribute('aria-hidden', 'true');
+    const previewGlyph = document.createElement('i');
+    previewGlyph.setAttribute('data-lucide', listGlyph(activeIcon, workflow));
+    preview.appendChild(previewGlyph);
+    picker.appendChild(preview);
+    for (const { choice, button } of buttons) {
+      button.addEventListener('click', () => {
+        onPick(choice.name);
+        buttons.forEach(candidate => candidate.button.setAttribute('aria-pressed', String(candidate.choice.name === choice.name)));
+        const replacement = document.createElement('i');
+        replacement.setAttribute('data-lucide', listGlyph(choice.name, workflow));
+        replacement.setAttribute('aria-hidden', 'true');
+        preview.replaceChildren(replacement);
+        initIcons(preview);
+      });
+    }
+    container.replaceChildren(picker);
+    initIcons(container);
   }
 }

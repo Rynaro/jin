@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { between } from "../lib/tasks/rank";
+import { between, compareRank } from "../lib/tasks/rank";
 
 const ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -15,6 +15,14 @@ function inAlphabet(k: string): boolean {
 }
 
 describe("rank.between — core invariants (VG-P2 / VG-P9)", () => {
+  it("compares mixed-case ranks in the base-62 ASCII order", () => {
+    expect(compareRank('Z', 'a')).toBeLessThan(0);
+    expect(compareRank('a', 'Z')).toBeGreaterThan(0);
+    expect(compareRank('Z', 'Z')).toBe(0);
+    const next = between('Z', 'a');
+    expect('Z' < next && next < 'a').toBe(true);
+  });
+
   it("between(null, null) returns a non-empty key", () => {
     const k = between(null, null);
     expect(k.length).toBeGreaterThan(0);

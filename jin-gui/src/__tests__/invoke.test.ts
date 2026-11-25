@@ -66,6 +66,7 @@ import {
   renameBoardColumn,
   reorderBoardColumn,
   changeBoardColumnType,
+  setBoardColumnColor,
   deleteBoardColumn,
   createSection,
   renameSection,
@@ -112,6 +113,10 @@ describe('workflow and column native IPC payloads', () => {
     await changeBoardColumnType('project', 'backlog', 'queue');
     expect(mockInvoke).toHaveBeenLastCalledWith('change_board_column_type', {
       id: 'project', column_id: 'backlog', column_type: 'queue',
+    });
+    await setBoardColumnColor('project', 'backlog', 'purple');
+    expect(mockInvoke).toHaveBeenLastCalledWith('set_board_column_color', {
+      id: 'project', column_id: 'backlog', color: 'purple',
     });
     await deleteBoardColumn('project', 'backlog', 'queue');
     expect(mockInvoke).toHaveBeenLastCalledWith('delete_board_column', {

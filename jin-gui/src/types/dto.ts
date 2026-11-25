@@ -277,7 +277,7 @@ export interface ListDto {
   view: string;
   sort_mode: string;
   workflow_kind: 'checklist' | 'board' | null;
-  columns: Array<{ id: string; name: string; position: string; type: 'queue' | 'none' | 'in_progress' | 'done' }>;
+  columns: Array<{ id: string; name: string; position: string; type: 'queue' | 'none' | 'in_progress' | 'done'; color?: string | null }>;
   initial_column_id: string | null;
   is_default: boolean;
   task_count: number;

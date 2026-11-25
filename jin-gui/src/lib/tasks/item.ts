@@ -252,6 +252,9 @@ export function createTaskDragPreview(source: HTMLElement): HTMLElement {
     if (attribute.name.startsWith('data-')) content.removeAttribute(attribute.name);
   }
   content.querySelectorAll('.task-item__actions, .task-item__collapse-toggle').forEach((node) => node.remove());
+  // A board family is one draggable parent. Its released child sheets remain
+  // interactive in-place, but would make a misleading oversized drag ghost.
+  content.querySelectorAll('.task-board-family').forEach((node) => node.remove());
   content.querySelectorAll<HTMLElement>('*').forEach((node) => {
     node.removeAttribute('id');
     for (const attribute of Array.from(node.attributes)) {
@@ -296,6 +299,8 @@ export interface TaskRowCallbacks {
   /** Typed board column placement, independent of its status type. */
   onColumnDrop?: (taskId: string, columnId: string) => void;
   onColumnCreate?: (columnId: string, title: string, due?: string) => void;
+  /** Open the editor for a typed board stage from its own heading. */
+  onEditBoardColumn?: (columnId: string) => void;
   /** Called when the status circle is clicked. Controller decides the next status. */
   onStatusToggle?: (taskId: string, currentStatus: string) => void;
   /** True while this task's optimistic completion mutation is in flight. */
@@ -374,6 +379,24 @@ export interface TaskRowCallbacks {
    * call site that does not wire this keeps its exact pre-S7 behavior.
    */
   onItemClick?: (taskId: string, event: MouseEvent) => void;
+  /** Opens a parent inspector and places keyboard focus on its subtasks. */
+  onManageSubtasks?: (taskId: string) => void;
+  /** Toggle a child in the parent card without changing its parent. */
+  onToggleBoardSubtask?: (parentId: string, childId: string, currentStatus: string) => void;
+  /** Open a child from its parent card's inline checklist. */
+  onSelectBoardSubtask?: (parentId: string, childId: string) => void;
+  /** Add a child from an expanded parent card. A false result preserves the draft. */
+  onAddBoardSubtask?: (parentId: string, title: string) => Promise<boolean> | boolean | void;
+  /** Undefined uses the family-size default. */
+  isBoardSubtasksExpanded?: (parentId: string) => boolean | undefined;
+  onSetBoardSubtasksExpanded?: (parentId: string, expanded: boolean) => void;
+  /** Preserve an inline add draft when board data re-renders. */
+  getBoardSubtaskDraft?: (parentId: string) => string | undefined;
+  onSetBoardSubtaskDraft?: (parentId: string, value: string | null) => void;
+  isBoardSubtaskComposerOpen?: (parentId: string) => boolean;
+  onSetBoardSubtaskComposerOpen?: (parentId: string, open: boolean) => void;
+  /** Move an inline child to a named board stage. */
+  onMoveBoardSubtask?: (parentId: string, childId: string, columnId: string) => Promise<boolean> | boolean | void;
 }
 
 /**
@@ -586,19 +609,22 @@ export function buildTaskItem(
   }
   if (titleEl) titleEl.textContent = task.title;
 
-  // ── S6: subtask progress badge (AC-S6-11) ─────────────────────────────────
-  // Populated ONLY when `task` itself has children in the current dataset;
-  // otherwise the placeholder is removed. A nested child never shows its own progress badge redundant
-  // with the parent's, but a subtask could itself carry the badge if depth
-  // allowed grandchildren — it never does (depth capped at one), so this is
-  // simply "does `nesting.progress` exist for this task".
+  // ── S6: subtask progress (AC-S6-11) ───────────────────────────────────────
+  // Board cards replace this compact progress slot with their inline family
+  // disclosure in render.ts. List rows keep the read-only count here.
   const progressEl = item.querySelector('.task-item__subtask-progress');
   if (progressEl) {
     if (nesting?.progress) {
       const { done, total } = nesting.progress;
-      progressEl.textContent = `${done}/${total}`;
-      progressEl.setAttribute('aria-label', `${done} of ${total} subtasks complete`);
-      progressEl.removeAttribute('aria-hidden');
+      if (variant === 'card') {
+        // The board renderer owns the disclosure and its inline checklist.
+        // Retaining only the slot avoids a temporary inspector-only control.
+        progressEl.remove();
+      } else {
+        progressEl.textContent = `${done}/${total}`;
+        progressEl.setAttribute('aria-label', `${done} of ${total} subtasks complete`);
+        progressEl.removeAttribute('aria-hidden');
+      }
     } else {
       progressEl.remove();
     }
@@ -624,7 +650,10 @@ export function buildTaskItem(
   // never for a nested child (isChild), where the nesting itself already
   // shows the relationship.
   if (!isChild && nesting?.parentBreadcrumb && metaEl) {
-    metaEl.insertBefore(buildParentBreadcrumbChip(nesting.parentBreadcrumb, onNavigate), metaEl.firstChild);
+    metaEl.insertBefore(
+      buildParentBreadcrumbChip(nesting.parentBreadcrumb, onNavigate, variant === 'card' ? callbacks?.onManageSubtasks : undefined),
+      metaEl.firstChild,
+    );
   }
 
   // ── Tag chips ──────────────────────────────────────────────────────────────
@@ -700,7 +729,11 @@ export function buildTaskItem(
       e.stopPropagation();
       onReopen(task.id);
     });
-    item.appendChild(reopenBtn);
+    // Board cards already reserve this caption lane for task context. Keeping
+    // Reopen there preserves the labeled transition without growing Done
+    // cards into a separate grid row.
+    if (metaEl) metaEl.appendChild(reopenBtn);
+    else item.appendChild(reopenBtn);
   }
 
   return item;
@@ -849,6 +882,7 @@ export function buildDueChipGroup(
 function buildParentBreadcrumbChip(
   breadcrumb: ParentBreadcrumb,
   onNavigate: BrowseNavigateCallback,
+  onManageSubtasks?: (taskId: string) => void,
 ): HTMLElement {
   const chip = document.createElement('button');
   chip.type = 'button';
@@ -857,7 +891,8 @@ function buildParentBreadcrumbChip(
   chip.textContent = `↳ ${breadcrumb.parentTitle}`;
   chip.addEventListener('click', (e) => {
     e.stopPropagation();
-    onNavigate('tasks', breadcrumb.parentId);
+    if (onManageSubtasks) onManageSubtasks(breadcrumb.parentId);
+    else onNavigate('tasks', breadcrumb.parentId);
   });
   return chip;
 }

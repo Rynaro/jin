@@ -20,6 +20,11 @@ const BASE = 62;
 /** Index of 'V' — approximate midpoint of the alphabet. */
 const MID_IDX = 31;
 
+/** Compare fractional position keys by their base-62 ASCII ordering. */
+export function compareRank(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /** Returns the position (0-based) of `c` in ALPHABET.  Throws if not found. */
 function idxOf(c: string): number {
   const i = ALPHABET.indexOf(c);

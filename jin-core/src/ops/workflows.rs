@@ -942,7 +942,29 @@ pub fn create_column(
             name: name.to_string(),
             position: crate::order::between(last, None),
             column_type,
+            color: None,
         });
+        Ok(())
+    })
+}
+
+/// Assign a visual Jin color to a board column. `None` restores the neutral
+/// presentation used by legacy columns.
+pub fn set_column_color(
+    root: &Path,
+    list_id: &str,
+    column_id: &str,
+    color: Option<&str>,
+) -> Result<List> {
+    let color = color.map(super::lists::normalize_color).transpose()?;
+    edit_board_columns(root, list_id, "set_board_column_color", |list| {
+        let column = list
+            .frontmatter
+            .columns
+            .iter_mut()
+            .find(|column| column.id == column_id)
+            .ok_or_else(|| JinError::NotFound(format!("column/{column_id}")))?;
+        column.color = color;
         Ok(())
     })
 }
@@ -2133,5 +2155,84 @@ mod tests {
             reopened_child.frontmatter.section_id.as_deref(),
             Some(group.id.as_str())
         );
+    }
+
+    #[test]
+    fn column_color_round_trips_without_changing_board_semantics() {
+        let tmp = vault();
+        let root = tmp.path();
+        let board = list(root, "Project", WorkflowKind::Board);
+        let queue = board
+            .columns
+            .iter()
+            .find(|column| column.column_type == BoardColumnType::Queue)
+            .unwrap();
+
+        let colored = set_column_color(root, &board.id, &queue.id, Some("#a3f")).unwrap();
+        let updated = colored
+            .frontmatter
+            .columns
+            .iter()
+            .find(|column| column.id == queue.id)
+            .unwrap();
+        assert_eq!(updated.color.as_deref(), Some("#AA33FF"));
+        assert_eq!(updated.column_type, BoardColumnType::Queue);
+
+        let renamed = rename_column(root, &board.id, &queue.id, "Ideas").unwrap();
+        let renamed_column = renamed
+            .frontmatter
+            .columns
+            .iter()
+            .find(|column| column.id == queue.id)
+            .unwrap();
+        assert_eq!(renamed_column.color.as_deref(), Some("#AA33FF"));
+        let reordered = reorder_column(root, &board.id, &queue.id, "A").unwrap();
+        assert_eq!(
+            reordered
+                .frontmatter
+                .columns
+                .iter()
+                .find(|column| column.id == queue.id)
+                .unwrap()
+                .color
+                .as_deref(),
+            Some("#AA33FF")
+        );
+        assert!(set_column_color(root, &board.id, &queue.id, Some("not-a-color")).is_err());
+        assert_eq!(
+            owning_list(&Config::load(root).unwrap(), &board.id)
+                .unwrap()
+                .frontmatter
+                .columns
+                .iter()
+                .find(|column| column.id == queue.id)
+                .unwrap()
+                .color
+                .as_deref(),
+            Some("#AA33FF")
+        );
+
+        let reloaded = owning_list(&Config::load(root).unwrap(), &board.id).unwrap();
+        assert_eq!(
+            reloaded
+                .frontmatter
+                .columns
+                .iter()
+                .find(|column| column.id == queue.id)
+                .unwrap()
+                .color
+                .as_deref(),
+            Some("#AA33FF")
+        );
+
+        let reset = set_column_color(root, &board.id, &queue.id, None).unwrap();
+        assert!(reset
+            .frontmatter
+            .columns
+            .iter()
+            .find(|column| column.id == queue.id)
+            .unwrap()
+            .color
+            .is_none());
     }
 }

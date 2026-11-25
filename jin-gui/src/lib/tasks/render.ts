@@ -53,7 +53,7 @@ import { buildTaskItem, createTaskDragPreview, wirePointerDrag, type TaskRowCall
 import { configureTaskCompletion } from './completion';
 import { guardNativeDrag } from '../ui/movement';
 import { createCompactNumberStepper } from '../ui/number_stepper';
-import { between } from './rank';
+import { between, compareRank } from './rank';
 import type { FlexibleTaskGroup } from './scopes';
 import type { ListDto } from '../../types/dto';
 
@@ -575,6 +575,14 @@ export function renderListViewWithSections(
  */
 const BOARD_STATUS_COLUMNS: readonly string[] = ['todo', 'doing', 'done'];
 
+function isBoardPlacementValid(task: TaskDto, columns: ListDto['columns']): boolean {
+  return columns.some((column) => column.id === task.board_column_id
+    && (column.type === 'queue' ? task.status === 'todo'
+      : column.type === 'done' ? task.status === 'done'
+        : column.type === 'none' ? task.status === 'todo' || task.status === 'doing'
+          : task.status === 'doing'));
+}
+
 /**
  * renderBoardView — render tasks as Kanban columns keyed by `TaskStatus`
  * (S4 — Approach §3, "Board = Kanban by status").
@@ -629,6 +637,7 @@ export function renderBoardView(
   selectedTaskIds?: ReadonlySet<string>,
   typedColumns?: ListDto['columns'],
   initialColumnId?: string | null,
+  boardFamilyTasks?: TaskDto[],
 ): void {
   container.innerHTML = '';
 
@@ -641,20 +650,31 @@ export function renderBoardView(
   // in the status filter and the Completed smart view instead.
   const boardTasks = tasks.filter((t) => t.status !== 'cancelled');
 
-  // S6: cards render standalone (never nested) — a parent gets the `2/5`
-  // progress badge and a child gets a parent breadcrumb chip, computed over
-  // the WHOLE board (before the per-column split), since a parent's children
-  // may land in a different status column than the parent itself.
-  const displayInfo = subtaskDisplayInfo ?? computeSubtaskDisplayInfo(boardTasks);
+  // The board is a work surface, so a related task belongs under the card
+  // that gives it context. `boardFamilyTasks` deliberately remains wider than
+  // a filtered board: it lets a visible parent retain an honest count while a
+  // child is filtered out. A child only becomes its own card when its parent
+  // cannot be rendered in the current result.
+  const fullBoardTasks = (boardFamilyTasks ?? tasks)
+    .filter((task) => task.deleted_at === null && task.status !== 'cancelled');
+  const visibleFamilies = partitionParentsAndChildren(boardTasks);
+  const { childrenByParent: fullChildrenByParent } = partitionParentsAndChildren(fullBoardTasks);
+  const visibleChildrenByParent = visibleFamilies.childrenByParent;
+  const cardTasks = visibleFamilies.topLevel;
+
+  // Progress is computed from the full active family before filters narrow
+  // the cards, so a parent remains honest about hidden child work.
+  const displayInfo = subtaskDisplayInfo ?? computeSubtaskDisplayInfo(fullBoardTasks);
 
   const columnEls: HTMLElement[] = [];
   const columns = typedColumns?.length
-    ? [...typedColumns].sort((a, b) => a.position.localeCompare(b.position))
+    ? [...typedColumns].sort((a, b) => compareRank(a.position, b.position) || a.id.localeCompare(b.id))
     : BOARD_STATUS_COLUMNS.map((status) => ({ id: status, name: taskStatusLabel(status), type: status, position: status }));
+  const placementIsValid = (task: TaskDto) => !typedColumns?.length || isBoardPlacementValid(task, columns as ListDto['columns']);
   for (const column of columns) {
     const colTasks = typedColumns?.length
-      ? boardTasks.filter((t) => t.board_column_id === column.id)
-      : boardTasks.filter((t) => t.status === column.type);
+      ? cardTasks.filter((t) => t.board_column_id === column.id && placementIsValid(t))
+      : cardTasks.filter((t) => t.status === column.type);
     const colEl = buildStatusColumn(
       column.type,
       colTasks,
@@ -668,19 +688,25 @@ export function renderBoardView(
       typedColumns?.length ? column as ListDto['columns'][number] : undefined,
       undefined,
       typedColumns?.length ? column.id === (initialColumnId ?? columns.find((item) => item.type === 'queue')?.id ?? columns.find((item) => item.type === 'none')?.id) : false,
+      {
+        fullChildrenByParent,
+        visibleChildrenByParent,
+        columns: typedColumns,
+      },
     );
     columnEls.push(colEl);
     boardEl.appendChild(colEl);
   }
 
   if (typedColumns?.length) {
-    const placementIsValid = (task: TaskDto) => columns.some((column) =>
-      column.id === task.board_column_id
-      && (column.type === 'queue' ? task.status === 'todo' : column.type === 'done' ? task.status === 'done' : column.type === 'none' ? task.status === 'todo' || task.status === 'doing' : task.status === 'doing'));
-    const needsPlacement = boardTasks.filter((task) => !placementIsValid(task));
+    const needsPlacement = cardTasks.filter((task) => !placementIsValid(task));
     if (needsPlacement.length) {
       const repair = buildStatusColumn('repair', needsPlacement, templates, sortMode, onNavigate,
-        taskCallbacks, selectedTaskId, displayInfo, selectedTaskIds, undefined, 'Needs placement');
+        taskCallbacks, selectedTaskId, displayInfo, selectedTaskIds, undefined, 'Needs placement', false, {
+          fullChildrenByParent,
+          visibleChildrenByParent,
+          columns: typedColumns,
+        });
       repair.classList.add('tasks-board__column--repair');
       columnEls.push(repair);
       boardEl.appendChild(repair);
@@ -705,6 +731,9 @@ export function renderBoardView(
 
     card.addEventListener('click', (event) => {
       const target = event.target as Element;
+      // The compact checklist is an independent interactive surface. Its
+      // whitespace must not select the parent card behind it.
+      if (target.closest('.task-board-family')) return;
       if (target.closest('button, a, input, select, textarea, [contenteditable="true"]')) return;
       if (taskCallbacks?.onItemClick) taskCallbacks.onItemClick(taskId, event);
       else onNavigate('tasks', taskId);
@@ -715,6 +744,7 @@ export function renderBoardView(
       shouldStart: (event) => {
         const target = event.target;
         if (!(target instanceof Element)) return false;
+        if (target.closest('.task-board-family')) return false;
         if (target.closest('input, select, textarea, a, [contenteditable="true"]')) return false;
         const button = target.closest('button');
         return !button || button.classList.contains('task-item__body') || button.classList.contains('task-item__drag-handle');
@@ -803,12 +833,18 @@ export function appendTaskDisclosure(
 }
 
 /**
- * buildStatusColumn — one Kanban column for a single `TaskStatus` (S4).
+ * buildStatusColumn — one Kanban column for a single stage.
  * Header is name + live count ONLY — no rename/delete/collapse, unlike the
  * retired section-keyed column: the three statuses are fixed by the core
  * FSM, not user data, so there is nothing here for the user to rename or
  * delete.
  */
+interface BoardFamilyContext {
+  fullChildrenByParent: Map<string, TaskDto[]>;
+  visibleChildrenByParent: Map<string, TaskDto[]>;
+  columns?: ListDto['columns'];
+}
+
 function buildStatusColumn(
   status: string,
   colTasks: TaskDto[],
@@ -822,17 +858,30 @@ function buildStatusColumn(
   typedColumn?: ListDto['columns'][number],
   specialLabel?: string,
   isInitial = false,
+  familyContext?: BoardFamilyContext,
 ): HTMLElement {
   const col = document.createElement('div');
   col.className = 'tasks-board__column';
   col.dataset.columnStatus = status;
   if (typedColumn) col.dataset.boardColumnId = typedColumn.id;
+  if (typedColumn) {
+    const color = (typedColumn as typeof typedColumn & { color?: string | null }).color;
+    if (color) applyJinColor(col, color, '--tasks-board-stage-color');
+    col.dataset.columnType = typedColumn.type;
+  }
   col.setAttribute('role', 'listitem');
   col.setAttribute('aria-disabled', 'false');
 
   // ── Column header: name + live count ──────────────────────────────────
   const header = document.createElement('div');
   header.className = 'tasks-board__column-header';
+
+  if (typedColumn) {
+    const marker = document.createElement('span');
+    marker.className = 'tasks-board__column-marker';
+    marker.setAttribute('aria-hidden', 'true');
+    header.appendChild(marker);
+  }
 
   const label = specialLabel ?? typedColumn?.name ?? taskStatusLabel(status);
 
@@ -847,28 +896,50 @@ function buildStatusColumn(
   countEl.setAttribute('aria-label', `${colTasks.length} tasks`);
   header.appendChild(countEl);
 
+  if (typedColumn && taskCallbacks?.onEditBoardColumn) {
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'tasks-board__column-edit jin-control jin-control--icon';
+    const icon = document.createElement('i');
+    icon.setAttribute('data-lucide', 'pencil');
+    icon.setAttribute('aria-hidden', 'true');
+    edit.append(icon);
+    edit.setAttribute('aria-label', `Edit ${label} column`);
+    edit.addEventListener('click', (event) => {
+      event.stopPropagation();
+      taskCallbacks.onEditBoardColumn?.(typedColumn.id);
+    });
+    header.appendChild(edit);
+  }
+
   if (typedColumn) {
-    const descriptor = document.createElement('small');
-    descriptor.className = 'tasks-board__column-type';
-    descriptor.textContent = typedColumn.type === 'in_progress' ? 'In Progress' : typedColumn.type === 'done' ? 'Done' : typedColumn.type === 'none' ? 'No status change' : 'Queue';
-    header.appendChild(descriptor);
+    const typeLabel = typedColumn.type === 'in_progress' ? 'In Progress' : typedColumn.type === 'done' ? 'Done' : typedColumn.type === 'none' ? 'No status change' : 'Queue';
+    const metadata = document.createElement('span');
+    metadata.className = 'tasks-board__column-meta';
+    if (label.trim().toLocaleLowerCase() !== typeLabel.toLocaleLowerCase()) {
+      const descriptor = document.createElement('small');
+      descriptor.className = 'tasks-board__column-type';
+      descriptor.textContent = typeLabel;
+      metadata.appendChild(descriptor);
+    }
     if (isInitial) {
       const initial = document.createElement('small');
       initial.className = 'tasks-board__column-initial';
       initial.textContent = 'New tasks';
-      header.appendChild(initial);
+      metadata.appendChild(initial);
     }
+    if (metadata.childElementCount) header.appendChild(metadata);
   }
 
   col.appendChild(header);
 
   // ── Card list — ordered by the active sort mode (AC-S2-05/06) ──────────
-  // S7: role="listbox" + aria-multiselectable pairs with buildTaskItem's
-  // role="option" on each card.
+  // A board remains a semantic list: cards contain native controls (including
+  // inline checklist controls), which are not valid descendants of listbox
+  // options and are hidden by VoiceOver in that arrangement.
   const cardList = document.createElement('ul');
   cardList.className = 'tasks-board__column-body';
-  cardList.setAttribute('role', 'listbox');
-  cardList.setAttribute('aria-multiselectable', 'true');
+  cardList.setAttribute('role', 'list');
   cardList.setAttribute('aria-label', `${label} column`);
 
   const sorted = sortTasksForMode(colTasks, sortMode);
@@ -883,6 +954,17 @@ function buildStatusColumn(
         displayInfo?.get(task.id),
       );
     if (typedColumn) card.dataset.boardColumnId = typedColumn.id;
+    appendBoardFamily(
+      card,
+      task,
+      familyContext?.fullChildrenByParent.get(task.id) ?? [],
+      familyContext?.visibleChildrenByParent.get(task.id) ?? [],
+      familyContext?.columns,
+      onNavigate,
+      taskCallbacks,
+    );
+    card.setAttribute('role', 'listitem');
+    card.removeAttribute('aria-selected');
     cardList.appendChild(card);
   }
   col.appendChild(cardList);
@@ -897,6 +979,253 @@ function buildStatusColumn(
   }
 
   return col;
+}
+
+/** Keep related board work in the parent card that provides its context. */
+function appendBoardFamily(
+  card: HTMLElement,
+  parent: TaskDto,
+  allChildren: TaskDto[],
+  visibleChildren: TaskDto[],
+  columns: ListDto['columns'] | undefined,
+  onNavigate: BrowseNavigateCallback,
+  callbacks: TaskRowCallbacks | undefined,
+): void {
+  if (parent.parent) return;
+  const canAdd = Boolean(callbacks?.onAddBoardSubtask);
+  if (allChildren.length === 0 && !canAdd) return;
+  const meta = card.querySelector<HTMLElement>('.task-item__meta');
+  if (!meta) return;
+
+  const saved = callbacks?.isBoardSubtasksExpanded?.(parent.id);
+  let expanded = saved ?? (parent.status !== 'done' && parent.status !== 'cancelled' && allChildren.length > 0 && allChildren.length <= 3);
+  if (allChildren.length) {
+    card.classList.add('task-item--family-deck');
+    const face = document.createElement('div');
+    face.className = 'task-item__family-face';
+    while (card.firstChild) face.appendChild(card.firstChild);
+    card.appendChild(face);
+  }
+  if (allChildren.length > 1) card.classList.add('task-item--family-deck-many');
+  const previous = meta.querySelector<HTMLElement>('.task-item__family-control');
+  const disclosure = document.createElement('button');
+  disclosure.type = 'button';
+  disclosure.className = 'task-item__family-control task-item__family-disclosure text-caption2';
+  if (!allChildren.length) disclosure.classList.add('task-item__family-disclosure--empty');
+  disclosure.dataset.boardSubtaskDisclosure = parent.id;
+  disclosure.setAttribute('aria-controls', `board-subtasks-${parent.id}`);
+  if (previous) previous.replaceWith(disclosure);
+  else meta.insertBefore(disclosure, meta.firstChild);
+
+  const panel = document.createElement('section');
+  panel.className = 'task-board-family';
+  if (allChildren.length) panel.classList.add('task-board-family--has-children');
+  if (visibleChildren.length) panel.classList.add('task-board-family--visible-children');
+  panel.id = `board-subtasks-${parent.id}`;
+  panel.setAttribute('aria-label', `Subtasks for ${parent.title}`);
+  card.appendChild(panel);
+  const contents = document.createElement('div');
+  contents.className = 'task-board-family__contents';
+  const chevron = document.createElement('i');
+  chevron.className = 'task-item__family-chevron';
+  chevron.setAttribute('data-lucide', allChildren.length ? 'chevron-down' : 'plus');
+  chevron.setAttribute('aria-hidden', 'true');
+  const label = document.createElement('span');
+  disclosure.append(chevron, label);
+
+  const updateDisclosure = (): void => {
+    const done = allChildren.filter((child) => child.status === 'done').length;
+    const count = `${done}/${allChildren.length}`;
+    label.textContent = allChildren.length ? `Subtasks ${count}` : 'Add subtask';
+    disclosure.setAttribute('aria-label', allChildren.length
+      ? `${expanded ? 'Hide' : 'Show'} subtasks for ${parent.title}, ${count} complete`
+      : `Add subtask to ${parent.title}`);
+    disclosure.classList.toggle('task-item__family-disclosure--expanded', expanded);
+  };
+  const applyExpandedState = (next: boolean, persist: boolean): void => {
+    expanded = next;
+    if (persist) callbacks?.onSetBoardSubtasksExpanded?.(parent.id, next);
+    panel.inert = !next;
+    panel.setAttribute('aria-hidden', String(!next));
+    card.classList.toggle('task-item--family-deck-tucked', !next && allChildren.length > 0);
+    disclosure.setAttribute('aria-expanded', String(next));
+    updateDisclosure();
+  };
+  disclosure.addEventListener('click', (event) => {
+    event.stopPropagation();
+    applyExpandedState(!expanded, true);
+    if (expanded && allChildren.length === 0) {
+      panel.querySelector<HTMLButtonElement>('.task-board-family__add-trigger')?.click();
+    } else if (expanded) {
+      panel.querySelector<HTMLElement>('[data-board-subtask-toggle], .task-board-family__add-trigger')?.focus();
+    }
+  });
+
+  if (visibleChildren.length) {
+    const list = document.createElement('ul');
+    list.className = 'task-board-family__list';
+    list.setAttribute('role', 'list');
+    for (const [index, child] of visibleChildren.entries()) {
+      const row = buildBoardSubtaskRow(parent, child, columns, onNavigate, callbacks);
+      // Preserve the paper order even while sheets receive focus: the parent
+      // face covers child one, then each preceding sheet covers the next.
+      row.style.zIndex = String(visibleChildren.length - index);
+      list.appendChild(row);
+    }
+    contents.appendChild(list);
+  } else if (allChildren.length) {
+    const filtered = document.createElement('p');
+    filtered.className = 'task-board-family__filtered text-caption2';
+    filtered.textContent = 'Subtasks are hidden by the current filters.';
+    contents.appendChild(filtered);
+  }
+  if (canAdd && callbacks) contents.appendChild(buildBoardSubtaskComposer(parent, callbacks));
+  panel.appendChild(contents);
+  applyExpandedState(expanded, false);
+}
+
+function buildBoardSubtaskRow(
+  parent: TaskDto,
+  child: TaskDto,
+  columns: ListDto['columns'] | undefined,
+  onNavigate: BrowseNavigateCallback,
+  callbacks: TaskRowCallbacks | undefined,
+): HTMLElement {
+  const row = document.createElement('li');
+  row.className = 'task-board-family__row';
+  row.dataset.taskId = child.id;
+  row.dataset.taskStatus = child.status;
+  row.addEventListener('click', (event) => {
+    const target = event.target as Element;
+    if (target.closest('button, select, input, textarea, a')) return;
+    if (callbacks?.onSelectBoardSubtask) callbacks.onSelectBoardSubtask(parent.id, child.id);
+    else onNavigate('tasks', child.id);
+  });
+  const sheet = document.createElement('div');
+  sheet.className = 'task-board-family__sheet';
+
+  const completion = document.createElement('button');
+  completion.dataset.boardSubtaskToggle = child.id;
+  configureTaskCompletion(completion, child, (_childId, currentStatus) => {
+    if (callbacks?.onToggleBoardSubtask) callbacks.onToggleBoardSubtask(parent.id, child.id, currentStatus);
+    else callbacks?.onStatusToggle?.(child.id, currentStatus);
+  });
+  const title = document.createElement('button');
+  title.type = 'button';
+  title.className = 'task-board-family__title';
+  title.textContent = child.title;
+  title.setAttribute('aria-label', `Open subtask ${child.title}`);
+  title.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (callbacks?.onSelectBoardSubtask) callbacks.onSelectBoardSubtask(parent.id, child.id);
+    else onNavigate('tasks', child.id);
+  });
+  sheet.append(completion, title);
+
+  if (columns?.length) {
+    const stage = document.createElement('select');
+    stage.className = 'task-board-family__stage form-select';
+    stage.dataset.boardSubtaskMove = child.id;
+    stage.setAttribute('aria-label', `Move ${child.title} to board stage`);
+    for (const column of columns) stage.add(new Option(column.name, column.id));
+    const original = child.board_column_id ?? '';
+    const hasOriginalStage = columns.some((column) => column.id === original);
+    const originalPlacementIsValid = hasOriginalStage && isBoardPlacementValid(child, columns);
+    if (!originalPlacementIsValid) stage.add(new Option('Needs placement', ''), 0);
+    stage.value = originalPlacementIsValid ? original : '';
+    const activeColumn = columns.find((column) => column.id === original);
+    if (activeColumn) stage.dataset.columnType = activeColumn.type;
+    const stageColor = (activeColumn as (typeof activeColumn & { color?: string | null }) | undefined)?.color;
+    if (stageColor) applyJinColor(stage, stageColor, '--tasks-board-stage-color');
+    stage.addEventListener('change', (event) => {
+      event.stopPropagation();
+      const target = stage.value;
+      if (!target || (target === original && originalPlacementIsValid) || !callbacks?.onMoveBoardSubtask) return;
+      stage.disabled = true;
+      Promise.resolve(callbacks.onMoveBoardSubtask(parent.id, child.id, target)).then((moved) => {
+        if (moved === false) stage.value = originalPlacementIsValid ? original : '';
+        stage.disabled = false;
+      }).catch(() => { stage.value = originalPlacementIsValid ? original : ''; stage.disabled = false; });
+    });
+    sheet.appendChild(stage);
+  } else {
+    const stage = document.createElement('span');
+    stage.className = 'task-board-family__stage-label text-caption2';
+    stage.textContent = taskStatusLabel(child.status);
+    stage.setAttribute('aria-label', `Current stage ${taskStatusLabel(child.status)}`);
+    sheet.appendChild(stage);
+  }
+  row.appendChild(sheet);
+  return row;
+}
+
+function buildBoardSubtaskComposer(parent: TaskDto, callbacks: TaskRowCallbacks): HTMLElement {
+  const host = document.createElement('div');
+  host.className = 'task-board-family__composer';
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'task-board-family__add-trigger';
+  trigger.textContent = 'Add subtask';
+  trigger.setAttribute('aria-label', `Add a subtask to ${parent.title}`);
+  const form = document.createElement('form');
+  form.className = 'task-board-family__add';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'task-board-family__add-input form-input';
+  input.dataset.boardSubtaskAddInput = parent.id;
+  input.placeholder = 'Add subtask…';
+  input.value = callbacks.getBoardSubtaskDraft?.(parent.id) ?? '';
+  input.setAttribute('aria-label', `New subtask for ${parent.title}`);
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.className = 'task-board-family__add-submit jin-control jin-control--secondary';
+  submit.textContent = 'Add';
+  const updateSubmit = (): void => { submit.disabled = !input.value.trim(); };
+  input.addEventListener('input', () => { callbacks.onSetBoardSubtaskDraft?.(parent.id, input.value); updateSubmit(); });
+  const setOpen = (open: boolean, focus = false): void => {
+    form.hidden = !open;
+    trigger.hidden = open;
+    callbacks.onSetBoardSubtaskComposerOpen?.(parent.id, open);
+    if (focus) input.focus();
+  };
+  trigger.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setOpen(true, true);
+  });
+  input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(false);
+    trigger.focus();
+  });
+  let submitting = false;
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const title = input.value.trim();
+    if (submitting || !title || !callbacks.onAddBoardSubtask) return;
+    submitting = true;
+    submit.disabled = true;
+    Promise.resolve(callbacks.onAddBoardSubtask(parent.id, title)).then((added) => {
+      if (added === false) { submitting = false; updateSubmit(); input.focus(); return; }
+      callbacks.onSetBoardSubtaskDraft?.(parent.id, null);
+      input.value = '';
+      submitting = false;
+      updateSubmit();
+    }).catch(() => { submitting = false; updateSubmit(); input.focus(); });
+  });
+  updateSubmit();
+  form.append(input, submit);
+  // State-aware controllers distinguish a user-closed composer from an
+  // absent state entry. Draft-only restoration stays as a compatibility
+  // fallback for older callers that cannot provide that state.
+  const restoredOpen = callbacks.isBoardSubtaskComposerOpen
+    ? callbacks.isBoardSubtaskComposerOpen(parent.id) === true
+    : input.value.length > 0;
+  form.hidden = !restoredOpen;
+  trigger.hidden = restoredOpen;
+  host.append(trigger, form);
+  return host;
 }
 
 // ── Section group helpers ─────────────────────────────────────────────────────
@@ -2392,7 +2721,7 @@ function buildDetailFields(task: TaskDto, cbs: TaskDetailCallbacks): HTMLElement
       prompt.selected = true;
       sel.add(prompt);
     }
-    for (const column of [...cbs.owningList.columns].sort((a, b) => a.position.localeCompare(b.position))) {
+    for (const column of [...cbs.owningList.columns].sort((a, b) => compareRank(a.position, b.position) || a.id.localeCompare(b.id))) {
       const option = new Option(`${column.name} · ${column.type === 'in_progress' ? 'In Progress' : column.type === 'done' ? 'Done' : column.type === 'none' ? 'No status change' : 'Queue'}`, column.id);
       option.selected = validCurrent && column.id === task.board_column_id;
       sel.add(option);

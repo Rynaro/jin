@@ -85,6 +85,7 @@ pub(crate) fn default_board_columns() -> Vec<BoardColumn> {
             name: name.to_string(),
             position,
             column_type,
+            color: None,
         }
     })
     .collect()

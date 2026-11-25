@@ -159,6 +159,16 @@ pub fn change_board_column_type_fn(
     current_list(root, id)
 }
 
+pub fn set_board_column_color_fn(
+    root: &Path,
+    id: &str,
+    column_id: &str,
+    color: Option<&str>,
+) -> Result<ListDto, JinErrorDto> {
+    workflows::set_column_color(root, id, column_id, color).map_err(JinErrorDto::from)?;
+    current_list(root, id)
+}
+
 pub fn delete_board_column_fn(
     root: &Path,
     id: &str,
@@ -424,6 +434,16 @@ pub async fn change_board_column_type(
 }
 
 #[tauri::command(rename_all = "snake_case")]
+pub async fn set_board_column_color(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    column_id: String,
+    color: Option<String>,
+) -> Result<ListDto, JinErrorDto> {
+    set_board_column_color_fn(&state.root, &id, &column_id, color.as_deref())
+}
+
+#[tauri::command(rename_all = "snake_case")]
 pub async fn delete_board_column(
     state: tauri::State<'_, AppState>,
     id: String,
@@ -509,6 +529,7 @@ mod ipc_tests {
                 rename_board_column,
                 reorder_board_column,
                 change_board_column_type,
+                set_board_column_color,
                 delete_board_column,
                 create_section,
                 rename_section,
@@ -616,6 +637,33 @@ mod ipc_tests {
             .unwrap()
             .iter()
             .any(|column| column["id"] == column_id && column["type"] == "queue"));
+        let recolored = call(
+            "set_board_column_color",
+            json!({"id":id,"column_id":column_id,"color":"purple"}),
+        )
+        .unwrap();
+        assert_eq!(
+            recolored["columns"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|column| column["id"] == column_id)
+                .unwrap()["color"],
+            "purple"
+        );
+        let reset_color = call(
+            "set_board_column_color",
+            json!({"id":id,"column_id":column_id,"color":null}),
+        )
+        .unwrap();
+        assert!(reset_color["columns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|column| column["id"] == column_id)
+            .unwrap()
+            .get("color")
+            .is_none());
         let original_queue = board.initial_column_id.as_deref().unwrap();
         let deleted = call(
             "delete_board_column",

@@ -810,9 +810,13 @@ describe('real-index modal wiring (RISK-1 gate)', () => {
       expect(createDialog.closest('[inert]')).toBeNull();
       const name = createDialog.querySelector<HTMLInputElement>('[data-lists-target="createNameInput"]')!;
       name.value = 'Personal reminders';
+      const travelSymbol = createDialog.querySelector<HTMLButtonElement>('.lists-icon-picker__choice[data-icon="plane"]')!;
+      travelSymbol.focus();
+      travelSymbol.click();
+      expect(document.activeElement).toBe(travelSymbol);
       createDialog.querySelector<HTMLButtonElement>('.btn-primary')!.click();
       await new Promise<void>(resolve => setTimeout(resolve, 30));
-      expect(createList).toHaveBeenCalledWith(expect.objectContaining({ name: 'Personal reminders', workflow_kind: 'checklist' }));
+      expect(createList).toHaveBeenCalledWith(expect.objectContaining({ name: 'Personal reminders', icon: 'plane', workflow_kind: 'checklist' }));
       expect(selected).toContain('personal');
       expect(createDialog.open).toBe(false);
     });
@@ -830,6 +834,21 @@ describe('real-index modal wiring (RISK-1 gate)', () => {
       ) as HTMLDialogElement | null;
       expect(createDialog).not.toBeNull();
       expect(createDialog!.open).toBe(true);
+    });
+
+    it('updates the active workspace identity from a saved list edit without reloading tasks', async () => {
+      const title = document.querySelector<HTMLElement>('[data-tasks-target="workspaceTitle"]')!;
+      const identity = document.querySelector<HTMLElement>('[data-tasks-target="workspaceIcon"]')!;
+      const listCalls = vi.mocked(listTasks).mock.calls.length;
+      window.dispatchEvent(new CustomEvent('jin:list-updated', {
+        detail: { list: makeList({ name: 'Household', color: '#FFE36B', icon: 'house' }) },
+      }));
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+      expect(title.textContent).toBe('Household');
+      expect(identity.dataset.color).toBe('custom');
+      expect(identity.style.getPropertyValue('--sw')).toBe('#FFE36B');
+      expect(identity.querySelector('i')?.getAttribute('data-lucide')).toBe('house');
+      expect(vi.mocked(listTasks).mock.calls).toHaveLength(listCalls);
     });
 
     it('create-list dialog has complete action-dialog__inner structure', () => {

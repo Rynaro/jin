@@ -109,6 +109,12 @@ import {
   // Lists P3 / Tags P4
   Inbox,          // Default list (inbox) icon in the lists sidebar rail
   Palette,        // Recolor action icon in list edit dialog
+  BriefcaseBusiness,
+  House,
+  Heart,
+  ShoppingBag,
+  GraduationCap,
+  Plane,
   // Views P6 — List/Board toggle + collapsible section header
   LayoutGrid,     // Board-view toggle icon
   Columns3,       // Board workflow choice
@@ -213,6 +219,12 @@ export {
   // Lists P3 / Tags P4
   Inbox,
   Palette,
+  BriefcaseBusiness,
+  House,
+  Heart,
+  ShoppingBag,
+  GraduationCap,
+  Plane,
   // Views P6 — List/Board toggle + collapsible section header
   LayoutGrid,
   Columns3,
@@ -317,6 +329,12 @@ const REGISTERED_ICONS = {
   // Lists P3 / Tags P4
   Inbox,
   Palette,
+  BriefcaseBusiness,
+  House,
+  Heart,
+  ShoppingBag,
+  GraduationCap,
+  Plane,
   // Views P6 — List/Board toggle + collapsible section header
   LayoutGrid,
   Columns3,

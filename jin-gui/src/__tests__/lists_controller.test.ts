@@ -253,6 +253,18 @@ describe('renderListsSidebar', () => {
     expect(container.querySelectorAll('.lists-rail__row')).toHaveLength(2);
   });
 
+  it('renders a saved list glyph in the rail and safely falls back for an unknown glyph', () => {
+    const container = makeContainer();
+    renderListsSidebar(container, [
+      makeList({ id: 'travel', name: 'Travel', icon: 'plane', is_default: false, position: 'B' }),
+      makeList({ id: 'legacy', name: 'Legacy', icon: 'custom-symbol', is_default: false, position: 'C' }),
+      makeList({ id: 'work', name: 'Work', icon: 'briefcase', is_default: false, position: 'D' }),
+    ]);
+    expect(container.querySelector('[data-list-id="travel"] .lists-rail__swatch i')?.getAttribute('data-lucide')).toBe('plane');
+    expect(container.querySelector('[data-list-id="legacy"] .lists-rail__swatch i')?.getAttribute('data-lucide')).toBe('list');
+    expect(container.querySelector('[data-list-id="work"] .lists-rail__swatch i')?.getAttribute('data-lucide')).toBe('briefcase-business');
+  });
+
   it('renders inbox row first and marks it as default', () => {
     const container = makeContainer();
     renderListsSidebar(container, [

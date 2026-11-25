@@ -61,6 +61,7 @@ import {
 import { between } from '../lib/tasks/rank';
 import { listNameById } from '../lib/lists/transform';
 import { applyScope, groupFlexibleTasks } from '../lib/tasks/scopes';
+import { createTaskDragPreview } from '../lib/tasks/item';
 
 // ── S1 controller-level harness (AC-S1-06 / AC-S1-08) ────────────────────────
 //
@@ -1219,6 +1220,22 @@ describe('VG-P6 / S4 — renderBoardView (Kanban by TaskStatus)', () => {
     const doingCount = container.querySelector('[data-column-status="doing"] .tasks-board__column-count');
     expect(todoCount?.textContent).toBe('2');
     expect(doingCount?.textContent).toBe('1');
+  });
+
+  it('renders a pencil edit affordance for typed columns without repeating the stage type', () => {
+    const onEditBoardColumn = vi.fn();
+    const columns = [
+      { id: 'queue', name: 'Queue', position: 'Z', type: 'queue' as const },
+      { id: 'backlog', name: 'Backlog', position: 'a', type: 'queue' as const },
+    ];
+    renderBoardView(container, templates, [], 'manual', () => {}, { onEditBoardColumn }, null, undefined, undefined, columns, 'queue');
+    const headers = Array.from(container.querySelectorAll<HTMLElement>('.tasks-board__column[data-board-column-id]'));
+    expect(headers.map((column) => column.dataset.boardColumnId)).toEqual(['queue', 'backlog']);
+    const queueHeader = headers[0].querySelector('.tasks-board__column-header')!;
+    expect(queueHeader.querySelector('.tasks-board__column-edit [data-lucide="pencil"]')).not.toBeNull();
+    expect(queueHeader.querySelector('.tasks-board__column-type')).toBeNull();
+    queueHeader.querySelector<HTMLButtonElement>('.tasks-board__column-edit')!.click();
+    expect(onEditBoardColumn).toHaveBeenCalledWith('queue');
   });
 });
 
@@ -3753,6 +3770,141 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     expect(document.querySelector('.browse-back-btn')).toBeNull();
   });
 
+  it('board families keep children inline while still opening the child inspector on demand', async () => {
+    const board = makeDefaultListDto({
+      id: 'kyoto', name: 'Weekend in Kyoto', is_default: true, workflow_kind: 'board',
+      columns: [
+        { id: 'queue', name: 'Queue', position: 'A', type: 'queue' },
+        { id: 'doing', name: 'In Progress', position: 'B', type: 'in_progress' },
+        { id: 'done', name: 'Done', position: 'C', type: 'done' },
+      ],
+    });
+    const parent = makeTaskDtoForStimulus({
+      id: 'kyoto-plan', title: 'Plan the Kyoto weekend', list: 'kyoto', board_column_id: 'queue',
+    });
+    const child = makeTaskDtoForStimulus({
+      id: 'tea-house', title: 'Find a quiet tea house', parent: 'kyoto-plan', list: 'kyoto',
+      status: 'doing', board_column_id: 'doing',
+    });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([board]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([parent, child]);
+    vi.spyOn(InvokeModule, 'getTaskById').mockImplementation(async (id: string) =>
+      id === child.id ? child : parent,
+    );
+
+    startS3App();
+    await flushStimulusAsync();
+
+    const boardEl = document.querySelector('.tasks-board');
+    const parentBody = document.querySelector<HTMLButtonElement>('li[data-task-id="kyoto-plan"] .task-item__body')!;
+    expect(boardEl).not.toBeNull();
+
+    // A parent title still opens its normal inspector; its compact checklist
+    // stays on the board instead of making a second, oversized child card.
+    parentBody.click();
+    await flushStimulusAsync();
+    expect(document.querySelector('.browse-detail__title')?.textContent).toBe('Plan the Kyoto weekend');
+
+    const parentCard = document.querySelector<HTMLElement>('li[data-task-id="kyoto-plan"]')!;
+    expect(parentCard.querySelector('.task-item__family-face')).not.toBeNull();
+    expect(document.querySelector('.task-item--card[data-task-id="tea-house"]')).toBeNull();
+    expect(parentCard.querySelector('[data-task-id="tea-house"]')).not.toBeNull();
+    expect(parentCard.querySelector<HTMLSelectElement>('[data-board-subtask-move="tea-house"]')?.value).toBe('doing');
+
+    // The disclosure is a board-local preference, and a child row reaches its
+    // own inspector without changing the board or treating it as a full card.
+    const disclosure = parentCard.querySelector<HTMLButtonElement>('[data-board-subtask-disclosure="kyoto-plan"]')!;
+    disclosure.click();
+    const familyPanel = parentCard.querySelector<HTMLElement>('.task-board-family')!;
+    expect(familyPanel.getAttribute('aria-hidden')).toBe('true');
+    expect(familyPanel.inert).toBe(true);
+    expect(disclosure.getAttribute('aria-controls')).toBe(familyPanel.id);
+    disclosure.click();
+    expect(familyPanel.getAttribute('aria-hidden')).toBe('false');
+    expect(familyPanel.inert).toBe(false);
+    // A quick reversal must retain one mounted family surface rather than
+    // duplicating cards or replaying an old transition after refresh.
+    disclosure.click(); disclosure.click();
+    expect(parentCard.querySelectorAll('.task-board-family')).toHaveLength(1);
+    expect(familyPanel.getAttribute('aria-hidden')).toBe('false');
+    const preview = createTaskDragPreview(parentCard);
+    expect(preview.querySelector('.task-board-family')).toBeNull();
+    expect(parentCard.querySelector('.task-board-family')).not.toBeNull();
+    // Quiet sheet padding has the same open behavior as a regular card body;
+    // native controls retain their own handlers above.
+    parentCard.querySelector<HTMLElement>('.task-board-family__row')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushStimulusAsync();
+    expect(document.querySelector('.browse-detail__title')?.textContent).toBe('Find a quiet tea house');
+    expect(document.querySelector('.tasks-board')).not.toBeNull();
+  });
+
+  it('returns focus to an inline child title when its detail pane closes', async () => {
+    const board = makeDefaultListDto({
+      id: 'kyoto', is_default: true, workflow_kind: 'board',
+      columns: [
+        { id: 'queue', name: 'Queue', position: 'A', type: 'queue' },
+        { id: 'doing', name: 'In Progress', position: 'B', type: 'in_progress' },
+      ],
+    });
+    const parent = makeTaskDtoForStimulus({ id: 'kyoto-plan', title: 'Plan Kyoto', list: 'kyoto', board_column_id: 'queue' });
+    const child = makeTaskDtoForStimulus({
+      id: 'tea-house', title: 'Find a quiet tea house', parent: 'kyoto-plan', list: 'kyoto',
+      status: 'doing', board_column_id: 'doing',
+    });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([board]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([parent, child]);
+    vi.spyOn(InvokeModule, 'getTaskById').mockImplementation(async (id: string) => id === child.id ? child : parent);
+
+    startS3App();
+    await flushStimulusAsync();
+    const childTitle = document.querySelector<HTMLButtonElement>('.task-board-family__row[data-task-id="tea-house"] .task-board-family__title')!;
+    childTitle.click();
+    await flushStimulusAsync();
+    expect(document.querySelector('.browse-detail__title')?.textContent).toBe('Find a quiet tea house');
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flushStimulusAsync();
+    expect(document.activeElement).toBe(document.querySelector('.task-board-family__row[data-task-id="tea-house"] .task-board-family__title'));
+  });
+
+  it('retains family context when a board status filter leaves only one side of the relationship visible', async () => {
+    const board = makeDefaultListDto({
+      id: 'kyoto', name: 'Weekend in Kyoto', is_default: true, workflow_kind: 'board',
+      columns: [
+        { id: 'queue', name: 'Queue', position: 'A', type: 'queue' },
+        { id: 'doing', name: 'In Progress', position: 'B', type: 'in_progress' },
+        { id: 'done', name: 'Done', position: 'C', type: 'done' },
+      ],
+    });
+    const parent = makeTaskDtoForStimulus({
+      id: 'kyoto-plan', title: 'Plan the Kyoto weekend', list: 'kyoto', status: 'doing', board_column_id: 'doing',
+    });
+    const child = makeTaskDtoForStimulus({
+      id: 'tea-house', title: 'Find a quiet tea house', parent: 'kyoto-plan', list: 'kyoto', board_column_id: 'queue',
+    });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([board]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([parent, child]);
+
+    startS3App();
+    await flushStimulusAsync();
+
+    const statusFilter = document.querySelector<HTMLSelectElement>('[data-tasks-target="statusFilter"]')!;
+    statusFilter.append(new Option('Queue', 'todo'), new Option('In Progress', 'doing'));
+    statusFilter.value = 'todo';
+    statusFilter.dispatchEvent(new Event('change'));
+    await flushStimulusAsync();
+    expect(document.querySelector('li[data-task-id="kyoto-plan"]')).toBeNull();
+    const childCard = document.querySelector('li[data-task-id="tea-house"]');
+    expect(childCard?.querySelector('.task-item__parent-chip')?.textContent).toContain('Plan the Kyoto weekend');
+
+    statusFilter.value = 'doing';
+    statusFilter.dispatchEvent(new Event('change'));
+    await flushStimulusAsync();
+    expect(document.querySelector('li[data-task-id="tea-house"]')).toBeNull();
+    expect(document.querySelector('li[data-task-id="kyoto-plan"] [data-board-subtask-disclosure="kyoto-plan"]')?.textContent).toContain('0/1');
+  });
+
   it('exactly_one_item_is_aria_selected', async () => {
     vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([makeDefaultListDto()]);
     vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([
@@ -4451,7 +4603,10 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     ) as TasksController;
     await controller.manageColumns();
     const dialog = document.querySelector<HTMLDialogElement>('#jin-modal-root dialog[open]')!;
-    dialog.querySelector<HTMLInputElement>('.tasks-column-manager__add input')!.value = 'Backlog';
+    dialog.querySelector<HTMLButtonElement>('.tasks-column-manager > button[aria-expanded="false"]')!.click();
+    const name = dialog.querySelector<HTMLInputElement>('.tasks-column-manager__add input')!;
+    name.value = 'Backlog';
+    name.dispatchEvent(new Event('input'));
     dialog.querySelector<HTMLSelectElement>('.tasks-column-manager__add select')!.value = 'none';
     dialog.querySelector<HTMLButtonElement>('.tasks-column-manager__add button')!.click();
     await flushStimulusAsync();
@@ -4459,6 +4614,82 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     expect(create).toHaveBeenCalledWith('project', 'Backlog', 'none');
     expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('missing required key `columnType`');
     expect(dialog.open).toBe(true);
+  });
+
+  it('opens one focused editor from the stage overview and restores rejected status changes', async () => {
+    const board = makeDefaultListDto({
+      id: 'project', name: 'Project', is_default: true, workflow_kind: 'board',
+      initial_column_id: 'queue-col', columns: [
+        { id: 'queue-col', name: 'Queue', position: 'A', type: 'queue' },
+        { id: 'doing-col', name: 'Doing', position: 'B', type: 'in_progress' },
+        { id: 'done-col', name: 'Done', position: 'C', type: 'done' },
+      ],
+    });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([board]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([]);
+    vi.spyOn(InvokeModule, 'changeBoardColumnType').mockRejectedValue({
+      code: 2, kind: 'usage', message: 'Could not change stage', retriable: false,
+    });
+
+    startS3App();
+    await flushStimulusAsync();
+    const controller = s3App.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="tasks"]')!, 'tasks',
+    ) as TasksController;
+    await controller.manageColumns('doing-col');
+    const dialog = document.querySelector<HTMLDialogElement>('#jin-modal-root dialog[open]')!;
+    expect(dialog.querySelectorAll('[data-board-column-editor]').length).toBe(1);
+    const status = dialog.querySelector<HTMLSelectElement>('[data-column-field="type"]')!;
+    status.value = 'done';
+    status.dispatchEvent(new Event('change'));
+    await flushStimulusAsync();
+
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toBe('Could not change stage');
+    expect(dialog.querySelectorAll('[data-board-column-editor]').length).toBe(1);
+    expect(dialog.querySelector<HTMLSelectElement>('[data-column-field="type"]')?.value).toBe('in_progress');
+    expect(dialog.querySelector('[data-board-column-editor="queue-col"]')).toBeNull();
+  });
+
+  it('restores semantic color and Automatic, preserving last-Done and boundary guards', async () => {
+    const board = makeDefaultListDto({
+      id: 'project', name: 'Project', is_default: true, workflow_kind: 'board',
+      initial_column_id: 'queue-col', columns: [
+        { id: 'queue-col', name: 'Queue', position: 'A', type: 'queue' },
+        { id: 'doing-col', name: 'Doing', position: 'B', type: 'in_progress' },
+        { id: 'done-col', name: 'Done', position: 'C', type: 'done' },
+      ],
+    });
+    const purpleBoard = { ...board, columns: board.columns.map((column) => column.id === 'queue-col' ? { ...column, color: 'purple' } : column) };
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([board]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([]);
+    const setColor = vi.spyOn(InvokeModule, 'setBoardColumnColor')
+      .mockResolvedValueOnce(purpleBoard)
+      .mockResolvedValueOnce(board);
+
+    startS3App();
+    await flushStimulusAsync();
+    const controller = s3App.getControllerForElementAndIdentifier(
+      document.querySelector('[data-controller="tasks"]')!, 'tasks',
+    ) as TasksController;
+    await controller.manageColumns('queue-col');
+    const dialog = document.querySelector<HTMLDialogElement>('#jin-modal-root dialog[open]')!;
+    dialog.querySelector<HTMLButtonElement>('.jin-color-swatch[data-color="purple"]')!.click();
+    await flushStimulusAsync();
+    expect(setColor).toHaveBeenNthCalledWith(1, 'project', 'queue-col', 'purple');
+    expect(dialog.querySelector('[data-board-column-editor="queue-col"]')?.getAttribute('data-color')).toBe('purple');
+
+    dialog.querySelector<HTMLButtonElement>('.tasks-column-manager__automatic')!.click();
+    await flushStimulusAsync();
+    expect(setColor).toHaveBeenNthCalledWith(2, 'project', 'queue-col', null);
+    const queueEditor = dialog.querySelector<HTMLElement>('[data-board-column-editor="queue-col"]')!;
+    expect(queueEditor.hasAttribute('data-color')).toBe(false);
+    expect(queueEditor.querySelector<HTMLButtonElement>('.tasks-column-manager__automatic')?.getAttribute('aria-pressed')).toBe('true');
+    expect(queueEditor.querySelector('.jin-color-swatch[aria-pressed="true"]')).toBeNull();
+    expect(queueEditor.querySelector<HTMLButtonElement>('[aria-label="Move Queue left"]')?.disabled).toBe(true);
+
+    dialog.querySelector<HTMLButtonElement>('[data-column-id="queue-col"][data-column-field="edit"]')!.click();
+    dialog.querySelector<HTMLButtonElement>('[data-column-id="done-col"][data-column-field="edit"]')!.click();
+    expect(dialog.querySelector<HTMLButtonElement>('[aria-label="Delete Done"]')?.disabled).toBe(true);
   });
 });
 
@@ -4847,6 +5078,50 @@ describe('AC-S6-10 — a subtask surfaces standalone with a parent breadcrumb ch
 
     // The parent itself must NOT appear (it doesn't match Today).
     expect(document.querySelector('li[data-task-id="parent-today"]')).toBeNull();
+  });
+});
+
+describe('board subtask families', () => {
+  it('renders a visible child inside its parent card with an independent stage chooser', () => {
+    const parent = makeTask({ id: 'kyoto-plan', title: 'Plan the Kyoto weekend', status: 'todo', board_column_id: 'queue' });
+    const child = makeTask({
+      id: 'tea-house',
+      title: 'Find a quiet tea house',
+      parent: 'kyoto-plan',
+      status: 'doing',
+      board_column_id: 'doing',
+    });
+    const navigate = vi.fn();
+    const moveChild = vi.fn().mockResolvedValue(true);
+    const columns = [
+      { id: 'queue', name: 'Queue', position: 'A', type: 'queue' as const },
+      { id: 'doing', name: 'In Progress', position: 'B', type: 'in_progress' as const },
+      { id: 'done', name: 'Done', position: 'C', type: 'done' as const },
+    ];
+
+    renderBoardView(
+      el.list, templates, [parent, child], 'manual', navigate,
+      {
+        onSelectBoardSubtask: (_parentId, childId) => navigate('tasks', childId),
+        onMoveBoardSubtask: (_parentId, childId, columnId) => moveChild(childId, columnId),
+      },
+      null, undefined, undefined, columns, 'queue', [parent, child],
+    );
+
+    const parentCard = el.list.querySelector<HTMLElement>('.task-item--card[data-task-id="kyoto-plan"]');
+    const childCard = el.list.querySelector<HTMLElement>('.task-item--card[data-task-id="tea-house"]');
+    expect(parentCard).not.toBeNull();
+    expect(childCard).toBeNull();
+    expect(parentCard?.closest('[data-board-column-id="queue"]')).not.toBeNull();
+    const childRow = parentCard?.querySelector<HTMLElement>('[data-task-id="tea-house"]');
+    expect(childRow?.textContent).toContain('Find a quiet tea house');
+    const stage = parentCard?.querySelector<HTMLSelectElement>('[data-board-subtask-move="tea-house"]')!;
+    expect(stage.value).toBe('doing');
+    stage.value = 'done';
+    stage.dispatchEvent(new Event('change'));
+    expect(moveChild).toHaveBeenCalledWith('tea-house', 'done');
+    parentCard?.querySelector<HTMLButtonElement>('.task-board-family__title')?.click();
+    expect(navigate).toHaveBeenCalledWith('tasks', 'tea-house');
   });
 });
 

@@ -149,6 +149,7 @@ pub fn run(root: std::path::PathBuf, launch: root_resolver::LaunchState) {
             commands::lists::rename_board_column,
             commands::lists::reorder_board_column,
             commands::lists::change_board_column_type,
+            commands::lists::set_board_column_color,
             commands::lists::delete_board_column,
             // Sections (P5)
             commands::lists::create_section,

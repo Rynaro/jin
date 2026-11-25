@@ -1160,7 +1160,7 @@
           data-controller="tasks"
           data-router-target="section"
           data-section-name="tasks"
-          data-action="jin:section-activated->tasks#activateSection jin:open-detail->tasks#openDetail jin:scope-changed->tasks#setScope"
+          data-action="jin:section-activated->tasks#activateSection jin:open-detail->tasks#openDetail jin:scope-changed->tasks#setScope jin:list-updated@window->tasks#handleListUpdated"
         >
           <!-- ── Lists rail (P3, S5) ──────────────────────────────────────── -->
           <!--
@@ -1276,6 +1276,10 @@
                     <p class="form-label">Color</p>
                     <div data-lists-target="createColorPicker"></div>
                   </div>
+                  <div class="form-group">
+                    <p class="form-label">Symbol</p>
+                    <div data-lists-target="createIconPicker"></div>
+                  </div>
                   <p
                     class="form-error hidden"
                     data-lists-target="createError"
@@ -1334,6 +1338,10 @@
                       Color
                     </p>
                     <div data-lists-target="editColorPicker"></div>
+                  </div>
+                  <div class="form-group">
+                    <p class="form-label">Symbol</p>
+                    <div data-lists-target="editIconPicker"></div>
                   </div>
                   <p
                     class="form-error hidden"
@@ -1413,6 +1421,7 @@
               <span class="tasks-context-trigger-host" data-sidebar-context-anchor="tasks-list"></span>
               <header class="tasks-workspace-header jin-workspace-header__identity">
                 <div class="tasks-workspace-title-row">
+                  <span class="tasks-workspace-identity" data-tasks-target="workspaceIcon" aria-hidden="true"><i data-lucide="inbox" aria-hidden="true"></i></span>
                   <h1 class="tasks-workspace-title" data-tasks-target="workspaceTitle">Inbox</h1>
                   <span class="tasks-workspace-count" data-tasks-target="workspaceCount" aria-live="polite"></span>
                 </div>
