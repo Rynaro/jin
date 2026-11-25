@@ -111,6 +111,7 @@ import {
   Palette,        // Recolor action icon in list edit dialog
   // Views P6 — List/Board toggle + collapsible section header
   LayoutGrid,     // Board-view toggle icon
+  Columns3,       // Board workflow choice
   ListFilter,     // Responsive task-filter disclosure
   ChevronDown,    // Collapsible section header indicator
   // P9: drag-and-drop manual reorder
@@ -214,6 +215,7 @@ export {
   Palette,
   // Views P6 — List/Board toggle + collapsible section header
   LayoutGrid,
+  Columns3,
   ListFilter,
   ChevronDown,
   // P9: drag-and-drop manual reorder
@@ -317,6 +319,7 @@ const REGISTERED_ICONS = {
   Palette,
   // Views P6 — List/Board toggle + collapsible section header
   LayoutGrid,
+  Columns3,
   ListFilter,
   ChevronDown,
   // P9: drag-and-drop manual reorder
