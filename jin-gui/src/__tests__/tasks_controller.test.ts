@@ -3769,6 +3769,100 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     expect(document.querySelector('.browse-back-btn')).toBeNull();
   });
 
+  it('board family actions keep the board active and place focus in the parent subtask manager', async () => {
+    const board = makeDefaultListDto({
+      id: 'kyoto', name: 'Weekend in Kyoto', is_default: true, workflow_kind: 'board',
+      columns: [
+        { id: 'queue', name: 'Queue', position: 'A', type: 'queue' },
+        { id: 'doing', name: 'In Progress', position: 'B', type: 'in_progress' },
+        { id: 'done', name: 'Done', position: 'C', type: 'done' },
+      ],
+    });
+    const parent = makeTaskDtoForStimulus({
+      id: 'kyoto-plan', title: 'Plan the Kyoto weekend', list: 'kyoto', board_column_id: 'queue',
+    });
+    const child = makeTaskDtoForStimulus({
+      id: 'tea-house', title: 'Find a quiet tea house', parent: 'kyoto-plan', list: 'kyoto',
+      status: 'doing', board_column_id: 'doing',
+    });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([board]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([parent, child]);
+    vi.spyOn(InvokeModule, 'getTaskById').mockImplementation(async (id: string) =>
+      id === child.id ? child : parent,
+    );
+
+    startS3App();
+    await flushStimulusAsync();
+
+    const boardEl = document.querySelector('.tasks-board');
+    const parentBody = document.querySelector<HTMLButtonElement>('li[data-task-id="kyoto-plan"] .task-item__body')!;
+    expect(boardEl).not.toBeNull();
+
+    // A title opens the normal inspector, with no forced jump into a different
+    // control. Family actions are the deliberate route into Subtasks.
+    parentBody.click();
+    await flushStimulusAsync();
+    const subtasks = document.querySelector<HTMLElement>('.task-detail__subtasks')!;
+    expect(document.querySelector('.browse-detail__title')?.textContent).toBe('Plan the Kyoto weekend');
+    expect(document.activeElement).not.toBe(subtasks);
+
+    document.querySelector<HTMLButtonElement>('li[data-task-id="kyoto-plan"] .task-item__subtask-progress')!.click();
+    await flushStimulusAsync();
+    expect(document.querySelector('.tasks-board')).not.toBeNull();
+    expect(document.activeElement).toBe(subtasks);
+
+    // The same control remains useful once its parent is already selected.
+    document.querySelector<HTMLElement>('.task-detail__title-editable')?.focus();
+    document.querySelector<HTMLButtonElement>('li[data-task-id="kyoto-plan"] .task-item__subtask-progress')!.click();
+    await flushStimulusAsync();
+    expect(document.activeElement).toBe(subtasks);
+
+    // A child can move across columns but its family affordance still lands on
+    // the parent's existing subtask manager.
+    document.querySelector<HTMLButtonElement>('li[data-task-id="tea-house"] .task-item__parent-chip')!.click();
+    await flushStimulusAsync();
+    expect(document.querySelector('.browse-detail__title')?.textContent).toBe('Plan the Kyoto weekend');
+    expect(document.activeElement).toBe(subtasks);
+    expect(document.querySelector('li[data-task-id="tea-house"]')?.closest('[data-board-column-id="doing"]')).not.toBeNull();
+  });
+
+  it('retains family context when a board status filter leaves only one side of the relationship visible', async () => {
+    const board = makeDefaultListDto({
+      id: 'kyoto', name: 'Weekend in Kyoto', is_default: true, workflow_kind: 'board',
+      columns: [
+        { id: 'queue', name: 'Queue', position: 'A', type: 'queue' },
+        { id: 'doing', name: 'In Progress', position: 'B', type: 'in_progress' },
+        { id: 'done', name: 'Done', position: 'C', type: 'done' },
+      ],
+    });
+    const parent = makeTaskDtoForStimulus({
+      id: 'kyoto-plan', title: 'Plan the Kyoto weekend', list: 'kyoto', status: 'doing', board_column_id: 'doing',
+    });
+    const child = makeTaskDtoForStimulus({
+      id: 'tea-house', title: 'Find a quiet tea house', parent: 'kyoto-plan', list: 'kyoto', board_column_id: 'queue',
+    });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([board]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([parent, child]);
+
+    startS3App();
+    await flushStimulusAsync();
+
+    const statusFilter = document.querySelector<HTMLSelectElement>('[data-tasks-target="statusFilter"]')!;
+    statusFilter.append(new Option('Queue', 'todo'), new Option('In Progress', 'doing'));
+    statusFilter.value = 'todo';
+    statusFilter.dispatchEvent(new Event('change'));
+    await flushStimulusAsync();
+    expect(document.querySelector('li[data-task-id="kyoto-plan"]')).toBeNull();
+    const childCard = document.querySelector('li[data-task-id="tea-house"]');
+    expect(childCard?.querySelector('.task-item__parent-chip')?.textContent).toContain('Plan the Kyoto weekend');
+
+    statusFilter.value = 'doing';
+    statusFilter.dispatchEvent(new Event('change'));
+    await flushStimulusAsync();
+    expect(document.querySelector('li[data-task-id="tea-house"]')).toBeNull();
+    expect(document.querySelector('li[data-task-id="kyoto-plan"] .task-item__subtask-progress')?.textContent).toBe('0/1 subtasks');
+  });
+
   it('exactly_one_item_is_aria_selected', async () => {
     vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([makeDefaultListDto()]);
     vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([
@@ -4942,6 +5036,42 @@ describe('AC-S6-10 — a subtask surfaces standalone with a parent breadcrumb ch
 
     // The parent itself must NOT appear (it doesn't match Today).
     expect(document.querySelector('li[data-task-id="parent-today"]')).toBeNull();
+  });
+});
+
+describe('board subtask cards', () => {
+  it('keeps parents and subtasks as independently movable cards while giving each card a compact family action', () => {
+    const parent = makeTask({ id: 'kyoto-plan', title: 'Plan the Kyoto weekend', status: 'todo' });
+    const child = makeTask({
+      id: 'tea-house',
+      title: 'Find a quiet tea house',
+      parent: 'kyoto-plan',
+      status: 'doing',
+    });
+    const navigate = vi.fn();
+
+    renderBoardView(el.list, templates, [parent, child], 'manual', navigate);
+
+    const parentCard = el.list.querySelector<HTMLElement>('.task-item--card[data-task-id="kyoto-plan"]');
+    const childCard = el.list.querySelector<HTMLElement>('.task-item--card[data-task-id="tea-house"]');
+    expect(parentCard).not.toBeNull();
+    expect(childCard).not.toBeNull();
+    expect(parentCard?.closest('[data-column-status="todo"]')).not.toBeNull();
+    expect(childCard?.closest('[data-column-status="doing"]')).not.toBeNull();
+
+    const parentProgress = parentCard?.querySelector<HTMLButtonElement>('.task-item__subtask-progress');
+    const parentBreadcrumb = childCard?.querySelector<HTMLButtonElement>('.task-item__parent-chip');
+    expect(parentProgress?.tagName).toBe('BUTTON');
+    expect(parentProgress?.textContent).toBe('0/1 subtasks');
+    expect(parentProgress?.getAttribute('aria-label')).toContain('subtask');
+    expect(parentBreadcrumb?.textContent).toContain('Plan the Kyoto weekend');
+    expect(parentBreadcrumb?.getAttribute('aria-label')).toContain('open parent');
+
+    parentBreadcrumb?.click();
+    expect(navigate).toHaveBeenCalledWith('tasks', 'kyoto-plan');
+    parentProgress?.click();
+    expect(navigate).toHaveBeenCalledTimes(2);
+    expect(navigate).toHaveBeenLastCalledWith('tasks', 'kyoto-plan');
   });
 });
 

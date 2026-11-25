@@ -1246,13 +1246,21 @@ export default class TasksController extends Controller {
       }
     }
 
+    // Board family context must be derived before the active status/tag/etc.
+    // filter removes a related card. Keep the normal server-narrowed query for
+    // every other surface, while board scopes fetch their one list in full and
+    // apply the same client filter only to visible cards below.
+    const boardScope = Boolean(selectedListId) && (
+      this.activeWorkflow?.workflow_kind === 'board'
+      || (!this.activeWorkflow?.workflow_kind && this.currentView === 'board')
+    );
     const tasks = await this.guarded(
       () =>
         listTasks({
-          status: filter.status || undefined,
+          status: boardScope ? undefined : filter.status || undefined,
           list: selectedListId || undefined,
-          priority: filter.priority || undefined,
-          tag: filter.tag || undefined,
+          priority: boardScope ? undefined : filter.priority || undefined,
+          tag: boardScope ? undefined : filter.tag || undefined,
         }),
       'loadList:listTasks',
     );
@@ -1266,12 +1274,12 @@ export default class TasksController extends Controller {
     const scoped =
       this.currentScope.kind === 'smart' ? applyScope(tasks, this.currentScope, lists ?? []) : tasks;
 
-    // AC-S6-10: resolve subtask breadcrumbs/progress against the FULL fetched
-    // set (before applyScope narrows it) ONLY for a smart-view scope — a
-    // parent with no due date of its own would otherwise be filtered out of
-    // e.g. the Today view, silently blanking its child's breadcrumb chip.
+    // AC-S6-10: resolve subtask breadcrumbs/progress against the full family
+    // before filtering visible cards. A board filter can otherwise hide the
+    // parent in one lane or a child in another and erase their relationship.
     this.currentSubtaskDisplayInfo =
-      this.currentScope.kind === 'smart' ? computeSubtaskDisplayInfo(tasks) : undefined;
+      boardScope ? computeSubtaskDisplayInfo(tasks.filter((task) => task.deleted_at === null && task.status !== 'cancelled'))
+        : this.currentScope.kind === 'smart' ? computeSubtaskDisplayInfo(tasks) : undefined;
 
     // Client-side filter to match the invoke filter (safety net + test surface)
     const filtered = filterTasksList(scoped, filter);
@@ -1356,6 +1364,7 @@ export default class TasksController extends Controller {
       onColumnDrop: (taskId, columnId) => { void this.handleColumnDrop(taskId, columnId); },
       onEditBoardColumn: (columnId) => { void this.manageColumns(columnId); },
       onColumnCreate: (columnId, title, due) => { void this.handleCreateTask(title, due, columnId); },
+      onManageSubtasks: (taskId) => { void this.selectTaskAndFocusSubtasks(taskId); },
     };
 
     const sectionCallbacks: SectionCallbacks = {
@@ -1599,6 +1608,18 @@ export default class TasksController extends Controller {
     // resolved) — same pattern `refreshPane` already uses below.
     if (this.selectedTaskId !== taskId || transition !== this.detailTransitionVersion) return;
     await this.hydratePaneFromTask(task);
+  }
+
+  /** Opens the existing parent inspector and sends a keyboard user straight
+   * to its built-in subtask manager, including when that parent is open. */
+  private async selectTaskAndFocusSubtasks(taskId: string): Promise<void> {
+    await this.selectTask(taskId);
+    if (this.selectedTaskId !== taskId || this.detailDraftTaskId !== taskId
+      || !this.mainTarget.classList.contains('tasks-main--detail-open')) return;
+    const subtasks = this.detailContentTarget.querySelector<HTMLElement>('.task-detail__subtasks');
+    if (!subtasks) return;
+    subtasks.tabIndex = -1;
+    subtasks.focus();
   }
 
   /**

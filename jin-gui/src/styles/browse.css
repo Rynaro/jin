@@ -2441,6 +2441,59 @@ figure.code-block {
   color: var(--accent);
 }
 
+/* Board cards share one compact rhythm. A full-size primary target carries
+   the title, while the same caption track holds due state or family context. */
+.task-item--card .task-item__meta {
+  min-block-size: 22px;
+  margin-block-start: 2px;
+}
+
+/* Hover actions live below the completion control in the leading gutter.
+   They never consume title width, create an auto-positioned grid row, or
+   intercept input while visually hidden. */
+.task-item--card .task-item__actions {
+  position: absolute;
+  inset-block-start: calc(var(--space-4) + var(--space-1));
+  inset-inline-start: var(--space-half);
+  z-index: 1;
+  pointer-events: none;
+}
+
+.task-item--card:hover .task-item__actions,
+.task-item--card:focus-within .task-item__actions {
+  pointer-events: auto;
+}
+
+.task-item--card .task-item__family-control,
+.task-item--card .task-item__parent-chip {
+  display: block;
+  min-block-size: 22px;
+  padding-inline: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--fill-quaternary, var(--fill-tertiary));
+  color: var(--label-secondary);
+  font-family: inherit;
+  font-size: var(--text-caption2-size);
+  line-height: var(--text-caption2-line);
+  cursor: pointer;
+  max-inline-size: min(100%, 160px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-item--card .task-item__family-control:hover,
+.task-item--card .task-item__parent-chip:hover {
+  color: var(--accent-text);
+  background: var(--fill-tertiary);
+}
+
+.task-item--card .task-item__family-control:focus-visible,
+.task-item--card .task-item__parent-chip:focus-visible {
+  outline-offset: 1px;
+}
+
 /* ── P10: Reminder chips and editor ───────────────────────────────────────── */
 
 .reminder-chips {
@@ -3013,6 +3066,7 @@ figure.code-block {
 
 .task-item--card .task-item__body {
   align-items: flex-start;
+  min-block-size: 44px;
   padding: 0;
   width: 100%;
 }
@@ -6208,6 +6262,12 @@ figure.code-block {
   touch-action: pan-y;
 }
 .task-item--card .task-item__body { cursor: grab; }
+.task-item--card .task-item__reopen-btn {
+  flex: 0 0 auto;
+  min-block-size: 22px;
+  margin: 0;
+  white-space: nowrap;
+}
 .task-item--card.task-item--dragging { cursor: grabbing; }
 .task-item--card :is(.task-completion, .task-item__delete-btn, .due-reschedule__btn, a, input, select, textarea) { cursor: auto; }
 .task-item--dragging {

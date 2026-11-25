@@ -376,6 +376,8 @@ export interface TaskRowCallbacks {
    * call site that does not wire this keeps its exact pre-S7 behavior.
    */
   onItemClick?: (taskId: string, event: MouseEvent) => void;
+  /** Opens a parent inspector and places keyboard focus on its subtasks. */
+  onManageSubtasks?: (taskId: string) => void;
 }
 
 /**
@@ -588,19 +590,32 @@ export function buildTaskItem(
   }
   if (titleEl) titleEl.textContent = task.title;
 
-  // ── S6: subtask progress badge (AC-S6-11) ─────────────────────────────────
-  // Populated ONLY when `task` itself has children in the current dataset;
-  // otherwise the placeholder is removed. A nested child never shows its own progress badge redundant
-  // with the parent's, but a subtask could itself carry the badge if depth
-  // allowed grandchildren — it never does (depth capped at one), so this is
-  // simply "does `nesting.progress` exist for this task".
+  // ── S6: subtask progress (AC-S6-11) ───────────────────────────────────────
+  // A board keeps related work as independent, movable cards. Its parent
+  // progress is therefore a real control that opens the existing subtask
+  // manager in the parent inspector, rather than a second card-sized region.
+  // List rows keep the compact read-only count they already use.
   const progressEl = item.querySelector('.task-item__subtask-progress');
   if (progressEl) {
     if (nesting?.progress) {
       const { done, total } = nesting.progress;
-      progressEl.textContent = `${done}/${total}`;
-      progressEl.setAttribute('aria-label', `${done} of ${total} subtasks complete`);
-      progressEl.removeAttribute('aria-hidden');
+      if (variant === 'card') {
+        const progressButton = document.createElement('button');
+        progressButton.type = 'button';
+        progressButton.className = 'task-item__subtask-progress task-item__family-control text-caption2';
+        progressButton.textContent = `${done}/${total} subtasks`;
+        progressButton.setAttribute('aria-label', `Manage ${done} of ${total} subtasks for "${task.title}"`);
+        progressButton.addEventListener('click', (event) => {
+          event.stopPropagation();
+          if (callbacks?.onManageSubtasks) callbacks.onManageSubtasks(task.id);
+          else onNavigate('tasks', task.id);
+        });
+        progressEl.replaceWith(progressButton);
+      } else {
+        progressEl.textContent = `${done}/${total}`;
+        progressEl.setAttribute('aria-label', `${done} of ${total} subtasks complete`);
+        progressEl.removeAttribute('aria-hidden');
+      }
     } else {
       progressEl.remove();
     }
@@ -626,7 +641,10 @@ export function buildTaskItem(
   // never for a nested child (isChild), where the nesting itself already
   // shows the relationship.
   if (!isChild && nesting?.parentBreadcrumb && metaEl) {
-    metaEl.insertBefore(buildParentBreadcrumbChip(nesting.parentBreadcrumb, onNavigate), metaEl.firstChild);
+    metaEl.insertBefore(
+      buildParentBreadcrumbChip(nesting.parentBreadcrumb, onNavigate, variant === 'card' ? callbacks?.onManageSubtasks : undefined),
+      metaEl.firstChild,
+    );
   }
 
   // ── Tag chips ──────────────────────────────────────────────────────────────
@@ -702,7 +720,11 @@ export function buildTaskItem(
       e.stopPropagation();
       onReopen(task.id);
     });
-    item.appendChild(reopenBtn);
+    // Board cards already reserve this caption lane for task context. Keeping
+    // Reopen there preserves the labeled transition without growing Done
+    // cards into a separate grid row.
+    if (metaEl) metaEl.appendChild(reopenBtn);
+    else item.appendChild(reopenBtn);
   }
 
   return item;
@@ -851,6 +873,7 @@ export function buildDueChipGroup(
 function buildParentBreadcrumbChip(
   breadcrumb: ParentBreadcrumb,
   onNavigate: BrowseNavigateCallback,
+  onManageSubtasks?: (taskId: string) => void,
 ): HTMLElement {
   const chip = document.createElement('button');
   chip.type = 'button';
@@ -859,7 +882,8 @@ function buildParentBreadcrumbChip(
   chip.textContent = `↳ ${breadcrumb.parentTitle}`;
   chip.addEventListener('click', (e) => {
     e.stopPropagation();
-    onNavigate('tasks', breadcrumb.parentId);
+    if (onManageSubtasks) onManageSubtasks(breadcrumb.parentId);
+    else onNavigate('tasks', breadcrumb.parentId);
   });
   return chip;
 }
