@@ -301,6 +301,22 @@ export default class TasksController extends Controller {
    * rendered set — unaffected, same as before S5.
    */
   private currentSubtaskDisplayInfo: Map<string, SubtaskDisplayInfo> | undefined = undefined;
+  /**
+   * Complete active-board membership before a filter narrows the visible
+   * cards. The board uses this to keep a parent's inline checklist truthful
+   * without duplicating a child as another card.
+   */
+  private boardFamilyTasks: TaskDto[] | undefined = undefined;
+  /** Raw filtered board members used for family projection; `currentTasks` contains only visible cards. */
+  private boardRenderedTasks: TaskDto[] | undefined = undefined;
+  /** Explicit parent checklist choices for the active board. Undefined lets the renderer choose its useful default. */
+  private readonly boardSubtaskExpansion = new Map<string, boolean>();
+  /** In-progress inline child titles survive unrelated board redraws. */
+  private readonly boardSubtaskDrafts = new Map<string, string>();
+  /** Composer visibility is independent from its possibly-empty draft. */
+  private readonly openBoardSubtaskComposers = new Set<string>();
+  /** Restore the initiating inline control after a board checklist redraw. */
+  private boardSubtaskFocus: { childId: string; kind: 'toggle' | 'move' } | null = null;
 
   // ── P5/P6 state ───────────────────────────────────────────────────────────
   /** Sections of the currently active list (empty if no specific list selected). */
@@ -624,6 +640,13 @@ export default class TasksController extends Controller {
       return;
     }
     if (e.key === 'Escape' && this.isTypingTarget(e.target)) return;
+    // Parent board cards are selection surfaces, but their compact child
+    // controls are ordinary native controls. Do not steal the keydown which
+    // causes Enter/Space to activate a nested button when another card owns
+    // the board cursor.
+    if ((e.key === 'Enter' || e.key === ' ') && eventElement?.closest(
+      '[data-board-subtask-disclosure], .task-board-family button, .task-board-family [role="checkbox"]',
+    )) return;
     // Shift+V toggles view (P6) — native form controls keep their own keys.
     if (e.key === 'V' && e.shiftKey && !e.ctrlKey && !e.metaKey) {
       if (this.isTypingTarget(e.target)) return;
@@ -1223,6 +1246,10 @@ export default class TasksController extends Controller {
       this.currentListId = selectedListId;
       this.currentSections = [];
       this.currentSortMode = 'manual';
+      this.boardSubtaskExpansion.clear();
+      this.boardSubtaskDrafts.clear();
+      this.openBoardSubtaskComposers.clear();
+      this.boardSubtaskFocus = null;
     }
 
     // S5: `lists` is needed both for a specific list's sections/sort_mode
@@ -1277,15 +1304,24 @@ export default class TasksController extends Controller {
     // AC-S6-10: resolve subtask breadcrumbs/progress against the full family
     // before filtering visible cards. A board filter can otherwise hide the
     // parent in one lane or a child in another and erase their relationship.
-    this.currentSubtaskDisplayInfo =
-      boardScope ? computeSubtaskDisplayInfo(tasks.filter((task) => task.deleted_at === null && task.status !== 'cancelled'))
-        : this.currentScope.kind === 'smart' ? computeSubtaskDisplayInfo(tasks) : undefined;
+    const boardMembers = boardScope
+      ? tasks.filter((task) => task.deleted_at === null && task.status !== 'cancelled')
+      : undefined;
+    this.currentSubtaskDisplayInfo = boardMembers
+      ? computeSubtaskDisplayInfo(boardMembers)
+      : this.currentScope.kind === 'smart' ? computeSubtaskDisplayInfo(tasks) : undefined;
+    this.boardFamilyTasks = boardMembers;
 
     // Client-side filter to match the invoke filter (safety net + test surface)
     const filtered = filterTasksList(scoped, filter);
 
     // P9: keep a snapshot so handleDrop can look up positions by id.
-    this.currentTasks = filtered;
+    // The board renders matching children inside their matching parent. Keep
+    // controller-wide selection, bulk, and keyboard navigation scoped to the
+    // cards a person can actually see; `boardRenderedTasks` preserves the raw
+    // set the renderer needs to build those inline children.
+    this.boardRenderedTasks = boardScope ? filtered : undefined;
+    this.currentTasks = boardScope ? partitionParentsAndChildren(filtered).topLevel : filtered;
     if (this.hasWorkspaceCountTarget) {
       const open = filtered.filter((task) => task.status !== 'done' && task.status !== 'cancelled').length;
       this.workspaceCountTarget.textContent = `${open} open`;
@@ -1303,7 +1339,7 @@ export default class TasksController extends Controller {
    */
   private renderList(): void {
     const el = this.viewElements;
-    const filtered = this.currentTasks;
+    const filtered = this.boardRenderedTasks ?? this.currentTasks;
     const checklist = this.activeWorkflow?.workflow_kind === 'checklist' && !this.statusFilterTarget.value;
     // Route whole visible families by their root's status. A completed child
     // stays beneath its open parent; a terminal parent carries its children
@@ -1365,6 +1401,28 @@ export default class TasksController extends Controller {
       onEditBoardColumn: (columnId) => { void this.manageColumns(columnId); },
       onColumnCreate: (columnId, title, due) => { void this.handleCreateTask(title, due, columnId); },
       onManageSubtasks: (taskId) => { void this.selectTaskAndFocusSubtasks(taskId); },
+      onToggleBoardSubtask: (parentId, childId, currentStatus) => {
+        void this.handleBoardSubtaskStatus(parentId, childId, currentStatus);
+      },
+      onSelectBoardSubtask: (_parentId, childId) => { void this.selectTask(childId); },
+      onAddBoardSubtask: (parentId, title) => this.addBoardSubtask(parentId, title),
+      isBoardSubtasksExpanded: (parentId) => this.boardSubtaskExpansion.get(parentId),
+      onSetBoardSubtasksExpanded: (parentId, expanded) => {
+        this.boardSubtaskExpansion.set(parentId, expanded);
+      },
+      getBoardSubtaskDraft: (parentId) => this.boardSubtaskDrafts.get(parentId),
+      onSetBoardSubtaskDraft: (parentId, value) => {
+        if (value === null) this.boardSubtaskDrafts.delete(parentId);
+        else this.boardSubtaskDrafts.set(parentId, value);
+      },
+      isBoardSubtaskComposerOpen: (parentId) => this.openBoardSubtaskComposers.has(parentId),
+      onSetBoardSubtaskComposerOpen: (parentId, open) => {
+        if (open) this.openBoardSubtaskComposers.add(parentId);
+        else this.openBoardSubtaskComposers.delete(parentId);
+      },
+      onMoveBoardSubtask: (parentId, childId, columnId) => {
+        return this.moveBoardSubtask(parentId, childId, columnId);
+      },
     };
 
     const sectionCallbacks: SectionCallbacks = {
@@ -1407,6 +1465,20 @@ export default class TasksController extends Controller {
     // DT-4 root cause (pre-S4): the old gate put `currentSections.length > 0`
     // first, so a sectionless list with board view fell through to
     // renderTasksList and ignored currentView entirely.
+    const boardView = this.activeWorkflow?.workflow_kind === 'board'
+      || (!this.activeWorkflow?.workflow_kind && this.currentScope.kind === 'list' && this.currentView === 'board');
+    if (boardView) {
+      // `renderBoardView` owns the actual labelled list/column semantics.
+      // This static host is only a layout wrapper in board mode.
+      el.list.setAttribute('role', 'presentation');
+      el.list.removeAttribute('aria-multiselectable');
+      el.list.removeAttribute('aria-label');
+    } else {
+      el.list.setAttribute('role', 'listbox');
+      el.list.setAttribute('aria-multiselectable', 'true');
+      el.list.setAttribute('aria-label', 'Tasks list');
+    }
+
     if (this.currentScope.kind === 'smart' && this.currentScope.id === 'flexible') {
       renderFlexibleTaskGroups(
         el,
@@ -1418,7 +1490,7 @@ export default class TasksController extends Controller {
         this.currentSubtaskDisplayInfo,
         this.selectedTaskIds,
       );
-    } else if (this.activeWorkflow?.workflow_kind === 'board' || (!this.activeWorkflow?.workflow_kind && this.currentScope.kind === 'list' && this.currentView === 'board')) {
+    } else if (boardView) {
       // Board view: Kanban by TaskStatus (Todo/Doing/Done), any scope.
       el.list.classList.remove('hidden');
       el.emptyState.classList.add('hidden');
@@ -1434,6 +1506,7 @@ export default class TasksController extends Controller {
         this.selectedTaskIds,
         this.activeWorkflow?.workflow_kind === 'board' ? this.activeWorkflow.columns : undefined,
         this.activeWorkflow?.workflow_kind === 'board' ? this.activeWorkflow.initial_column_id : undefined,
+        this.boardFamilyTasks,
       );
     } else if (selectedListId && this.currentSections.length > 0) {
       // List view with sections.
@@ -1658,7 +1731,10 @@ export default class TasksController extends Controller {
     if (closedTaskId) {
       const body = Array.from(this.viewElements.list.querySelectorAll<HTMLElement>('.task-item__body'))
         .find((candidate) => candidate.dataset.taskId === closedTaskId);
-      body?.focus();
+      const inlineChildTitle = Array.from(this.viewElements.list.querySelectorAll<HTMLElement>('.task-board-family__row'))
+        .find((row) => row.dataset.taskId === closedTaskId)
+        ?.querySelector<HTMLButtonElement>('.task-board-family__title');
+      (inlineChildTitle ?? body)?.focus();
     }
   }
 
@@ -2494,7 +2570,7 @@ export default class TasksController extends Controller {
 
   // ── P1 S1.1 — Status toggle (complete/reopen) ─────────────────────────────
 
-  private async handleStatusToggle(taskId: string, currentStatus: string): Promise<boolean> {
+  private async handleStatusToggle(taskId: string, currentStatus: string, reload = true): Promise<boolean> {
     // legal transitions per task.rs:39-51
     const nextStatus = currentStatus === 'done' || currentStatus === 'cancelled' ? 'todo' : 'done';
     const task = this.currentTasks.find((candidate) => candidate.id === taskId);
@@ -2524,8 +2600,84 @@ export default class TasksController extends Controller {
     }
 
     // Reconcile without replacing the visible list with the global loader.
-    void this.loadList(this.currentFilter, true);
+    if (reload) void this.loadList(this.currentFilter, true);
     return true;
+  }
+
+  private async handleBoardSubtaskStatus(parentId: string, childId: string, currentStatus: string): Promise<void> {
+    const child = this.boardFamilyTasks?.find((task) => task.id === childId && task.parent === parentId);
+    if (!child) return;
+    this.boardSubtaskExpansion.set(parentId, true);
+    this.boardSubtaskFocus = { childId, kind: 'toggle' };
+    if (!await this.handleStatusToggle(childId, currentStatus, false)) {
+      this.boardSubtaskFocus = null;
+      return;
+    }
+    await this.loadList(this.currentFilter, true);
+    this.restoreBoardSubtaskFocus();
+  }
+
+  private async addBoardSubtask(parentId: string, title: string): Promise<boolean> {
+    const parent = this.boardFamilyTasks?.find((task) => task.id === parentId && task.parent === null);
+    if (!parent || !title.trim()) return false;
+    const result = await this.mutate(
+      () => createTask({ title: title.trim(), list: parent.list, parent: parentId }),
+      'addBoardSubtask',
+    );
+    if (result === undefined) return false;
+    this.boardSubtaskExpansion.set(parentId, true);
+    this.openBoardSubtaskComposers.add(parentId);
+    this.boardSubtaskDrafts.delete(parentId);
+    await this.loadList(this.currentFilter, true);
+    this.viewElements.list.querySelector<HTMLInputElement>(`[data-board-subtask-add-input="${CSS.escape(parentId)}"]`)?.focus();
+    return true;
+  }
+
+  private async moveBoardSubtask(parentId: string, childId: string, columnId: string): Promise<boolean> {
+    const list = this.activeWorkflow;
+    const family = this.boardFamilyTasks;
+    const child = family?.find((task) => task.id === childId && task.parent === parentId);
+    if (!list || list.workflow_kind !== 'board' || !family || !child) return false;
+    const targetColumn = list.columns.find((column) => column.id === columnId);
+    if (!targetColumn) return false;
+    const alreadyCompatible = targetColumn.type === 'queue'
+      ? child.status === 'todo'
+      : targetColumn.type === 'done'
+        ? child.status === 'done'
+        : targetColumn.type === 'none'
+          ? child.status === 'todo' || child.status === 'doing'
+          : child.status === 'doing';
+    // Selecting a mismatched current column is an intentional repair: core
+    // normalizes its status to the stage's workflow meaning.
+    if (child.board_column_id === columnId && alreadyCompatible) return true;
+    const last = family
+      .filter((task) => task.id !== childId && task.board_column_id === columnId)
+      .sort((a, b) => compareRank(a.position ?? '', b.position ?? '') || a.id.localeCompare(b.id))
+      .at(-1);
+    this.boardSubtaskExpansion.set(parentId, true);
+    this.boardSubtaskFocus = { childId, kind: 'move' };
+    const result = await this.mutate(() => moveTask(childId, {
+      listId: list.id,
+      sectionId: child.section_id ?? null,
+      boardColumnId: columnId,
+      position: between(last?.position ?? null, null),
+    }), 'moveBoardSubtask');
+    if (result === undefined) {
+      this.boardSubtaskFocus = null;
+      return false;
+    }
+    await this.loadList(this.currentFilter, true);
+    this.restoreBoardSubtaskFocus();
+    return true;
+  }
+
+  private restoreBoardSubtaskFocus(): void {
+    const target = this.boardSubtaskFocus;
+    this.boardSubtaskFocus = null;
+    if (!target) return;
+    this.viewElements.list.querySelector<HTMLElement>(
+      `[data-board-subtask-${target.kind}="${CSS.escape(target.childId)}"]`,
+    )?.focus();
   }
 
   // ── S4: board Kanban-by-status — Reopen action + cross-column drop ───────

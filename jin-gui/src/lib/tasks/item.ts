@@ -378,6 +378,22 @@ export interface TaskRowCallbacks {
   onItemClick?: (taskId: string, event: MouseEvent) => void;
   /** Opens a parent inspector and places keyboard focus on its subtasks. */
   onManageSubtasks?: (taskId: string) => void;
+  /** Toggle a child in the parent card without changing its parent. */
+  onToggleBoardSubtask?: (parentId: string, childId: string, currentStatus: string) => void;
+  /** Open a child from its parent card's inline checklist. */
+  onSelectBoardSubtask?: (parentId: string, childId: string) => void;
+  /** Add a child from an expanded parent card. A false result preserves the draft. */
+  onAddBoardSubtask?: (parentId: string, title: string) => Promise<boolean> | boolean | void;
+  /** Undefined uses the family-size default. */
+  isBoardSubtasksExpanded?: (parentId: string) => boolean | undefined;
+  onSetBoardSubtasksExpanded?: (parentId: string, expanded: boolean) => void;
+  /** Preserve an inline add draft when board data re-renders. */
+  getBoardSubtaskDraft?: (parentId: string) => string | undefined;
+  onSetBoardSubtaskDraft?: (parentId: string, value: string | null) => void;
+  isBoardSubtaskComposerOpen?: (parentId: string) => boolean;
+  onSetBoardSubtaskComposerOpen?: (parentId: string, open: boolean) => void;
+  /** Move an inline child to a named board stage. */
+  onMoveBoardSubtask?: (parentId: string, childId: string, columnId: string) => Promise<boolean> | boolean | void;
 }
 
 /**
@@ -591,26 +607,16 @@ export function buildTaskItem(
   if (titleEl) titleEl.textContent = task.title;
 
   // ── S6: subtask progress (AC-S6-11) ───────────────────────────────────────
-  // A board keeps related work as independent, movable cards. Its parent
-  // progress is therefore a real control that opens the existing subtask
-  // manager in the parent inspector, rather than a second card-sized region.
-  // List rows keep the compact read-only count they already use.
+  // Board cards replace this compact progress slot with their inline family
+  // disclosure in render.ts. List rows keep the read-only count here.
   const progressEl = item.querySelector('.task-item__subtask-progress');
   if (progressEl) {
     if (nesting?.progress) {
       const { done, total } = nesting.progress;
       if (variant === 'card') {
-        const progressButton = document.createElement('button');
-        progressButton.type = 'button';
-        progressButton.className = 'task-item__subtask-progress task-item__family-control text-caption2';
-        progressButton.textContent = `${done}/${total} subtasks`;
-        progressButton.setAttribute('aria-label', `Manage ${done} of ${total} subtasks for "${task.title}"`);
-        progressButton.addEventListener('click', (event) => {
-          event.stopPropagation();
-          if (callbacks?.onManageSubtasks) callbacks.onManageSubtasks(task.id);
-          else onNavigate('tasks', task.id);
-        });
-        progressEl.replaceWith(progressButton);
+        // The board renderer owns the disclosure and its inline checklist.
+        // Retaining only the slot avoids a temporary inspector-only control.
+        progressEl.remove();
       } else {
         progressEl.textContent = `${done}/${total}`;
         progressEl.setAttribute('aria-label', `${done} of ${total} subtasks complete`);

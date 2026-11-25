@@ -3769,7 +3769,7 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     expect(document.querySelector('.browse-back-btn')).toBeNull();
   });
 
-  it('board family actions keep the board active and place focus in the parent subtask manager', async () => {
+  it('board families keep children inline while still opening the child inspector on demand', async () => {
     const board = makeDefaultListDto({
       id: 'kyoto', name: 'Weekend in Kyoto', is_default: true, workflow_kind: 'board',
       columns: [
@@ -3798,32 +3798,57 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     const parentBody = document.querySelector<HTMLButtonElement>('li[data-task-id="kyoto-plan"] .task-item__body')!;
     expect(boardEl).not.toBeNull();
 
-    // A title opens the normal inspector, with no forced jump into a different
-    // control. Family actions are the deliberate route into Subtasks.
+    // A parent title still opens its normal inspector; its compact checklist
+    // stays on the board instead of making a second, oversized child card.
     parentBody.click();
     await flushStimulusAsync();
-    const subtasks = document.querySelector<HTMLElement>('.task-detail__subtasks')!;
     expect(document.querySelector('.browse-detail__title')?.textContent).toBe('Plan the Kyoto weekend');
-    expect(document.activeElement).not.toBe(subtasks);
 
-    document.querySelector<HTMLButtonElement>('li[data-task-id="kyoto-plan"] .task-item__subtask-progress')!.click();
+    const parentCard = document.querySelector<HTMLElement>('li[data-task-id="kyoto-plan"]')!;
+    expect(document.querySelector('.task-item--card[data-task-id="tea-house"]')).toBeNull();
+    expect(parentCard.querySelector('[data-task-id="tea-house"]')).not.toBeNull();
+    expect(parentCard.querySelector<HTMLSelectElement>('[data-board-subtask-move="tea-house"]')?.value).toBe('doing');
+
+    // The disclosure is a board-local preference, and a child row reaches its
+    // own inspector without changing the board or treating it as a full card.
+    const disclosure = parentCard.querySelector<HTMLButtonElement>('[data-board-subtask-disclosure="kyoto-plan"]')!;
+    disclosure.click();
+    expect(parentCard.querySelector<HTMLElement>('.task-board-family')?.hidden).toBe(true);
+    disclosure.click();
+    expect(parentCard.querySelector<HTMLElement>('.task-board-family')?.hidden).toBe(false);
+    parentCard.querySelector<HTMLButtonElement>('.task-board-family__title')!.click();
     await flushStimulusAsync();
+    expect(document.querySelector('.browse-detail__title')?.textContent).toBe('Find a quiet tea house');
     expect(document.querySelector('.tasks-board')).not.toBeNull();
-    expect(document.activeElement).toBe(subtasks);
+  });
 
-    // The same control remains useful once its parent is already selected.
-    document.querySelector<HTMLElement>('.task-detail__title-editable')?.focus();
-    document.querySelector<HTMLButtonElement>('li[data-task-id="kyoto-plan"] .task-item__subtask-progress')!.click();
-    await flushStimulusAsync();
-    expect(document.activeElement).toBe(subtasks);
+  it('returns focus to an inline child title when its detail pane closes', async () => {
+    const board = makeDefaultListDto({
+      id: 'kyoto', is_default: true, workflow_kind: 'board',
+      columns: [
+        { id: 'queue', name: 'Queue', position: 'A', type: 'queue' },
+        { id: 'doing', name: 'In Progress', position: 'B', type: 'in_progress' },
+      ],
+    });
+    const parent = makeTaskDtoForStimulus({ id: 'kyoto-plan', title: 'Plan Kyoto', list: 'kyoto', board_column_id: 'queue' });
+    const child = makeTaskDtoForStimulus({
+      id: 'tea-house', title: 'Find a quiet tea house', parent: 'kyoto-plan', list: 'kyoto',
+      status: 'doing', board_column_id: 'doing',
+    });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([board]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([parent, child]);
+    vi.spyOn(InvokeModule, 'getTaskById').mockImplementation(async (id: string) => id === child.id ? child : parent);
 
-    // A child can move across columns but its family affordance still lands on
-    // the parent's existing subtask manager.
-    document.querySelector<HTMLButtonElement>('li[data-task-id="tea-house"] .task-item__parent-chip')!.click();
+    startS3App();
     await flushStimulusAsync();
-    expect(document.querySelector('.browse-detail__title')?.textContent).toBe('Plan the Kyoto weekend');
-    expect(document.activeElement).toBe(subtasks);
-    expect(document.querySelector('li[data-task-id="tea-house"]')?.closest('[data-board-column-id="doing"]')).not.toBeNull();
+    const childTitle = document.querySelector<HTMLButtonElement>('.task-board-family__row[data-task-id="tea-house"] .task-board-family__title')!;
+    childTitle.click();
+    await flushStimulusAsync();
+    expect(document.querySelector('.browse-detail__title')?.textContent).toBe('Find a quiet tea house');
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flushStimulusAsync();
+    expect(document.activeElement).toBe(document.querySelector('.task-board-family__row[data-task-id="tea-house"] .task-board-family__title'));
   });
 
   it('retains family context when a board status filter leaves only one side of the relationship visible', async () => {
@@ -3860,7 +3885,7 @@ describe('S3 — the detail pane replaces both editors (AC-S3-01..11)', () => {
     statusFilter.dispatchEvent(new Event('change'));
     await flushStimulusAsync();
     expect(document.querySelector('li[data-task-id="tea-house"]')).toBeNull();
-    expect(document.querySelector('li[data-task-id="kyoto-plan"] .task-item__subtask-progress')?.textContent).toBe('0/1 subtasks');
+    expect(document.querySelector('li[data-task-id="kyoto-plan"] [data-board-subtask-disclosure="kyoto-plan"]')?.textContent).toContain('0/1');
   });
 
   it('exactly_one_item_is_aria_selected', async () => {
@@ -5039,39 +5064,47 @@ describe('AC-S6-10 — a subtask surfaces standalone with a parent breadcrumb ch
   });
 });
 
-describe('board subtask cards', () => {
-  it('keeps parents and subtasks as independently movable cards while giving each card a compact family action', () => {
-    const parent = makeTask({ id: 'kyoto-plan', title: 'Plan the Kyoto weekend', status: 'todo' });
+describe('board subtask families', () => {
+  it('renders a visible child inside its parent card with an independent stage chooser', () => {
+    const parent = makeTask({ id: 'kyoto-plan', title: 'Plan the Kyoto weekend', status: 'todo', board_column_id: 'queue' });
     const child = makeTask({
       id: 'tea-house',
       title: 'Find a quiet tea house',
       parent: 'kyoto-plan',
       status: 'doing',
+      board_column_id: 'doing',
     });
     const navigate = vi.fn();
+    const moveChild = vi.fn().mockResolvedValue(true);
+    const columns = [
+      { id: 'queue', name: 'Queue', position: 'A', type: 'queue' as const },
+      { id: 'doing', name: 'In Progress', position: 'B', type: 'in_progress' as const },
+      { id: 'done', name: 'Done', position: 'C', type: 'done' as const },
+    ];
 
-    renderBoardView(el.list, templates, [parent, child], 'manual', navigate);
+    renderBoardView(
+      el.list, templates, [parent, child], 'manual', navigate,
+      {
+        onSelectBoardSubtask: (_parentId, childId) => navigate('tasks', childId),
+        onMoveBoardSubtask: (_parentId, childId, columnId) => moveChild(childId, columnId),
+      },
+      null, undefined, undefined, columns, 'queue', [parent, child],
+    );
 
     const parentCard = el.list.querySelector<HTMLElement>('.task-item--card[data-task-id="kyoto-plan"]');
     const childCard = el.list.querySelector<HTMLElement>('.task-item--card[data-task-id="tea-house"]');
     expect(parentCard).not.toBeNull();
-    expect(childCard).not.toBeNull();
-    expect(parentCard?.closest('[data-column-status="todo"]')).not.toBeNull();
-    expect(childCard?.closest('[data-column-status="doing"]')).not.toBeNull();
-
-    const parentProgress = parentCard?.querySelector<HTMLButtonElement>('.task-item__subtask-progress');
-    const parentBreadcrumb = childCard?.querySelector<HTMLButtonElement>('.task-item__parent-chip');
-    expect(parentProgress?.tagName).toBe('BUTTON');
-    expect(parentProgress?.textContent).toBe('0/1 subtasks');
-    expect(parentProgress?.getAttribute('aria-label')).toContain('subtask');
-    expect(parentBreadcrumb?.textContent).toContain('Plan the Kyoto weekend');
-    expect(parentBreadcrumb?.getAttribute('aria-label')).toContain('open parent');
-
-    parentBreadcrumb?.click();
-    expect(navigate).toHaveBeenCalledWith('tasks', 'kyoto-plan');
-    parentProgress?.click();
-    expect(navigate).toHaveBeenCalledTimes(2);
-    expect(navigate).toHaveBeenLastCalledWith('tasks', 'kyoto-plan');
+    expect(childCard).toBeNull();
+    expect(parentCard?.closest('[data-board-column-id="queue"]')).not.toBeNull();
+    const childRow = parentCard?.querySelector<HTMLElement>('[data-task-id="tea-house"]');
+    expect(childRow?.textContent).toContain('Find a quiet tea house');
+    const stage = parentCard?.querySelector<HTMLSelectElement>('[data-board-subtask-move="tea-house"]')!;
+    expect(stage.value).toBe('doing');
+    stage.value = 'done';
+    stage.dispatchEvent(new Event('change'));
+    expect(moveChild).toHaveBeenCalledWith('tea-house', 'done');
+    parentCard?.querySelector<HTMLButtonElement>('.task-board-family__title')?.click();
+    expect(navigate).toHaveBeenCalledWith('tasks', 'tea-house');
   });
 });
 

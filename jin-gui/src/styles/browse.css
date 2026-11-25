@@ -2167,18 +2167,18 @@ figure.code-block {
 .tasks-board__column,
 .tasks-column-manager__marker,
 .tasks-column-manager__editor { --tasks-board-stage-color: var(--accent); }
-:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor)[data-column-type='queue'] { --tasks-board-stage-color: var(--accent); }
-:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor)[data-column-type='none'] { --tasks-board-stage-color: var(--label-secondary); }
-:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor)[data-column-type='in_progress'] { --tasks-board-stage-color: var(--system-orange); }
-:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor)[data-column-type='done'] { --tasks-board-stage-color: var(--feedback-success-text); }
-:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor)[data-color='accent'] { --tasks-board-stage-color: var(--accent); }
-:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor)[data-color='sky'] { --tasks-board-stage-color: var(--system-teal); }
-:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor)[data-color='danger'] { --tasks-board-stage-color: var(--system-red); }
-:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor)[data-color='warning'] { --tasks-board-stage-color: var(--system-yellow); }
-:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor)[data-color='success'] { --tasks-board-stage-color: var(--system-green); }
-:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor)[data-color='purple'] { --tasks-board-stage-color: var(--system-purple); }
-:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor)[data-color='pink'] { --tasks-board-stage-color: var(--system-pink); }
-:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor)[data-color='orange'] { --tasks-board-stage-color: var(--system-orange); }
+:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor, .task-board-family__stage)[data-column-type='queue'] { --tasks-board-stage-color: var(--accent); }
+:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor, .task-board-family__stage)[data-column-type='none'] { --tasks-board-stage-color: var(--label-secondary); }
+:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor, .task-board-family__stage)[data-column-type='in_progress'] { --tasks-board-stage-color: var(--system-orange); }
+:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor, .task-board-family__stage)[data-column-type='done'] { --tasks-board-stage-color: var(--feedback-success-text); }
+:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor, .task-board-family__stage)[data-color='accent'] { --tasks-board-stage-color: var(--accent); }
+:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor, .task-board-family__stage)[data-color='sky'] { --tasks-board-stage-color: var(--system-teal); }
+:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor, .task-board-family__stage)[data-color='danger'] { --tasks-board-stage-color: var(--system-red); }
+:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor, .task-board-family__stage)[data-color='warning'] { --tasks-board-stage-color: var(--system-yellow); }
+:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor, .task-board-family__stage)[data-color='success'] { --tasks-board-stage-color: var(--system-green); }
+:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor, .task-board-family__stage)[data-color='purple'] { --tasks-board-stage-color: var(--system-purple); }
+:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor, .task-board-family__stage)[data-color='pink'] { --tasks-board-stage-color: var(--system-pink); }
+:is(.tasks-board__column, .tasks-column-manager__marker, .tasks-column-manager__editor, .task-board-family__stage)[data-color='orange'] { --tasks-board-stage-color: var(--system-orange); }
 .tasks-board__column-marker {
   inline-size: 8px;
   block-size: 8px;
@@ -2492,6 +2492,167 @@ figure.code-block {
 .task-item--card .task-item__family-control:focus-visible,
 .task-item--card .task-item__parent-chip:focus-visible {
   outline-offset: 1px;
+}
+
+.task-item--card .task-item__family-disclosure {
+  display: inline-flex;
+  align-items: center;
+  max-inline-size: 100%;
+}
+
+.task-item__family-chevron {
+  display: inline-block;
+  margin-inline-end: 3px;
+  font-size: 14px;
+  line-height: 1;
+  transform: rotate(-90deg);
+  transition: transform 160ms ease;
+}
+
+.task-item__family-disclosure--expanded .task-item__family-chevron {
+  transform: rotate(0deg);
+}
+
+.task-item__family-disclosure--empty .task-item__family-chevron {
+  margin-inline-end: 2px;
+  transform: none;
+}
+
+/* A childless card keeps its first-add route available without turning every
+   card into a repeated action pill. Touch layouts retain it at all times. */
+@media (hover: hover) and (pointer: fine) {
+  .task-item--card .task-item__family-disclosure--empty {
+    opacity: 0;
+    transition: opacity 140ms ease;
+  }
+
+  .task-item--card:hover .task-item__family-disclosure--empty,
+  .task-item--card:focus-within .task-item__family-disclosure--empty {
+    opacity: 1;
+  }
+}
+
+.task-board-family {
+  grid-column: 1 / -1;
+  margin-block-start: var(--space-1);
+  padding-block-start: var(--space-1);
+  border-block-start: 0.5px solid var(--separator);
+}
+
+.task-board-family[hidden] { display: none; }
+.task-board-family__add[hidden],
+.task-board-family__add-trigger[hidden] { display: none; }
+
+.task-board-family__list {
+  display: grid;
+  gap: var(--space-half);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-board-family__row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-half);
+  min-block-size: 32px;
+}
+
+.task-board-family__row .task-completion {
+  min-inline-size: 32px;
+  min-block-size: 32px;
+  padding: 0;
+}
+
+.task-board-family__title {
+  min-inline-size: 0;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--label);
+  font: inherit;
+  font-size: var(--text-caption1-size);
+  line-height: var(--text-caption1-line);
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.task-board-family__title:hover { color: var(--accent-text); }
+
+.task-board-family__stage.form-select {
+  inline-size: auto;
+  min-inline-size: 80px;
+  max-inline-size: 160px;
+  min-block-size: 32px;
+  padding: 2px 22px 2px var(--space-1);
+  border-color: color-mix(in srgb, var(--task-board-family-stage-color, var(--separator)) 48%, var(--separator));
+  background-color: color-mix(in srgb, var(--task-board-family-stage-color, var(--control-surface)) 12%, var(--control-surface));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b6b6b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 6px center;
+  background-repeat: no-repeat;
+  appearance: none;
+  field-sizing: content;
+  color: var(--label);
+  text-overflow: ellipsis;
+  font-size: var(--text-caption2-size);
+  line-height: var(--text-caption2-line);
+}
+
+.task-board-family__stage-label {
+  justify-self: end;
+  color: var(--label-secondary);
+  white-space: nowrap;
+}
+
+.task-board-family__filtered {
+  margin: 0;
+  color: var(--label-secondary);
+}
+
+.task-board-family__add {
+  display: flex;
+  gap: var(--space-half);
+  margin-block-start: var(--space-1);
+}
+
+.task-board-family__add-trigger {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 28px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent-text);
+  font: inherit;
+  font-size: var(--text-caption1-size);
+  cursor: pointer;
+}
+
+.task-board-family__add-trigger::before {
+  content: '+';
+  margin-inline-end: var(--space-half);
+  font-size: var(--text-callout-size);
+}
+
+.task-board-family__add-trigger:hover,
+.task-board-family__add-trigger:focus-visible { color: var(--accent); }
+
+.task-board-family__add-input.form-input {
+  min-inline-size: 0;
+  min-block-size: 28px;
+  flex: 1 1 auto;
+  padding-block: 3px;
+  font-size: var(--text-caption1-size);
+}
+
+.task-board-family__add-submit {
+  min-block-size: 28px;
+  padding-inline: var(--space-1);
+  font-size: var(--text-caption2-size);
 }
 
 /* ── P10: Reminder chips and editor ───────────────────────────────────────── */
