@@ -30,9 +30,7 @@ Thumbs.db
 .artifacts/
 
 # Magicite authored engrams and config are tracked; only local/rebuildable state is ignored.
-.magicite/engrams/skill-graph.db
-.magicite/engrams/skill-graph.db-shm
-.magicite/engrams/skill-graph.db-wal
+.magicite/engrams/
 .magicite/runtime/
 .magicite/approvals/
 
@@ -61,6 +59,7 @@ eidolons.mcp.lock
 # Machine-local Magicite installation, enrollment, and harness ownership.
 .magicite-install-backups/
 .magicite/venv/
+.magicite/install-wheels/
 .magicite/install-assets/
 .magicite/install-prepared/
 .magicite/trust/
