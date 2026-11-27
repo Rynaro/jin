@@ -115,6 +115,15 @@ pub struct EventInvitationCapabilitiesDto {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct EventCollaborationCapabilitiesDto {
     pub invitation: Option<EventInvitationCapabilitiesDto>,
+    /// Whether the canonical attendee list contains another person who can
+    /// receive a provider update. The signed-in attendee and calendar
+    /// resources are deliberately excluded.
+    #[serde(default)]
+    pub has_notifiable_guests: bool,
+    /// The corresponding signal for a recurring instance's master event.
+    /// It is absent when this event does not resolve to a local master.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub series_has_notifiable_guests: Option<bool>,
     pub can_edit_schedule: bool,
     pub can_append_attendees: bool,
     pub can_remove_attendees: bool,

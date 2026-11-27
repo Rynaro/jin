@@ -542,6 +542,44 @@ pub fn get_scoped_entry_by_jin_id(
     .map_err(JinError::Index)
 }
 
+/// Resolve a persisted provider mapping for an occurrence mutation.
+///
+/// New mappings use the provider's exact recurrence identity, including the
+/// numeric RFC3339 offset and (when supplied) TZID. Older event files retain
+/// only Jin's wall-clock `original_start`, so they cannot always recreate that
+/// provider string. In that legacy shape, accepting an arbitrary mapping would
+/// risk mutating another occurrence. The compatibility path is therefore
+/// deliberately narrow: same destination, same Jin event id, non-master key,
+/// and exactly one candidate. Callers must persist the returned key in the
+/// mutation journal so delivery continues to address that exact provider item.
+pub fn get_occurrence_entry_by_jin_id_compatible(
+    conn: &Connection,
+    destination: &SyncDestination,
+    jin_id: &str,
+    recurrence_key: &str,
+) -> crate::Result<Option<ScopedEventSyncEntry>> {
+    if let Some(entry) = get_scoped_entry_by_jin_id(conn, destination, jin_id, recurrence_key)? {
+        return Ok(Some(entry));
+    }
+    if recurrence_key == MASTER_RECURRENCE_KEY {
+        return Ok(None);
+    }
+
+    // Query by Jin id first instead of scanning every mapping in the calendar;
+    // the destination predicate below still makes this a strictly route-local
+    // recovery path.
+    let candidates = list_scoped_entries_by_jin_id(conn, jin_id)?
+        .into_iter()
+        .filter(|entry| {
+            entry.destination == *destination && entry.recurrence_key != MASTER_RECURRENCE_KEY
+        })
+        .collect::<Vec<_>>();
+    match candidates.as_slice() {
+        [entry] => Ok(Some(entry.clone())),
+        _ => Ok(None),
+    }
+}
+
 pub fn delete_scoped_entry(
     conn: &Connection,
     destination: &SyncDestination,
@@ -1397,5 +1435,93 @@ mod tests {
                 .unwrap()
                 .dirty
         );
+    }
+
+    fn scoped_entry(destination: SyncDestination, recurrence_key: &str) -> ScopedEventSyncEntry {
+        ScopedEventSyncEntry {
+            destination,
+            jin_id: "occurrence-jin-id".to_string(),
+            recurrence_key: recurrence_key.to_string(),
+            google_event_id: Some("google-occurrence-id".to_string()),
+            ical_uid: Some("series-uid".to_string()),
+            etag: Some("etag".to_string()),
+            google_updated: None,
+            last_synced_at: None,
+        }
+    }
+
+    #[test]
+    fn occurrence_mapping_compatibility_preserves_the_unique_provider_identity() {
+        let (_tmp, conn) = mk_db();
+        let destination = SyncDestination::google("account", "calendar");
+        let persisted_key = "2026-08-20T10:00:00+00:00@UTC";
+        upsert_scoped_entry(&conn, &scoped_entry(destination.clone(), persisted_key)).unwrap();
+        // A matching Jin id in another destination must never satisfy this
+        // route's compatibility lookup.
+        let other_destination = SyncDestination::google("other-account", "calendar");
+        upsert_scoped_entry(
+            &conn,
+            &scoped_entry(
+                other_destination.clone(),
+                "2026-08-20T10:00:00-03:00@America/Sao_Paulo",
+            ),
+        )
+        .unwrap();
+
+        let resolved = get_occurrence_entry_by_jin_id_compatible(
+            &conn,
+            &destination,
+            "occurrence-jin-id",
+            "2026-08-20T10:00:00",
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(resolved.recurrence_key, persisted_key);
+        assert_eq!(
+            resolved.google_event_id.as_deref(),
+            Some("google-occurrence-id")
+        );
+        assert!(get_occurrence_entry_by_jin_id_compatible(
+            &conn,
+            &SyncDestination::google("account", "other-calendar"),
+            "occurrence-jin-id",
+            "2026-08-20T10:00:00",
+        )
+        .unwrap()
+        .is_none());
+    }
+
+    #[test]
+    fn occurrence_mapping_compatibility_refuses_ambiguous_or_master_mappings() {
+        let (_tmp, conn) = mk_db();
+        let destination = SyncDestination::google("account", "calendar");
+        upsert_scoped_entry(
+            &conn,
+            &scoped_entry(destination.clone(), "2026-08-20T10:00:00+00:00@UTC"),
+        )
+        .unwrap();
+        upsert_scoped_entry(
+            &conn,
+            &scoped_entry(destination.clone(), "2026-08-27T10:00:00+00:00@UTC"),
+        )
+        .unwrap();
+
+        assert!(get_occurrence_entry_by_jin_id_compatible(
+            &conn,
+            &destination,
+            "occurrence-jin-id",
+            "2026-08-20T10:00:00",
+        )
+        .unwrap()
+        .is_none());
+        assert!(get_occurrence_entry_by_jin_id_compatible(
+            &conn,
+            &destination,
+            "occurrence-jin-id",
+            MASTER_RECURRENCE_KEY,
+        )
+        .unwrap()
+        .is_none());
     }
 }

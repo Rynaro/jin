@@ -8,6 +8,7 @@ import { draftFromEvent, draftFromSlot, setAttendees, setConferenceIntent, setRe
 import { renderEventComposer } from '../lib/events/composer';
 import { recurrenceFromRepeatValue } from '../lib/events/recurrence';
 import { renderRecurrenceScope } from '../lib/events/recurrence_scope';
+import { eventMessage } from '../lib/events/locale';
 import type { EventDto } from '../types/dto';
 
 function baseEvent(overrides: Partial<EventDto> = {}): EventDto {
@@ -116,6 +117,235 @@ describe('event_composer recurrence (S6)', () => {
 });
 
 describe('event_composer restoration', () => {
+  it('shows the chosen Google update delivery policy for real guests', () => {
+    const draft = draftFromEvent(baseEvent({
+      attendees: [{ email: 'person@example.com' }],
+    }), 'tok');
+    draft.title = 'Updated title';
+    const view = renderEventComposer({
+      draft,
+      destination: { name: 'Team', accountId: 'account', calendarId: 'calendar' },
+      guestUpdateAvailable: true,
+    });
+    document.body.replaceChildren(view.root, view.footer);
+
+    const updates = view.root.querySelector<HTMLSelectElement>('#event-composer-guest-updates')!;
+    expect(updates.labels?.[0]?.textContent).toContain('Send Google updates');
+    expect([...updates.options].map(option => option.textContent)).toEqual([
+      'All guests',
+      'Guests who do not use Google Calendar',
+      'Do not notify guests',
+    ]);
+    updates.value = 'none';
+    updates.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(draft.guest_update_policy).toBe('none');
+  });
+
+  it('opens the delivery choice when core knows an attendee is affected', () => {
+    const view = renderEventComposer({
+      draft: draftFromEvent(baseEvent({ attendees: null }), 'tok'),
+      destination: { name: 'Team', accountId: 'account', calendarId: 'calendar' },
+      guestUpdateAvailable: true,
+    });
+    document.body.appendChild(view.root);
+
+    const updates = view.root.querySelector('#event-composer-guest-updates')!;
+    expect((updates.closest('details') as HTMLDetailsElement).open).toBe(true);
+  });
+
+  it('uses the recurrence-master delivery capability for an entire-series edit', () => {
+    const draft = draftFromEvent(baseEvent({
+      attendees: [{ email: 'occurrence@example.com' }],
+    }), 'tok');
+    const view = renderEventComposer({
+      draft,
+      guestUpdateAvailable: true,
+      seriesGuestUpdateAvailable: false,
+      recurrenceScopes: ['this_occurrence', 'entire_series'],
+    });
+    document.body.appendChild(view.root);
+
+    const entireSeries = view.root.querySelector<HTMLInputElement>('input[value="entire_series"]')!;
+    entireSeries.click();
+    expect(draft.recurrence_scope).toBe('entire_series');
+    expect(view.root.querySelector<HTMLElement>('#event-composer-guest-updates')?.closest('label')?.hidden).toBe(true);
+  });
+
+  it('falls back to occurrence eligibility for a recurrence master whose series signal is unavailable', () => {
+    const draft = draftFromEvent(baseEvent({ attendees: [{ email: 'guest@example.com' }] }), 'tok');
+    draft.recurrence_scope = 'entire_series';
+    const view = renderEventComposer({
+      draft,
+      destination: { name: 'Team', accountId: 'account', calendarId: 'calendar' },
+      guestUpdateAvailable: true,
+      eventIsSeriesMaster: true,
+    });
+    document.body.appendChild(view.root);
+
+    expect(view.root.querySelector<HTMLElement>('#event-composer-guest-updates')?.closest('label')?.hidden).toBe(false);
+  });
+
+  it('does not infer delivery from an attendee list when core explicitly says no guests are affected', () => {
+    const draft = draftFromEvent(baseEvent({
+      attendees: [{ email: 'unverified@example.com' }],
+    }), 'tok');
+    const view = renderEventComposer({ draft, guestUpdateAvailable: false });
+    document.body.appendChild(view.root);
+
+    expect(view.root.querySelector<HTMLElement>('#event-composer-guest-updates')?.closest('label')?.hidden).toBe(true);
+    expect(view.root.querySelector('#event-composer-guests')?.closest('details')
+      ?.querySelector('.event-composer__section-hint')?.textContent).toBe('1 guests');
+  });
+
+  it('never offers delivery controls for a local route with historical attendees', () => {
+    const draft = draftFromEvent(baseEvent({ attendees: [{ email: 'guest@example.com' }] }), 'tok');
+    const view = renderEventComposer({
+      draft,
+      destination: { name: 'Jin' },
+      guestUpdateAvailable: true,
+    });
+    document.body.appendChild(view.root);
+
+    expect(view.root.querySelector<HTMLElement>('#event-composer-guest-updates')?.closest('label')?.hidden).toBe(true);
+  });
+
+  it('enables a writable Jin-origin Google event to add its first guest and choose delivery', () => {
+    const draft = draftFromEvent(baseEvent(), 'tok');
+    const view = renderEventComposer({
+      draft,
+      destination: { name: 'Team', accountId: 'account', calendarId: 'calendar' },
+      guestUpdateAvailable: false,
+      guestUpdateEditable: true,
+      attendeeEditingAllowed: true,
+    });
+    document.body.appendChild(view.root);
+
+    const guests = view.root.querySelector<HTMLTextAreaElement>('#event-composer-guests')!;
+    expect(guests.disabled).toBe(false);
+    guests.value = 'first@example.com';
+    guests.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(view.root.querySelector<HTMLElement>('#event-composer-guest-updates')?.closest('label')?.hidden).toBe(false);
+  });
+
+  it('keeps attendee editing unavailable to a schedule-only guest editor', () => {
+    const draft = draftFromEvent(baseEvent({ attendees: [{ email: 'host@example.com' }] }), 'tok');
+    const view = renderEventComposer({
+      draft,
+      destination: { name: 'Team', accountId: 'account', calendarId: 'calendar' },
+      guestUpdateAvailable: true,
+      guestUpdateEditable: true,
+      attendeeEditingAllowed: false,
+    });
+    document.body.appendChild(view.root);
+
+    expect(view.root.querySelector<HTMLTextAreaElement>('#event-composer-guests')?.disabled).toBe(true);
+    expect(view.root.querySelector<HTMLElement>('#event-composer-guest-updates')?.closest('label')?.hidden).toBe(false);
+  });
+
+  it('prepopulates guests and retains matching RSVP metadata plus protected provider entries', () => {
+    const draft = draftFromEvent(baseEvent({
+      attendees: [
+        { email: 'person@example.com', responseStatus: 'accepted', optional: true },
+        { email: 'me@example.com', self: true, responseStatus: 'accepted' },
+        { email: 'room@example.com', resource: true },
+      ],
+    }), 'tok');
+    const view = renderEventComposer({
+      draft,
+      destination: { name: 'Team', accountId: 'account', calendarId: 'calendar' },
+      guestUpdateAvailable: true,
+      attendeeEditingAllowed: true,
+    });
+    document.body.appendChild(view.root);
+
+    const guests = view.root.querySelector<HTMLTextAreaElement>('#event-composer-guests')!;
+    expect(guests.value).toBe('person@example.com');
+    guests.value = 'person@example.com, new@example.com';
+    guests.dispatchEvent(new Event('input', { bubbles: true }));
+
+    expect(draft.attendees).toEqual([
+      { email: 'person@example.com', responseStatus: 'accepted', optional: true },
+      { email: 'new@example.com' },
+      { email: 'me@example.com', self: true, responseStatus: 'accepted' },
+      { email: 'room@example.com', resource: true },
+    ]);
+  });
+
+  it('does not expose the Google delivery choice for a solo event', () => {
+    const view = renderEventComposer({ draft: draftFromEvent(baseEvent(), 'tok') });
+    document.body.appendChild(view.root);
+    expect(view.root.querySelector<HTMLElement>('#event-composer-guest-updates')?.closest('label')?.hidden).toBe(true);
+  });
+
+  it('keeps a long Portuguese calendar source in the native destination control', () => {
+    const personal = { name: 'Calendário do Jin' };
+    const google = {
+      name: 'Agenda Pessoal da Família e compromissos compartilhados',
+      alias: 'Conta pessoal',
+      accountId: 'account-personal',
+      calendarId: 'calendar-family',
+      color: 'sky' as const,
+    };
+    const draft = draftFromSlot({ date: '2026-09-23' });
+    const changed = vi.fn();
+    const view = renderEventComposer({
+      draft,
+      locale: 'pt-BR',
+      destinations: [personal, google],
+      onDestinationChange: changed,
+    });
+    document.body.replaceChildren(view.root, view.footer);
+
+    const select = view.root.querySelector<HTMLSelectElement>('#event-composer-destination')!;
+    const swatch = view.root.querySelector<HTMLElement>('.event-composer__calendar-row .event-composer__color')!;
+    expect(select.labels?.[0]?.textContent).toContain('Calendário');
+    expect([...select.options].map(option => option.textContent)).toContain(
+      'Conta pessoal · Agenda Pessoal da Família e compromissos compartilhados',
+    );
+    expect(swatch.getAttribute('aria-hidden')).toBe('true');
+
+    select.value = '1';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(select.selectedOptions[0]?.textContent).toBe(
+      'Conta pessoal · Agenda Pessoal da Família e compromissos compartilhados',
+    );
+    expect(changed).toHaveBeenCalledWith(google);
+  });
+
+  it('uses a labeled native radio group to choose how a recurring edit applies', () => {
+    const draft = draftFromEvent(baseEvent(), 'tok');
+    draft.title = 'Standup renamed';
+    const view = renderEventComposer({
+      draft,
+      locale: 'pt-BR',
+      recurrenceScopes: ['this_occurrence', 'entire_series'],
+      recurrencePatternSupported: true,
+    });
+    document.body.replaceChildren(view.root, view.footer);
+
+    const fieldset = view.root.querySelector<HTMLFieldSetElement>('.event-composer__apply-to')!;
+    const radios = [...fieldset.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+    const save = view.footer.querySelector<HTMLButtonElement>('.event-composer__save')!;
+    expect(fieldset.querySelector('legend')?.textContent).toBe(eventMessage('applyTo', 'pt-BR'));
+    expect(radios.map(radio => radio.name)).toEqual([
+      'event-composer-recurrence-scope',
+      'event-composer-recurrence-scope',
+    ]);
+    expect(radios.map(radio => radio.labels?.[0]?.textContent?.trim())).toEqual([
+      'Esta ocorrência',
+      'Série inteira',
+    ]);
+    expect(save.disabled).toBe(true);
+
+    radios[1].click();
+
+    expect(draft.recurrence_scope).toBe('entire_series');
+    expect(view.scopeResolved()).toBe(true);
+    expect(save.disabled).toBe(false);
+    expect(view.root.querySelector<HTMLSelectElement>('[data-companion-focus="composer-repeat"]')?.disabled).toBe(false);
+  });
+
   it('names every editable field and keeps pristine validation hidden while Save is gated', () => {
     const view = renderEventComposer({ draft: draftFromSlot({ date: '2026-09-23' }), locale: 'en' });
     document.body.replaceChildren(view.root, view.footer);

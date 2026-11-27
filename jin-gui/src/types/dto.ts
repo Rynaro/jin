@@ -508,6 +508,10 @@ export interface EventInvitationCapabilitiesDto {
 
 export interface EventCollaborationCapabilitiesDto {
   invitation: EventInvitationCapabilitiesDto | null;
+  /** A Google edit can affect at least one other human attendee. */
+  has_notifiable_guests?: boolean;
+  /** The recurring series has another human attendee, when its master is available. */
+  series_has_notifiable_guests?: boolean;
   can_edit_schedule: boolean;
   can_append_attendees: boolean;
   can_remove_attendees: boolean;

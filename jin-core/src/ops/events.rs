@@ -440,16 +440,21 @@ pub(crate) fn event_detail_capabilities_unrecovered(
         || event.frontmatter.recurring_event_id.is_some()
         || event.frontmatter.original_start.is_some()
         || event.frontmatter.master_id.is_some();
-    let recurrence_pattern_supported =
-        if let Some(master_id) = event.frontmatter.master_id.as_deref() {
-            get_event(&cfg.events_dir(), master_id)
-                .map(|master| crate::recurrence::is_supported(&master.frontmatter.recurrence))
-                .unwrap_or(false)
-        } else if recurring {
-            crate::recurrence::is_supported(&event.frontmatter.recurrence)
-        } else {
-            true
-        };
+    let canonical_master = event
+        .frontmatter
+        .master_id
+        .as_deref()
+        .and_then(|master_id| get_event(&cfg.events_dir(), master_id).ok());
+    let recurrence_pattern_supported = if event.frontmatter.master_id.is_some() {
+        canonical_master
+            .as_ref()
+            .map(|master| crate::recurrence::is_supported(&master.frontmatter.recurrence))
+            .unwrap_or(false)
+    } else if recurring {
+        crate::recurrence::is_supported(&event.frontmatter.recurrence)
+    } else {
+        true
+    };
     let mut writable_route = false;
     if event.frontmatter.source == EventSource::Google && cfg.google_v2_active() {
         let sync_path = cfg.sync_dir().join("sync-state.sqlite");
@@ -477,7 +482,25 @@ pub(crate) fn event_detail_capabilities_unrecovered(
     }
     let (can_return_task_to_flexible, originating_task) =
         return_eligibility_unrecovered(root, event)?;
-    let collaboration = collaboration_capabilities(root, event)?;
+    let principal = account_principal_for_event(&cfg, event)?;
+    let organizer_matches_route_calendar = organizer_is_route_calendar(&cfg, event)?;
+    let mut collaboration = collaboration_capabilities(
+        root,
+        event,
+        principal.as_deref(),
+        organizer_matches_route_calendar,
+    )?;
+    collaboration.series_has_notifiable_guests = event
+        .frontmatter
+        .master_id
+        .as_deref()
+        .and_then(|master_id| get_event(&cfg.events_dir(), master_id).ok())
+        .map(|master| {
+            let principal = account_principal_for_event(&cfg, &master).ok().flatten();
+            let organizer_is_route_calendar =
+                organizer_is_route_calendar(&cfg, &master).unwrap_or(false);
+            master.has_notifiable_guests(principal.as_deref(), organizer_is_route_calendar)
+        });
     if event.frontmatter.source == EventSource::Google
         && collaboration.can_edit_schedule
         && (!recurring || recurrence_pattern_supported)
@@ -500,7 +523,10 @@ pub(crate) fn event_detail_capabilities_unrecovered(
             && recurring
             && recurrence_pattern_supported
         {
-            vec!["this_occurrence".to_string(), "entire_series".to_string()]
+            supported_recurrence_scopes(event, canonical_master.as_ref())
+                .into_iter()
+                .map(str::to_string)
+                .collect()
         } else {
             Vec::new()
         },
@@ -510,14 +536,49 @@ pub(crate) fn event_detail_capabilities_unrecovered(
     })
 }
 
+/// Return only scopes whose selected event has enough canonical identity for
+/// the mutation service to resolve. A master does not identify one occurrence,
+/// and an occurrence cannot address a series until its canonical master is
+/// available locally.
+fn supported_recurrence_scopes(
+    event: &Event,
+    canonical_master: Option<&Event>,
+) -> Vec<&'static str> {
+    let frontmatter = &event.frontmatter;
+    let is_series_master = !frontmatter.recurrence.is_empty()
+        && frontmatter.recurring_event_id.is_none()
+        && frontmatter.original_start.is_none()
+        && frontmatter.master_id.is_none();
+    let has_canonical_series = is_series_master
+        || canonical_master.is_some_and(|master| !master.frontmatter.recurrence.is_empty());
+
+    let mut scopes = Vec::new();
+    if frontmatter.original_start.is_some() {
+        scopes.push("this_occurrence");
+    }
+    if has_canonical_series {
+        scopes.push("entire_series");
+    }
+    scopes
+}
+
 /// Project the Notification Center RSVP ledger into Event detail.  The center
 /// remains the canonical owner of response attempts, versions, and pending
 /// state; this is deliberately a read-only projection.
 fn collaboration_capabilities(
     root: &Path,
     event: &Event,
+    principal: Option<&str>,
+    organizer_is_route_calendar: bool,
 ) -> Result<EventCollaborationCapabilitiesDto> {
-    let mut collaboration = EventCollaborationCapabilitiesDto::default();
+    // Keep this separate from mutation authority. A Jin-authored event can
+    // have a routed Google destination and guests even though it is not a
+    // Google mirror. Resources are not people and the authenticated attendee
+    // never needs an update choice for themself.
+    let mut collaboration = EventCollaborationCapabilitiesDto {
+        has_notifiable_guests: event.has_notifiable_guests(principal, organizer_is_route_calendar),
+        ..Default::default()
+    };
     if event.frontmatter.source != EventSource::Google {
         return Ok(collaboration);
     }
@@ -697,6 +758,28 @@ fn collaboration_capabilities(
         disabled_reason: payload.capabilities.disabled_reason,
     });
     Ok(collaboration)
+}
+
+fn account_principal_for_event(cfg: &crate::Config, event: &Event) -> Result<Option<String>> {
+    let route = crate::google::route_ownership::read(&cfg.events_dir(), event.id())?;
+    Ok(route.and_then(|route| {
+        cfg.google_registry
+            .account(&route.account_id)
+            .ok()
+            .and_then(|account| account.principal.clone())
+    }))
+}
+
+fn organizer_is_route_calendar(cfg: &crate::Config, event: &Event) -> Result<bool> {
+    let organizer_email = event
+        .frontmatter
+        .organizer
+        .as_ref()
+        .and_then(|organizer| organizer.email.as_deref());
+    let route = crate::google::route_ownership::read(&cfg.events_dir(), event.id())?;
+    Ok(organizer_email
+        .zip(route.as_ref())
+        .is_some_and(|(email, route)| email.eq_ignore_ascii_case(&route.calendar_id)))
 }
 
 /// Create a new Event, write to disk.
@@ -1334,6 +1417,115 @@ mod tests {
         }
 
         #[test]
+        fn notification_guest_capability_excludes_self_and_resources() {
+            let vault = TempDir::new().unwrap();
+            crate::ops::init(vault.path()).unwrap();
+            let mut event = create(&vault.path().join("events"));
+            event.frontmatter.organizer = Some(crate::model::event::EventOrganizer {
+                email: Some("me@example.com".to_string()),
+                is_self: Some(true),
+                ..Default::default()
+            });
+            event.frontmatter.attendees = Some(vec![
+                crate::model::event::EventAttendee {
+                    email: Some("me@example.com".to_string()),
+                    is_self: Some(true),
+                    ..Default::default()
+                },
+                crate::model::event::EventAttendee {
+                    email: Some("room@example.com".to_string()),
+                    resource: Some(true),
+                    ..Default::default()
+                },
+                crate::model::event::EventAttendee {
+                    email: Some("organizer@example.com".to_string()),
+                    organizer: Some(true),
+                    ..Default::default()
+                },
+            ]);
+            event.frontmatter.attendees_omitted = Some(true);
+            fs::write_event(&vault.path().join("events"), &event).unwrap();
+            assert!(
+                !event_detail_capabilities(vault.path(), event.id())
+                    .unwrap()
+                    .collaboration
+                    .has_notifiable_guests
+            );
+
+            event.frontmatter.attendees.as_mut().unwrap().push(
+                crate::model::event::EventAttendee {
+                    email: Some("guest@example.com".to_string()),
+                    ..Default::default()
+                },
+            );
+            fs::write_event(&vault.path().join("events"), &event).unwrap();
+            assert!(
+                event_detail_capabilities(vault.path(), event.id())
+                    .unwrap()
+                    .collaboration
+                    .has_notifiable_guests
+            );
+        }
+
+        #[test]
+        fn series_notification_guest_capability_uses_the_master_attendees() {
+            let vault = TempDir::new().unwrap();
+            crate::ops::init(vault.path()).unwrap();
+            let mut master = create(&vault.path().join("events"));
+            master.frontmatter.attendees = Some(vec![crate::model::event::EventAttendee {
+                email: Some("guest@example.com".to_string()),
+                ..Default::default()
+            }]);
+            fs::write_event(&vault.path().join("events"), &master).unwrap();
+
+            let mut occurrence = create(&vault.path().join("events"));
+            occurrence.frontmatter.master_id = Some(master.id().to_string());
+            occurrence.frontmatter.attendees = Some(vec![crate::model::event::EventAttendee {
+                email: Some("me@example.com".to_string()),
+                is_self: Some(true),
+                ..Default::default()
+            }]);
+            fs::write_event(&vault.path().join("events"), &occurrence).unwrap();
+
+            let collaboration = event_detail_capabilities(vault.path(), occurrence.id())
+                .unwrap()
+                .collaboration;
+            assert!(!collaboration.has_notifiable_guests);
+            assert_eq!(collaboration.series_has_notifiable_guests, Some(true));
+        }
+
+        #[test]
+        fn notification_guest_classification_excludes_principal_and_organizer_email() {
+            let vault = TempDir::new().unwrap();
+            let mut event = create(vault.path());
+            event.frontmatter.organizer = Some(crate::model::event::EventOrganizer {
+                email: Some("organizer@example.com".to_string()),
+                ..Default::default()
+            });
+            event.frontmatter.attendees = Some(vec![
+                crate::model::event::EventAttendee {
+                    email: Some("ME@example.com".to_string()),
+                    ..Default::default()
+                },
+                crate::model::event::EventAttendee {
+                    email: Some("ORGANIZER@example.com".to_string()),
+                    ..Default::default()
+                },
+            ]);
+            assert!(!event.has_notifiable_guests(Some("me@example.com"), false));
+
+            event.frontmatter.organizer = Some(crate::model::event::EventOrganizer {
+                email: Some("team@group.calendar.google.com".to_string()),
+                ..Default::default()
+            });
+            event.frontmatter.attendees = Some(vec![crate::model::event::EventAttendee {
+                email: Some("team@group.calendar.google.com".to_string()),
+                ..Default::default()
+            }]);
+            assert!(!event.has_notifiable_guests(None, true));
+        }
+
+        #[test]
         fn time_block() {
             let tmp = TempDir::new().unwrap();
             let mut event = create(tmp.path());
@@ -1350,6 +1542,42 @@ mod tests {
             let mut event = create(tmp.path());
             event.frontmatter.recurrence = vec!["RRULE:FREQ=DAILY".to_string()];
             assert!(!mutation_policy(&event).is_mutable());
+        }
+
+        #[test]
+        fn recurrence_scopes_require_identity_supported_by_the_selected_event() {
+            let tmp = TempDir::new().unwrap();
+            let mut master = create(tmp.path());
+            master.frontmatter.recurrence = vec!["RRULE:FREQ=DAILY".to_string()];
+            assert_eq!(
+                supported_recurrence_scopes(&master, None),
+                vec!["entire_series"],
+                "a master has no occurrence identity"
+            );
+
+            let mut occurrence = create(tmp.path());
+            occurrence.frontmatter.master_id = Some(master.id().to_string());
+            occurrence.frontmatter.recurring_event_id = Some("remote-master".to_string());
+            occurrence.frontmatter.original_start = Some(TemporalValue::DateTime(
+                chrono::NaiveDateTime::parse_from_str("2026-08-24T09:00:00", "%Y-%m-%dT%H:%M:%S")
+                    .unwrap(),
+            ));
+            assert_eq!(
+                supported_recurrence_scopes(&occurrence, Some(&master)),
+                vec!["this_occurrence", "entire_series"]
+            );
+
+            occurrence.frontmatter.original_start = None;
+            assert_eq!(
+                supported_recurrence_scopes(&occurrence, Some(&master)),
+                vec!["entire_series"],
+                "an instance without original-start cannot target one occurrence"
+            );
+            assert_eq!(
+                supported_recurrence_scopes(&occurrence, None),
+                Vec::<&str>::new(),
+                "an unavailable master cannot be targeted as a series"
+            );
         }
 
         #[test]

@@ -464,6 +464,14 @@ pub fn sync_event_with_http<H: HttpClient>(
     // Successful earlier operations must be visible even if a later one failed.
     crate::ops::api::refresh(root)?;
     let pushed = result?;
+    // A successful Google DELETE leaves the canonical tombstone in place and
+    // removes its remote mapping. Hydrating it would issue a GET for a
+    // resource Google has just cancelled, turning a delivered cancellation
+    // into a spurious follow-up failure.
+    if crate::store::fs::read_event(&cfg.events_dir().join(format!("{event_id}.md")))?.is_deleted()
+    {
+        return Ok(pushed);
+    }
     // Import the provider-confirmed conference response (also handles a later
     // retry while Google is still preparing the link). This refuses to replace
     // canonical data when unsent or paused changes remain.
@@ -968,6 +976,7 @@ mod initial_import_tests {
     use crate::google::account::{DiscoveredCalendar, GoogleAccessRole, GOOGLE_ISSUER};
     use crate::google::client::{HttpResponse, MockHttpClient};
     use crate::google::secrets::TokenSet;
+    use crate::model::event::{EventSource, EventStatus, TemporalValue, ValueType};
 
     #[test]
     fn initial_import_uses_only_the_inbound_calendar_request() {
@@ -1030,6 +1039,134 @@ mod initial_import_tests {
         assert_eq!(http.requested_posts(), Vec::new());
         assert_eq!(http.requested_patches(), Vec::new());
         assert_eq!(http.requested_urls().len(), 1);
+    }
+
+    #[test]
+    fn event_scoped_cancellation_delivers_once_without_hydrating_the_tombstone() {
+        let _passphrase = crate::test_support::EnvGuard::set(
+            "JIN_TOKEN_PASSPHRASE",
+            "event-cancellation-test-passphrase",
+            &crate::test_support::PASSPHRASE_ENV_LOCK,
+        );
+        let root = tempfile::tempdir().unwrap();
+        crate::ops::init(root.path()).unwrap();
+        let mut config = Config::load(root.path()).unwrap();
+        config.token_backend = "file".to_string();
+        let account_id = config.google_registry.add_pending_account("Pilot").unwrap();
+        config
+            .google_registry
+            .account_mut(&account_id)
+            .unwrap()
+            .bind_subject(
+                GOOGLE_ISSUER,
+                "pilot-subject",
+                Some("me@example.com".to_string()),
+            )
+            .unwrap();
+        config
+            .google_registry
+            .reconcile_calendars(
+                &account_id,
+                vec![DiscoveredCalendar {
+                    calendar_id: "primary".to_string(),
+                    name: "Primary".to_string(),
+                    primary: true,
+                    access_role: GoogleAccessRole::Owner,
+                    allowed_conference_solution_types: Vec::new(),
+                }],
+            )
+            .unwrap();
+        config.save().unwrap();
+        let tokens = TokenSet {
+            access_token: "test-access".to_string(),
+            refresh_token: None,
+            expires_at: 9_999_999_999,
+            scope: "calendar.events".to_string(),
+            client_id: "test.apps.googleusercontent.com".to_string(),
+            account: None,
+        };
+        crate::google::secrets::save_tokens_for_account(root.path(), &config, &account_id, &tokens)
+            .unwrap();
+
+        let mut event = crate::ops::events::build_event(
+            crate::ops::events::CreateEventParams {
+                title: "Cancelled meeting".to_string(),
+                body: String::new(),
+                start: TemporalValue::Date("2026-08-03".parse().unwrap()),
+                end: TemporalValue::Date("2026-08-04".parse().unwrap()),
+                start_value_type: ValueType::Date,
+                end_value_type: ValueType::Date,
+                is_all_day: true,
+                start_tzid: None,
+                end_tzid: None,
+                floating: false,
+                ical_uid: None,
+                description: None,
+                location: None,
+                attendees: None,
+                conference_data: None,
+                reminders: None,
+            },
+            None,
+        )
+        .unwrap();
+        event.frontmatter.source = EventSource::Jin;
+        event.frontmatter.calendar_id = "primary".to_string();
+        event.frontmatter.status = EventStatus::Cancelled;
+        let bytes = crate::store::fs::render_event_bytes(&event).unwrap();
+        crate::store::fs::write_event(&config.events_dir(), &event).unwrap();
+        let target =
+            crate::google::account::EventSyncTarget::new(account_id.clone(), "primary").unwrap();
+        crate::google::route_ownership::write(&config.events_dir(), event.id(), &target).unwrap();
+        let destination =
+            crate::sync::state::SyncDestination::google(account_id.to_string(), "primary");
+        let conn = crate::sync::state::open_sync_db(&config.sync_dir()).unwrap();
+        crate::sync::state::upsert_scoped_entry(
+            &conn,
+            &crate::sync::state::ScopedEventSyncEntry {
+                destination: destination.clone(),
+                jin_id: event.id().to_string(),
+                recurrence_key: crate::sync::state::MASTER_RECURRENCE_KEY.to_string(),
+                google_event_id: Some("remote-event".to_string()),
+                ical_uid: event.frontmatter.ical_uid.clone(),
+                etag: Some("\"etag\"".to_string()),
+                google_updated: None,
+                last_synced_at: None,
+            },
+        )
+        .unwrap();
+        crate::sync::state::enqueue_outbox(
+            &conn,
+            &crate::sync::state::OutboxOperation {
+                operation_id: "cancel-once".to_string(),
+                destination,
+                jin_id: event.id().to_string(),
+                recurrence_key: crate::sync::state::MASTER_RECURRENCE_KEY.to_string(),
+                google_event_id: Some("remote-event".to_string()),
+                operation: crate::sync::state::OutboxOperationKind::Delete,
+                base_etag: Some("\"etag\"".to_string()),
+                canonical_revision: format!("sha256:{:x}", Sha256::digest(bytes)),
+                auth_generation: 1,
+                route_generation: 0,
+                payload: Some(serde_json::json!({ "_jinGuestUpdatePolicy": "none" })),
+                state: "pending".to_string(),
+                pause_reason: None,
+                reviewed: false,
+            },
+        )
+        .unwrap();
+        let http = MockHttpClient::new(vec![HttpResponse {
+            status: 204,
+            body: serde_json::Value::Null,
+            etag: None,
+        }]);
+
+        assert_eq!(
+            sync_event_with_http(root.path(), event.id(), &http).unwrap(),
+            1
+        );
+        assert_eq!(http.requested_urls().len(), 1);
+        assert!(http.requested_urls()[0].ends_with("/events/remote-event?sendUpdates=none"));
     }
 
     #[test]

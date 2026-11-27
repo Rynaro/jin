@@ -120,6 +120,8 @@ import {
   type EventDraft,
 } from '../lib/events/draft';
 import { EventCompanion, type CompanionSaveResult } from '../lib/ui/companion';
+import { createEventRemovalDialog } from '../lib/events/removal';
+import { ConfirmDialog } from '../lib/ui/confirm_dialog';
 import type { SupportedRecurrenceScope } from '../lib/events/recurrence_scope';
 import type { ComposerDestination } from '../lib/events/composer';
 
@@ -213,6 +215,8 @@ export default class CalendarViewController extends Controller {
   private filterSignature = '';
   private rangeProjection: CalendarRangeProjectionDto | null = null;
   private companion: EventCompanion | null = null;
+  private removalDialog: ConfirmDialog | null = null;
+  private readonly pendingRemovalEventIds = new Set<string>();
   private addButton: HTMLButtonElement | null = null;
   private workspaceObserver: ResizeObserver | null = null;
   private monthGridObserver: ResizeObserver | null = null;
@@ -273,6 +277,9 @@ export default class CalendarViewController extends Controller {
     this.stopMonthGridMeasurement();
     this.companion?.close(true);
     this.companion = null;
+    this.removalDialog?.destroy();
+    this.removalDialog = null;
+    this.pendingRemovalEventIds.clear();
     this.timeline = null;
     this.timelineIdentity = null;
     this.nightManual = {};
@@ -1842,6 +1849,7 @@ export default class CalendarViewController extends Controller {
       onOpenFullDetails: (eventId) => {
         this.dispatch('navigate', { detail: { kind: 'events', id: eventId }, prefix: 'jin', bubbles: true });
       },
+      onRemove: (detail, invoker) => this.confirmPreviewRemoval(detail, invoker),
       onSave: async (draft) => this.saveCompanionDraft(draft),
       onClose: () => {
         this.pointerLayer = null;
@@ -1859,6 +1867,44 @@ export default class CalendarViewController extends Controller {
     } else {
       this.companion.setContentBox(workspace.getBoundingClientRect().width || 1280);
     }
+  }
+
+  private confirmPreviewRemoval(detail: EventDetailDto, invoker: HTMLButtonElement): void {
+    if (this.pendingRemovalEventIds.has(detail.event.id)) return;
+    this.removalDialog?.destroy();
+    // Pointer activation in WebKit does not always focus the pressed control.
+    // Make it the modal's restore target before ConfirmDialog captures focus.
+    invoker.focus({ preventScroll: true });
+    this.removalDialog = createEventRemovalDialog({
+      detail,
+      locale: resolveEventLocale(),
+      onStart: () => { this.pendingRemovalEventIds.add(detail.event.id); },
+      onRemoved: async () => {
+        this.pendingRemovalEventIds.delete(detail.event.id);
+        if (this.companion?.getDetail()?.event.id === detail.event.id) this.companion.close(true);
+        this.notifyMutation();
+        await this.loadCalendar();
+      },
+      onRefreshFailure: () => {
+        this.pendingRemovalEventIds.delete(detail.event.id);
+        this.dispatch('error', {
+          detail: { message: eventMessage('removalRefreshFailed', resolveEventLocale()) },
+          prefix: 'app',
+          bubbles: true,
+        });
+      },
+      onFailure: (error) => {
+        this.pendingRemovalEventIds.delete(detail.event.id);
+        this.dispatch('error', {
+          detail: isJinErrorDto(error)
+            ? error
+            : { message: error instanceof Error ? error.message : eventMessage('failedRemoveEvent') },
+          prefix: 'app',
+          bubbles: true,
+        });
+      },
+    });
+    this.removalDialog.open();
   }
 
   private async openCompanionCreate(slot: DraftSlot, anchor: HTMLElement | null = null): Promise<void> {

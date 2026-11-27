@@ -43,6 +43,8 @@ import {
   listEvents,
   getEventDetailById,
   removeTimeBlock,
+  editRoutedEventDelta,
+  deleteRoutedEvent,
   createEvent,
   promoteTask,
   attachNote,
@@ -656,4 +658,29 @@ it('forwards upcoming entry targets and optimistic series guards with exact snak
     recurrence_expected: { series_id: 'series', revision: 2, enabled: true } };
   await editTask('routine', input);
   expect(invoke).toHaveBeenCalledWith('edit_task', { id: 'routine', input });
+});
+
+describe('routed event mutation delivery', () => {
+  const canonicalEvent = { id: 'master-event' };
+
+  it('attempts event-scoped delivery after a routed edit without delaying its result', async () => {
+    mockInvoke.mockResolvedValueOnce(canonicalEvent).mockResolvedValueOnce(1);
+    await expect(editRoutedEventDelta({
+      event_id: 'occurrence-event', edit_token: 'token', operation_id: 'edit-op',
+      delta: { title: 'Changed' }, account_id: 'account', calendar_id: 'calendar',
+    })).resolves.toEqual(canonicalEvent);
+    await Promise.resolve();
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, 'edit_routed_event_delta', expect.any(Object));
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, 'sync_calendar_event', { event_id: 'master-event' });
+  });
+
+  it('keeps a successful routed cancellation successful when delivery is offline', async () => {
+    mockInvoke.mockResolvedValueOnce(canonicalEvent).mockRejectedValueOnce(new Error('offline'));
+    await expect(deleteRoutedEvent({
+      event_id: 'event', account_id: 'account', calendar_id: 'calendar', operation_id: 'delete-op',
+    })).resolves.toEqual(canonicalEvent);
+    await Promise.resolve();
+    expect(mockInvoke).toHaveBeenNthCalledWith(1, 'delete_routed_event', expect.any(Object));
+    expect(mockInvoke).toHaveBeenNthCalledWith(2, 'sync_calendar_event', { event_id: 'master-event' });
+  });
 });

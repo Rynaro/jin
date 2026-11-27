@@ -3,7 +3,7 @@
  * Does not own submit routing or create a second role=status live region.
  */
 
-import type { EventConferenceDataDto } from '../../types/dto';
+import type { EventAttendeeDto, EventConferenceDataDto } from '../../types/dto';
 import type { JinColor } from '../ui/color_picker';
 import { applyCalendarColor } from '../calendar/colors';
 import {
@@ -56,6 +56,16 @@ export interface ComposerRenderOptions {
   conferenceData?: EventConferenceDataDto | null;
   existingMeetingHref?: string | null;
   conferenceCapabilities?: { can_add_conference: boolean; can_remove_conference: boolean };
+  /** Core's authoritative answer for the persisted event and active recurrence scope. */
+  guestUpdateAvailable?: boolean;
+  /** Core's authoritative answer for the series master when that scope is selected. */
+  seriesGuestUpdateAvailable?: boolean;
+  /** The active provider route permits schedule edits, including new guests. */
+  guestUpdateEditable?: boolean;
+  /** The current authority permits changing the attendee set itself. */
+  attendeeEditingAllowed?: boolean;
+  /** The current detail is the recurrence master, so occurrence eligibility applies to the series. */
+  eventIsSeriesMaster?: boolean;
   recurrenceScopes?: readonly SupportedRecurrenceScope[];
   /** When true and entire_series is selected, expose series-pattern editor (AC-032). */
   recurrencePatternSupported?: boolean;
@@ -102,6 +112,27 @@ function guestPolicyLabel(policy: GuestUpdatePolicy, locale: EventLocaleKey): st
   return 'Notify all';
 }
 
+function preserveAttendeeMetadata(
+  emails: string[],
+  baseline: readonly EventAttendeeDto[],
+): EventAttendeeDto[] {
+  const wanted = new Set(emails.map(email => email.toLocaleLowerCase()));
+  const byEmail = new Map(
+    baseline
+      .filter(attendee => attendee.email)
+      .map(attendee => [attendee.email!.toLocaleLowerCase(), attendee]),
+  );
+  const edited = emails.map(email => ({ ...(byEmail.get(email.toLocaleLowerCase()) ?? {}), email }));
+  // Google may include the signed-in person, organizer, and rooms in the
+  // attendee list. They are provider-managed entries and must survive text
+  // edits even when their address is not present in the editable guest field.
+  const protectedEntries = baseline.filter(attendee =>
+    Boolean(attendee.self || attendee.organizer || attendee.resource)
+    && (!attendee.email || !wanted.has(attendee.email.toLocaleLowerCase())),
+  );
+  return [...edited, ...protectedEntries];
+}
+
 function primaryLabel(draft: EventDraft, locale: EventLocaleKey): string {
   const dirty = dirtyFields(draft);
   if (!draft.event_id) {
@@ -124,6 +155,7 @@ function makeSection(
   open: boolean,
   collapsedSummary: () => string,
   bodyBuild: (body: HTMLElement) => void,
+  icon?: string,
 ): HTMLDetailsElement {
   const details = document.createElement('details');
   details.className = 'event-composer__section';
@@ -135,7 +167,14 @@ function makeSection(
 
   const titleEl = document.createElement('span');
   titleEl.className = 'event-composer__section-title';
-  titleEl.textContent = title;
+  if (icon) {
+    const glyph = document.createElement('i');
+    glyph.className = 'event-composer__section-icon';
+    glyph.dataset.lucide = icon;
+    glyph.setAttribute('aria-hidden', 'true');
+    titleEl.appendChild(glyph);
+  }
+  titleEl.append(title);
 
   const hint = document.createElement('span');
   hint.className = 'event-composer__section-hint text-footnote';
@@ -425,7 +464,7 @@ export function renderEventComposer(options: ComposerRenderOptions): ComposerVie
   );
   const zoneSection = makeSection(eventMessage('timeZone', locale), false, () => draft.temporal.timezone, section => {
     section.appendChild(labeled(eventMessage('timeZone', locale), timezone, 'event-composer-timezone'));
-  });
+  }, 'clock');
   zoneSection.classList.add('event-composer__zone');
   temporal.appendChild(zoneSection);
   body.appendChild(temporal);
@@ -435,40 +474,99 @@ export function renderEventComposer(options: ComposerRenderOptions): ComposerVie
   guestsText.className = 'form-textarea event-composer__guests-input';
   guestsText.dataset.companionFocus = 'composer-guests';
   guestsText.placeholder = 'a@example.com, b@example.com';
-  if (draft.attendees) {
-    guestsText.value = draft.attendees.map((a) => a.email ?? '').filter(Boolean).join(', ');
-  }
+  const attendeeBaseline = draft.attendee_baseline ?? [];
+  const displayedAttendees = draft.attendees ?? attendeeBaseline;
+  guestsText.value = displayedAttendees
+    .filter(attendee => !attendee.self && !attendee.organizer && !attendee.resource)
+    .map((attendee) => attendee.email ?? '')
+    .filter(Boolean)
+    .join(', ');
+  const isGoogleRoute = (): boolean => Boolean(selectedDestination?.accountId && selectedDestination?.calendarId);
+  const attendeeEditingAllowed = (): boolean => !draft.event_id || (isGoogleRoute() && options.attendeeEditingAllowed === true);
+  guestsText.disabled = draft.attendees_omitted === true || !attendeeEditingAllowed();
   guestsText.addEventListener('input', () => {
     const emails = guestsText.value
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
     // Only mark attendees dirty when the user edits this control.
-    setAttendees(
-      draft,
-      emails.map((email) => ({ email })),
-    );
+    setAttendees(draft, preserveAttendeeMetadata(emails, attendeeBaseline));
     options.onDraftChange?.();
     refresh();
   });
   guestsText.addEventListener('blur', () => markTouched('attendees'));
 
-  const guestCount = (): number => draft.attendees?.length ?? 0;
-  const guestsOpen = guestCount() > 0;
-  body.appendChild(
-    makeSection(
+  const guestCount = (): number => (draft.attendees ?? attendeeBaseline)
+    .filter(attendee => !attendee.self && !attendee.organizer && !attendee.resource).length;
+  const validGuestEmail = (email: string | undefined): boolean => Boolean(email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+  const baselineEmails = new Set(attendeeBaseline
+    .map(attendee => attendee.email?.toLocaleLowerCase())
+    .filter((email): email is string => Boolean(email)));
+  const draftHasNewHumanGuest = (): boolean => draft.attendees?.some(attendee =>
+    !attendee.self
+    && !attendee.organizer
+    && !attendee.resource
+    && validGuestEmail(attendee.email)
+    && !baselineEmails.has(attendee.email!.toLocaleLowerCase()),
+  ) === true;
+  const hasGuestUpdates = (): boolean => {
+    const canEditGoogleGuests = isGoogleRoute() && options.guestUpdateEditable === true;
+    if (!isGoogleRoute()) return false;
+    if (!draft.event_id) return draft.attendees?.some(attendee =>
+      !attendee.self && !attendee.organizer && !attendee.resource && validGuestEmail(attendee.email),
+    ) === true;
+    const persistedGuestUpdateAvailable = draft.recurrence_scope === 'entire_series'
+      ? options.seriesGuestUpdateAvailable ?? (options.eventIsSeriesMaster ? options.guestUpdateAvailable : undefined)
+      : options.guestUpdateAvailable;
+    if (persistedGuestUpdateAvailable !== undefined) {
+      return persistedGuestUpdateAvailable || (canEditGoogleGuests && draftHasNewHumanGuest());
+    }
+    return canEditGoogleGuests && draftHasNewHumanGuest();
+  };
+  // Delivery is part of the pending Google edit, so never hide it behind a
+  // collapsed disclosure when core knows the event has affected guests.
+  const guestsOpen = hasGuestUpdates();
+  let guestUpdatesField: HTMLElement | null = null;
+  const guestsSection = makeSection(
       eventMessage('guestsAndUpdates', locale),
       guestsOpen,
       () => {
         const count = guestCount();
         const summary = eventMessageFormat('guestSummary', { count }, locale);
-        return `${summary} · ${guestPolicyLabel(draft.guest_update_policy, locale)}`;
+        return hasGuestUpdates()
+          ? `${summary} · ${guestPolicyLabel(draft.guest_update_policy, locale)}`
+          : summary;
       },
       (section) => {
         section.appendChild(labeled(eventMessage('attendees', locale), guestsText, 'event-composer-guests'));
+        if (draft.attendees_omitted) {
+          const limited = document.createElement('p');
+          limited.className = 'form-help';
+          limited.textContent = eventMessage('attendeeListLimited', locale);
+          section.appendChild(limited);
+        }
+        const updates = document.createElement('select');
+        updates.className = 'form-select event-composer__guest-updates';
+        updates.dataset.companionFocus = 'composer-guest-updates';
+        updates.append(
+          new Option(eventMessage('notifyAllGuests', locale), 'all'),
+          new Option(eventMessage('notifyExternalGuests', locale), 'external_only'),
+          new Option(eventMessage('notifyNoGuests', locale), 'none'),
+        );
+        updates.value = draft.guest_update_policy;
+        updates.addEventListener('change', () => {
+          draft.guest_update_policy = updates.value === 'external_only' || updates.value === 'none'
+            ? updates.value
+            : 'all';
+          options.onDraftChange?.();
+          refresh();
+        });
+        guestUpdatesField = labeled(eventMessage('notifyGuests', locale), updates, 'event-composer-guest-updates');
+        section.appendChild(guestUpdatesField);
       },
-    ),
+      'users-round',
   );
+  body.appendChild(guestsSection);
 
   // Google Meet
   const meetSelect = document.createElement('select');
@@ -514,7 +612,7 @@ export function renderEventComposer(options: ComposerRenderOptions): ComposerVie
   body.appendChild(
     makeSection(eventMessage('googleMeet', locale), meetOpen, meetSummary, (section) => {
       section.appendChild(labeled(eventMessage('googleMeet', locale), meetSelect, 'event-composer-meet'));
-    }),
+    }, 'video'),
   );
 
   // Repeat — gated by recurrence scope + pattern support (AC-031/032)
@@ -552,6 +650,7 @@ export function renderEventComposer(options: ComposerRenderOptions): ComposerVie
     (section) => {
       section.appendChild(labeled(copy.repeat, repeatSelect, 'event-composer-repeat'));
     },
+    'repeat',
   );
   body.appendChild(repeatSection);
 
@@ -619,6 +718,7 @@ export function renderEventComposer(options: ComposerRenderOptions): ComposerVie
         section.appendChild(labeled(eventMessage('location', locale), locationInput, 'event-composer-location'));
         section.appendChild(labeled(eventMessage('description', locale), notesInput, 'event-composer-notes'));
       },
+      'map-pin',
     ),
   );
 
@@ -678,6 +778,7 @@ export function renderEventComposer(options: ComposerRenderOptions): ComposerVie
   function refresh(): void {
     rangeSummary.textContent = clockSummary(draft, locale);
     syncPatternAvailability();
+    guestsText.disabled = draft.attendees_omitted === true || !attendeeEditingAllowed();
     startTime.disabled = draft.temporal.is_all_day;
     endTime.disabled = draft.temporal.is_all_day;
     timezone.disabled = draft.temporal.is_all_day || draft.temporal.floating;
@@ -738,6 +839,10 @@ export function renderEventComposer(options: ComposerRenderOptions): ComposerVie
     root.querySelectorAll<HTMLDetailsElement>('.event-composer__section').forEach(section => {
       section.dispatchEvent(new Event('composer-refresh'));
     });
+    if (guestUpdatesField) {
+      guestUpdatesField.hidden = !hasGuestUpdates();
+      if (!guestUpdatesField.hidden) guestsSection.open = true;
+    }
 
     const scopeOk = scopes.length <= 1 || scopeChosen;
     save.disabled =

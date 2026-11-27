@@ -670,7 +670,10 @@ export function editRoutedEventDelta(input: {
   calendar_id: string;
   guest_update_policy?: 'all' | 'external_only' | 'none';
 }): Promise<EventDto> {
-  return invoke<EventDto>('edit_routed_event_delta', { input });
+  return invoke<EventDto>('edit_routed_event_delta', { input }).then(event => {
+    triggerRoutedEventSync(event.id);
+    return event;
+  });
 }
 
 /** Read-only display-timezone geometry for one bounded, inclusive window. */
@@ -762,7 +765,10 @@ export function editRoutedEvent(input: {
   recurrence_scope?: RecurrenceMutationScope;
   guest_update_policy?: 'all' | 'external_only' | 'none';
 }): Promise<EventDto> {
-  return invoke<EventDto>('edit_routed_event', { input });
+  return invoke<EventDto>('edit_routed_event', { input }).then(event => {
+    triggerRoutedEventSync(event.id);
+    return event;
+  });
 }
 
 export function deleteRoutedEvent(input: {
@@ -773,7 +779,25 @@ export function deleteRoutedEvent(input: {
   operation_id: string;
   guest_update_policy?: 'all' | 'external_only' | 'none';
 }): Promise<EventDto> {
-  return invoke<EventDto>('delete_routed_event', { input });
+  return invoke<EventDto>('delete_routed_event', { input }).then(event => {
+    triggerRoutedEventSync(event.id);
+    return event;
+  });
+}
+
+/**
+ * A routed mutation has already committed its durable outbox item by the time
+ * it resolves. Try to deliver only that canonical event immediately, keeping
+ * the UI usable and the queued item available if connectivity is unavailable.
+ */
+function triggerRoutedEventSync(eventId: string): void {
+  void syncCalendarEvent(eventId)
+    .catch(() => undefined)
+    .finally(() => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('jin:google-state-changed'));
+      }
+    });
 }
 
 // ── Promote / attach / link ────────────────────────────────────────────────────

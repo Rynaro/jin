@@ -498,6 +498,13 @@ impl<'a> EventMutationService<'a> {
         if let Some(target) = target {
             let (auth_generation, route_generation) = self.validate_target(&target, true)?;
             event.frontmatter.calendar_id = target.calendar_id.clone();
+            let guest_update_policy = effective_guest_update_policy(
+                None,
+                &event,
+                &self.config.google_registry,
+                &target,
+                guest_update_policy,
+            );
             let bytes = fs::render_event_bytes(&event)?;
             let revision = revision(&bytes);
             let payload = crate::google::mapping::jin_to_google(&event.frontmatter);
@@ -796,7 +803,7 @@ impl<'a> EventMutationService<'a> {
                 "recurrence changes must apply to the entire series".to_string(),
             ));
         }
-        let recurrence_key = recurrence_key(&event, scope)?;
+        let mut recurrence_key = recurrence_key(&event, scope)?;
         if event.frontmatter.status == EventStatus::Cancelled {
             return Err(JinError::InvalidStateTransition {
                 from: "cancelled".to_string(),
@@ -825,14 +832,28 @@ impl<'a> EventMutationService<'a> {
             target.calendar_id.clone(),
         );
         let conn = state::open_sync_db(&self.config.sync_dir())?;
-        let mapping =
-            state::get_scoped_entry_by_jin_id(&conn, &destination, &effective_id, &recurrence_key)?;
+        let mapping = state::get_occurrence_entry_by_jin_id_compatible(
+            &conn,
+            &destination,
+            &effective_id,
+            &recurrence_key,
+        )?;
+        if let Some(mapping) = mapping.as_ref() {
+            recurrence_key = mapping.recurrence_key.clone();
+        }
         if event.frontmatter.source == EventSource::Google && mapping.is_none() {
             return Err(JinError::Integrity(
                 "Google event has no mapping for its persisted destination".to_string(),
             ));
         }
         let payload = sparse_patch(&before_event, &event);
+        let guest_update_policy = effective_guest_update_policy(
+            Some(&before_event),
+            &event,
+            &self.config.google_registry,
+            &target,
+            guest_update_policy,
+        );
         let journal = MutationJournal {
             operation_id: operation_id.to_string(),
             event_id: effective_id,
@@ -894,7 +915,13 @@ impl<'a> EventMutationService<'a> {
         let mut event = fs::read_event(&path)?;
         self.validate_event_target(&event, &target)?;
         ensure_google_organizer_authority(&event, &self.config.google_registry, &target)?;
-        let recurrence_key = recurrence_key(&event, scope)?;
+        // A cancellation is terminal. Replaying a UI command after the first
+        // durable tombstone must not enqueue another provider DELETE and send
+        // a second cancellation notice while the original is still pending.
+        if event.frontmatter.is_deleted() {
+            return Ok(event);
+        }
+        let mut recurrence_key = recurrence_key(&event, scope)?;
         if event.frontmatter.source == EventSource::Jin {
             validate_supported_recurrence_mutation(&event, scope)?;
         }
@@ -903,16 +930,31 @@ impl<'a> EventMutationService<'a> {
             target.calendar_id.clone(),
         );
         let conn = state::open_sync_db(&self.config.sync_dir())?;
-        let mapping =
-            state::get_scoped_entry_by_jin_id(&conn, &destination, &effective_id, &recurrence_key)?;
-        if mapping.is_none() {
-            return Err(JinError::Integrity(
+        let mapping = state::get_occurrence_entry_by_jin_id_compatible(
+            &conn,
+            &destination,
+            &effective_id,
+            &recurrence_key,
+        )?
+        .ok_or_else(|| {
+            JinError::Integrity(
                 "synchronized delete has no mapping for its persisted destination".to_string(),
-            ));
-        }
+            )
+        })?;
+        // Preserve the provider identity that was actually persisted. This is
+        // essential for legacy occurrence files, whose wall-clock
+        // `original_start` cannot reproduce Google's numeric offset exactly.
+        recurrence_key = mapping.recurrence_key.clone();
         event.frontmatter.status = EventStatus::Cancelled;
         event.frontmatter.updated = Utc::now().fixed_offset();
         event.frontmatter.sequence += 1;
+        let guest_update_policy = effective_guest_update_policy(
+            None,
+            &event,
+            &self.config.google_registry,
+            &target,
+            guest_update_policy,
+        );
         let bytes = fs::render_event_bytes(&event)?;
         let journal = MutationJournal {
             operation_id: operation_id.to_string(),
@@ -920,10 +962,8 @@ impl<'a> EventMutationService<'a> {
             target,
             operation: OutboxOperationKind::Delete,
             recurrence_key,
-            google_event_id: mapping
-                .as_ref()
-                .and_then(|entry| entry.google_event_id.clone()),
-            base_etag: mapping.as_ref().and_then(|entry| entry.etag.clone()),
+            google_event_id: mapping.google_event_id.clone(),
+            base_etag: mapping.etag.clone(),
             canonical_revision: revision(&bytes),
             auth_generation,
             route_generation,
@@ -1425,6 +1465,38 @@ fn ensure_google_organizer_authority(
     }
 }
 
+/// Keep provider notification delivery aligned with the people who can
+/// actually receive it. For attendee removals the pre-edit list participates
+/// as well, so removing the last guest can still send the requested update.
+/// A Google guest who has `guestsCanModify` keeps the selected delivery policy
+/// for permitted schedule edits, matching Google's organizer policy.
+fn effective_guest_update_policy(
+    before: Option<&Event>,
+    after: &Event,
+    registry: &crate::google::account::GoogleRegistry,
+    target: &EventSyncTarget,
+    requested: GuestUpdatePolicy,
+) -> GuestUpdatePolicy {
+    let principal = registry
+        .account(&target.account_id)
+        .ok()
+        .and_then(|account| account.principal.as_deref());
+    let organizer_is_route_calendar = after
+        .frontmatter
+        .organizer
+        .as_ref()
+        .and_then(|organizer| organizer.email.as_deref())
+        .is_some_and(|email| email.eq_ignore_ascii_case(&target.calendar_id));
+    let has_possible_recipient = before
+        .is_some_and(|event| event.has_notifiable_guests(principal, organizer_is_route_calendar))
+        || after.has_notifiable_guests(principal, organizer_is_route_calendar);
+    if has_possible_recipient {
+        requested
+    } else {
+        GuestUpdatePolicy::None
+    }
+}
+
 fn ensure_google_edit_authority(
     event: &Event,
     patch: &EditEventPatch,
@@ -1516,16 +1588,36 @@ fn recurrence_key(event: &Event, scope: Option<RecurrenceMutationScope>) -> crat
         return Ok(MASTER_RECURRENCE_KEY.to_string());
     }
     match scope {
-        Some(RecurrenceMutationScope::ThisOccurrence) => event
-            .frontmatter
-            .original_start
-            .as_ref()
-            .map(crate::model::event::render_temporal)
-            .ok_or_else(|| {
+        Some(RecurrenceMutationScope::ThisOccurrence) => {
+            let original_start = event.frontmatter.original_start.as_ref().ok_or_else(|| {
                 JinError::InvalidInput(
                     "occurrence edit requires original-start identity".to_string(),
                 )
-            }),
+            })?;
+            match (original_start, event.frontmatter.start_tzid.as_deref()) {
+                // Google persists a timed instance key as an RFC3339 value with
+                // its numeric offset plus the IANA zone. Recreate that provider
+                // identity rather than using Jin's naive wall time alone.
+                (crate::model::event::TemporalValue::DateTime(wall_time), Some(tzid)) => {
+                    let identity = crate::time::resolve_to_utc(*wall_time, tzid)
+                        .ok()
+                        .and_then(|utc| {
+                            tzid.parse::<chrono_tz::Tz>()
+                                .ok()
+                                .map(|timezone| utc.utc().with_timezone(&timezone).to_rfc3339())
+                        })
+                        .map(|value| format!("{value}@{tzid}"));
+                    // An occurrence can have been moved into a different zone
+                    // since it was imported. If the current zone cannot
+                    // recreate Google's old identity, retain the wall-time key
+                    // so the strict persisted-mapping compatibility resolver
+                    // can prove (or reject) the route without guessing.
+                    Ok(identity
+                        .unwrap_or_else(|| crate::model::event::render_temporal(original_start)))
+                }
+                _ => Ok(crate::model::event::render_temporal(original_start)),
+            }
+        }
         Some(RecurrenceMutationScope::EntireSeries) => Ok(MASTER_RECURRENCE_KEY.to_string()),
         Some(RecurrenceMutationScope::ThisAndFollowing) => unreachable!(),
         None => Err(JinError::InvalidInput(
@@ -2080,6 +2172,115 @@ mod tests {
         assert_eq!(
             patch,
             serde_json::json!({ "description": null, "location": null })
+        );
+    }
+
+    #[test]
+    fn occurrence_recurrence_key_matches_google_offset_and_timezone_identity() {
+        let mut occurrence = event("instance", "Pilates", "2026-11-30", "2026-12-01");
+        occurrence.frontmatter.is_all_day = false;
+        occurrence.frontmatter.start_value_type = ValueType::DateTime;
+        occurrence.frontmatter.end_value_type = ValueType::DateTime;
+        occurrence.frontmatter.start_tzid = Some("America/Sao_Paulo".to_string());
+        occurrence.frontmatter.end_tzid = Some("America/Sao_Paulo".to_string());
+        occurrence.frontmatter.recurring_event_id = Some("google-series-id".to_string());
+        occurrence.frontmatter.original_start = Some(TemporalValue::DateTime(
+            chrono::NaiveDateTime::parse_from_str("2026-11-30 08:00:00", "%Y-%m-%d %H:%M:%S")
+                .unwrap(),
+        ));
+
+        assert_eq!(
+            recurrence_key(&occurrence, Some(RecurrenceMutationScope::ThisOccurrence)).unwrap(),
+            "2026-11-30T08:00:00-03:00@America/Sao_Paulo"
+        );
+
+        occurrence.frontmatter.start_tzid = Some("Invalid/Moved-Zone".to_string());
+        assert_eq!(
+            recurrence_key(&occurrence, Some(RecurrenceMutationScope::ThisOccurrence)).unwrap(),
+            "2026-11-30T08:00:00"
+        );
+        occurrence.frontmatter.start_tzid = Some("America/Sao_Paulo".to_string());
+
+        occurrence.frontmatter.original_start = Some(TemporalValue::Date(
+            NaiveDate::parse_from_str("2026-11-30", "%Y-%m-%d").unwrap(),
+        ));
+        assert_eq!(
+            recurrence_key(&occurrence, Some(RecurrenceMutationScope::ThisOccurrence)).unwrap(),
+            "2026-11-30"
+        );
+    }
+
+    #[test]
+    fn guest_update_policy_suppresses_solo_events_but_keeps_last_guest_removal() {
+        let mut before = event("master", "Standup", "2026-08-03", "2026-08-04");
+        before.frontmatter.source = EventSource::Jin;
+        let target = EventSyncTarget::new(
+            crate::google::account::GoogleAccountId::parse("account-1").unwrap(),
+            "primary",
+        )
+        .unwrap();
+        let registry = crate::google::account::GoogleRegistry::default();
+
+        assert_eq!(
+            effective_guest_update_policy(
+                None,
+                &before,
+                &registry,
+                &target,
+                GuestUpdatePolicy::All,
+            ),
+            GuestUpdatePolicy::None
+        );
+
+        before.frontmatter.attendees = Some(vec![EventAttendee {
+            email: Some("guest@example.com".to_string()),
+            ..Default::default()
+        }]);
+        let mut after = before.clone();
+        after.frontmatter.attendees = Some(Vec::new());
+        assert_eq!(
+            effective_guest_update_policy(
+                Some(&before),
+                &after,
+                &registry,
+                &target,
+                GuestUpdatePolicy::All,
+            ),
+            GuestUpdatePolicy::All
+        );
+
+        after.frontmatter.attendees_omitted = Some(true);
+        assert_eq!(
+            effective_guest_update_policy(
+                None,
+                &after,
+                &registry,
+                &target,
+                GuestUpdatePolicy::ExternalOnly,
+            ),
+            GuestUpdatePolicy::None
+        );
+
+        let mut guest_edit = event("guest-edit", "Standup", "2026-08-03", "2026-08-04");
+        guest_edit.frontmatter.organizer = Some(crate::model::event::EventOrganizer {
+            email: Some("organizer@example.com".to_string()),
+            ..Default::default()
+        });
+        guest_edit.frontmatter.attendees = Some(vec![EventAttendee {
+            email: Some("me@example.com".to_string()),
+            is_self: Some(true),
+            ..Default::default()
+        }]);
+        guest_edit.frontmatter.guests_can_modify = true;
+        assert_eq!(
+            effective_guest_update_policy(
+                None,
+                &guest_edit,
+                &registry,
+                &target,
+                GuestUpdatePolicy::All,
+            ),
+            GuestUpdatePolicy::All
         );
     }
 

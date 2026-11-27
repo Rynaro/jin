@@ -51,6 +51,7 @@ const invokeMocks = vi.hoisted(() => ({
   editEventDelta: vi.fn(),
   editRoutedEventDelta: vi.fn(),
   deleteEvent: vi.fn(),
+  deleteRoutedEvent: vi.fn(),
   removeTimeBlock: vi.fn(),
   syncCalendarEvent: vi.fn(),
   newOperationId: vi.fn((prefix: string) => `${prefix}-test-operation`),
@@ -568,11 +569,16 @@ describe('renderEventDetail — invitation response', () => {
 });
 
 describe('renderEventDetail — organizer cancellation', () => {
-  it('names the destructive action as meeting cancellation only for the organizer capability', () => {
-    const detail = makeDetail({ source: 'google', authority: 'google' }, {
+  it('names a shared routed Google event as a meeting cancellation', () => {
+    const detail = makeDetail({ source: 'google', authority: 'google', sync_context: {
+      provider: 'google', account_id: 'account', account_alias: 'Personal',
+      calendar_id: 'calendar', calendar_name: 'Personal calendar', access_role: 'owner',
+      allowed_conference_solution_types: [], writable: true, state: 'synced',
+    } }, {
       can_delete: true,
       collaboration: {
         invitation: null,
+        has_notifiable_guests: true,
         can_edit_schedule: true,
         can_append_attendees: false,
         can_remove_attendees: false,
@@ -975,6 +981,7 @@ describe('Event detail capability controller gates (AC-022–AC-028)', () => {
     invokeMocks.getEventDetailById.mockReset().mockResolvedValue(detail);
     invokeMocks.editEventDelta.mockReset().mockResolvedValue({ event: detail.event, no_op: false });
     invokeMocks.deleteEvent.mockReset().mockResolvedValue(detail.event);
+    invokeMocks.deleteRoutedEvent.mockReset().mockResolvedValue(detail.event);
     invokeMocks.removeTimeBlock.mockReset().mockResolvedValue({ event: detail.event, originating_task: null });
     Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
       configurable: true, value() { this.setAttribute('open', ''); },
@@ -1123,13 +1130,111 @@ describe('Event detail capability controller gates (AC-022–AC-028)', () => {
     expect(document.querySelector('.confirm-dialog__checkbox')).toBeNull();
   });
 
+  it('offers Google guest delivery only when another person can receive it', async () => {
+    const googleRoute = {
+      provider: 'google', account_id: 'account', account_alias: 'Personal',
+      calendar_id: 'calendar', calendar_name: 'Personal calendar', access_role: 'owner',
+      allowed_conference_solution_types: [], writable: true, state: 'synced' as const,
+    };
+    await start(makeDetail({ sync_context: googleRoute }, {
+      collaboration: {
+        invitation: null, has_notifiable_guests: false, can_edit_schedule: true,
+        can_append_attendees: true, can_remove_attendees: true,
+        can_change_attendee_roles: true, can_cancel_meeting: true,
+        can_add_conference: false, can_remove_conference: false,
+        allowed_conference_solution_types: [], disabled_reasons: {},
+      },
+    }));
+    document.querySelector<HTMLButtonElement>('.event-detail__destructive')!.click();
+    expect(document.querySelector('.confirm-dialog__select')).toBeNull();
+    document.querySelector<HTMLButtonElement>('#jin-modal-root .btn-danger')!.click();
+    await flushController();
+    expect(invokeMocks.deleteRoutedEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event_id: 'evt-001', guest_update_policy: 'all',
+    }));
+  });
+
+  it('keeps a selected Google cancellation delivery policy through the routed delete', async () => {
+    const googleRoute = {
+      provider: 'google', account_id: 'account', account_alias: 'Personal',
+      calendar_id: 'calendar', calendar_name: 'Personal calendar', access_role: 'owner',
+      allowed_conference_solution_types: [], writable: true, state: 'synced' as const,
+    };
+    await start(makeDetail({ sync_context: googleRoute }, {
+      collaboration: {
+        invitation: null, has_notifiable_guests: true, can_edit_schedule: true,
+        can_append_attendees: true, can_remove_attendees: true,
+        can_change_attendee_roles: true, can_cancel_meeting: true,
+        can_add_conference: false, can_remove_conference: false,
+        allowed_conference_solution_types: [], disabled_reasons: {},
+      },
+    }));
+    document.querySelector<HTMLButtonElement>('.event-detail__destructive')!.click();
+    const select = document.querySelector<HTMLSelectElement>('.confirm-dialog__select select')!;
+    expect(select).not.toBeNull();
+    select.value = 'none';
+    document.querySelector<HTMLButtonElement>('#jin-modal-root .btn-danger')!.click();
+    await flushController();
+    expect(invokeMocks.deleteRoutedEvent).toHaveBeenCalledWith(expect.objectContaining({
+      event_id: 'evt-001', guest_update_policy: 'none',
+    }));
+  });
+
+  it('does not silently notify guests when a Google Meet change is requested', async () => {
+    const googleRoute = {
+      provider: 'google', account_id: 'account', account_alias: 'Personal',
+      calendar_id: 'calendar', calendar_name: 'Personal calendar', access_role: 'owner',
+      allowed_conference_solution_types: ['hangoutsMeet'], writable: true, state: 'synced' as const,
+    };
+    await start(makeDetail({ sync_context: googleRoute }, {
+      collaboration: {
+        invitation: null, has_notifiable_guests: true, can_edit_schedule: true,
+        can_append_attendees: true, can_remove_attendees: true,
+        can_change_attendee_roles: true, can_cancel_meeting: true,
+        can_add_conference: true, can_remove_conference: false,
+        allowed_conference_solution_types: ['hangoutsMeet'], disabled_reasons: {},
+      },
+    }));
+    [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent === 'Add Google Meet')?.click();
+    const select = document.querySelector<HTMLSelectElement>('.confirm-dialog__select select')!;
+    expect(select).not.toBeNull();
+    select.value = 'none';
+    document.querySelector<HTMLButtonElement>('#jin-modal-root .btn-primary')!.click();
+    await flushController();
+    expect(invokeMocks.editRoutedEventDelta).toHaveBeenCalledWith(expect.objectContaining({
+      guest_update_policy: 'none',
+    }));
+  });
+
+  it('keeps the established remove-and-return flow for a solo published time block', async () => {
+    const googleRoute = {
+      provider: 'google', account_id: 'account', account_alias: 'Personal',
+      calendar_id: 'calendar', calendar_name: 'Personal calendar', access_role: 'owner',
+      allowed_conference_solution_types: [], writable: true, state: 'synced' as const,
+    };
+    await start(makeDetail({ derived_from: 'task-1', sync_context: googleRoute }, {
+      can_return_task_to_flexible: true,
+    }));
+    document.querySelector<HTMLButtonElement>('.event-detail__destructive')!.click();
+    const checkbox = document.querySelector<HTMLInputElement>('.confirm-dialog__checkbox input')!;
+    expect(checkbox).not.toBeNull();
+    checkbox.checked = true;
+    document.querySelector<HTMLButtonElement>('#jin-modal-root .btn-danger')!.click();
+    await flushController();
+    expect(invokeMocks.removeTimeBlock).toHaveBeenCalledWith(expect.objectContaining({
+      event_id: 'evt-001', return_to_flexible: true,
+    }));
+    expect(invokeMocks.deleteRoutedEvent).not.toHaveBeenCalled();
+  });
+
   it('refetches canonical detail after a successful mutation before showing it', async () => {
     const detail = makeDetail();
     await start(detail);
     document.querySelector<HTMLButtonElement>('.event-detail__destructive')!.click();
     document.querySelector<HTMLButtonElement>('#jin-modal-root .btn-danger')!.click();
     await flushController();
-    expect(invokeMocks.deleteEvent).toHaveBeenCalledWith(detail.event.id);
+    expect(invokeMocks.deleteEvent).toHaveBeenCalledWith(detail.event.id, undefined);
     expect(invokeMocks.getEventDetailById.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 

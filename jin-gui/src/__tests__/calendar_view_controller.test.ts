@@ -590,7 +590,7 @@ describe('CalendarViewController safety and mode invariants', () => {
     controller.localeChanged();
 
     expect(document.querySelector<HTMLButtonElement>('[data-date="2026-08-20"]')?.getAttribute('aria-label')).toBe('20 (1 evento)');
-    expect(document.querySelector<HTMLButtonElement>('.calendar-event-chip')?.getAttribute('aria-label')).toBe('Ver Overnight workshop, 23:30, Source: Jin');
+    expect(document.querySelector<HTMLButtonElement>('.calendar-event-chip')?.getAttribute('aria-label')).toBe('Ver Overnight workshop, 23:30, Origem: Jin');
   });
 
   it('keeps month dates on the existing Day-view activation path', () => {

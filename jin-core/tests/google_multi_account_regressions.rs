@@ -582,6 +582,7 @@ fn google_sync_recurring_series_identity_and_jin_unpublish_are_reachable() {
     master["organizer"] = serde_json::json!({"self": true, "email": "user@example.com"});
     master["recurrence"] = serde_json::json!(["RRULE:FREQ=WEEKLY"]);
     let mut occurrence = google_event("remote-occurrence", "Weekly instance");
+    occurrence["organizer"] = serde_json::json!({"self": true, "email": "user@example.com"});
     occurrence["recurringEventId"] = serde_json::json!("remote-master");
     occurrence["originalStartTime"] =
         serde_json::json!({"dateTime": "2026-08-20T10:00:00Z", "timeZone": "UTC"});
@@ -668,6 +669,56 @@ fn google_sync_recurring_series_identity_and_jin_unpublish_are_reachable() {
     assert_eq!(
         edited_master.frontmatter.recurrence,
         vec!["RRULE:FREQ=WEEKLY"]
+    );
+
+    // A timed occurrence stores Google's offset+TZID identity, while the
+    // materialized Jin event keeps `original_start` as a wall time. Cancelling
+    // it must enqueue the exact instance mapping rather than failing the raw
+    // naive-time lookup or falling back to the series master.
+    let cancelled_occurrence = jin_core::ops::event_mutation::EventMutationService::new(tmp.path())
+        .unwrap()
+        .delete(
+            &occurrence_mapping.jin_id,
+            target.clone(),
+            Some(jin_core::ops::event_mutation::RecurrenceMutationScope::ThisOccurrence),
+            "occurrence-cancel",
+        )
+        .unwrap();
+    assert_eq!(
+        cancelled_occurrence.frontmatter.status,
+        jin_core::model::event::EventStatus::Cancelled
+    );
+    let delete = state::get_route_outbox_operation(&conn, &destination, "occurrence-cancel")
+        .unwrap()
+        .unwrap();
+    assert_eq!(delete.operation, OutboxOperationKind::Delete);
+    assert_eq!(delete.recurrence_key, "2026-08-20T10:00:00+00:00@UTC");
+    assert_eq!(delete.google_event_id.as_deref(), Some("remote-occurrence"));
+    let delete_http = MockHttpClient::new(vec![HttpResponse {
+        status: 204,
+        body: serde_json::json!({}),
+        etag: None,
+    }]);
+    assert_eq!(
+        jin_core::google::multi_sync::drain_destination_event(
+            tmp.path(),
+            &conn,
+            &target,
+            account.auth_generation,
+            calendar.route_generation,
+            &tokens(),
+            &delete_http,
+            Some(&occurrence_mapping.jin_id),
+        )
+        .unwrap(),
+        1
+    );
+    assert_eq!(
+        delete_http.requested_deletes(),
+        vec![jin_core::google::client::RecordedDelete {
+            url: "https://www.googleapis.com/calendar/v3/calendars/primary/events/remote-occurrence?sendUpdates=none".to_string(),
+            if_match_etag: Some("etag-remote-occurrence".to_string()),
+        }]
     );
 
     let mut jin_event =
