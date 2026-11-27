@@ -1,6 +1,6 @@
 # Jin — build + test image
 # Base: rust:1.96 bundles gcc, git, pkg-config
-FROM rust:1.96 AS builder
+FROM rust:1.99 AS builder
 
 WORKDIR /app
 
