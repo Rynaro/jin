@@ -2016,7 +2016,7 @@ dependencies = [
 
 [[package]]
 name = "jin"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2028,7 +2028,7 @@ dependencies = [
 
 [[package]]
 name = "jin-core"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "argon2",
  "base64 0.22.1",
@@ -2053,7 +2053,7 @@ dependencies = [
 
 [[package]]
 name = "jin-gui"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "block2",
  "chrono",
