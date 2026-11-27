@@ -26,7 +26,7 @@ thiserror = "2"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 tempfile = "3"
-toml = "0.8"
+toml = "1.1"
 rrule = "0.14"
 
 # ── S6.1: OAuth + token storage ─────────────────────────────────────────────
