@@ -46,7 +46,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2",
     "@types/markdown-it": "^14.1.2",
-    "@types/node": "^22",
+    "@types/node": "^26",
     "jsdom": "^26.1.0",
     "playwright": "^1.61.1",
     "stylelint": "^16.20.0",
