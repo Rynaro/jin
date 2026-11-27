@@ -188,7 +188,7 @@ jobs:
             fi
           fi
           test "$(find dist -maxdepth 1 -type f | wc -l)" -ge 2
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.platform }}
           path: dist/*

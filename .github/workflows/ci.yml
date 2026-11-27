@@ -74,7 +74,7 @@ jobs:
 
       - name: Upload storage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: storage-core
           path: .artifacts/storage/*.json
@@ -194,7 +194,7 @@ jobs:
 
       - name: Upload visual detector failure screenshots
         if: failure() && steps.visual-detector.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: visual-detector-failure-screenshots
           path: .artifacts/playwright-mcp/ui-ux-overhaul/continuation/visual-failures/**/*.png
@@ -214,7 +214,7 @@ jobs:
 
       - name: Upload storage reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: storage-gui
           path: .artifacts/storage/*.json
@@ -255,7 +255,7 @@ jobs:
 
       - name: Upload storage reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: storage-windows
           path: .artifacts/storage/*.json
