@@ -6,11 +6,22 @@ depend on it. The assistant host owns execution and its permissions.
 
 ## Portable project skills
 
-The original thirteen `.magicite/engrams/` artifacts use `engram/1.0`. They preserve
+The catalog contains 27 portable skills, including the original 13, one imported Playwright draft, and 13 new procedures.
+
+The original thirteen `.magicite/portable/` artifacts use `engram/1.0`. They preserve
 Jin's storage, CLI, core, GUI, accessibility, temporal, sync, account, calendar,
 and onboarding procedures. Risk metadata declares project writes and only the
 applicable `cargo`/`pnpm` tools, without network or secret access. Verification
 guidance uses actual GUI scripts: `test`, `build`, and `lint:css`.
+
+Thirteen additional portable procedures capture completed Jin work where the
+failure boundary is specific enough to guide future changes. Their filenames and
+routing contracts are grouped below. Every new source begins pending local review.
+
+- **Storage and recovery** — [portable conflicts](../.magicite/portable/jin-portable-conflict-safety.egr.md), [restorable exports](../.magicite/portable/jin-restorable-backup-integrity.egr.md), and [build storage](../.magicite/portable/jin-build-storage-guard.egr.md).
+- **Tasks and workspace** — [workflow projection](../.magicite/portable/jin-task-workflow-projection.egr.md), [task recurrence](../.magicite/portable/jin-persistent-task-recurrence.egr.md), [Today projection](../.magicite/portable/jin-today-projection-date-integrity.egr.md), and [Find](../.magicite/portable/jin-desktop-find-read-model.egr.md).
+- **Editing and integrations** — [Capture Review](../.magicite/portable/jin-capture-review-conversion.egr.md), [note drafts](../.magicite/portable/jin-notes-editor-draft-integrity.egr.md), and [Google desktop sign-in](../.magicite/portable/jin-google-desktop-signin-setup.egr.md).
+- **Operations and evidence** — [visual acceptance](../.magicite/portable/jin-native-visual-acceptance.egr.md), [release acceptance](../.magicite/portable/jin-release-acceptance-evidence.egr.md), and [portable authoring](../.magicite/portable/jin-magicite-portable-authoring.egr.md).
 
 The imported `jin-playwright-mcp` skill preserves the repository’s Playwright
 procedure. It declares npm, project writes for browser evidence, and the local
@@ -27,9 +38,38 @@ override host permissions. Autonomous approval remains disabled. `AGENTS.md`
 and the Claude project rule describe route → load → apply → report, including
 abstention and exact decision/content/policy binding.
 
-The Git artifacts contain no machine enrollment markers or admission records.
+The Git artifacts contain no machine enrollment markers or admission records. The active
+`.magicite/engrams/` registry is local and ignored because authenticated enrollment
+markers are specific to this project custody identity.
+
+On a fresh clone, keep the portable sources in `.magicite/portable/`, install the
+project client, and call the Magicite MCP `register` tool with an absolute path to
+that directory and `format: "egr"`. This imports the sources into the local active
+registry at `.magicite/engrams/`. Call the MCP `sync` tool, then review each imported
+artifact and approve its current digest with the actual operator identity. For
+example, the registration arguments are
+
+```json
+{"path":"/absolute/path/to/jin/.magicite/portable","format":"egr"}
+```
+
+Do not copy another checkout's active artifacts, approval records, or custody
+journal. Existing checkouts retain their custody-bound active registry. The
+published 1.0.0 intake path rejects an unmarked portable artifact when its ID
+already has a decision, so registering a changed source directly is not an update
+path. Preserve this checkout's exact reviewed copies at `.magicite/engrams/` and
+restore them there after accepting the portable-source rename, then run `sync`.
+Keep any temporary copy outside the tracked tree. `sync` indexes the active
+registry; it does not import changes from `.magicite/portable/` by itself. Only
+procedures with an existing approval are eligible. `jin-playwright-mcp` remains a
+draft until it receives its own review and approval.
 A clone must enroll, register, and review its own exact content before use;
 committing a skill never grants trust.
+
+In an already enrolled checkout, register only the new source you intend to
+admit by passing its absolute `.magicite/portable/*.egr.md` path to `register`,
+then run `sync` and review that source's current digest. Do not re-register the
+entire directory when adding one procedure.
 
 ## Install and configure the harnesses
 
