@@ -33,7 +33,7 @@ rrule = "0.14"
 # PKCE challenge: SHA-256 of the code_verifier (RFC 7636 S256 method)
 sha2 = "0.10"
 # Base64URL encoding for PKCE verifier/challenge and ciphertext
-base64 = "0.22"
+base64 = "0.23"
 # CSPRNG for PKCE verifier bytes, AEAD salt, and nonce
 rand = "0.8"
 # HTTP client for token endpoint (exchange, refresh, future Calendar API in S6.2)
