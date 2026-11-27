@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.0](https://github.com/Rynaro/jin/compare/v1.1.0...v1.2.0) (2026-11-27)
+
+
+### Features
+
+* **calendar:** cancel events and clarify event dialogs ([#78](https://github.com/Rynaro/jin/issues/78)) ([1b73705](https://github.com/Rynaro/jin/commit/1b7370522d6b6dbf09bdf563a9b96f3322469413))
+* **calendar:** simplify Google sign-in and fix calendar interactions ([#48](https://github.com/Rynaro/jin/issues/48)) ([031d839](https://github.com/Rynaro/jin/commit/031d8394a2caf282c8c5a98af07113c07b2ea0af))
+* **notes:** add writing tools and streamline the editor footer ([#46](https://github.com/Rynaro/jin/issues/46)) ([21f88d2](https://github.com/Rynaro/jin/commit/21f88d20e189f98c4fc07e207f61716f76a9e4ae))
+* **tasks:** personalize boards and improve subtask management ([#51](https://github.com/Rynaro/jin/issues/51)) ([7a40d17](https://github.com/Rynaro/jin/commit/7a40d1764e05e899424a8421ac97e3e68cb83ef2))
+* **tasks:** refine list workflows and the task detail sidebar ([#52](https://github.com/Rynaro/jin/issues/52)) ([ad5202e](https://github.com/Rynaro/jin/commit/ad5202e05c15c7eae8a6bfe9d2dc94e9852dbc1e))
+
+
+### Bug Fixes
+
+* **deps:** address Dependabot alerts and schedule dependency maintenance ([#54](https://github.com/Rynaro/jin/issues/54)) ([df63e69](https://github.com/Rynaro/jin/commit/df63e69a3368ed717a280a3a70a3fb458be14bfc))
+
 ## [1.1.0](https://github.com/Rynaro/jin/compare/v1.0.1...v1.1.0) (2026-11-24)
 
 
