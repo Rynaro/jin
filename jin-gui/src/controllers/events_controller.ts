@@ -30,9 +30,6 @@ import {
   getEventDetailById,
   editEventDelta,
   editRoutedEventDelta,
-  deleteEvent,
-  deleteRoutedEvent,
-  removeTimeBlock,
   newOperationId,
   respondCalendarInvitation,
   refreshGoogleEventDetails,
@@ -40,7 +37,6 @@ import {
 } from '../invoke';
 import { isJinErrorDto, toSyntheticErrorDto } from '../types/error';
 import type { EventDetailDto } from '../types/dto';
-import type { JinErrorDetails } from '../types/error';
 import {
   type EventsViewElements,
   type EventsTemplates,
@@ -60,6 +56,7 @@ import {
 } from '../lib/events/draft';
 import { EventCompanion, type CompanionSaveResult } from '../lib/ui/companion';
 import type { SupportedRecurrenceScope } from '../lib/events/recurrence_scope';
+import { createEventRemovalDialog } from '../lib/events/removal';
 
 export default class EventsController extends Controller {
   // ── Targets ───────────────────────────────────────────────────────────────
@@ -80,6 +77,7 @@ export default class EventsController extends Controller {
   private returnFocusId: string | null = null;
   private pendingContextSuccessId: string | null = null;
   private companion: EventCompanion | null = null;
+  private guestUpdateDialog: ConfirmDialog | null = null;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -91,6 +89,7 @@ export default class EventsController extends Controller {
     this.companion?.close(true);
     this.companion = null;
     this.removalDialog?.destroy();
+    this.guestUpdateDialog?.destroy();
   }
 
   // ── Detail ────────────────────────────────────────────────────────────────
@@ -217,7 +216,7 @@ export default class EventsController extends Controller {
         locale: resolveEventLocale(),
         onEdit: (current) => this.beginEdit(current),
         onCreatePrepNote: current => openEventPrepNote(current, note => this.navigateTo('notes', note.id)),
-        onRemove: (current) => this.confirmRemoval(current),
+        onRemove: (current) => { this.confirmRemoval(current); },
         onRespondInvitation: (current, choice, control) => { void this.respondToInvitation(current, choice, control); },
         onManageMeet: (current, action) => { void this.manageMeet(current, action); },
         onRefreshGoogleDetails: (current) => { void this.refreshGoogleDetails(current); },
@@ -272,15 +271,49 @@ export default class EventsController extends Controller {
     await submit(invitation.recurrence_scopes[0] ?? null);
   }
 
-  private async manageMeet(
+  private manageMeet(
     detail: EventDetailDto,
     action: 'add' | 'retry' | 'remove',
-  ): Promise<void> {
+  ): void {
     const route = detail.event.sync_context;
     const capability = detail.capabilities.collaboration;
     if (!route || !capability || (action === 'remove' ? !capability.can_remove_conference : !capability.can_add_conference)) return;
+    const notifyGuests = capability.has_notifiable_guests === true;
+    if (!notifyGuests) {
+      void this.performMeetMutation(detail, action, 'all');
+      return;
+    }
+    this.guestUpdateDialog?.destroy();
+    const locale = resolveEventLocale();
+    this.guestUpdateDialog = new ConfirmDialog({
+      title: action === 'remove' ? 'Remove Google Meet?' : 'Update Google Meet?',
+      message: detail.event.title,
+      confirmLabel: action === 'remove' ? 'Remove Google Meet' : 'Update Google Meet',
+      cancelLabel: eventMessage('cancel', locale),
+      selectLabel: eventMessage('notifyGuests', locale),
+      selectOptions: [
+        { value: 'all', label: eventMessage('notifyAllGuests', locale) },
+        { value: 'external_only', label: eventMessage('notifyExternalGuests', locale) },
+        { value: 'none', label: eventMessage('notifyNoGuests', locale) },
+      ],
+      onConfirm: (_checked, policy) => {
+        const guestUpdatePolicy = policy === 'external_only' || policy === 'none' ? policy : 'all';
+        void this.performMeetMutation(detail, action, guestUpdatePolicy);
+      },
+    });
+    this.guestUpdateDialog.open();
+  }
+
+  private async performMeetMutation(
+    detail: EventDetailDto,
+    action: 'add' | 'retry' | 'remove',
+    guestUpdatePolicy: 'all' | 'external_only' | 'none',
+  ): Promise<void> {
+    const route = detail.event.sync_context;
+    if (!route) return;
     try {
       const draft = draftFromEvent(detail.event, detail.edit_token);
+      draft.guest_update_policy = guestUpdatePolicy;
       setConferenceIntent(
         draft,
         action === 'remove'
@@ -420,74 +453,36 @@ export default class EventsController extends Controller {
   private confirmRemoval(detail: EventDetailDto): void {
     this.removalDialog?.destroy();
     const locale = resolveEventLocale();
-    const isTimeBlock = detail.capabilities.display_kind === 'time-block';
-    const cancelsMeeting = detail.capabilities.collaboration?.can_cancel_meeting === true;
-    const recurring = this.isRecurring(detail.event);
-    this.removalDialog = new ConfirmDialog({
-      title: isTimeBlock ? eventMessage('removeTitle', locale) : cancelsMeeting ? eventMessage('cancelMeetingTitle', locale) : eventMessage('delete', locale),
-      message: isTimeBlock ? eventMessage('removeBody', locale) : cancelsMeeting ? eventMessage('cancelMeetingBody', locale) : detail.event.title,
-      confirmLabel: isTimeBlock ? eventMessage('remove', locale) : cancelsMeeting ? eventMessage('cancelMeeting', locale) : eventMessage('delete', locale),
-      cancelLabel: eventMessage('cancel', locale),
-      checkboxLabel: recurring
-        ? eventMessage('deleteEntireSeries', locale)
-        : isTimeBlock && detail.capabilities.can_return_task_to_flexible
-          ? eventMessage('returnFlexible', locale)
-          : undefined,
-      selectLabel: cancelsMeeting ? 'Notify guests' : undefined,
-      selectOptions: cancelsMeeting ? [
-        { value: 'all', label: 'All guests' },
-        { value: 'external_only', label: 'External guests only' },
-        { value: 'none', label: 'Do not notify guests' },
-      ] : undefined,
-      variant: 'danger',
-      onConfirm: (checked, guestUpdatePolicy) => { void this.performRemoval(detail, checked, guestUpdatePolicy); },
+    this.removalDialog = createEventRemovalDialog({
+      detail,
+      locale,
+      onRemoved: async () => {
+        await this.loadDetail(detail.event.id);
+        this.dispatch('events-mutated', { prefix: 'jin', bubbles: true });
+        this.dispatch('tasks-changed', { prefix: 'jin', bubbles: true });
+        this.showList();
+      },
+      onRefreshFailure: () => {
+        this.showList();
+        this.dispatch('error', {
+          detail: { message: eventMessage('removalRefreshFailed', locale) },
+          prefix: 'app',
+          bubbles: true,
+        });
+      },
+      onFailure: async (error) => {
+        const details = isJinErrorDto(error) ? error.details : undefined;
+        if (details?.type === 'operation_conflict') {
+          await this.loadDetail(detail.event.id);
+          this.showOperationStatus(eventMessage('removalConflict', locale));
+        } else if (details?.type === 'operation_blocked') {
+          this.showOperationStatus(eventMessage('removalBlocked', locale));
+        } else {
+          this.showOperationStatus(eventMessage('failedRemoveEvent', locale));
+        }
+      },
     });
     this.removalDialog.open();
-  }
-
-  private async performRemoval(detail: EventDetailDto, checked: boolean, guestUpdatePolicy?: string): Promise<void> {
-    try {
-      if (detail.capabilities.display_kind === 'time-block') {
-        await removeTimeBlock({
-          event_id: detail.event.id,
-          return_to_flexible: checked,
-          operation_id: newOperationId('remove'),
-        });
-      } else {
-        const route = detail.event.sync_context;
-        if (route) {
-          await deleteRoutedEvent({
-            event_id: detail.event.id,
-            account_id: route.account_id,
-            calendar_id: route.calendar_id,
-            recurrence_scope: this.isRecurring(detail.event)
-              ? (checked ? 'entire_series' : 'this_occurrence')
-              : undefined,
-            operation_id: newOperationId('delete'),
-            guest_update_policy: guestUpdatePolicy === 'external_only' || guestUpdatePolicy === 'none' ? guestUpdatePolicy : 'all',
-          });
-        } else {
-          await deleteEvent(detail.event.id);
-        }
-      }
-      await this.loadDetail(detail.event.id);
-      this.dispatch('events-mutated', { prefix: 'jin', bubbles: true });
-      this.dispatch('tasks-changed', { prefix: 'jin', bubbles: true });
-      // A successful delete leaves no useful detail projection to reload. Go
-      // back to the calendar list so the action has an immediate, visible
-      // result instead of rendering a cancelled stale entry.
-      this.showList();
-    } catch (error: unknown) {
-      const details: JinErrorDetails | undefined = isJinErrorDto(error) ? error.details : undefined;
-      if (details?.type === 'operation_conflict') {
-        await this.loadDetail(detail.event.id);
-        this.showOperationStatus(eventMessage('removalConflict'));
-      } else if (details?.type === 'operation_blocked') {
-        this.showOperationStatus(eventMessage('removalBlocked'));
-      } else {
-        this.showOperationStatus(eventMessage('failedRemoveEvent'));
-      }
-    }
   }
 
   private showOperationStatus(message: string): void {
@@ -497,11 +492,6 @@ export default class EventsController extends Controller {
     status.classList.remove('hidden');
   }
 
-  private isRecurring(event: EventDetailDto['event']): boolean {
-    return (event.recurrence?.length ?? 0) > 0 || Boolean(
-      event.recurring_event_id || event.original_start || event.master_id || event.recurrence_unexpanded,
-    );
-  }
 
   private setGlobalAddHidden(hidden: boolean): void {
     const button = this.element.querySelector<HTMLButtonElement>('.calendar-global-add');

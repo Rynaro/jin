@@ -66,8 +66,10 @@ import {
   type EventDraft,
 } from '../lib/events/draft';
 import { EventCompanion, type CompanionSaveResult } from '../lib/ui/companion';
+import { createEventRemovalDialog } from '../lib/events/removal';
+import { ConfirmDialog } from '../lib/ui/confirm_dialog';
 import type { SupportedRecurrenceScope } from '../lib/events/recurrence_scope';
-import { resolveEventLocale } from '../lib/events/locale';
+import { eventMessage, resolveEventLocale } from '../lib/events/locale';
 
 class TodayPreviewModal extends JinModal {
   constructor(title: string, private readonly afterClose: () => void) {
@@ -176,6 +178,8 @@ export default class TodayController extends Controller {
   private previewOpener: HTMLElement | null = null;
   private previewFocusRestoreSequence = 0;
   private eventCompanion: EventCompanion | null = null;
+  private removalDialog: ConfirmDialog | null = null;
+  private readonly pendingRemovalEventIds = new Set<string>();
   /** Shared by duplicate task appearances so one task cannot save twice. */
   private pendingInlineTaskIds = new Set<string>();
   /** Restored only after the mutation-triggered projection has replaced its rows. */
@@ -218,6 +222,9 @@ export default class TodayController extends Controller {
     this.previewModal = null;
     this.eventCompanion?.close(true);
     this.eventCompanion = null;
+    this.removalDialog?.destroy();
+    this.removalDialog = null;
+    this.pendingRemovalEventIds.clear();
   }
 
   // ── Date navigation actions ───────────────────────────────────────────────
@@ -959,12 +966,58 @@ export default class TodayController extends Controller {
         this.afterEventCompanionClose();
         this.navigateDirect('events', eventId);
       },
+      onRemove: (detail, invoker) => this.confirmPreviewRemoval(detail, invoker),
       onSave: async (draft) => this.saveEventCompanionDraft(draft),
       onClose: () => {
         this.afterEventCompanionClose();
         this.eventCompanion = null;
       },
     });
+  }
+
+  private confirmPreviewRemoval(detail: EventDetailDto, invoker: HTMLButtonElement): void {
+    if (this.pendingRemovalEventIds.has(detail.event.id)) return;
+    this.removalDialog?.destroy();
+    invoker.focus({ preventScroll: true });
+    this.removalDialog = createEventRemovalDialog({
+      detail,
+      locale: resolveEventLocale(),
+      onStart: () => { this.pendingRemovalEventIds.add(detail.event.id); },
+      onRemoved: async () => {
+        this.pendingRemovalEventIds.delete(detail.event.id);
+        const removedPreviewIsOpen = this.previewId === detail.event.id;
+        if (removedPreviewIsOpen) this.closePreview(false);
+        this.dispatch('events-mutated', { prefix: 'jin', bubbles: true });
+        if (this.isActiveSection()) {
+          await this.loadAgenda((this.requestedDate ?? this.dateValue) || undefined);
+          // Do not pull focus away from a newer preview opened while this
+          // mutation was in flight.
+          if (removedPreviewIsOpen) {
+            this.dateLabelTarget.setAttribute('tabindex', '-1');
+            this.dateLabelTarget.focus();
+          }
+        }
+      },
+      onRefreshFailure: () => {
+        this.pendingRemovalEventIds.delete(detail.event.id);
+        this.dispatch('error', {
+          detail: { message: eventMessage('removalRefreshFailed', resolveEventLocale()) },
+          prefix: 'app',
+          bubbles: true,
+        });
+      },
+      onFailure: (error) => {
+        this.pendingRemovalEventIds.delete(detail.event.id);
+        this.dispatch('error', {
+          detail: isJinErrorDto(error)
+            ? error
+            : { message: error instanceof Error ? error.message : eventMessage('failedRemoveEvent', resolveEventLocale()) },
+          prefix: 'app',
+          bubbles: true,
+        });
+      },
+    });
+    this.removalDialog.open();
   }
 
   private async saveEventCompanionDraft(draft: EventDraft): Promise<CompanionSaveResult> {

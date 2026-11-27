@@ -10,6 +10,7 @@ import { draftFromEvent, draftFromSlot, isDirty } from '../lib/events/draft';
 import { renderRecurrenceScope } from '../lib/events/recurrence_scope';
 import { eventMessage } from '../lib/events/locale';
 import { EventCompanion } from '../lib/ui/companion';
+import { eventRemovalKind } from '../lib/events/removal';
 import { installNavigationGuard } from '../lib/ui/navigation_guard';
 import { createEventPrepNote } from '../invoke';
 import type { NoteDto } from '../types/dto';
@@ -335,6 +336,43 @@ describe('EventCompanion', () => {
     expect(workspace.querySelector('.event-composer')).toBeTruthy();
     expect(workspace.querySelector('aside.event-companion--floating')).toBe(hostBefore);
     expect(companion.getPanel()).toBe(panelBefore);
+  });
+
+  it('passes the quick-remove control to the owner, including pointer focus recovery', () => {
+    const onRemove = vi.fn();
+    const companion = createCompanion({ workspace, field, locale: 'en', onRemove });
+    companion.setContentBox(1100);
+    companion.openPreview(detailFixture());
+
+    const remove = workspace.querySelector<HTMLButtonElement>('.event-preview__remove')!;
+    remove.click();
+
+    expect(onRemove).toHaveBeenCalledWith(expect.objectContaining({ event: expect.objectContaining({ id: 'evt-1' }) }), remove);
+  });
+
+  it('keeps a shared routed task block on the meeting cancellation path', () => {
+    const detail = detailFixture({
+      event: baseEvent({ derived_from: 'task-1' }),
+      capabilities: {
+        ...detailFixture().capabilities,
+        display_kind: 'time-block',
+        collaboration: {
+          invitation: null,
+          has_notifiable_guests: true,
+          can_edit_schedule: true,
+          can_append_attendees: true,
+          can_remove_attendees: true,
+          can_change_attendee_roles: true,
+          can_cancel_meeting: true,
+          can_add_conference: false,
+          can_remove_conference: false,
+          allowed_conference_solution_types: [],
+          disabled_reasons: {},
+        },
+      },
+    });
+
+    expect(eventRemovalKind(detail)).toBe('cancel-meeting');
   });
 
   it('successful save returns the same host to updated preview', async () => {

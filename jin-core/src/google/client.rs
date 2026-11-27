@@ -294,6 +294,7 @@ pub struct MockHttpClient {
     requested_urls: std::sync::Mutex<Vec<String>>,
     requested_patches: std::sync::Mutex<Vec<RecordedPatch>>,
     requested_posts: std::sync::Mutex<Vec<(String, serde_json::Value)>>,
+    requested_deletes: std::sync::Mutex<Vec<RecordedDelete>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -301,6 +302,12 @@ pub struct RecordedPatch {
     pub url: String,
     pub if_match_etag: Option<String>,
     pub body: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecordedDelete {
+    pub url: String,
+    pub if_match_etag: Option<String>,
 }
 
 impl MockHttpClient {
@@ -311,6 +318,7 @@ impl MockHttpClient {
             requested_urls: std::sync::Mutex::new(Vec::new()),
             requested_patches: std::sync::Mutex::new(Vec::new()),
             requested_posts: std::sync::Mutex::new(Vec::new()),
+            requested_deletes: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -324,6 +332,10 @@ impl MockHttpClient {
 
     pub fn requested_posts(&self) -> Vec<(String, serde_json::Value)> {
         self.requested_posts.lock().unwrap().clone()
+    }
+
+    pub fn requested_deletes(&self) -> Vec<RecordedDelete> {
+        self.requested_deletes.lock().unwrap().clone()
     }
 
     fn record_url(&self, url: &str) {
@@ -379,9 +391,13 @@ impl HttpClient for MockHttpClient {
         &self,
         url: &str,
         _bearer: &str,
-        _if_match_etag: Option<&str>,
+        if_match_etag: Option<&str>,
     ) -> crate::Result<HttpResponse> {
         self.record_url(url);
+        self.requested_deletes.lock().unwrap().push(RecordedDelete {
+            url: url.to_string(),
+            if_match_etag: if_match_etag.map(str::to_string),
+        });
         self.next_response()
     }
 

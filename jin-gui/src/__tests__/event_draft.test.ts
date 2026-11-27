@@ -83,6 +83,18 @@ describe('EventDraft construction', () => {
     expect(draft.edit_token).toBe('sha256:token');
   });
 
+  it('keeps provider attendees as a display baseline without making an edit dirty', () => {
+    const draft = draftFromEvent(crossZoneEvent({
+      attendees: [{ email: 'guest@example.com', responseStatus: 'accepted' }],
+    }), 'sha256:token');
+
+    expect(draft.attendee_baseline).toEqual([
+      { email: 'guest@example.com', responseStatus: 'accepted' },
+    ]);
+    expect(draft.attendees).toBeUndefined();
+    expect(dirtyFields(draft)).not.toContain('attendees');
+  });
+
   it('shows the inclusive last day for an all-day event', () => {
     const draft = draftFromEvent(allDayEvent());
     expect(draft.temporal.start_date).toBe('2026-07-01');

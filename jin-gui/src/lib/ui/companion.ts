@@ -66,6 +66,8 @@ export interface EventCompanionOptions {
   destination?: ComposerDestination;
   recurrenceScopes?: readonly SupportedRecurrenceScope[];
   onOpenFullDetails?: (eventId: string) => void;
+  /** Opens the shared destructive confirmation for the currently previewed event. */
+  onRemove?: (detail: EventDetailDto, invoker: HTMLButtonElement) => void;
   onSave?: (draft: EventDraft) => Promise<CompanionSaveResult>;
   onDestinationChange?: (destination: ComposerDestination) => void;
   onClose?: () => void;
@@ -176,6 +178,7 @@ export class EventCompanion {
   private changeSummary: CompanionChangeSummary | null = null;
   private temporalDisabledReason: string | null = null;
   private onOpenFullDetails?: (eventId: string) => void;
+  private onRemove?: (detail: EventDetailDto, invoker: HTMLButtonElement) => void;
   private onSave?: (draft: EventDraft) => Promise<CompanionSaveResult>;
   private onClose?: () => void;
 
@@ -216,6 +219,7 @@ export class EventCompanion {
     this.destination = options.destination;
     this.recurrenceScopes = options.recurrenceScopes ?? [];
     this.onOpenFullDetails = options.onOpenFullDetails;
+    this.onRemove = options.onRemove;
     this.onSave = options.onSave;
     this.onDestinationChange = options.onDestinationChange;
     this.onClose = options.onClose;
@@ -627,6 +631,11 @@ export class EventCompanion {
           onOpenFullDetails: (eventId) => {
             this.onOpenFullDetails?.(eventId);
           },
+          onRemove: this.onRemove
+            ? (invoker) => {
+              if (this.detail) this.onRemove?.(this.detail, invoker);
+            }
+            : undefined,
         },
         {
           locale: this.locale,
@@ -654,8 +663,17 @@ export class EventCompanion {
             temporalDisabledReason: this.temporalDisabledReason,
           });
         });
-        preview.querySelector('.event-preview__actions')?.appendChild(edit)
-          ?? preview.insertBefore(edit, preview.querySelector('.event-preview__open-full'));
+        const actions = preview.querySelector('.event-preview__actions');
+        const remove = actions?.querySelector('.event-preview__remove');
+        if (actions && remove) {
+          // Keep the affirmative actions together; destructive cancellation
+          // remains last even when a joined meeting needs a secondary Edit.
+          actions.insertBefore(edit, remove);
+        } else if (actions) {
+          actions.appendChild(edit);
+        } else {
+          preview.insertBefore(edit, preview.querySelector('.event-preview__open-full'));
+        }
       }
       this.bodySlot.appendChild(preview);
       preview.querySelector<HTMLElement>('[data-companion-focus="preview-title"]')?.setAttribute('tabindex', '-1');
@@ -692,6 +710,19 @@ export class EventCompanion {
         conferenceData: this.detail?.event.conference_data,
         existingMeetingHref: this.detail?.event.hangout_link,
         conferenceCapabilities: this.detail?.capabilities.collaboration ?? undefined,
+        guestUpdateAvailable: this.detail?.capabilities.collaboration?.has_notifiable_guests,
+        seriesGuestUpdateAvailable: this.detail?.capabilities.collaboration?.series_has_notifiable_guests,
+        guestUpdateEditable: this.detail?.capabilities.can_edit === true,
+        attendeeEditingAllowed: (
+          this.detail?.capabilities.collaboration?.can_append_attendees === true
+          && this.detail?.capabilities.collaboration?.can_remove_attendees === true
+        ) || (this.detail?.event.authority === 'jin'
+            && this.detail?.event.sync_context?.provider === 'google'
+            && this.detail?.capabilities.can_edit === true),
+        eventIsSeriesMaster: Boolean(this.detail?.event.recurrence?.length)
+          && !this.detail?.event.recurring_event_id
+          && !this.detail?.event.original_start
+          && !this.detail?.event.master_id,
         recurrenceScopes: scopes,
         recurrencePatternSupported: this.recurrencePatternSupported,
         changeSummary: this.changeSummary,

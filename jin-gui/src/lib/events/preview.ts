@@ -16,10 +16,13 @@ import {
 } from './locale';
 import { formatEventDate, formatEventTime } from './transform';
 import type { EventOperationState } from './operation_state';
+import { eventRemovalLabels } from './removal';
 import { syncContextStatusCopy } from './status_copy';
 
 export interface EventPreviewCallbacks {
   onEdit?: () => void;
+  /** The host owns confirmation and mutation. Preview only exposes the action. */
+  onRemove?: (invoker: HTMLButtonElement) => void;
   onOpenFullDetails?: (eventId: string) => void;
   onJoin?: (href: string) => void;
   onCreatePrepNote?: () => void;
@@ -73,6 +76,10 @@ function provenanceCopy(event: EventDto, locale: EventLocaleKey): string {
   });
 }
 
+function normalizedIdentity(value: string | null | undefined): string {
+  return value?.trim().toLocaleLowerCase() ?? '';
+}
+
 /** Render shared Preview DOM. */
 export function renderEventPreview(
   detail: EventDetailDto,
@@ -100,18 +107,21 @@ export function renderEventPreview(
   identityText.className = 'event-preview__identity-text';
 
   const calendarName = context.calendarName ?? membership.label;
-  const nameEl = document.createElement('p');
+  const identityPrimary = document.createElement('p');
+  identityPrimary.className = 'event-preview__identity-primary';
+  const nameEl = document.createElement('span');
   nameEl.className = 'event-preview__calendar-name';
   nameEl.textContent = calendarName;
-  identityText.appendChild(nameEl);
+  identityPrimary.appendChild(nameEl);
 
   const alias = context.accountAlias ?? membership.accountAlias;
   if (alias && alias !== calendarName) {
-    const aliasEl = document.createElement('p');
+    const aliasEl = document.createElement('span');
     aliasEl.className = 'event-preview__account-alias text-footnote';
     aliasEl.textContent = alias;
-    identityText.appendChild(aliasEl);
+    identityPrimary.append(' · ', aliasEl);
   }
+  identityText.appendChild(identityPrimary);
 
   const provenance = document.createElement('p');
   provenance.className = 'event-preview__provenance text-footnote color-secondary';
@@ -120,14 +130,17 @@ export function renderEventPreview(
 
   identity.appendChild(identityText);
 
+  const header = document.createElement('header');
+  header.className = 'event-preview__header';
+
   // Title and time lead the compact inspector; calendar identity follows once.
   const title = document.createElement('h2');
   title.className = 'event-preview__title';
   title.textContent = event.title || eventMessage('eventTitle', locale);
   title.dataset.companionFocus = 'preview-title';
-  root.appendChild(title);
+  header.appendChild(title);
 
-  const when = document.createElement('p');
+  const when = document.createElement('div');
   when.className = 'event-preview__when';
   const datePart = formatEventDate(event.start, event.is_all_day, event.start_tzid, locale);
   const timePart = formatEventTime(
@@ -138,11 +151,21 @@ export function renderEventPreview(
     event.start_tzid,
     locale,
   );
-  const zone =
-    !event.is_all_day && !event.floating && event.start_tzid ? ` · ${event.start_tzid}` : '';
-  when.textContent = `${datePart} · ${timePart}${zone}`;
-  root.appendChild(when);
-  root.appendChild(identity);
+  const date = document.createElement('span');
+  date.className = 'event-preview__date';
+  date.textContent = datePart;
+  const time = document.createElement('span');
+  time.className = 'event-preview__time';
+  time.textContent = timePart;
+  when.append(date, time);
+  if (!event.is_all_day && !event.floating && event.start_tzid) {
+    const zone = document.createElement('span');
+    zone.className = 'event-preview__zone';
+    zone.textContent = event.start_tzid;
+    when.append(zone);
+  }
+  header.append(when, identity);
+  root.appendChild(header);
 
   if (context.temporalDisabledReason) {
     const reason = document.createElement('p');
@@ -194,6 +217,16 @@ export function renderEventPreview(
     actions.appendChild(edit);
   }
 
+  if (detail.capabilities.can_delete && callbacks.onRemove) {
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn-secondary tap-target event-preview__remove';
+    remove.textContent = eventRemovalLabels(detail, locale).confirmLabel;
+    remove.dataset.companionFocus = 'preview-remove';
+    remove.addEventListener('click', () => callbacks.onRemove?.(remove));
+    actions.appendChild(remove);
+  }
+
   if (actions.childNodes.length) root.appendChild(actions);
 
   // 4. Location and description
@@ -211,19 +244,24 @@ export function renderEventPreview(
   }
 
   // 5. Guests
-  const attendees = event.attendees ?? [];
-  if (attendees.length > 0 || event.organizer) {
+  const attendees = (event.attendees ?? []).filter(attendee =>
+    attendee.self !== true && attendee.resource !== true && attendee.organizer !== true,
+  );
+  const organizerName = event.organizer?.displayName ?? event.organizer?.email;
+  const organizerMatchesCalendar = normalizedIdentity(organizerName) === normalizedIdentity(calendarName);
+  const meaningfulOrganizer = Boolean(organizerName && !organizerMatchesCalendar);
+  if (attendees.length > 0 || meaningfulOrganizer) {
     const guests = document.createElement('section');
     guests.className = 'event-preview__guests';
     const heading = document.createElement('h3');
     heading.className = 'event-preview__section-title';
     heading.textContent = eventMessage('attendees', locale);
     guests.appendChild(heading);
-    if (event.organizer?.email || event.organizer?.displayName) {
+    if (meaningfulOrganizer) {
       const org = document.createElement('p');
       org.className = 'text-footnote';
       org.textContent = `${eventMessage('organizer', locale)}: ${
-        event.organizer.displayName ?? event.organizer.email ?? ''
+        organizerName ?? ''
       }`;
       guests.appendChild(org);
     }
@@ -283,13 +321,27 @@ export function renderEventPreview(
     root.appendChild(links);
   }
 
+  let secondaryActions: HTMLElement | null = null;
+  const appendSecondaryAction = (action: HTMLButtonElement): void => {
+    if (!secondaryActions) {
+      secondaryActions = document.createElement('div');
+      secondaryActions.className = 'event-preview__secondary-actions';
+    }
+    secondaryActions.appendChild(action);
+  };
+
   if (callbacks.onCreatePrepNote) {
     const create = document.createElement('button');
     create.type = 'button';
     create.className = 'btn-secondary event-preview__new-prep';
-    create.textContent = eventMessage('newPrepNote', locale);
+    const icon = document.createElement('i');
+    icon.setAttribute('data-lucide', 'file-text');
+    icon.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.textContent = eventMessage('newPrepNote', locale);
+    create.append(icon, label);
     create.addEventListener('click', callbacks.onCreatePrepNote);
-    root.append(create);
+    appendSecondaryAction(create);
   }
 
   // 8. Concise sync status
@@ -297,6 +349,11 @@ export function renderEventPreview(
   if (syncCopy) {
     const sync = document.createElement('p');
     sync.className = 'event-preview__sync text-footnote';
+    // A confirmed provider sync is reassuring context, not an action or warning.
+    // Keep other operation and caller-provided statuses at their normal contrast.
+    if (!context.operationState && !context.statusMessage && event.sync_context?.state === 'synced') {
+      sync.classList.add('event-preview__sync--routine');
+    }
     sync.textContent = syncCopy;
     root.appendChild(sync);
   }
@@ -306,13 +363,20 @@ export function renderEventPreview(
     const openFull = document.createElement('button');
     openFull.type = 'button';
     openFull.className = 'btn-secondary tap-target event-preview__open-full';
-    openFull.textContent = eventMessage('openFullDetails', locale);
+    const icon = document.createElement('i');
+    icon.setAttribute('data-lucide', 'chevron-right');
+    icon.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.textContent = eventMessage('openFullDetails', locale);
+    openFull.append(icon, label);
     openFull.dataset.companionFocus = 'preview-open-full';
     openFull.addEventListener('click', () => {
       callbacks.onOpenFullDetails?.(event.id);
     });
-    root.appendChild(openFull);
+    appendSecondaryAction(openFull);
   }
+
+  if (secondaryActions) root.appendChild(secondaryActions);
 
   return root;
 }

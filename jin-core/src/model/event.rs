@@ -366,6 +366,63 @@ impl Event {
     pub fn is_deleted(&self) -> bool {
         self.frontmatter.is_deleted()
     }
+
+    /// True when this event identifies another person who could receive a
+    /// Calendar update. Resource attendees, the authenticated account, and a
+    /// self-organizer are excluded. A non-self organizer remains a person for
+    /// guest editors who are allowed to change a meeting's schedule.
+    pub fn has_notifiable_guests(
+        &self,
+        principal: Option<&str>,
+        organizer_is_route_calendar: bool,
+    ) -> bool {
+        let organizer = self.frontmatter.organizer.as_ref();
+        let organizer_is_self = organizer_is_route_calendar
+            || organizer.and_then(|organizer| organizer.is_self) == Some(true)
+            || organizer
+                .and_then(|organizer| organizer.email.as_deref())
+                .is_some_and(|email| {
+                    principal.is_some_and(|principal| email.eq_ignore_ascii_case(principal))
+                });
+        let attendee_is_notifiable = self
+            .frontmatter
+            .attendees
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .any(|attendee| {
+                let Some(email) = attendee.email.as_deref() else {
+                    return false;
+                };
+                let email = email.trim();
+                if email.is_empty() {
+                    return false;
+                }
+                let matches_organizer = organizer
+                    .and_then(|organizer| organizer.email.as_deref())
+                    .is_some_and(|organizer| email.eq_ignore_ascii_case(organizer.trim()));
+                attendee.is_self != Some(true)
+                    && attendee.resource != Some(true)
+                    && attendee.organizer != Some(true)
+                    && !principal.is_some_and(|principal| email.eq_ignore_ascii_case(principal))
+                    && !matches_organizer
+            });
+        let self_attends = self
+            .frontmatter
+            .attendees
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .any(|attendee| attendee.is_self == Some(true));
+        attendee_is_notifiable
+            || (self_attends
+                && !organizer_is_self
+                && organizer
+                    .and_then(|organizer| organizer.email.as_deref())
+                    .is_some_and(|email| {
+                        !principal.is_some_and(|principal| email.eq_ignore_ascii_case(principal))
+                    }))
+    }
 }
 
 /// Helper: parse a datetime string that might be NaiveDateTime or NaiveDate.

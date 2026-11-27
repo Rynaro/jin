@@ -698,13 +698,80 @@ pub(crate) fn list_events(conn: &Connection, include_deleted: bool) -> SqlResult
         format!("SELECT {} FROM events ORDER BY id ASC", EVENT_COLS)
     } else {
         format!(
-            "SELECT {} FROM events WHERE status != 'cancelled' ORDER BY id ASC",
+            "SELECT {} FROM events
+             WHERE status != 'cancelled'
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM events AS master
+                   WHERE master.id = events.master_id
+                     AND master.status = 'cancelled'
+               )
+             ORDER BY id ASC",
             EVENT_COLS
         )
     };
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], row_to_event)?;
     rows.collect()
+}
+
+#[cfg(test)]
+mod event_projection_tests {
+    use super::*;
+    use crate::index::schema;
+
+    fn insert_event(conn: &Connection, id: &str, status: &str, master_id: Option<&str>) {
+        conn.execute(
+            "INSERT INTO events
+             (id, title, status, start, end_time, start_value_type, end_value_type,
+              created, updated, source, authority, calendar_id, file_path, master_id)
+             VALUES (?1, ?1, ?2, '2026-11-30T08:00:00', '2026-11-30T09:00:00',
+                     'date-time', 'date-time', '2026-11-01T00:00:00Z',
+                     '2026-11-01T00:00:00Z', 'google', 'google', 'calendar', ?1, ?3)",
+            params![id, status, master_id],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn event_projection_hides_materialized_occurrences_of_a_cancelled_master() {
+        let conn = Connection::open_in_memory().unwrap();
+        schema::apply(&conn).unwrap();
+        insert_event(&conn, "cancelled-master", "cancelled", None);
+        insert_event(
+            &conn,
+            "hidden-occurrence",
+            "confirmed",
+            Some("cancelled-master"),
+        );
+        insert_event(&conn, "active-master", "confirmed", None);
+        insert_event(
+            &conn,
+            "other-series-occurrence",
+            "confirmed",
+            Some("active-master"),
+        );
+        insert_event(
+            &conn,
+            "individually-cancelled-occurrence",
+            "cancelled",
+            Some("active-master"),
+        );
+        insert_event(&conn, "standalone", "confirmed", None);
+
+        let visible = list_events(&conn, false).unwrap();
+        let visible_ids = visible
+            .iter()
+            .map(|event| event.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            visible_ids,
+            vec!["active-master", "other-series-occurrence", "standalone"]
+        );
+
+        let all = list_events(&conn, true).unwrap();
+        assert_eq!(all.len(), 6, "include_deleted retains cancellation history");
+    }
 }
 
 pub(crate) fn get_event(conn: &Connection, id: &str) -> SqlResult<Option<EventRow>> {

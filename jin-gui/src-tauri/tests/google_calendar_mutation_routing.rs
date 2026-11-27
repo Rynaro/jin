@@ -1,8 +1,8 @@
 use jin_core::google::account::{DiscoveredCalendar, GoogleAccessRole, GOOGLE_ISSUER};
 use jin_core::sync::state::{self, OutboxOperationKind, SyncDestination};
 use jin_gui::commands::events::{
-    create_routed_event_fn, delete_event_fn, edit_event_fn, get_event_detail_fn, EditEventInput,
-    EventInput, RoutedEventInput,
+    create_routed_event_fn, delete_event_fn, delete_routed_event_fn, edit_event_fn,
+    get_event_detail_fn, EditEventInput, EventInput, RoutedDeleteEventInput, RoutedEventInput,
 };
 use tempfile::TempDir;
 
@@ -327,4 +327,79 @@ fn legacy_tauri_edit_and_delete_preserve_the_canonical_route() {
         .get("status")
         .is_none());
     assert_eq!(patch["reminders"]["overrides"][0]["minutes"], 20);
+}
+
+#[test]
+fn routed_delete_preserves_the_selected_guest_notification_policy() {
+    let (root, account_id) = configured_root();
+    let event = create_routed_event_fn(
+        root.path(),
+        RoutedEventInput {
+            event: EventInput {
+                title: "Meeting to cancel".into(),
+                start: "2026-08-28T09:00:00".into(),
+                end: "2026-08-28T10:00:00".into(),
+                tzid: Some("UTC".into()),
+                is_all_day: false,
+                description: None,
+                location: None,
+                attendees: None,
+                attendees_omitted: None,
+                conference_data: None,
+                clear_conference_data: false,
+                reminders: None,
+                recurrence: None,
+            },
+            account_id: account_id.clone(),
+            calendar_id: "primary".into(),
+            operation_id: "tauri-create-before-cancel".into(),
+            guest_update_policy: jin_core::ops::event_mutation::GuestUpdatePolicy::All,
+        },
+    )
+    .unwrap();
+
+    let config = jin_core::Config::load(root.path()).unwrap();
+    let conn = state::open_sync_db(&config.sync_dir()).unwrap();
+    let route = SyncDestination::google(&account_id, "primary");
+    state::upsert_scoped_entry(
+        &conn,
+        &state::ScopedEventSyncEntry {
+            destination: route.clone(),
+            jin_id: event.id.clone(),
+            recurrence_key: state::MASTER_RECURRENCE_KEY.into(),
+            google_event_id: Some("remote-cancelled-event".into()),
+            ical_uid: None,
+            etag: Some("etag-cancel".into()),
+            google_updated: None,
+            last_synced_at: None,
+        },
+    )
+    .unwrap();
+
+    delete_routed_event_fn(
+        root.path(),
+        RoutedDeleteEventInput {
+            event_id: event.id.clone(),
+            account_id: account_id.clone(),
+            calendar_id: "primary".into(),
+            recurrence_scope: None,
+            operation_id: "tauri-cancel-without-email".into(),
+            guest_update_policy: jin_core::ops::event_mutation::GuestUpdatePolicy::None,
+        },
+    )
+    .unwrap();
+
+    let pending = state::list_route_outbox(&conn, &route, "pending").unwrap();
+    let delete = pending
+        .iter()
+        .find(|item| item.operation == OutboxOperationKind::Delete && item.jin_id == event.id)
+        .expect("the routed cancellation must enqueue one delete intent");
+    assert_eq!(
+        delete
+            .payload
+            .as_ref()
+            .and_then(|payload| payload.get("_jinGuestUpdatePolicy")),
+        Some(&serde_json::json!("none")),
+        "the bridge must retain the user's cancellation notification choice for retry-safe delivery"
+    );
 }

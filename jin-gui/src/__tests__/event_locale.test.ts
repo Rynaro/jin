@@ -36,9 +36,10 @@ describe('Calendar and Event locale registry (AC-030/AC-031)', () => {
   it('localizes visible and accessibility copy while preserving approved product tokens', () => {
     expect(eventMessage('calendar', 'pt-BR')).toBe('Calendário');
     expect(eventMessage('edit', 'pt-BR')).toBe('Editar');
-    expect(eventMessage('sourceJin', 'pt-BR')).toBe('Source: Jin');
-    expect(eventMessage('sourceGoogle', 'pt-BR')).toBe('Source: Google');
-    expect(eventMessage('timeBlock', 'pt-BR')).toBe('Time block');
+    expect(eventMessage('sourceJin', 'pt-BR')).toBe('Origem: Jin');
+    expect(eventMessage('sourceGoogle', 'pt-BR')).toBe('Origem: Google');
+    expect(eventMessage('timeBlock', 'pt-BR')).toBe('Bloco de tempo');
+    expect(eventMessage('cancelEvent', 'pt-BR')).toBe('Cancelar evento');
   });
 
   it('provides keyed English and pt-BR Calendar/Event error copy', () => {

@@ -206,6 +206,30 @@ describe('ConfirmDialog dynamic icon hydration', () => {
   });
 });
 
+describe('ConfirmDialog asynchronous confirmation', () => {
+  it('keeps a failed destructive action open with an inline retry message', async () => {
+    const dialog = new ConfirmDialog({
+      title: 'Cancel this event?',
+      confirmLabel: 'Cancel event',
+      variant: 'danger',
+      failureMessage: 'Failed to remove event',
+      onConfirm: async () => { throw new Error('network unavailable'); },
+    });
+    dialog.open();
+    const root = document.querySelector<HTMLDialogElement>('dialog.action-dialog')!;
+    root.querySelector<HTMLButtonElement>('.btn-danger')!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const feedback = root.querySelector<HTMLElement>('.confirm-dialog__failure')!;
+    expect(root.open).toBe(true);
+    expect(feedback.hidden).toBe(false);
+    expect(feedback.textContent).toBe('Failed to remove event');
+    expect(document.activeElement).toBe(root.querySelector('.btn-danger'));
+    dialog.destroy();
+  });
+});
+
 // ── Suite: JinModal — close() ─────────────────────────────────────────────────
 
 describe('JinModal close()', () => {

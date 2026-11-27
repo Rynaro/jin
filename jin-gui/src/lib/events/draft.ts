@@ -94,6 +94,12 @@ export interface EventDraft {
   clear_recurrence: boolean;
   recurrence_changed: boolean;
   guest_update_policy: GuestUpdatePolicy;
+  /**
+   * Attendees as last supplied by the provider. This is display-only until a
+   * user edits the guest field, when matching entries retain their provider
+   * metadata rather than being reduced to email addresses.
+   */
+  attendee_baseline?: EventAttendeeDto[];
   attendees?: EventAttendeeDto[];
   attendees_omitted?: boolean;
   conference_intent: ConferenceIntent;
@@ -210,8 +216,9 @@ export function draftFromEvent(event: EventDto, editToken?: string): EventDraft 
     clear_recurrence: false,
     recurrence_changed: false,
     guest_update_policy: 'all',
+    attendee_baseline: event.attendees?.map(attendee => ({ ...attendee })),
     attendees: undefined,
-    attendees_omitted: undefined,
+    attendees_omitted: event.attendees_omitted ?? undefined,
     conference_intent: { kind: 'preserve' },
     reminders: undefined,
     relative_input: '',

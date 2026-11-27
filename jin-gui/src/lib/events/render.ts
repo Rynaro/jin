@@ -29,6 +29,7 @@ import {
 } from './transform';
 import type { BrowseNavigateCallback } from '../notes/render';
 import { eventMessage, resolveEventLocale, type EventLocaleKey } from './locale';
+import { eventRemovalLabels } from './removal';
 import { renderInvitationResponseControls, type InvitationResponseChoice } from './invitation';
 
 // ── Interface types ───────────────────────────────────────────────────────────
@@ -182,11 +183,7 @@ export function renderEventDetail(
     const destructive = document.createElement('button');
     destructive.type = 'button';
     destructive.className = 'btn-danger event-detail__destructive';
-    destructive.textContent = detail.capabilities.display_kind === 'time-block'
-      ? eventMessage('remove', locale)
-      : detail.capabilities.collaboration?.can_cancel_meeting
-        ? eventMessage('cancelMeeting', locale)
-      : eventMessage('delete', locale);
+    destructive.textContent = eventRemovalLabels(detail, locale).confirmLabel;
     destructive.addEventListener('click', () => options.onRemove?.(detail));
     headerActions.appendChild(destructive);
   }

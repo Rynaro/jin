@@ -229,7 +229,11 @@ async function assertEventDetailLayout(page, viewport) {
   const pane = page.locator('.events-detail-pane');
   const back = page.getByRole('button', { name: /^Back(?: to)? Calendar$/ });
   const edit = page.getByRole('button', { name: /^Edit Partner review$/, exact: true });
-  const remove = page.getByRole('button', { name: 'Delete', exact: true });
+  // e8 is a writable Google event in the production fixture, with no
+  // notifiable guests projected by this fixture. Its policy is therefore the
+  // solo Google cancellation action, not a local Delete or shared-meeting
+  // cancellation.
+  const remove = page.getByRole('button', { name: 'Cancel event', exact: true });
   await Promise.all([pane.waitFor({ state: 'visible' }), back.waitFor({ state: 'visible' }), edit.waitFor({ state: 'visible' }), remove.waitFor({ state: 'visible' })]);
   await pane.evaluate((element) => { element.scrollTop = 0; });
   const geometry = await page.evaluate(() => {
@@ -295,6 +299,42 @@ async function assertEventDetailLayout(page, viewport) {
   if (contextMetrics.length < 2 || contextMetrics.some((metrics) => metrics.headingClient <= 1 || metrics.headingScroll > metrics.headingClient + 1 || metrics.actionClient <= 1 || metrics.actionScroll > metrics.actionClient + 1)) {
     throw new Error(`Event detail Prep or Related context collapsed or clipped at ${viewport.width}px: ${JSON.stringify(contextMetrics)}`);
   }
+
+  await edit.click();
+  const composer = page.locator('.event-composer');
+  await composer.waitFor({ state: 'visible' });
+  // The fixture source has two ordinary words. This catches a grid track
+  // collapsing to single glyphs while still allowing ordinary word-level wrapping.
+  const sourceGeometry = await composer.locator('.event-composer__calendar-name').evaluate((name) => {
+    const row = name.closest('.event-composer__calendar-row');
+    const range = document.createRange();
+    const text = name.firstChild;
+    if (!text) return null;
+    const wordEnd = text.textContent?.indexOf(' ') ?? -1;
+    range.setStart(text, 0);
+    range.setEnd(text, wordEnd < 0 ? text.textContent?.length ?? 0 : wordEnd);
+    const wordLines = [...range.getClientRects()]
+      .filter((rect) => rect.width > 0 && rect.height > 0)
+      .map((rect) => Math.round(rect.top));
+    return {
+      rowWidth: row?.getBoundingClientRect().width ?? 0,
+      nameClientWidth: name.clientWidth,
+      nameScrollWidth: name.scrollWidth,
+      wordLineCount: new Set(wordLines).size,
+    };
+  });
+  if (!sourceGeometry
+    || sourceGeometry.rowWidth <= 1
+    || sourceGeometry.nameScrollWidth > sourceGeometry.nameClientWidth + 1
+    || sourceGeometry.wordLineCount !== 1) {
+    throw new Error(`Calendar source collapsed, clipped, or split into glyphs at ${viewport.width}px: ${JSON.stringify(sourceGeometry)}`);
+  }
+  // The composer body and its action footer are sibling slots in the active
+  // companion, so scope the footer control to that host rather than its body.
+  const activeCompanion = page.locator('.event-companion:has(.event-composer)');
+  await activeCompanion.locator('.event-composer__cancel').click();
+  await composer.waitFor({ state: 'hidden' });
+
   await back.click();
   await page.getByRole('button', { name: 'Month', exact: true }).waitFor({ state: 'visible' });
 }
