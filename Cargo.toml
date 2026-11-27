@@ -21,7 +21,7 @@ serde_yaml_ng = "0.9"
 ulid = "1"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = { version = "0.10", features = ["serde"] }
-rusqlite = { version = "0.38", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 thiserror = "2"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
