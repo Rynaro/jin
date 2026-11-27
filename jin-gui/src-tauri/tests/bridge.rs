@@ -1430,6 +1430,7 @@ fn bridge_create_task_round_trip() {
         tmp.path(),
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Write tests".to_string(),
             body: String::new(),
             priority: Some("high".to_string()),
@@ -1458,6 +1459,37 @@ fn bridge_create_task_round_trip() {
 }
 
 #[test]
+fn bridge_create_task_persists_initial_section_from_json_input() {
+    let tmp = init_root();
+    let root = tmp.path();
+    let list = create_workflow_list(root, "Home", "checklist");
+    let section = jin_gui::commands::lists::create_section_fn(
+        root,
+        list.id.clone(),
+        jin_gui::commands::lists::CreateSectionInput {
+            name: "Errands".to_string(),
+        },
+    )
+    .expect("create section");
+
+    let input: jin_gui::commands::tasks::TaskInput = serde_json::from_value(serde_json::json!({
+        "title": "Pick up tea",
+        "list": list.id,
+        "section_id": section.id,
+    }))
+    .expect("deserialize create task input");
+    let dto = jin_gui::commands::tasks::create_task_fn(root, input).expect("create in section");
+
+    let cfg = jin_core::Config::load(root).expect("load config");
+    let on_disk = jin_core::store::fs::read_task(&cfg.tasks_dir().join(format!("{}.md", dto.id)))
+        .expect("read created task");
+    assert_eq!(
+        on_disk.frontmatter.section_id.as_deref(),
+        Some(section.id.as_str())
+    );
+}
+
+#[test]
 fn bridge_task_status_transition() {
     let tmp = init_root();
     let board = create_workflow_list(tmp.path(), "Project", "board");
@@ -1466,6 +1498,7 @@ fn bridge_task_status_transition() {
         tmp.path(),
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "My task".to_string(),
             body: String::new(),
             priority: None,
@@ -2206,6 +2239,7 @@ fn vg_p1_edit_task_body_fix_persists_and_returns_via_get_task() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Body Fix Task".to_string(),
             body: "initial body".to_string(),
             priority: None,
@@ -2288,6 +2322,7 @@ fn vg_p1_complete_sets_status_and_completed_at_reopen_clears_it() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Complete Me".to_string(),
             body: String::new(),
             priority: None,
@@ -2347,6 +2382,7 @@ fn vg_p1_delete_task_sets_status_deleted_and_deleted_at() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Delete Me".to_string(),
             body: String::new(),
             priority: None,
@@ -2397,6 +2433,7 @@ fn vg_p1_create_task_with_typed_title_appears_in_list() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Typed From Create-In-Place".to_string(),
             body: String::new(),
             priority: None,
@@ -2491,6 +2528,7 @@ fn typed_board_bridge_create_move_and_projection_share_exact_column() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Sketch release".into(),
             body: String::new(),
             priority: None,
@@ -2992,6 +3030,7 @@ fn vg_p5_bridge_delete_section_clears_tasks() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Task in section".to_string(),
             body: String::new(),
             priority: None,
@@ -3092,6 +3131,7 @@ fn vg_p9_bridge_move_task_persists_position_change() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Task A".to_string(),
             body: String::new(),
             priority: None,
@@ -3112,6 +3152,7 @@ fn vg_p9_bridge_move_task_persists_position_change() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Task B".to_string(),
             body: String::new(),
             priority: None,
@@ -3268,6 +3309,7 @@ fn vg_p9_bridge_move_task_cross_column() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Cross-column task".to_string(),
             body: String::new(),
             priority: None,
@@ -3383,6 +3425,7 @@ fn vg_p9_bridge_reseed_positions_assigns_ordered_keys() {
             root,
             jin_gui::commands::tasks::TaskInput {
                 recurrence_upcoming_count: None,
+                section_id: None,
                 title: format!("Task {}", i),
                 body: String::new(),
                 priority: None,
@@ -3479,6 +3522,7 @@ fn vg_p10_bridge_reminders_persist_and_survive_rebuild() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Reminder task".to_string(),
             body: String::new(),
             priority: None,
@@ -3557,6 +3601,7 @@ fn vg_p10_bridge_edit_task_replaces_reminders() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Editable reminder task".to_string(),
             body: String::new(),
             priority: None,
@@ -3751,6 +3796,7 @@ fn vg_p10_bridge_auto_reminder_seeded_for_due_datetime() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Auto-reminder task".to_string(),
             body: String::new(),
             priority: None,
@@ -3797,6 +3843,7 @@ fn vg_p10_bridge_auto_reminder_seeded_for_due_datetime() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Date-only task".to_string(),
             body: String::new(),
             priority: None,
@@ -3840,6 +3887,7 @@ fn s6_create_task_with_parent_persists_and_returns_it() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Parent task".to_string(),
             body: String::new(),
             priority: None,
@@ -3860,6 +3908,7 @@ fn s6_create_task_with_parent_persists_and_returns_it() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Child task".to_string(),
             body: String::new(),
             priority: None,
@@ -3903,6 +3952,7 @@ fn s6_create_task_rejects_depth_two_parent_via_bridge() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "A".to_string(),
             body: String::new(),
             priority: None,
@@ -3922,6 +3972,7 @@ fn s6_create_task_rejects_depth_two_parent_via_bridge() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "B".to_string(),
             body: String::new(),
             priority: None,
@@ -3942,6 +3993,7 @@ fn s6_create_task_rejects_depth_two_parent_via_bridge() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "C".to_string(),
             body: String::new(),
             priority: None,
@@ -3975,6 +4027,7 @@ fn s6_edit_task_clear_parent_detaches_subtask() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Parent".to_string(),
             body: String::new(),
             priority: None,
@@ -3994,6 +4047,7 @@ fn s6_edit_task_clear_parent_detaches_subtask() {
         root,
         jin_gui::commands::tasks::TaskInput {
             recurrence_upcoming_count: None,
+            section_id: None,
             title: "Child".to_string(),
             body: String::new(),
             priority: None,

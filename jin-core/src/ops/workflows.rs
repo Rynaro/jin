@@ -193,11 +193,32 @@ pub fn create_task(root: &Path, params: CreateTaskParams, column_id: Option<&str
     create_task_with_capture_review(root, params, column_id, None)
 }
 
+/// Create a task in a concrete section after validating that section against
+/// the canonical owning list inside the same recoverable mutation.
+pub fn create_task_with_section(
+    root: &Path,
+    params: CreateTaskParams,
+    column_id: Option<&str>,
+    section_id: Option<String>,
+) -> Result<Task> {
+    create_task_with_capture_review_and_section(root, params, column_id, None, section_id)
+}
+
 pub fn create_task_with_capture_review(
+    root: &Path,
+    params: CreateTaskParams,
+    column_id: Option<&str>,
+    capture_review: Option<CaptureReview>,
+) -> Result<Task> {
+    create_task_with_capture_review_and_section(root, params, column_id, capture_review, None)
+}
+
+fn create_task_with_capture_review_and_section(
     root: &Path,
     mut params: CreateTaskParams,
     column_id: Option<&str>,
     capture_review: Option<CaptureReview>,
+    section_id: Option<String>,
 ) -> Result<Task> {
     super::lists::ensure_default_list_for_root(root)?;
     let cfg = Config::load(root)?;
@@ -217,6 +238,18 @@ pub fn create_task_with_capture_review(
                 }
             }
             let list = owning_list(&cfg, &list_id)?;
+            if let Some(section_id) = section_id.as_deref() {
+                if !list
+                    .frontmatter
+                    .sections
+                    .iter()
+                    .any(|section| section.id == section_id)
+                {
+                    return Err(JinError::InvalidInput(format!(
+                        "section/{section_id} is not in list/{list_id}"
+                    )));
+                }
+            }
             let mut initial_status = TaskStatus::Todo;
             let column = match list.frontmatter.workflow_kind {
                 Some(WorkflowKind::Checklist) => {
@@ -249,6 +282,7 @@ pub fn create_task_with_capture_review(
             let mut task =
                 tasks::prepare_new_task(&cfg.tasks_dir(), params, column, initial_status)?;
             task.frontmatter.id = id.clone();
+            task.frontmatter.section_id = section_id.clone();
             task.frontmatter.capture_review = capture_review.clone();
             super::recurrence::initialize_created(&mut task, upcoming_count)?;
             let path = cfg.tasks_dir().join(fs::task_filename(&id));
@@ -1189,6 +1223,63 @@ mod tests {
             column,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn create_task_with_section_persists_only_a_section_owned_by_the_list() {
+        let tmp = vault();
+        let root = tmp.path();
+        let checklist = list(root, "Home", WorkflowKind::Checklist);
+        let foreign = list(root, "Work", WorkflowKind::Checklist);
+        let section = lists::create_section(root, &checklist.id, "Errands".into()).unwrap();
+        let foreign_section = lists::create_section(root, &foreign.id, "Review".into()).unwrap();
+        let params = |title: &str| CreateTaskParams {
+            recurrence_upcoming_count: None,
+            title: title.into(),
+            body: String::new(),
+            priority: None,
+            due: None,
+            list: Some(checklist.id.clone()),
+            tags: None,
+            reminders: None,
+            parent: None,
+            recurrence: None,
+        };
+
+        let placed =
+            create_task_with_section(root, params("Buy tea"), None, Some(section.id.clone()))
+                .unwrap();
+        assert_eq!(
+            placed.frontmatter.section_id.as_deref(),
+            Some(section.id.as_str())
+        );
+        assert_eq!(
+            tasks::get_task(&Config::load(root).unwrap().tasks_dir(), placed.id())
+                .unwrap()
+                .frontmatter
+                .section_id,
+            Some(section.id.clone())
+        );
+
+        let unsectioned = create_task_with_section(root, params("Loose"), None, None).unwrap();
+        assert!(unsectioned.frontmatter.section_id.is_none());
+
+        let before = tasks::list_tasks(&Config::load(root).unwrap().tasks_dir(), None, None, true)
+            .unwrap()
+            .len();
+        assert!(
+            create_task_with_section(root, params("Foreign"), None, Some(foreign_section.id))
+                .is_err()
+        );
+        lists::delete_section(root, &checklist.id, &section.id).unwrap();
+        assert!(create_task_with_section(root, params("Deleted"), None, Some(section.id)).is_err());
+        let after = tasks::list_tasks(&Config::load(root).unwrap().tasks_dir(), None, None, true)
+            .unwrap()
+            .len();
+        assert_eq!(
+            after, before,
+            "invalid section placement must not write an orphan task"
+        );
     }
 
     #[test]

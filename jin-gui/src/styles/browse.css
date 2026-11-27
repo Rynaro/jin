@@ -2994,20 +2994,31 @@ figure.code-block {
 }
 
 .task-detail__main .task-detail__body.form-input {
-  block-size: 76px;
-  min-block-size: 76px;
-  padding: var(--space-2);
-  border: 0.5px solid var(--separator);
-  border-radius: var(--radius-sm);
-  background: var(--workspace-row-hover);
-  box-shadow: inset 0 0.5px 0 var(--specular-highlight);
+  /* One authority for the Notes writing surface. `field-sizing` tracks
+     reflow/text scale where supported; the rows + overflow fallback stays
+     usable in older engines and for genuinely long notes. */
+  block-size: auto;
+  min-block-size: 2.75rem;
+  max-block-size: 18rem;
+  padding: var(--space-1) 0;
+  field-sizing: content;
+  resize: none;
+  overflow: auto;
+  border: 0.5px solid transparent;
+  border-block-end-color: var(--separator);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .task-detail__main .task-detail__body.form-input::placeholder {
   color: var(--label-tertiary);
 }
 .task-detail__main .task-detail__body.form-input:focus {
+  padding-inline: var(--space-1);
+  margin-inline: calc(-1 * var(--space-1));
   border-color: var(--accent-text);
-  background: var(--workspace-canvas);
+  border-radius: var(--radius-sm);
+  background: var(--workspace-row-hover);
   outline: 2px solid color-mix(in oklab, var(--agenda-indigo) 28%, transparent);
   outline-offset: 2px;
 }
@@ -5267,7 +5278,8 @@ figure.code-block {
 
 [data-tasks-target="listPanel"] .jin-workspace-header--paired {
   display: flex;
-  align-items: center;
+  /* The title owns a stable top rail while filter actions wrap beneath it. */
+  align-items: flex-start;
   gap: var(--space-2);
   min-block-size: 116px;
   max-inline-size: 58rem;
@@ -5292,10 +5304,23 @@ figure.code-block {
 [data-tasks-target="listPanel"] .tasks-context-trigger-host { flex: 0 0 auto; }
 [data-tasks-target="listPanel"] .tasks-workspace-header { flex: 1 1 auto; display: grid; gap: var(--space-half); align-items: start; }
 [data-tasks-target="listPanel"] > :is(.browse-list, .browse-loading, .browse-empty) { max-inline-size: 58rem; margin-inline: auto; }
+[data-tasks-target="listPanel"] > [data-tasks-list-presentation='list'] {
+  max-inline-size: 58rem;
+  margin-inline: 0;
+}
+/* A named List keeps one planning rail as the inspector opens. Centering a
+   bounded measure in a changing grid track makes its title visibly hop. */
+[data-tasks-target="listPanel"]:has(> [data-tasks-list-presentation='list']) > .jin-workspace-header--paired {
+  margin-inline: 0;
+}
 [data-tasks-target="listPanel"] > .browse-list.tasks-board { max-inline-size: none; }
 /* The hidden rail gives the task list the full working width. Keep its
  * heading and transient states aligned with that same canvas. */
 .jin-shell[data-nav-visible='false'] [data-tasks-target="listPanel"] > :is(.jin-workspace-header--paired, .browse-loading, .browse-empty) {
+  max-inline-size: none;
+  margin-inline: 0;
+}
+.jin-shell[data-nav-visible='false'] [data-tasks-target="listPanel"] > [data-tasks-list-presentation='list'] {
   max-inline-size: none;
   margin-inline: 0;
 }
@@ -5322,7 +5347,7 @@ figure.code-block {
   margin-block-start: calc(var(--compact-context-block-start) - var(--space-3));
 }
 @container (max-width: 760px) {
-  [data-tasks-target="listPanel"] .jin-workspace-header--paired { flex-wrap: wrap; padding-block: var(--space-half); }
+  [data-tasks-target="listPanel"] .jin-workspace-header--paired { flex-wrap: wrap; }
   [data-tasks-target="listPanel"] .tasks-filter-bar { flex: 1 1 100%; justify-content: flex-start; flex-wrap: wrap; }
 }
 
@@ -5989,6 +6014,8 @@ figure.code-block {
   padding: var(--space-2) var(--space-3) var(--space-4);
   background: var(--tasks-board-paper);
   container-type: inline-size;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .tasks-detail-pane .task-detail__layout {
@@ -6095,7 +6122,7 @@ figure.code-block {
   .task-detail__repeat-edit, .task-detail__repeat-stop, .task-detail__repeat-weekday,
   .task-detail__repeat .jin-select-field__trigger { min-block-size: var(--coarse-hit-target); }
 }
-@container (max-width: 28rem) {
+@container (max-width: 20rem) {
   .task-detail__field-group .task-detail__field-row { grid-template-columns: minmax(0, 1fr); }
   .task-detail__field-group .task-detail__field-label { padding-block: 0; }
 }
@@ -6112,6 +6139,13 @@ figure.code-block {
 .tasks-detail-pane__header {
   min-height: var(--control-height);
   margin-bottom: var(--space-1);
+  padding-block-end: var(--space-1);
+  border-block-end: 0.5px solid var(--separator);
+}
+
+.tasks-detail-pane__header-actions {
+  align-self: start;
+  padding-block-start: 1px;
 }
 
 .tasks-detail-pane__close-btn.jin-control,
@@ -6127,17 +6161,6 @@ figure.code-block {
   color: var(--system-red);
 }
 
-.tasks-detail-pane__header > .browse-detail__title,
-.tasks-detail-pane .browse-detail__title,
-.task-detail__title-editable {
-  margin: 0;
-  padding: var(--space-half) 0 var(--space-1);
-  font-size: var(--text-title3-size);
-  font-family: var(--font-text);
-  line-height: var(--text-title3-line);
-  font-weight: 650;
-  letter-spacing: var(--display-title-tracking);
-}
 .tasks-detail-pane__header > .browse-detail__title { min-inline-size: 0; padding-block-start: 0; }
 .tasks-detail-pane__header > .task-detail__title-row { flex: 1 1 auto; min-inline-size: 0; }
 
@@ -6154,11 +6177,10 @@ figure.code-block {
 .task-detail__body-section {
   gap: var(--space-half);
   margin-block-start: var(--space-2);
+  min-inline-size: 0;
 }
 
-.task-detail__body-section > .form-label,
 .task-detail__field-label,
-.task-detail__subtasks-heading,
 .task-detail__reminders-heading {
   color: var(--ink-muted);
   font-size: var(--text-caption2-size);
@@ -6168,26 +6190,29 @@ figure.code-block {
   text-transform: uppercase;
 }
 
-.task-detail__body.form-input {
-  min-height: 76px;
-  padding: 10px 12px;
-  border: 0.5px solid var(--separator);
-  border-radius: 7px;
-  background: var(--workspace-row-hover);
-  box-shadow: inset 0 0.5px 0 var(--specular-highlight);
-  font-size: var(--text-callout-size);
-  line-height: var(--text-body-line);
+.tasks-detail-pane .task-detail__section-heading,
+.tasks-detail-pane .task-detail__group-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  margin: 0 0 var(--space-1);
+  color: var(--label-secondary);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
-.task-detail__body.form-input:focus {
-  border-color: var(--ink-stroke);
-  background: var(--workspace-canvas);
+.tasks-detail-pane .task-detail__section-heading svg,
+.task-detail__group-heading svg {
+  inline-size: 14px;
+  block-size: 14px;
+  color: var(--accent-text);
 }
 
 .task-detail__fields {
   gap: 0;
   margin-block: var(--space-2);
-  border-block: 0.5px solid var(--separator);
+  border-block: 0;
 }
 
 .task-detail__field-row {
@@ -6241,9 +6266,9 @@ figure.code-block {
 
 .task-detail__subtasks,
 .task-detail__reminders {
-  margin-block-start: var(--space-2);
-  padding-block-start: var(--space-2);
-  border-top: 0.5px solid var(--separator);
+  margin-block-start: var(--space-1);
+  padding-block-start: 0;
+  border-top: 0;
 }
 
 .tasks-detail-pane .browse-detail__actions {
@@ -6708,11 +6733,14 @@ figure.code-block {
 
 .tasks-detail-pane .browse-detail__title,
 .task-detail__title-editable {
+  /* Inspector title, deliberately quieter than the workspace route title. */
+  margin: 0;
+  padding: var(--space-half) 0 var(--space-1);
   font-family: var(--font-text);
-  font-size: var(--workspace-route-title-size);
-  line-height: var(--workspace-route-title-line);
-  font-weight: var(--workspace-route-title-weight);
-  letter-spacing: var(--workspace-title-tracking);
+  font-size: var(--text-title3-size);
+  line-height: var(--text-title3-line);
+  font-weight: 650;
+  letter-spacing: var(--display-title-tracking);
 }
 
 .tasks-section-group {
@@ -6760,6 +6788,143 @@ figure.code-block {
 }
 .task-add-row:hover { background: var(--fill-secondary); }
 .task-add-row:focus-within {
+  border-color: var(--control-edge);
+  background: var(--workspace-canvas);
+}
+
+/* ── Named List presentation ──────────────────────────────────────────────
+   A List remains one continuous planning field: sections supply quiet
+   sentence-case landmarks, while rows carry the working hierarchy. This
+   scope deliberately excludes Board, Smart, and flexible projections. */
+[data-tasks-list-presentation='list'] .tasks-section-group {
+  margin-block: var(--space-3) 0;
+}
+
+[data-tasks-list-presentation='list'] .tasks-section-group__header {
+  min-block-size: 36px;
+  gap: var(--space-half);
+  padding: var(--space-half) var(--space-1);
+  border-block-end: 0.5px solid var(--separator);
+}
+
+[data-tasks-list-presentation='list'] .tasks-section-group__name {
+  flex: 0 1 auto;
+  font-size: var(--text-callout-size);
+  font-weight: 600;
+  line-height: var(--text-callout-line);
+  letter-spacing: 0;
+}
+
+[data-tasks-list-presentation='list'] .tasks-section-group__delete-btn {
+  margin-inline-start: auto;
+}
+
+[data-tasks-list-presentation='list'] .tasks-section-group__count {
+  min-inline-size: 22px;
+  padding: 1px var(--space-half);
+  border-radius: var(--radius-md);
+  background: var(--fill-quaternary, var(--fill-tertiary));
+  color: var(--label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-tasks-list-presentation='list'] .task-item--row.jin-list-row {
+  border-radius: 0;
+  transition: background-color var(--duration-fast) var(--ease-standard),
+              box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+[data-tasks-list-presentation='list'] .task-item--row.jin-list-row:hover {
+  background: transparent;
+  box-shadow: inset 2px 0 var(--fill-tertiary);
+}
+
+[data-tasks-list-presentation='list'] .task-item--row.jin-list-row:focus-within {
+  background: transparent;
+  box-shadow: inset 2px 0 var(--accent);
+}
+
+[data-tasks-list-presentation='list'] .task-item--selected.task-item--row,
+[data-tasks-list-presentation='list'] .task-item--selected.task-item--row:hover,
+[data-tasks-list-presentation='list'] .task-item--selected.task-item--row:focus-within {
+  background: transparent;
+  box-shadow: inset 3px 0 var(--accent);
+}
+
+[data-tasks-list-presentation='list'] .task-item--row .task-item__content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  align-items: start;
+}
+
+[data-tasks-list-presentation='list'] .task-item--row .task-item__body,
+[data-tasks-list-presentation='list'] .task-item--row .task-item__meta {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+[data-tasks-list-presentation='list'] .task-item--row .task-item__title {
+  font-weight: 500;
+}
+
+/* Metadata enters as a quiet second line only when it exists. Plain tasks
+   retain the compact, single-line reading rhythm of a checklist. */
+[data-tasks-list-presentation='list'] .task-item--row .task-item__meta {
+  margin-block-start: 2px;
+  padding-block: 0 2px;
+  color: var(--label-secondary);
+}
+[data-tasks-list-presentation='list'] .task-item--row[data-task-status='done'] .task-item__meta { color: var(--label-tertiary); }
+
+/* Reserve a shared family gutter rather than offsetting only the parent: root
+   rows keep one rail, children remain indented, and the disclosure stays in
+   bounds on a narrow List. */
+@container (max-width: 34rem) {
+  /* Flat list roots receive the gutter directly. For sectioned lists, the
+     named-list root detects any family and gives every section's task canvas
+     the same rail without shifting the section headers themselves. */
+  [data-tasks-list-presentation='list']:has(> .task-item--has-children),
+  [data-tasks-list-presentation='list']:has(.task-item--has-children) > .tasks-section-group > .tasks-section-group__list {
+    box-sizing: border-box;
+    padding-inline-start: var(--space-3);
+  }
+}
+
+/* Drag remains discoverable, but editing furniture should not compete with
+   the task sentence until the row is being worked with. Coarse pointers keep
+   their normal visible target below. */
+@media (pointer: fine) {
+  [data-tasks-list-presentation='list'] .task-item--row .task-item__drag-handle {
+    opacity: 0.32;
+  }
+
+  [data-tasks-list-presentation='list'] .task-item--row:hover .task-item__drag-handle,
+  [data-tasks-list-presentation='list'] .task-item--row:focus-within .task-item__drag-handle,
+  [data-tasks-list-presentation='list'] .task-item--row .task-item__drag-handle:focus-visible {
+    opacity: 1;
+  }
+}
+
+/* The first route into an empty or populated section is deliberately part of
+   the same canvas; focus promotes it to a real entry field. */
+[data-tasks-list-presentation='list'] .task-add-row,
+[data-tasks-list-presentation='list'] .tasks-section-group__list .task-add-row {
+  min-block-size: 40px;
+  margin-block-start: var(--space-half);
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--label-secondary);
+}
+
+[data-tasks-list-presentation='list'] .task-add-row:hover {
+  border-color: transparent;
+  background: var(--workspace-row-hover);
+  color: var(--label);
+}
+
+[data-tasks-list-presentation='list'] .task-add-row:focus-within {
   border-color: var(--control-edge);
   background: var(--workspace-canvas);
 }
