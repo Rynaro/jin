@@ -311,6 +311,8 @@ export function createTask(input: {
   priority?: string;
   due?: string;
   list?: string;
+  /** Optional named-list section for an atomic section-local create. */
+  section_id?: string;
   board_column_id?: string;
   /** P4: tag slugs to attach on creation. */
   tags?: string[];

@@ -57,6 +57,7 @@ import {
   type TasksTemplates,
   type TaskDetailCallbacks,
   type TaskRowCallbacks,
+  type SectionCallbacks,
 } from '../lib/tasks/render';
 import { between } from '../lib/tasks/rank';
 import { listNameById } from '../lib/lists/transform';
@@ -485,6 +486,26 @@ describe('renderTasksList — empty state', () => {
   it('shows empty state when tasks array is empty', () => {
     renderTasksList(el, templates, [], noopNavigate);
     expect(el.emptyState.classList.contains('hidden')).toBe(false);
+  });
+
+  it('keeps the existing composer as the first entry for an unfiltered named list', () => {
+    renderTasksList(
+      el,
+      templates,
+      [],
+      noopNavigate,
+      { onCreateTask: vi.fn() },
+      undefined,
+      false,
+      undefined,
+      undefined,
+      undefined,
+      { keepComposerVisibleWhenEmpty: true },
+    );
+
+    expect(el.emptyState.classList.contains('hidden')).toBe(true);
+    expect(el.list.classList.contains('hidden')).toBe(false);
+    expect(el.list.querySelector<HTMLInputElement>('.task-add-input')).not.toBeNull();
   });
 
   it('hides list when tasks array is empty (no onCreateTask callback)', () => {
@@ -1158,6 +1179,36 @@ describe('VG-P6 — renderListViewWithSections', () => {
     const header = container.querySelector('.tasks-section-group__header');
     expect(header!.textContent).toContain('My Section');
   });
+
+  it('creates from a named section through its section-local callback', async () => {
+    const sec = makeSection({ id: 'sec-local', name: 'Local', position: 'a' });
+    const create = vi.fn().mockResolvedValue(true);
+    renderListViewWithSections(container, tmpl, [], [sec], 'manual', () => {}, { onCreateTask: vi.fn() }, {
+      onCreateTaskInSection: create,
+    });
+    const input = container.querySelector<HTMLInputElement>('.tasks-section-group[data-section-id="sec-local"] .task-add-input')!;
+    input.value = 'Keep this here';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await Promise.resolve();
+    expect(create).toHaveBeenCalledWith('sec-local', 'Keep this here', undefined, {
+      title: 'Keep this here',
+      due: undefined,
+    });
+  });
+
+  it('retains an explicit collapsed section choice across a redraw', () => {
+    const sec = makeSection({ id: 'sec-collapse', name: 'Folded', position: 'a' });
+    const expansion = new Map<string | null, boolean>();
+    const callbacks: SectionCallbacks = {
+      isSectionExpanded: (id) => expansion.get(id),
+      onSetSectionExpanded: (id, expanded) => expansion.set(id, expanded),
+    };
+    renderListViewWithSections(container, tmpl, [], [sec], 'manual', () => {}, { onCreateTask: vi.fn() }, callbacks);
+    (container.querySelector('.tasks-section-group__toggle') as HTMLButtonElement).click();
+    expect(expansion.get('sec-collapse')).toBe(false);
+    renderListViewWithSections(container, tmpl, [], [sec], 'manual', () => {}, { onCreateTask: vi.fn() }, callbacks);
+    expect(container.querySelector('.tasks-section-group__list')?.classList.contains('hidden')).toBe(true);
+  });
 });
 
 // ── VG-P6: renderBoardView ────────────────────────────────────────────────────
@@ -1663,6 +1714,45 @@ describe('ITEM 5 — renderTaskPane: per-field editable callbacks', () => {
     expect(completion?.getAttribute('aria-label')).toBe('Mark "Header task" as done');
     completion?.click();
     expect(onSaveStatus).toHaveBeenCalledWith('task-header', 'done');
+  });
+
+  it('groups the editable inspector into labelled notes and metadata regions', () => {
+    const detailEl = makeDetailEl();
+    const task = makeTask({ id: 'task-regions', title: 'Well structured' });
+    renderTaskPane(detailEl, templates, task, noopNavigate, undefined, undefined, {
+      onSaveBody: vi.fn().mockResolvedValue(undefined),
+      onSavePriority: vi.fn().mockResolvedValue(undefined),
+      onSaveList: vi.fn().mockResolvedValue(undefined),
+      availableLists: [{ id: 'inbox', name: 'Inbox' }],
+    }, vi.fn(), vi.fn());
+
+    const notes = detailEl.detailContent.querySelector('.task-detail__body-section');
+    expect(notes?.getAttribute('aria-labelledby')).toBe('task-notes-label-task-regions');
+    expect(detailEl.detailContent.querySelector('.task-detail__field-group--timing')?.getAttribute('aria-labelledby'))
+      .toBe('task-timing-task-regions');
+    expect(detailEl.detailContent.querySelector('.task-detail__field-group--organization')?.getAttribute('aria-labelledby'))
+      .toBe('task-organization-task-regions');
+    expect(detailEl.detailContent.querySelector('[role="group"][aria-label="Task actions"]'))
+      .not.toBeNull();
+  });
+
+  it('keeps subtasks directly after Notes, before timing and organization', () => {
+    const detailEl = makeDetailEl();
+    const task = makeTask({ id: 'task-order', title: 'Plan the work' });
+    renderTaskPane(detailEl, templates, task, noopNavigate, undefined, undefined, {
+      onSavePriority: vi.fn().mockResolvedValue(undefined),
+      onSaveList: vi.fn().mockResolvedValue(undefined),
+      availableLists: [{ id: 'inbox', name: 'Inbox' }],
+      subtasks: [makeTask({ id: 'child-order', parent: 'task-order', title: 'A next step' })],
+      onToggleSubtaskStatus: vi.fn(),
+    }, vi.fn(), vi.fn());
+
+    const main = detailEl.detailContent.querySelector('.task-detail__main')!;
+    const children = Array.from(main.children);
+    expect(children.indexOf(main.querySelector('.task-detail__body-section')!))
+      .toBeLessThan(children.indexOf(main.querySelector('.task-detail__subtasks')!));
+    expect(children.indexOf(main.querySelector('.task-detail__subtasks')!))
+      .toBeLessThan(children.indexOf(main.querySelector('.task-detail__fields')!));
   });
 
   it('blurring title calls onSaveTitle with new title', () => {
@@ -5539,6 +5629,129 @@ describe('S7 — bulk multi-select and keyboard flow (AC-S7-01..08)', () => {
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true }));
     await flushStimulusAsync();
     expect(document.activeElement).toBe(quickAddInput);
+  });
+});
+
+// =============================================================================
+// Named-list rapid entry — controller-level regression
+// =============================================================================
+
+describe('named-list section composer (real TasksController)', () => {
+  let namedListApp: Application;
+
+  beforeEach(() => {
+    document.body.innerHTML = buildStimulusTasksHTML();
+    localStorage.clear();
+    vi.spyOn(InvokeModule, 'listTags').mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    namedListApp?.stop();
+    document.body.innerHTML = '';
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('creates two rapid entries in the same named section and restores the new composer focus', async () => {
+    const section = makeSection({ id: 'sec-now', name: 'Now' });
+    const created: TaskDto[] = [];
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([
+      makeDefaultListDto({ id: 'work', name: 'Work', is_default: true, sections: [section] }),
+    ]);
+    vi.spyOn(InvokeModule, 'listTasks').mockImplementation(async () => [...created]);
+    const create = vi.spyOn(InvokeModule, 'createTask').mockImplementation(async (input) => {
+      const task = makeTask({
+        id: `created-${created.length + 1}`,
+        title: input.title,
+        list: input.list ?? 'work',
+        section_id: input.section_id ?? null,
+      });
+      created.push(task);
+      return task;
+    });
+
+    namedListApp = Application.start(document.documentElement, defaultSchema);
+    namedListApp.register('tasks', TasksController);
+    await flushStimulusAsync();
+
+    const getInput = (): HTMLInputElement => document.querySelector(
+      '.tasks-section-group[data-section-id="sec-now"] .task-add-input',
+    ) as HTMLInputElement;
+    for (const title of ['First task', 'Second task']) {
+      const input = getInput();
+      input.focus();
+      input.value = title;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await flushStimulusAsync();
+      expect(document.activeElement).toBe(getInput());
+    }
+
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(created.map((task) => task.section_id)).toEqual(['sec-now', 'sec-now']);
+  });
+
+  it('moves the roving stop and Arrow navigation past a folded first section', async () => {
+    const first = makeSection({ id: 'sec-first', name: 'First', position: 'a' });
+    const second = makeSection({ id: 'sec-second', name: 'Second', position: 'b' });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([
+      makeDefaultListDto({ id: 'work', name: 'Work', is_default: true, sections: [first, second] }),
+    ]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([
+      makeTaskDtoForStimulus({ id: 'hidden-first', title: 'Hidden first', list: 'work', section_id: 'sec-first' }),
+      makeTaskDtoForStimulus({ id: 'visible-second', title: 'Visible second', list: 'work', section_id: 'sec-second' }),
+    ]);
+
+    namedListApp = Application.start(document.documentElement, defaultSchema);
+    namedListApp.register('tasks', TasksController);
+    await flushStimulusAsync();
+    const firstGroup = document.querySelector<HTMLElement>('.tasks-section-group[data-section-id="sec-first"]')!;
+    (firstGroup.querySelector('.tasks-section-group__toggle') as HTMLButtonElement).click();
+
+    const hiddenBody = firstGroup.querySelector<HTMLElement>('.task-item__body')!;
+    const visibleBody = document.querySelector<HTMLElement>('[data-task-id="visible-second"] .task-item__body')!;
+    expect(hiddenBody.tabIndex).toBe(-1);
+    expect(visibleBody.tabIndex).toBe(0);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await flushStimulusAsync();
+    expect(document.activeElement).toBe(document.querySelector('[data-task-id="visible-second"] .task-item__body'));
+  });
+
+  it('does not duplicate a section write after an unrelated redraw while it is in flight', async () => {
+    const section = makeSection({ id: 'sec-save', name: 'Saving' });
+    vi.spyOn(InvokeModule, 'listLists').mockResolvedValue([
+      makeDefaultListDto({ id: 'work', name: 'Work', is_default: true, sections: [section] }),
+    ]);
+    vi.spyOn(InvokeModule, 'listTasks').mockResolvedValue([]);
+    let finish: ((task: TaskDto) => void) | undefined;
+    const create = vi.spyOn(InvokeModule, 'createTask').mockImplementation((input) => new Promise<TaskDto>((resolve) => {
+      finish = resolve;
+    }));
+
+    namedListApp = Application.start(document.documentElement, defaultSchema);
+    namedListApp.register('tasks', TasksController);
+    await flushStimulusAsync();
+    const selector = '.tasks-section-group[data-section-id="sec-save"] .task-add-input';
+    const input = document.querySelector(selector) as HTMLInputElement;
+    input.value = 'Only once';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    // A real filter action redraws the section and creates a new DOM row.
+    // Its Enter must still see the original write as pending.
+    const status = document.querySelector('[data-tasks-target="statusFilter"]') as HTMLSelectElement;
+    status.dispatchEvent(new Event('change', { bubbles: true }));
+    await flushStimulusAsync();
+    const redrawn = document.querySelector(selector) as HTMLInputElement;
+    redrawn.value = 'Would duplicate';
+    redrawn.dispatchEvent(new Event('input', { bubbles: true }));
+    redrawn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await Promise.resolve();
+
+    expect(create).toHaveBeenCalledTimes(1);
+    finish?.(makeTask({ id: 'saved', title: 'Only once', list: 'work', section_id: 'sec-save' }));
+    await flushStimulusAsync();
   });
 });
 

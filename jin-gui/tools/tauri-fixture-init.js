@@ -1022,6 +1022,10 @@
           if (parentTask.parent !== null) return Promise.reject(new Error('A subtask cannot have its own subtasks'));
         }
         var destination = lists.find(function findDestination(item) { return item.id === (createInput.list || 'inbox'); });
+        var requestedSection = createInput.section_id === undefined ? null : createInput.section_id;
+        if (requestedSection !== null && (!destination || !(destination.sections || []).some(function findSection(item) { return item.id === requestedSection; }))) {
+          return Promise.reject({ code: 3, kind: 'not_found', message: 'Section not found: ' + requestedSection, retriable: false });
+        }
         var chosenColumn = destination && destination.workflow_kind === 'board'
           ? destination.columns.find(function exactColumn(item) { return item.id === (createInput.board_column_id || destination.initial_column_id); }) || destination.columns.find(function queueColumn(item) { return item.type === 'queue'; }) || destination.columns.find(function neutralColumn(item) { return item.type === 'none'; })
           : null;
@@ -1032,6 +1036,7 @@
           priority: String(createInput.priority || 'none'),
           due: createInput.due === undefined ? null : createInput.due,
           list: String(createInput.list || 'inbox'),
+          section_id: requestedSection,
           board_column_id: chosenColumn ? chosenColumn.id : null,
           status: chosenColumn ? chosenColumn.type === 'done' ? 'done' : chosenColumn.type === 'in_progress' ? 'doing' : 'todo' : 'todo',
           completed_at: chosenColumn && chosenColumn.type === 'done' ? NOW : null,

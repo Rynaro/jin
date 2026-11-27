@@ -104,6 +104,7 @@ import {
   type TaskRowCallbacks,
   type SectionCallbacks,
   type TaskDetailCallbacks,
+  type TaskAddDraft,
   type BulkPanelCallbacks,
   showTasksListLoading,
   hideTasksListLoading,
@@ -321,6 +322,14 @@ export default class TasksController extends Controller {
   // ── P5/P6 state ───────────────────────────────────────────────────────────
   /** Sections of the currently active list (empty if no specific list selected). */
   private currentSections: SectionDto[] = [];
+  /** Ephemeral section-local composer drafts, keyed independently per list. */
+  private readonly sectionTaskDrafts = new Map<string, TaskAddDraft>();
+  /** Disclosure choices survive task/filter redraws for the active list. */
+  private readonly sectionExpansion = new Map<string, boolean>();
+  /** Section-local writes currently persisted; keyed by the originating list. */
+  private readonly sectionCreatesInFlight = new Set<string>();
+  /** A focus request is evaluated at the DOM replacement boundary, never after it. */
+  private pendingSectionComposerFocus: { listId: string; sectionKey: string } | null = null;
   /**
    * S1: view mode is a GLOBAL user preference (Approach §5), not per-list.
    * Loaded once in connect() from localStorage['jin.tasks.view']; never reset
@@ -1246,6 +1255,9 @@ export default class TasksController extends Controller {
       this.currentListId = selectedListId;
       this.currentSections = [];
       this.currentSortMode = 'manual';
+      this.sectionTaskDrafts.clear();
+      this.sectionExpansion.clear();
+      this.pendingSectionComposerFocus = null;
       this.boardSubtaskExpansion.clear();
       this.boardSubtaskDrafts.clear();
       this.openBoardSubtaskComposers.clear();
@@ -1327,7 +1339,23 @@ export default class TasksController extends Controller {
       this.workspaceCountTarget.textContent = `${open} open`;
     }
 
+    const focusRequest = this.pendingSectionComposerFocus;
+    this.pendingSectionComposerFocus = null;
+    const activeComposer = document.activeElement instanceof HTMLInputElement
+      ? document.activeElement.closest<HTMLElement>('.task-add-row[data-section-id]')
+      : null;
+    const shouldRestoreComposerFocus = Boolean(
+      focusRequest
+      && focusRequest.listId === this.currentListId
+      && activeComposer?.dataset.sectionId === focusRequest.sectionKey
+      && !activeComposer.closest('.hidden'),
+    );
     this.renderList();
+    if (shouldRestoreComposerFocus && focusRequest) {
+      const restored = Array.from(this.viewElements.list.querySelectorAll<HTMLInputElement>('.task-add-row[data-section-id] .task-add-input'))
+        .find((input) => input.closest<HTMLElement>('.task-add-row')?.dataset.sectionId === focusRequest.sectionKey);
+      if (restored && !restored.closest('.hidden')) restored.focus();
+    }
   }
 
   /**
@@ -1368,9 +1396,7 @@ export default class TasksController extends Controller {
       onDeleteRequest: (taskId, taskTitle) => {
         this.openDeleteDialog(taskId, taskTitle);
       },
-      onCreateTask: (title, due) => {
-        void this.handleCreateTask(title, due);
-      },
+      onCreateTask: (title, due) => { void this.handleCreateTask(title, due); },
       // ITEM 4: calendar for create-row due date
       onPickDueForCreate: (currentDue, onSelected) => {
         this.openCalendarForCreate(currentDue, onSelected);
@@ -1425,6 +1451,13 @@ export default class TasksController extends Controller {
       },
     };
 
+    // These callbacks close over the rendered list id instead of consulting
+    // currentListId later. A detached row can still finish an async callback
+    // after navigation; it must never put its draft into the newly selected
+    // list's composer.
+    const renderedListId = selectedListId;
+    const draftKeyForRenderedList = (sectionId: string | null): string =>
+      this.sectionDraftKeyForList(renderedListId, sectionId);
     const sectionCallbacks: SectionCallbacks = {
       onRenameSection: (sectionId, newName) => {
         void this.handleRenameSection(sectionId, newName);
@@ -1437,6 +1470,19 @@ export default class TasksController extends Controller {
       },
       onReorderSection: (sectionId, position) => {
         void this.handleReorderSection(sectionId, position);
+      },
+      onCreateTaskInSection: (sectionId, title, due, draft) => this.handleCreateTaskInSection(sectionId, title, due, draft),
+      getSectionTaskDraft: (sectionId) => this.sectionTaskDrafts.get(draftKeyForRenderedList(sectionId)),
+      onSetSectionTaskDraft: (sectionId, value) => {
+        if (this.currentListId === renderedListId) {
+          this.sectionTaskDrafts.set(draftKeyForRenderedList(sectionId), value);
+        }
+      },
+      isSectionExpanded: (sectionId) => this.sectionExpansion.get(draftKeyForRenderedList(sectionId)),
+      onSetSectionExpanded: (sectionId, expanded) => {
+        if (this.currentListId === renderedListId) {
+          this.sectionExpansion.set(draftKeyForRenderedList(sectionId), expanded);
+        }
       },
     };
 
@@ -1467,6 +1513,11 @@ export default class TasksController extends Controller {
     // renderTasksList and ignored currentView entirely.
     const boardView = this.activeWorkflow?.workflow_kind === 'board'
       || (!this.activeWorkflow?.workflow_kind && this.currentScope.kind === 'list' && this.currentView === 'board');
+    const namedListView = Boolean(selectedListId)
+      && this.currentScope.kind === 'list'
+      && !boardView;
+    if (namedListView) el.list.dataset.tasksListPresentation = 'list';
+    else delete el.list.dataset.tasksListPresentation;
     if (boardView) {
       // `renderBoardView` owns the actual labelled list/column semantics.
       // This static host is only a layout wrapper in board mode.
@@ -1550,6 +1601,13 @@ export default class TasksController extends Controller {
         // sections to render at all). "All Lists" (no selectedListId) still
         // gets none — sections are a single-list concept.
         selectedListId ? sectionCallbacks.onAddSection : undefined,
+        namedListView ? {
+          sectionId: null,
+          initialDraft: sectionCallbacks.getSectionTaskDraft?.(null),
+          onDraftChange: (draft) => sectionCallbacks.onSetSectionTaskDraft?.(null, draft),
+          onSubmit: (title, due, draft) => this.handleCreateTaskInSection(null, title, due, draft),
+          keepComposerVisibleWhenEmpty: !this.currentFilter.status && !this.currentFilter.priority && !this.currentFilter.tag,
+        } : undefined,
       );
     }
 
@@ -2154,17 +2212,30 @@ export default class TasksController extends Controller {
    * active bulk selection first (arrow-nav is a single-item concern).
    */
   private moveSelection(delta: number): void {
-    if (this.currentTasks.length === 0) return;
+    // Collapsed section rows remain in currentTasks (so expanding is lossless)
+    // but not in a named list's keyboard order. Traverse DOM once so this is
+    // linear and follows the actual rendered section/sort order; smart and
+    // board views keep their established currentTasks navigation semantics.
+    const visibleTasks = this.listTarget.dataset.tasksListPresentation === 'list'
+      ? (() => {
+          const tasksById = new Map(this.currentTasks.map((task) => [task.id, task]));
+          return Array.from(this.listTarget.querySelectorAll<HTMLElement>('.task-item[data-task-id]'))
+            .filter((item) => !item.closest('.hidden'))
+            .map((item) => tasksById.get(item.dataset.taskId ?? ''))
+            .filter((task): task is TaskDto => Boolean(task));
+        })()
+      : this.currentTasks;
+    if (visibleTasks.length === 0) return;
     const currentIndex = this.selectedTaskId
-      ? this.currentTasks.findIndex((t) => t.id === this.selectedTaskId)
+      ? visibleTasks.findIndex((t) => t.id === this.selectedTaskId)
       : -1;
     const nextIndex =
       currentIndex === -1
         ? delta > 0
           ? 0
-          : this.currentTasks.length - 1
-        : Math.max(0, Math.min(this.currentTasks.length - 1, currentIndex + delta));
-    const nextTask = this.currentTasks[nextIndex];
+          : visibleTasks.length - 1
+        : Math.max(0, Math.min(visibleTasks.length - 1, currentIndex + delta));
+    const nextTask = visibleTasks[nextIndex];
     if (!nextTask) return;
 
     this.selectedTaskIds.clear();
@@ -2208,7 +2279,14 @@ export default class TasksController extends Controller {
         .find((column) => column.dataset.boardColumnId === initialId);
       return initial?.querySelector<HTMLInputElement>('.task-add-input') ?? null;
     }
-    return this.listTarget.querySelector<HTMLInputElement>('.task-add-input');
+    const inputs = Array.from(this.listTarget.querySelectorAll<HTMLInputElement>('.task-add-input'));
+    const visible = inputs.find((input) => !input.closest('.hidden'));
+    if (visible) return visible;
+    // In a fully folded named list, New task remains useful: open the first
+    // section rather than focusing an inert, hidden composer.
+    const folded = inputs[0]?.closest<HTMLElement>('.tasks-section-group');
+    folded?.querySelector<HTMLButtonElement>('.tasks-section-group__toggle')?.click();
+    return folded?.querySelector<HTMLInputElement>('.task-add-input') ?? inputs[0] ?? null;
   }
 
   /** selectTaskAndFocusTitle — Enter (AC-S7-05): open the pane, then focus its title. */
@@ -2839,6 +2917,45 @@ export default class TasksController extends Controller {
     );
     if (result === undefined) return;
     void this.loadList(this.currentFilter);
+  }
+
+  private sectionDraftKeyForList(listId: string | null, sectionId: string | null): string {
+    return `${listId ?? ''}:${sectionId ?? '__unsectioned__'}`;
+  }
+
+  private async handleCreateTaskInSection(
+    sectionId: string | null,
+    title: string,
+    due?: string,
+    submittedDraft: TaskAddDraft = { title, due },
+  ): Promise<boolean> {
+    const listId = this.currentListId;
+    if (!listId) return false;
+    const sectionKey = sectionId ?? '__unsectioned__';
+    const draftKey = this.sectionDraftKeyForList(listId, sectionId);
+    if (this.sectionCreatesInFlight.has(draftKey)) return false;
+    this.sectionCreatesInFlight.add(draftKey);
+    try {
+      const result = await this.mutate(
+        () => createTask({ title, due, list: listId, ...(sectionId ? { section_id: sectionId } : {}) }),
+        'handleCreateTaskInSection',
+      );
+      if (result === undefined) return false;
+      // A navigation during save means this callback belongs to an old view.
+      // Never clear a draft or request focus in the destination list.
+      if (this.currentListId !== listId) return true;
+      const currentDraft = this.sectionTaskDrafts.get(draftKey);
+      if (currentDraft?.title === submittedDraft.title && currentDraft.due === submittedDraft.due) {
+        this.sectionTaskDrafts.delete(draftKey);
+      }
+      // loadList performs the DOM replacement after its fetches. It decides
+      // whether focus is still on this visible composer at that exact point.
+      this.pendingSectionComposerFocus = { listId, sectionKey };
+      await this.loadList(this.currentFilter, true);
+      return true;
+    } finally {
+      this.sectionCreatesInFlight.delete(draftKey);
+    }
   }
 
   // ── Internals ─────────────────────────────────────────────────────────────

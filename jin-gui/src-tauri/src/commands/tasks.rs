@@ -40,6 +40,9 @@ pub struct TaskInput {
     pub due: Option<String>,
     pub list: Option<String>,
     pub board_column_id: Option<String>,
+    /// Optional initial section, validated against the canonical owning list.
+    #[serde(default)]
+    pub section_id: Option<String>,
     /// P4: initial tag slugs. Slugified before use.
     pub tags: Option<Vec<String>>,
     /// P10: initial reminders. `None` = use auto-reminder logic.
@@ -221,7 +224,7 @@ pub fn create_task_fn(root: &Path, input: TaskInput) -> Result<TaskDto, JinError
         .map(|rs| rs.into_iter().map(Reminder::from).collect());
 
     let board_column_id = input.board_column_id.clone();
-    let task = workflows::create_task(
+    let task = workflows::create_task_with_section(
         root,
         tasks::CreateTaskParams {
             title: input.title,
@@ -236,6 +239,7 @@ pub fn create_task_fn(root: &Path, input: TaskInput) -> Result<TaskDto, JinError
             recurrence_upcoming_count: input.recurrence_upcoming_count,
         },
         board_column_id.as_deref(),
+        input.section_id,
     )
     .map_err(JinErrorDto::from)?;
     api::refresh(root).map_err(JinErrorDto::from)?;

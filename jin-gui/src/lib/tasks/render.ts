@@ -113,6 +113,29 @@ export interface SectionCallbacks {
    * it against, the same way Inbox is pinned first in the lists rail.
    */
   onReorderSection?: (sectionId: string, position: string) => void;
+  /** Create directly in this visible section (null is the unsectioned bucket). */
+  onCreateTaskInSection?: (sectionId: string | null, title: string, due?: string, draft?: TaskAddDraft) => Promise<boolean>;
+  /** Keep a local add draft through a controller redraw. */
+  getSectionTaskDraft?: (sectionId: string | null) => TaskAddDraft | undefined;
+  onSetSectionTaskDraft?: (sectionId: string | null, draft: TaskAddDraft) => void;
+  isSectionExpanded?: (sectionId: string | null) => boolean | undefined;
+  onSetSectionExpanded?: (sectionId: string | null, expanded: boolean) => void;
+}
+
+/** Unsubmitted local entry, preserved across a list redraw. */
+export interface TaskAddDraft {
+  title: string;
+  due?: string;
+}
+
+/** Local composer state preserved by a named list across a redraw. */
+export interface TaskAddRowOptions {
+  sectionId?: string | null;
+  initialDraft?: TaskAddDraft;
+  onDraftChange?: (draft: TaskAddDraft) => void;
+  /** State-aware path; ordinary callbacks retain their established arity. */
+  onSubmit?: (title: string, due: string | undefined, draft: TaskAddDraft) => void | Promise<boolean>;
+  keepComposerVisibleWhenEmpty?: boolean;
 }
 
 /**
@@ -228,8 +251,14 @@ function resolveItemSelected(
  * anything.
  */
 function ensureRovingTabStop(container: HTMLElement): void {
-  if (container.querySelector('[tabindex="0"]')) return;
-  const first = container.querySelector<HTMLElement>('.task-item__body');
+  const bodies = Array.from(container.querySelectorAll<HTMLElement>('.task-item__body'));
+  // A folded section is still mounted so its task buttons remain queryable;
+  // they must not retain the sole roving stop or make a hidden row tabbable.
+  for (const body of bodies) {
+    if (body.closest('.hidden')) body.tabIndex = -1;
+  }
+  if (bodies.some((body) => !body.closest('.hidden') && body.tabIndex === 0)) return;
+  const first = bodies.find((body) => !body.closest('.hidden'));
   if (first) first.tabIndex = 0;
 }
 
@@ -304,11 +333,21 @@ export function renderTasksList(
   subtaskDisplayInfo?: Map<string, SubtaskDisplayInfo>,
   selectedTaskIds?: ReadonlySet<string>,
   onAddSection?: () => void,
+  addTaskOptions?: TaskAddRowOptions,
 ): void {
   el.list.innerHTML = '';
 
   if (tasks.length === 0) {
-    showTasksListEmptyState(el);
+    // A named, unfiltered List has a useful first action even before it has
+    // open rows (or when its only rows are in terminal disclosures). Keep the
+    // existing composer as that entry point instead of pairing it with the
+    // generic search-style empty state. Filtered scopes retain that feedback.
+    if (addTaskOptions?.keepComposerVisibleWhenEmpty) {
+      el.emptyState.classList.add('hidden');
+      el.list.classList.remove('hidden');
+    } else {
+      showTasksListEmptyState(el);
+    }
   } else {
     el.emptyState.classList.add('hidden');
     el.list.classList.remove('hidden');
@@ -334,7 +373,7 @@ export function renderTasksList(
 
   // P1 S1.4: always-visible add-task row at bottom of list.
   if (callbacks?.onCreateTask) {
-    el.list.appendChild(buildAddTaskRow(callbacks.onCreateTask, callbacks.onPickDueForCreate));
+    el.list.appendChild(buildAddTaskRow(callbacks.onCreateTask, callbacks.onPickDueForCreate, addTaskOptions));
     el.list.classList.remove('hidden');
   }
 
@@ -1269,6 +1308,11 @@ function buildSectionGroup(
   ul.setAttribute('role', 'listbox');
   ul.setAttribute('aria-multiselectable', 'true');
   ul.setAttribute('aria-label', `${group.sectionName} tasks`);
+  const expanded = sectionCallbacks?.isSectionExpanded?.(group.sectionId) ?? true;
+  if (!expanded) {
+    ul.dataset.collapsed = 'true';
+    ul.classList.add('hidden');
+  }
 
   // S6 (AC-S6-13): a section group is always a list-scope, list-view render —
   // children nest directly beneath their parent, never also as top-level rows.
@@ -1277,7 +1321,19 @@ function buildSectionGroup(
 
   // Add-task row at bottom of each section group.
   if (taskCallbacks?.onCreateTask) {
-    ul.appendChild(buildAddTaskRow(taskCallbacks.onCreateTask, taskCallbacks.onPickDueForCreate));
+    const sectionCreate = sectionCallbacks?.onCreateTaskInSection;
+    ul.appendChild(buildAddTaskRow(
+      taskCallbacks.onCreateTask,
+      taskCallbacks.onPickDueForCreate,
+      sectionCreate ? {
+        sectionId: group.sectionId,
+        initialDraft: sectionCallbacks?.getSectionTaskDraft?.(group.sectionId),
+        onDraftChange: (value) => sectionCallbacks?.onSetSectionTaskDraft?.(group.sectionId, value),
+        onSubmit: sectionCreate
+          ? (title, due, draft) => sectionCreate(group.sectionId, title, due, draft)
+          : undefined,
+      } : undefined,
+    ));
   }
 
   section.appendChild(ul);
@@ -1375,8 +1431,9 @@ function buildSectionHeader(
   const toggleBtn = document.createElement('button');
   toggleBtn.type = 'button';
   toggleBtn.className = 'tasks-section-group__toggle tap-target';
-  toggleBtn.setAttribute('aria-label', `Collapse ${group.sectionName} section`);
-  toggleBtn.setAttribute('aria-expanded', 'true');
+  const initiallyExpanded = callbacks?.isSectionExpanded?.(group.sectionId) ?? true;
+  toggleBtn.setAttribute('aria-label', `${initiallyExpanded ? 'Collapse' : 'Expand'} ${group.sectionName} section`);
+  toggleBtn.setAttribute('aria-expanded', String(initiallyExpanded));
 
   const chevron = document.createElement('i');
   chevron.setAttribute('data-lucide', 'chevron-down');
@@ -1391,6 +1448,10 @@ function buildSectionHeader(
       listEl.dataset.collapsed = collapsed ? 'false' : 'true';
       listEl.classList.toggle('hidden', !collapsed ? true : false);
       toggleBtn.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
+      toggleBtn.setAttribute('aria-label', `${collapsed ? 'Collapse' : 'Expand'} ${group.sectionName} section`);
+      callbacks?.onSetSectionExpanded?.(group.sectionId, collapsed);
+      const root = sectionEl?.parentElement as HTMLElement | null;
+      if (root) ensureRovingTabStop(root);
     }
   });
   header.appendChild(toggleBtn);
@@ -1533,6 +1594,8 @@ export function renderTaskPane(
 
     const actions = document.createElement('div');
     actions.className = 'tasks-detail-pane__header-actions';
+    actions.setAttribute('role', 'group');
+    actions.setAttribute('aria-label', 'Task actions');
 
     if (onDeleteRequest) {
       const deleteBtn = document.createElement('button');
@@ -1599,13 +1662,19 @@ export function renderTaskPane(
   }
 
   // ── Body (P1) ────────────────────────────────────────────────────────────
-  const bodySection = document.createElement('div');
+  const bodySection = document.createElement('section');
   bodySection.className = 'task-detail__body-section';
 
   const bodyLabel = document.createElement('label');
-  bodyLabel.className = 'form-label';
+  bodyLabel.className = 'form-label task-detail__section-heading';
+  bodyLabel.id = `task-notes-label-${task.id}`;
   bodyLabel.setAttribute('for', `task-body-${task.id}`);
-  bodyLabel.textContent = 'Notes';
+  const notesIcon = document.createElement('i');
+  notesIcon.setAttribute('data-lucide', 'file-text');
+  notesIcon.setAttribute('aria-hidden', 'true');
+  const notesCopy = document.createElement('span');
+  notesCopy.textContent = 'Notes';
+  bodyLabel.append(notesIcon, notesCopy);
   bodySection.appendChild(bodyLabel);
 
   const bodyEl = document.createElement('textarea');
@@ -1614,7 +1683,12 @@ export function renderTaskPane(
   bodyEl.value = task.body ?? '';
   bodyEl.placeholder = 'Add a description…';
   bodyEl.setAttribute('aria-label', 'Task notes (body)');
+  bodySection.setAttribute('aria-labelledby', bodyLabel.id);
   bodyEl.rows = 2;
+
+  // CSS `field-sizing: content` lets this writing surface reflow when the
+  // inspector width or text scale changes, without retaining stale inline
+  // heights across a refresh.
 
   if (detailCallbacks?.onSaveBody) {
     const origBody = task.body ?? '';
@@ -1851,6 +1925,9 @@ export function renderTaskPane(
     if (node) main.appendChild(node);
   };
   appendKind('task-detail__body-section');
+  // Children are work, not configuration: keep them next to the note a
+  // person is using to plan the task, before timing and organization fields.
+  appendKind('task-detail__subtasks');
   const fields = existing.find((node) => node.classList.contains('task-detail__fields'));
   const reminders = existing.find((node) => node.classList.contains('task-detail__reminders'));
   const timing = fields?.querySelector('.task-detail__field-group--timing');
@@ -1862,7 +1939,6 @@ export function renderTaskPane(
     appendKind('task-detail__list');
     if (reminders) main.appendChild(reminders);
   }
-  appendKind('task-detail__subtasks');
   appendKind('browse-detail__backlinks');
   appendKind('browse-detail__actions');
   for (const node of existing) {
@@ -2047,8 +2123,13 @@ function buildSubtasksSection(
   section.setAttribute('aria-label', 'Subtasks');
 
   const heading = document.createElement('h3');
-  heading.className = 'task-detail__subtasks-heading text-subheadline';
-  heading.textContent = 'Subtasks';
+  heading.className = 'task-detail__subtasks-heading task-detail__section-heading text-subheadline';
+  const subtaskIcon = document.createElement('i');
+  subtaskIcon.setAttribute('data-lucide', 'list-todo');
+  subtaskIcon.setAttribute('aria-hidden', 'true');
+  const subtaskCopy = document.createElement('span');
+  subtaskCopy.textContent = 'Subtasks';
+  heading.append(subtaskIcon, subtaskCopy);
   section.appendChild(heading);
 
   const subtasks = cbs.subtasks ?? [];
@@ -2778,16 +2859,29 @@ function buildDetailFields(task: TaskDto, cbs: TaskDetailCallbacks): HTMLElement
 
   const timing = document.createElement('section');
   timing.className = 'task-detail__field-group task-detail__field-group--timing';
+  timing.setAttribute('role', 'group');
   const organization = document.createElement('section');
   organization.className = 'task-detail__field-group task-detail__field-group--organization';
-  const heading = (text: string) => {
+  organization.setAttribute('role', 'group');
+  const heading = (text: string, iconName: 'clock' | 'folder') => {
     const label = document.createElement('h3');
     label.className = 'task-detail__group-heading text-footnote';
-    label.textContent = text;
+    const icon = document.createElement('i');
+    icon.setAttribute('data-lucide', iconName);
+    icon.setAttribute('aria-hidden', 'true');
+    const copy = document.createElement('span');
+    copy.textContent = text;
+    label.append(icon, copy);
     return label;
   };
-  timing.appendChild(heading('Timing'));
-  organization.appendChild(heading('Organization'));
+  const timingHeading = heading('Timing', 'clock');
+  timingHeading.id = `task-timing-${task.id}`;
+  timing.setAttribute('aria-labelledby', timingHeading.id);
+  timing.appendChild(timingHeading);
+  const organizationHeading = heading('Organization', 'folder');
+  organizationHeading.id = `task-organization-${task.id}`;
+  organization.setAttribute('aria-labelledby', organizationHeading.id);
+  organization.appendChild(organizationHeading);
   for (const row of Array.from(fields.children)) {
     (['Due', 'Repeat'].includes(row.querySelector('.task-detail__field-label')?.textContent ?? '') ? timing : organization).appendChild(row);
   }
@@ -2926,14 +3020,16 @@ function buildDetailTagsEditor(task: TaskDto, cbs: TaskDetailCallbacks): HTMLEle
  * ITEM 4: Calendar button opens the shared calendar via onPickDueForCreate.
  */
 function buildAddTaskRow(
-  onCreateTask: (title: string, due?: string) => void,
+  onCreateTask: (title: string, due?: string) => void | Promise<boolean>,
   onPickDueForCreate?: (
     currentDue: string | null,
     onSelected: (dueString: string) => void,
   ) => void,
+  options?: TaskAddRowOptions,
 ): HTMLElement {
   const li = document.createElement('li');
   li.className = 'task-add-row';
+  if (options?.sectionId !== undefined) li.dataset.sectionId = options.sectionId ?? '__unsectioned__';
   // S7: the containing <ul> is role="listbox" (multi-select); this row is an
   // input affordance, not a selectable option — excluded from that role.
   li.setAttribute('role', 'presentation');
@@ -2952,33 +3048,48 @@ function buildAddTaskRow(
   input.className = 'task-add-input';
   input.placeholder = 'Add task…';
   input.setAttribute('aria-label', 'New task title');
+  input.value = options?.initialDraft?.title ?? '';
 
   // ITEM 4: track pending due selected via calendar
-  let pendingDue: string | undefined;
+  let pendingDue = options?.initialDraft?.due;
 
+  const reportDraft = (): void => options?.onDraftChange?.({ title: input.value, due: pendingDue });
+
+  let submitting = false;
   const submitTask = () => {
     const title = input.value.trim();
-    if (title) {
-      if (pendingDue) {
-        onCreateTask(title, pendingDue);
-      } else {
-        onCreateTask(title);
-      }
+    if (!title || submitting) return;
+    const submittedDraft = { title: input.value, due: pendingDue };
+    const result = options?.onSubmit
+      ? options.onSubmit(title, pendingDue, submittedDraft)
+      : pendingDue ? onCreateTask(title, pendingDue) : onCreateTask(title);
+    if (!(result instanceof Promise)) {
       input.value = '';
+      options?.onDraftChange?.({ title: '' });
       pendingDue = undefined;
       dueLabelEl.textContent = '';
       dueLabelEl.removeAttribute('data-has-due');
+      return;
     }
+    submitting = true;
+    void result.then(() => {
+      submitting = false;
+    }).catch(() => { submitting = false; });
   };
 
   input.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.key === 'Enter') { e.preventDefault(); submitTask(); }
   });
+  input.addEventListener('input', reportDraft);
   li.appendChild(input);
 
   // ITEM 4: due-date label (shows chosen date, hidden until set)
   const dueLabelEl = document.createElement('span');
   dueLabelEl.className = 'task-add-row__due-label text-caption2';
+  if (pendingDue) {
+    dueLabelEl.textContent = pendingDue;
+    dueLabelEl.setAttribute('data-has-due', 'true');
+  }
   li.appendChild(dueLabelEl);
 
   // ITEM 4: calendar button (only when controller provides the handler)
@@ -3003,6 +3114,7 @@ function buildAddTaskRow(
         } else {
           dueLabelEl.removeAttribute('data-has-due');
         }
+        reportDraft();
       });
     });
 
