@@ -23,7 +23,7 @@ keyring = { workspace = true }
 chacha20poly1305 = { workspace = true }
 argon2 = { workspace = true }
 rrule = { workspace = true }
-dirs = "5"
+dirs = "6"
 
 [dev-dependencies]
 tempfile = { workspace = true }
