@@ -59,7 +59,7 @@ jobs:
         run: sudo apt-get update -y && sudo apt-get install -y gcc
 
       - name: Cache Cargo downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -129,7 +129,7 @@ jobs:
             libjavascriptcoregtk-4.1-dev
 
       - name: Cache Cargo downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
