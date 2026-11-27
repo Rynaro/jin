@@ -53,7 +53,7 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 # "sync-secret-service" + "crypto-rust" features locally for Secret Service integration.
 keyring = { version = "3", features = ["linux-native", "apple-native", "windows-native"] }
 # AEAD encryption for the headless-Linux token file fallback (tokens.enc)
-chacha20poly1305 = "0.10"
+chacha20poly1305 = "0.11"
 # KDF: Argon2id derives the 32-byte ChaCha20-Poly1305 key from the passphrase
 argon2 = "0.5"
 
