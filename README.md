@@ -180,7 +180,7 @@ offline model cache, and review of Jin’s authored engrams.
 
 ## Build from source
 
-Install stable Rust and, for the desktop app, Node.js 20+ and npm 10+. macOS
+Install stable Rust and, for the desktop app, Node.js 24 LTS and npm 10+. macOS
 needs Xcode Command Line Tools; Linux needs the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
