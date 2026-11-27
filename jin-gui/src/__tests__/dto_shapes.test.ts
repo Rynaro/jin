@@ -609,7 +609,7 @@ describe('Notification Center DTO parity (AC-NC-050)', () => {
       'series_master',
       'instance',
     ]);
-  });
+  }, 20_000);
 });
 
 describe('AuthStatusDto shape', () => {

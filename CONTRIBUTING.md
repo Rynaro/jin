@@ -15,7 +15,7 @@ or review SLA.
 
 ## Local setup
 
-You will need a current Rust toolchain, Node.js 20+ and npm 10+ for GUI work.
+You will need a current Rust toolchain, Node.js 24 LTS and npm 10+ for GUI work.
 
 ```bash
 git clone https://github.com/Rynaro/jin.git
