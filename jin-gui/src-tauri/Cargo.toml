@@ -21,7 +21,7 @@ chrono             = { version = "0.4", features = ["serde"] }
 thiserror          = "2"
 tokio              = { version = "1", features = ["macros", "rt", "sync", "time"] }
 # Cross-platform home/config directory resolution (never defaults to cwd).
-dirs               = "5"
+dirs               = "6"
 # jin-core is the ONLY path to the index — VG4 is structural.
 jin-core = { path = "../../jin-core" }
 
